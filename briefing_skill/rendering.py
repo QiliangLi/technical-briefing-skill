@@ -8,6 +8,7 @@ import subprocess
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -336,6 +337,10 @@ const fs = require('fs');
             return
         email_html = email_path.read_text(encoding="utf-8")
         lower_html = email_html.lower()
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(email_html, "html.parser")
+        visible_text = soup.get_text(" ", strip=True)
         if "<img" in lower_html:
             report["failures"].append("Expanded email must not contain item images")
         else:
@@ -358,18 +363,44 @@ const fs = require('fs');
         else:
             report["passes"].append("Expanded email topic groups are complete")
 
+        if re.search(r"\bai\s*hot\b|\baihot\b", visible_text, flags=re.I):
+            report["failures"].append("Expanded email exposes a forbidden discovery-source name")
+        else:
+            report["passes"].append("Expanded email does not expose discovery-source branding")
+        forbidden_links = []
+        for link in soup.find_all("a", href=True):
+            hostname = (urlparse(str(link["href"])).hostname or "").lower().rstrip(".")
+            if hostname == "aihot.virxact.com" or hostname.endswith(".aihot.virxact.com"):
+                forbidden_links.append(str(link["href"]))
+        if forbidden_links:
+            report["failures"].append("Expanded email contains discovery-source links")
+        else:
+            report["passes"].append("Expanded email links only to accepted destinations")
+
+        expected_title = "AI语义Fabric技术情报（内测版）"
+        if expected_title not in visible_text or "TECHNICAL BRIEFING" not in visible_text:
+            report["failures"].append("Expanded email header is incorrect")
+        else:
+            report["passes"].append("Expanded email header is correct")
+        issue_date = str(data.get("date_to") or "")
+        if issue_date and issue_date not in visible_text:
+            report["failures"].append("Expanded email issue date is missing")
+        if visible_text.count("阅读原文：") < len(data.get("items", [])):
+            report["failures"].append("Expanded email is missing per-item original-source labels")
+        else:
+            report["passes"].append("Expanded email labels original-source links")
+
         judgement_ref_counts = [int(value) for value in re.findall(r'data-judgement-ref-count="(\d+)"', email_html)]
         expected_judgements = len(data.get("synthesis", {}).get("judgements") or [])
         if (
             "本期判断" not in email_html
-            or "可定位到具体条目" not in email_html
             or len(judgement_ref_counts) != expected_judgements
             or any(count < 1 for count in judgement_ref_counts)
         ):
             report["failures"].append("Expanded email judgements lack concrete item references")
         else:
             report["passes"].append("Expanded email judgements expose concrete item references")
-        if "AI HOT 热点雷达" not in email_html or "未经本简报深度核验" not in email_html:
-            report["failures"].append("Expanded email AI HOT radar or disclaimer is missing")
+        if "热点雷达" not in visible_text or "未经本简报深度核验" not in visible_text:
+            report["failures"].append("Expanded email hotspot radar or disclaimer is missing")
         else:
-            report["passes"].append("Expanded email AI HOT radar is clearly marked as discovery-only")
+            report["passes"].append("Expanded email hotspot radar is clearly marked as discovery-only")

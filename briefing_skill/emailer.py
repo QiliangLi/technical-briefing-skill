@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -103,7 +104,10 @@ class EmailService:
             name = item.get("topic_name") or item.get("topic_id")
             if name and name not in topic_names:
                 topic_names.append(name)
-        subject = self.config.email.get("subject_template", "技术情报简报").replace("{{ date_range }}", f"{data.get('date_from')}—{data.get('date_to')}").replace("{{ item_count }}", str(len(data.get("items", []))))
+        date_from = str(data.get("date_from") or "")
+        date_to = str(data.get("date_to") or date_from)
+        date_label = date_to if date_from == date_to else f"{date_from}—{date_to}"
+        subject = self.config.email.get("subject_template", "AI语义Fabric技术情报（内测版）").replace("{{ date_range }}", date_label).replace("{{ item_count }}", str(len(data.get("items", []))))
         topic_groups = self._topic_groups(data)
         judgement_refs = self._judgement_refs(data)
         aihot_groups = self._aihot_groups(data.get("date_to"))
@@ -249,10 +253,17 @@ class EmailService:
         seen_urls: set[str] = set()
         seen_titles: set[str] = set()
         for row in rows:
+            original_url = str(row.get("original_url") or "").strip()
+            parsed_url = urlparse(original_url)
+            hostname = (parsed_url.hostname or "").lower().rstrip(".")
+            if parsed_url.scheme.lower() not in {"http", "https"} or not hostname:
+                continue
+            if hostname == "aihot.virxact.com" or hostname.endswith(".aihot.virxact.com"):
+                continue
             published = self._parse_source_time(row.get("published_at") or row.get("discovered_at"))
             if not published or not (start <= published <= end):
                 continue
-            key = row.get("canonical_url") or row.get("original_url") or row.get("aihot_url") or row["title"]
+            key = original_url
             title_key = self._normalise_reference(row["title"])
             if key in seen_urls or title_key in seen_titles:
                 continue
@@ -263,8 +274,8 @@ class EmailService:
                 {
                     "title": row["title"],
                     "summary": self._shorten(row.get("summary"), 105),
-                    "url": row.get("original_url") or row.get("aihot_url"),
-                    "aihot_url": row.get("aihot_url"),
+                    "url": original_url,
+                    "source_name": hostname.removeprefix("www."),
                     "published_at": published.date().isoformat(),
                 }
             )
@@ -312,10 +323,10 @@ class EmailService:
         smtp = resolve_smtp_config()
         password = os.getenv("SMTP_PASSWORD")
         msg = EmailMessage()
-        msg["Subject"] = issue.get("subject") or "技术情报简报"
+        msg["Subject"] = issue.get("subject") or "AI语义Fabric技术情报（内测版）"
         msg["From"] = smtp.sender
         msg["To"] = ", ".join(smtp.recipients)
-        msg.set_content("本邮件包含HTML技术情报简报，请使用支持HTML的邮件客户端查看。")
+        msg.set_content("本邮件包含HTML技术情报，请使用支持HTML的邮件客户端查看。")
         html_text = (self.root / issue["email_path"]).read_text(encoding="utf-8")
         html_text, related = self._prepare_inline_images(html_text)
         msg.add_alternative(html_text, subtype="html")

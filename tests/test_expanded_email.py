@@ -50,6 +50,7 @@ def test_aihot_radar_uses_only_local_seven_day_window_and_deduplicates(tmp_path:
         ("1", "old-run", "aihot", "AI HOT", "B", "OmegaUse OfficeVal", "Agent办公基准", "https://example.com/a", "https://aihot/a", "https://example.com/a", "2026-08-01T00:00:00Z", "2026-08-01T00:00:00Z", 1, "{}", now_iso()),
         ("2", "other-run", "aihot", "AI HOT", "B", "OmegaUse OfficeVal", "重复", "https://example.com/b", "https://aihot/b", "https://example.com/b", "2026-08-01T01:00:00Z", "2026-08-01T01:00:00Z", 1, "{}", now_iso()),
         ("3", "old-run", "aihot", "AI HOT", "B", "过期消息", "旧", "https://example.com/old", "https://aihot/old", "https://example.com/old", "2026-07-01T00:00:00Z", "2026-07-01T00:00:00Z", 1, "{}", now_iso()),
+        ("4", "old-run", "aihot", "AI HOT", "B", "无原始来源", "丢弃", "https://aihot.virxact.com/items/4", "https://aihot.virxact.com/items/4", "https://aihot.virxact.com/items/4", "2026-08-01T02:00:00Z", "2026-08-01T02:00:00Z", 1, "{}", now_iso()),
     ]
     db.executemany(f"INSERT INTO raw_items({','.join(required)}) VALUES ({','.join('?' for _ in required)})", rows)
 
@@ -57,6 +58,8 @@ def test_aihot_radar_uses_only_local_seven_day_window_and_deduplicates(tmp_path:
 
     assert sum(len(group["items"]) for group in groups) == 1
     assert groups[0]["name"] == "Agent与生产力"
+    assert groups[0]["items"][0]["url"] == "https://example.com/a"
+    assert groups[0]["items"][0]["source_name"] == "example.com"
 
 
 def test_expanded_rebuild_is_current_run_only_resets_approval_and_is_idempotent(tmp_path: Path, monkeypatch) -> None:
@@ -111,22 +114,25 @@ def test_expanded_rebuild_is_current_run_only_resets_approval_and_is_idempotent(
 def test_email_template_contains_no_item_images() -> None:
     template = (Path(__file__).resolve().parents[1] / "templates" / "email.html").read_text(encoding="utf-8")
     assert "<img" not in template.lower()
-    assert "AI HOT 热点雷达" in template
+    assert "AI语义Fabric技术情报（内测版）" in template
+    assert ">热点雷达<" in template
+    assert "阅读原文：" in template
     assert "stack-col" in template
 
 
 def test_expanded_email_validator_checks_the_deliverable_not_unused_cards(tmp_path: Path) -> None:
     email_path = tmp_path / "email.html"
     email_path.write_text(
-        '<div>本期判断 · 可定位到具体条目 <span data-judgement-ref-count="1"><a href="#item-a1">对应</a></span></div>'
-        '<section id="topic-tpn"><article id="item-a1">内容</article></section>'
-        '<footer>AI HOT 热点雷达 · 未经本简报深度核验</footer>',
+        '<header>TECHNICAL BRIEFING AI语义Fabric技术情报（内测版） 2026-08-02</header>'
+        '<div>本期判断 <span data-judgement-ref-count="1"><a href="#item-a1">对应</a></span></div>'
+        '<section id="topic-tpn"><article id="item-a1">内容 阅读原文：<a href="https://example.com/a">原始来源</a></article></section>'
+        '<footer>热点雷达 · 未经本简报深度核验</footer>',
         encoding="utf-8",
     )
     report = {"passes": [], "warnings": [], "failures": []}
     Renderer._validate_expanded_email(
         email_path,
-        {"items": [{"brief_item_id": "a1", "topic_id": "tpn"}], "synthesis": {"judgements": ["判断"]}},
+        {"date_to": "2026-08-02", "items": [{"brief_item_id": "a1", "topic_id": "tpn"}], "synthesis": {"judgements": ["判断"]}},
         report,
     )
 
