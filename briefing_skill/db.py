@@ -174,6 +174,7 @@ CREATE TABLE IF NOT EXISTS issue_items (
     brief_item_id TEXT NOT NULL,
     position INTEGER NOT NULL,
     visual_plan_path TEXT,
+    item_role TEXT NOT NULL DEFAULT 'core',
     PRIMARY KEY(issue_id, brief_item_id),
     FOREIGN KEY(issue_id) REFERENCES issues(id),
     FOREIGN KEY(brief_item_id) REFERENCES brief_items(id)
@@ -204,6 +205,9 @@ class Database:
     def init(self) -> None:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(issue_items)")}
+            if "item_role" not in columns:
+                conn.execute("ALTER TABLE issue_items ADD COLUMN item_role TEXT NOT NULL DEFAULT 'core'")
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

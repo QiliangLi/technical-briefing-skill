@@ -38,7 +38,7 @@ def approve_issue(root: Path, db: Database, run_id: str, approved_ids: set[str])
     # selection without losing rejected candidates.
     rows = db.fetchall(
         """
-        SELECT ii.position, ii.visual_plan_path, bi.id, bi.json_path,
+        SELECT ii.position, ii.visual_plan_path, ii.item_role, bi.id, bi.json_path,
                e.topic_id, e.direction_id
         FROM issue_items ii
         JOIN brief_items bi ON bi.id=ii.brief_item_id
@@ -60,6 +60,9 @@ def approve_issue(root: Path, db: Database, run_id: str, approved_ids: set[str])
         "date_from": issue.get("date_from"),
         "date_to": issue.get("date_to"),
         "synthesis": previous.get("synthesis") or read_json(root / issue.get("synthesis_path", ""), {}),
+        "layout_mode": previous.get("layout_mode", "compact"),
+        "core_items": [],
+        "observations": [],
         "items": [],
     }
     run_dir = root / "workspace" / "runs" / run_id
@@ -72,19 +75,33 @@ def approve_issue(root: Path, db: Database, run_id: str, approved_ids: set[str])
         if not isinstance(plan, dict):
             plan = read_json(root / row["visual_plan_path"], {}) if row.get("visual_plan_path") else {"visual_mode": "text_only"}
         illustration = read_json(run_dir / "visuals" / "illustrations" / f"{row['id']}.json", {})
-        rebuilt["items"].append(
-            {
-                **item,
-                "brief_item_id": row["id"],
-                "topic_id": row["topic_id"],
-                "direction_id": row["direction_id"],
-                "visual_plan": plan,
-                "illustration": illustration,
-            }
-        )
+        item_role = row.get("item_role") or "core"
+        rebuilt_item = {
+            **item,
+            "brief_item_id": row["id"],
+            "topic_id": row["topic_id"],
+            "direction_id": row["direction_id"],
+            "item_role": item_role,
+            "fact_check_status": "PASS",
+            "anchor_id": f"item-{row['id']}",
+            "visual_plan": plan,
+            "illustration": illustration,
+        }
+        rebuilt["items"].append(rebuilt_item)
+        rebuilt["core_items" if item_role == "core" else "observations"].append(rebuilt_item)
     write_json(issue_path, rebuilt)
     db.execute("UPDATE issues SET status='APPROVED' WHERE id=?", (issue["id"],))
-    return EmailService(root, ConfigBundle.load(Paths(root)), db).build(run_id, status_after="APPROVED")
+    config = ConfigBundle.load(Paths(root))
+    email_path = EmailService(root, config, db).build(run_id, status_after="APPROVED")
+    # Approval changes the actual deliverable; never reuse a pre-approval report.
+    from .rendering import Renderer
+
+    report = Renderer(root, config, db).validate(run_id)
+    if report.get("failures"):
+        db.execute("UPDATE issues SET status='AWAITING_APPROVAL' WHERE id=?", (issue["id"],))
+        db.update_run(run_id, stage="AWAITING_APPROVAL")
+        raise RuntimeError(f"Approved email failed validation: {report['failures']}")
+    return email_path
 
 
 class ReviewServer:

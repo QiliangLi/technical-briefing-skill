@@ -16,6 +16,7 @@ from .config import ConfigBundle
 from .db import Database
 from .demo import complete_pending_demo_tasks
 from .emailer import EmailService
+from .expanded import rebuild_expanded_issue
 from .paths import Paths, discover_root
 from .pipeline import Pipeline
 from .rendering import Renderer
@@ -218,6 +219,18 @@ def cmd_render(args) -> int:
     return 0
 
 
+def cmd_rebuild_existing(args) -> int:
+    root, paths, config, db = _context(args)
+    if not args.run or args.run == "latest":
+        raise RuntimeError("rebuild-existing requires an explicit --run ID")
+    run_id = _resolve_run(db, args.run)
+    result = rebuild_expanded_issue(root, config, db, run_id, confirm=args.confirm_rebuild)
+    if args.confirm_rebuild:
+        result["email"] = str(EmailService(root, config, db).build(run_id))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_validate(args) -> int:
     root, paths, config, db = _context(args)
     run_id = _resolve_run(db, args.run)
@@ -274,6 +287,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("resume"); p.add_argument("--run", default="latest"); p.set_defaults(func=cmd_resume)
     p = sub.add_parser("demo"); p.add_argument("--run"); p.add_argument("--render", action="store_true"); p.set_defaults(func=cmd_demo)
     p = sub.add_parser("render"); p.add_argument("--run", default="latest"); p.add_argument("--execute", action="store_true"); p.set_defaults(func=cmd_render)
+    p = sub.add_parser("rebuild-existing"); p.add_argument("--run", required=True); p.add_argument("--confirm-rebuild", action="store_true"); p.set_defaults(func=cmd_rebuild_existing)
     p = sub.add_parser("validate"); p.add_argument("--run", default="latest"); p.set_defaults(func=cmd_validate)
     p = sub.add_parser("review"); p.add_argument("--run", default="latest"); p.add_argument("--serve", action="store_true"); p.add_argument("--port", type=int, default=8765); p.set_defaults(func=cmd_review)
     p = sub.add_parser("approve"); p.add_argument("--run", default="latest"); p.add_argument("--all", action="store_true"); p.add_argument("--ids"); p.set_defaults(func=cmd_approve)

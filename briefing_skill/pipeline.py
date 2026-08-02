@@ -12,6 +12,7 @@ from .adapters.base import CollectedItem
 from .db import Database
 from .dedup import EventClusterer
 from .fulltext import FulltextService
+from .expanded import select_expanded_rows
 from .matching import RuleMatcher
 from .scoring import Scorer
 from .tasks import TaskService
@@ -432,32 +433,38 @@ class Pipeline:
         issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (self.run_id,))
         if issue:
             return
-        threshold = float(self.config.scoring.get("thresholds", {}).get("issue_minimum", 70))
-        max_items = int(self.config.scoring.get("thresholds", {}).get("max_issue_items", 6))
-        max_per_topic = int(self.config.scoring.get("thresholds", {}).get("max_items_per_topic", 2))
+        mode = self.config.settings.get("issue_mode", "compact")
         rows = self.db.fetchall(
             """
             SELECT bi.*, e.topic_id, e.direction_id, e.canonical_title, e.last_pushed_at
             FROM brief_items bi JOIN events e ON e.id=bi.event_id
-            WHERE bi.run_id=? AND bi.fact_check_status='PASS' AND bi.score>=?
-            ORDER BY bi.score DESC
+            WHERE bi.run_id=? AND bi.fact_check_status='PASS'
+            ORDER BY bi.score DESC, bi.id
             """,
-            (self.run_id, threshold),
+            (self.run_id,),
         )
-        selected: list[dict[str, Any]] = []
-        topic_counts: dict[str, int] = {}
-        for row in rows:
-            if row.get("last_pushed_at"):
-                item = read_json(self.root / row["json_path"])
-                if not item.get("incremental_update"):
+        if mode == "expanded_v2":
+            selected, _, _, _ = select_expanded_rows(self.root, self.config, rows)
+        else:
+            threshold = float(self.config.scoring.get("thresholds", {}).get("issue_minimum", 70))
+            max_items = int(self.config.scoring.get("thresholds", {}).get("max_issue_items", 6))
+            max_per_topic = int(self.config.scoring.get("thresholds", {}).get("max_items_per_topic", 2))
+            selected = []
+            topic_counts: dict[str, int] = {}
+            for row in rows:
+                if float(row["score"]) < threshold:
                     continue
-            if topic_counts.get(row["topic_id"], 0) >= max_per_topic:
-                continue
-            selected.append(row)
-            topic_counts[row["topic_id"]] = topic_counts.get(row["topic_id"], 0) + 1
-            if len(selected) >= max_items:
-                break
-        if not selected:
+                if row.get("last_pushed_at"):
+                    item = read_json(self.root / row["json_path"])
+                    if not item.get("incremental_update"):
+                        continue
+                if topic_counts.get(row["topic_id"], 0) >= max_per_topic:
+                    continue
+                selected.append({**row, "item_role": "core"})
+                topic_counts[row["topic_id"]] = topic_counts.get(row["topic_id"], 0) + 1
+                if len(selected) >= max_items:
+                    break
+        if not selected or (mode == "expanded_v2" and not any(row.get("item_role") == "core" for row in selected)):
             return
         issue_id = stable_hash("issue", self.run_id)
         now = datetime.now(timezone.utc)
@@ -468,20 +475,23 @@ class Pipeline:
             )
             for position, row in enumerate(selected, 1):
                 conn.execute(
-                    "INSERT INTO issue_items(issue_id, brief_item_id, position) VALUES (?, ?, ?)",
-                    (issue_id, row["id"], position),
+                    "INSERT INTO issue_items(issue_id, brief_item_id, position, item_role) VALUES (?, ?, ?, ?)",
+                    (issue_id, row["id"], position, row.get("item_role", "core")),
                 )
         self.db.update_run(self.run_id, stage="AWAITING_ISSUE_SYNTHESIS", issue_id=issue_id)
         items = [read_json(self.root / row["json_path"]) for row in selected]
+        synthesis_items = [item for row, item in zip(selected, items) if row.get("item_role", "core") == "core"]
         self.tasks.create(
             self.run_id,
             "issue_synthesis",
             issue_id,
-            {"issue_id": issue_id, "items": items, "max_judgements": 3, "audience": "公司内部领导和技术同事"},
+            {"issue_id": issue_id, "items": synthesis_items, "max_judgements": 3, "audience": "公司内部领导和技术同事"},
             prompt="issue-synthesis.md",
             schema="issue-synthesis.schema.json",
             priority=100,
         )
+        if mode == "expanded_v2":
+            return
         for row, item in zip(selected, items):
             self.tasks.create(
                 self.run_id,
@@ -565,7 +575,7 @@ class Pipeline:
             return
         item_rows = self.db.fetchall(
             """
-            SELECT ii.position, ii.visual_plan_path, bi.*, e.topic_id, e.direction_id
+            SELECT ii.position, ii.visual_plan_path, ii.item_role, bi.*, e.topic_id, e.direction_id
             FROM issue_items ii JOIN brief_items bi ON bi.id=ii.brief_item_id
             JOIN events e ON e.id=bi.event_id
             WHERE ii.issue_id=? ORDER BY ii.position
@@ -578,13 +588,29 @@ class Pipeline:
             "date_from": issue["date_from"],
             "date_to": issue["date_to"],
             "synthesis": read_json(self.root / issue["synthesis_path"]),
+            "layout_mode": self.config.settings.get("issue_mode", "compact"),
+            "core_items": [],
+            "observations": [],
             "items": [],
         }
         for row in item_rows:
             item = read_json(self.root / row["json_path"])
             plan = read_json(self.root / row["visual_plan_path"], {}) if row.get("visual_plan_path") else {"visual_mode": "text_only"}
             illustration = read_json(self.run_dir / "visuals" / "illustrations" / f"{row['id']}.json", {})
-            issue_data["items"].append({**item, "brief_item_id": row["id"], "topic_id": row["topic_id"], "direction_id": row["direction_id"], "visual_plan": plan, "illustration": illustration})
+            item_role = row.get("item_role") or "core"
+            rebuilt_item = {
+                **item,
+                "brief_item_id": row["id"],
+                "topic_id": row["topic_id"],
+                "direction_id": row["direction_id"],
+                "item_role": item_role,
+                "fact_check_status": row.get("fact_check_status"),
+                "anchor_id": f"item-{row['id']}",
+                "visual_plan": plan,
+                "illustration": illustration,
+            }
+            issue_data["items"].append(rebuilt_item)
+            issue_data["core_items" if item_role == "core" else "observations"].append(rebuilt_item)
         path = self.run_dir / "issue" / "issue.json"
         write_json(path, issue_data)
         self.db.execute("UPDATE issues SET issue_json_path=?, status='READY_FOR_RENDER', updated_at=? WHERE id=?", (str(path.relative_to(self.root)), now_iso(), issue["id"]))

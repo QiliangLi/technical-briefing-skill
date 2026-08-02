@@ -30,6 +30,15 @@ class Renderer:
         issue_data = read_json(self.root / issue["issue_json_path"])
         card_dir = run_dir / "cards"
         card_dir.mkdir(parents=True, exist_ok=True)
+        if (issue_data.get("layout_mode") or self.config.settings.get("issue_mode")) == "expanded_v2":
+            result = {
+                "skipped": True,
+                "reason": "expanded_v2 email is intentionally image-free",
+                "output_dir": None,
+                "rendered": False,
+            }
+            write_json(card_dir / "manifest.json", result)
+            return result
         index_path = card_dir / "index.html"
         render_script = card_dir / "render.cjs"
         if execute_playwright:
@@ -253,9 +262,17 @@ const fs = require('fs');
 
     def validate(self, run_id: str) -> dict[str, Any]:
         run_dir = self.root / "workspace" / "runs" / run_id
+        issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
+        data: dict[str, Any] = {}
+        mode = self.config.settings.get("issue_mode", "compact")
+        if issue and issue.get("issue_json_path"):
+            data = read_json(self.root / issue["issue_json_path"])
+            mode = data.get("layout_mode") or mode
         validator = self.root / "vendor" / "guizang-social-card-skill" / "validate-social-deck.mjs"
         report: dict[str, Any] = {"vendor_validator": False, "passes": [], "warnings": [], "failures": []}
-        if validator.exists() and (run_dir / "cards" / "index.html").exists():
+        if mode == "expanded_v2":
+            self._validate_expanded_email(run_dir / "email.html", data, report)
+        elif validator.exists() and (run_dir / "cards" / "index.html").exists():
             proc = subprocess.run(["node", str(validator), str(run_dir / "cards")], cwd=self.root, text=True, capture_output=True)
             report["vendor_validator"] = True
             report["stdout"] = proc.stdout
@@ -264,14 +281,45 @@ const fs = require('fs');
                 report["failures"].append("Guizang validator returned non-zero status")
             else:
                 report["passes"].append("Guizang social-card validator passed")
-        issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
-        if issue and issue.get("issue_json_path"):
-            data = read_json(self.root / issue["issue_json_path"])
-            if 1 <= len(data.get("items", [])) <= 6:
-                report["passes"].append("Issue item count is within 1-6")
+        if data:
+            items = data.get("items", [])
+            if mode == "expanded_v2":
+                limits = {"core_min": 8, "core_max": 14, "observation_max": 4, "total_min": 12, "total_max": 18, "max_per_topic": 8, **self.config.scoring.get("expanded_v2", {})}
+                core = data.get("core_items", [])
+                observations = data.get("observations", [])
+                topic_counts: dict[str, int] = {}
+                for item in items:
+                    topic_id = item.get("topic_id", "unknown")
+                    topic_counts[topic_id] = topic_counts.get(topic_id, 0) + 1
+                if len(items) > int(limits["total_max"]) or len(core) > int(limits["core_max"]) or len(observations) > int(limits["observation_max"]):
+                    report["failures"].append("Expanded issue exceeds configured capacity")
+                elif any(count > int(limits["max_per_topic"]) for count in topic_counts.values()):
+                    report["failures"].append("Expanded issue exceeds per-topic capacity")
+                else:
+                    report["passes"].append("Expanded issue capacity is valid")
+                if len(core) < int(limits["core_min"]) or len(items) < int(limits["total_min"]):
+                    report["warnings"].append("Expanded issue is below its preferred minimum; do not add weak filler")
+                for item in core:
+                    score = float(item.get("score") or 0)
+                    if score < float(limits["core_score"]):
+                        report["failures"].append(f"Core item is below the core score threshold: {item.get('title')}")
+                    if not any(source.get("source_level") == "A" for source in item.get("sources", [])):
+                        report["failures"].append(f"Core item lacks an A-level source: {item.get('title')}")
+                    if item.get("fact_check_status") != "PASS":
+                        report["failures"].append(f"Core item did not pass fact checking: {item.get('title')}")
+                for item in observations:
+                    if item.get("item_role") != "observation":
+                        report["failures"].append(f"Observation is not explicitly labelled: {item.get('title')}")
+                    score = float(item.get("score") or 0)
+                    if not float(limits["observation_score"]) <= score < float(limits["core_score"]):
+                        report["failures"].append(f"Observation score is outside the configured range: {item.get('title')}")
+                    if item.get("fact_check_status") != "PASS":
+                        report["failures"].append(f"Observation did not pass fact checking: {item.get('title')}")
+            elif 1 <= len(items) <= 6:
+                report["passes"].append("Compact issue item count is within 1-6")
             else:
-                report["failures"].append("Issue item count exceeds configured maximum")
-            for item in data.get("items", []):
+                report["failures"].append("Compact issue item count exceeds configured maximum")
+            for item in items:
                 text = "".join(str(item.get(k, "")) for k in ("core_conclusion", "mechanism", "result", "boundary", "project_relevance"))
                 if len(text) < 250:
                     report["warnings"].append(f"Item may be too short: {item.get('title')}")
@@ -279,3 +327,49 @@ const fs = require('fs');
                     report["failures"].append(f"Missing sources: {item.get('title')}")
         write_json(run_dir / "validation.json", report)
         return report
+
+    @staticmethod
+    def _validate_expanded_email(email_path: Path, data: dict[str, Any], report: dict[str, Any]) -> None:
+        """Validate the compact HTML deliverable instead of unused social-card PNGs."""
+        if not email_path.exists():
+            report["failures"].append("Expanded email HTML is missing")
+            return
+        email_html = email_path.read_text(encoding="utf-8")
+        lower_html = email_html.lower()
+        if "<img" in lower_html:
+            report["failures"].append("Expanded email must not contain item images")
+        else:
+            report["passes"].append("Expanded email contains no item images")
+
+        missing_anchors = []
+        for item in data.get("items", []):
+            anchor = item.get("anchor_id") or f"item-{item.get('brief_item_id', '')}"
+            if f'id="{html.escape(str(anchor), quote=True)}"' not in email_html:
+                missing_anchors.append(str(anchor))
+        if missing_anchors:
+            report["failures"].append(f"Expanded email is missing item anchors: {', '.join(missing_anchors)}")
+        else:
+            report["passes"].append("Expanded email item anchors are complete")
+
+        topic_ids = {str(item.get("topic_id", "unknown")) for item in data.get("items", [])}
+        missing_topics = [topic_id for topic_id in sorted(topic_ids) if f'id="topic-{html.escape(topic_id, quote=True)}"' not in email_html]
+        if missing_topics:
+            report["failures"].append(f"Expanded email is missing topic groups: {', '.join(missing_topics)}")
+        else:
+            report["passes"].append("Expanded email topic groups are complete")
+
+        judgement_ref_counts = [int(value) for value in re.findall(r'data-judgement-ref-count="(\d+)"', email_html)]
+        expected_judgements = len(data.get("synthesis", {}).get("judgements") or [])
+        if (
+            "本期判断" not in email_html
+            or "可定位到具体条目" not in email_html
+            or len(judgement_ref_counts) != expected_judgements
+            or any(count < 1 for count in judgement_ref_counts)
+        ):
+            report["failures"].append("Expanded email judgements lack concrete item references")
+        else:
+            report["passes"].append("Expanded email judgements expose concrete item references")
+        if "AI HOT 热点雷达" not in email_html or "未经本简报深度核验" not in email_html:
+            report["failures"].append("Expanded email AI HOT radar or disclaimer is missing")
+        else:
+            report["passes"].append("Expanded email AI HOT radar is clearly marked as discovery-only")
