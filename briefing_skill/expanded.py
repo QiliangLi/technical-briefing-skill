@@ -10,15 +10,55 @@ from typing import Any
 
 from .config import ConfigBundle
 from .db import Database
-from .utils import now_iso, read_json
+from .freshness import freshness_limits, item_age_days
+from .tasks import brief_item_validation_errors
+from .utils import complete_sentence_excerpt, now_iso, read_json
+
+
+LEGACY_FIELD_BUDGETS = {
+    "core_conclusion": 120,
+    "mechanism": 90,
+    "result": 90,
+    "boundary": 65,
+    "project_relevance": 85,
+}
+
+
+def _normalise_legacy_item(item: dict[str, Any], config: ConfigBundle) -> dict[str, Any]:
+    min_chars = int(config.settings.get("brief_item_min_chars", 300))
+    max_chars = int(config.settings.get("brief_item_max_chars", 450))
+    if not brief_item_validation_errors(item, min_chars=min_chars, max_chars=max_chars):
+        return item
+    rebuilt = dict(item)
+    for field, limit in LEGACY_FIELD_BUDGETS.items():
+        rebuilt[field] = complete_sentence_excerpt(str(item.get(field) or ""), limit)
+    return rebuilt
+
+
+def _rebuild_synthesis(core_items: list[dict[str, Any]]) -> dict[str, Any]:
+    judgements = []
+    for item in core_items[:3]:
+        conclusion = complete_sentence_excerpt(item.get("core_conclusion"), 105)
+        judgements.append(f"{item.get('title')}：{conclusion}")
+    topic_names = []
+    for item in core_items:
+        name = item.get("topic_name") or item.get("topic_id")
+        if name and name not in topic_names:
+            topic_names.append(name)
+    return {
+        "headline": f"本期筛选出{len(core_items)}条满足新鲜度、去重和证据门槛的技术进展。",
+        "judgements": judgements,
+        "topic_names": topic_names,
+        "watch_next": ["继续扩大AI Infra近期一手来源覆盖，但不使用旧信息凑数。"],
+    }
 
 
 def _limits(config: ConfigBundle) -> dict[str, int]:
     defaults = {
-        "core_min": 8,
+        "core_min": 0,
         "core_max": 14,
         "observation_max": 4,
-        "total_min": 12,
+        "total_min": 0,
         "total_max": 18,
         "max_per_topic": 8,
         "core_score": 70,
@@ -32,10 +72,12 @@ def select_expanded_rows(
     root: Path,
     config: ConfigBundle,
     rows: list[dict[str, Any]],
+    *,
+    reference_date: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int], dict[str, int]]:
     """Classify and cap fact-checked rows for both normal runs and rebuilds."""
     limits = _limits(config)
-    topic_order = {topic["id"]: index for index, topic in enumerate(config.topic_list())}
+    age_limits = freshness_limits(config)
     eligible: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     for row in rows:
@@ -44,24 +86,34 @@ def select_expanded_rows(
             excluded.append({"id": row["id"], "score": score, "reason": "fact check did not pass"})
             continue
         item = read_json(root / row["json_path"])
+        age = item_age_days(
+            {**item, "source_published_at": row.get("source_published_at")},
+            reference=reference_date,
+        )
+        if age is None:
+            excluded.append({"id": row["id"], "score": score, "reason": "unknown original publication date"})
+            continue
+        if age > age_limits["absolute"]:
+            excluded.append({"id": row["id"], "score": score, "reason": f"stale source ({age} days old)"})
+            continue
         if row.get("last_pushed_at") and not item.get("incremental_update"):
             excluded.append({"id": row["id"], "score": score, "reason": "previously pushed without incremental update"})
             continue
         source_levels = {str(source.get("source_level", "")) for source in item.get("sources", [])}
-        if score >= limits["core_score"] and "A" in source_levels:
+        if age <= age_limits["core"] and score >= limits["core_score"] and "A" in source_levels:
             role = "core"
-        elif limits["observation_score"] <= score < limits["core_score"]:
+        elif age <= age_limits["adjacent"] and score >= limits["observation_score"]:
             role = "observation"
         else:
             reason = "high score but no A-level source" if score >= limits["core_score"] else "below expanded-v2 evidence threshold"
             excluded.append({"id": row["id"], "score": score, "reason": reason})
             continue
-        eligible.append({**row, "item": item, "item_role": role})
+        eligible.append({**row, "item": item, "item_role": role, "age_days": age})
 
     eligible.sort(
         key=lambda row: (
-            topic_order.get(row["topic_id"], 999),
             0 if row["item_role"] == "core" else 1,
+            int(row["age_days"]),
             -float(row["score"]),
             row["id"],
         )
@@ -100,7 +152,18 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
     rows = db.fetchall(
         """
         SELECT bi.id, bi.score, bi.json_path, bi.fact_check_status,
-               e.topic_id, e.direction_id, e.last_pushed_at, ii.visual_plan_path
+               e.topic_id, e.direction_id,
+               COALESCE(
+                 e.last_pushed_at,
+                 (SELECT MAX(e2.last_pushed_at) FROM events e2
+                  WHERE e.event_key IS NOT NULL AND e2.event_key=e.event_key)
+               ) AS last_pushed_at,
+               (SELECT MAX(r.published_at)
+                FROM event_members em
+                JOIN candidates c ON c.id=em.candidate_id
+                JOIN raw_items r ON r.id=c.raw_item_id
+                WHERE em.event_id=e.id) AS source_published_at,
+               ii.visual_plan_path
         FROM brief_items bi
         JOIN events e ON e.id=bi.event_id
         LEFT JOIN issue_items ii ON ii.brief_item_id=bi.id AND ii.issue_id=?
@@ -109,14 +172,19 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
         """,
         (issue["id"], run_id),
     )
-    selected, excluded, counts, limits = select_expanded_rows(root, config, rows)
+    selected, excluded, counts, limits = select_expanded_rows(
+        root,
+        config,
+        rows,
+        reference_date=issue.get("date_to") or issue.get("date_from"),
+    )
 
     previous = read_json(root / issue["issue_json_path"])
     core_items = []
     observations = []
     for position, row in enumerate(selected, 1):
         item = {
-            **row["item"],
+            **_normalise_legacy_item(row["item"], config),
             "brief_item_id": row["id"],
             "topic_id": row["topic_id"],
             "direction_id": row["direction_id"],
@@ -126,13 +194,14 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
         }
         (core_items if row["item_role"] == "core" else observations).append(item)
 
+    rebuilt_synthesis = _rebuild_synthesis(core_items)
     rebuilt = {
         "id": issue["id"],
         "run_id": run_id,
         "date_from": issue.get("date_from"),
         "date_to": issue.get("date_to"),
         "layout_mode": "expanded_v2",
-        "synthesis": previous.get("synthesis") or read_json(root / issue.get("synthesis_path", ""), {}),
+        "synthesis": rebuilt_synthesis,
         "core_items": core_items,
         "observations": observations,
         "items": core_items + observations,
@@ -182,6 +251,7 @@ def rebuild_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_i
         try:
             with db.transaction() as conn:
                 conn.execute("DELETE FROM issue_items WHERE issue_id=?", (issue["id"],))
+                conn.execute("DELETE FROM issue_radar_items WHERE issue_id=?", (issue["id"],))
                 for position, row in enumerate(plan["selected"], 1):
                     conn.execute(
                         "INSERT INTO issue_items(issue_id, brief_item_id, position, item_role, visual_plan_path) VALUES (?, ?, ?, ?, ?)",

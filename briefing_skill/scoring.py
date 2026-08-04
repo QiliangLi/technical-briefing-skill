@@ -34,7 +34,7 @@ class Scorer:
         now = datetime.now(timezone.utc)
         ages = []
         for item in raw_items:
-            dt = parse_datetime(item.get("published_at") or item.get("discovered_at"))
+            dt = parse_datetime(item.get("published_at"))
             if dt:
                 ages.append((now - dt).days)
         age = min(ages) if ages else 30

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import CollectedItem
+from ..utils import now_iso
 
 
 def offline_fixture_items() -> list[CollectedItem]:
@@ -16,7 +17,7 @@ def offline_fixture_items() -> list[CollectedItem]:
                 "The agent queries the graph to locate relevant code before using read and grep tools."
             ),
             original_url="https://example.com/codegraph-paper",
-            published_at="2026-07-30T08:00:00Z",
+            published_at=now_iso(),
             topic_hint="agent_acceleration",
             direction_hint="code_graph",
             priority=25,
@@ -33,7 +34,7 @@ def offline_fixture_items() -> list[CollectedItem]:
                 "reducing queueing for latency-sensitive inference requests."
             ),
             original_url="https://example.com/kv-network-paper",
-            published_at="2026-07-29T08:00:00Z",
+            published_at=now_iso(),
             topic_hint="tpn",
             direction_hint="kv_network_scheduling",
             priority=24,

@@ -312,8 +312,8 @@ const fs = require('fs');
                     if item.get("item_role") != "observation":
                         report["failures"].append(f"Observation is not explicitly labelled: {item.get('title')}")
                     score = float(item.get("score") or 0)
-                    if not float(limits["observation_score"]) <= score < float(limits["core_score"]):
-                        report["failures"].append(f"Observation score is outside the configured range: {item.get('title')}")
+                    if score < float(limits["observation_score"]):
+                        report["failures"].append(f"Observation score is below the configured threshold: {item.get('title')}")
                     if item.get("fact_check_status") != "PASS":
                         report["failures"].append(f"Observation did not pass fact checking: {item.get('title')}")
             elif 1 <= len(items) <= 6:
@@ -326,6 +326,16 @@ const fs = require('fs');
                     report["warnings"].append(f"Item may be too short: {item.get('title')}")
                 if not item.get("sources"):
                     report["failures"].append(f"Missing sources: {item.get('title')}")
+                from .tasks import brief_item_validation_errors
+                completeness_errors = brief_item_validation_errors(
+                    item,
+                    min_chars=int(self.config.settings.get("brief_item_min_chars", 300)),
+                    max_chars=int(self.config.settings.get("brief_item_max_chars", 450)),
+                )
+                if completeness_errors:
+                    report["failures"].append(
+                        f"Incomplete or invalid item text: {item.get('title')} ({'; '.join(completeness_errors)})"
+                    )
         write_json(run_dir / "validation.json", report)
         return report
 

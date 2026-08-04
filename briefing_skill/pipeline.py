@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,7 @@ from .db import Database
 from .dedup import EventClusterer
 from .fulltext import FulltextService
 from .expanded import select_expanded_rows
+from .freshness import freshness_limits
 from .matching import RuleMatcher
 from .scoring import Scorer
 from .tasks import TaskService
@@ -35,6 +36,9 @@ class Pipeline:
 
     def prepare_agent_search(self, max_queries: int = 18) -> int:
         created = 0
+        max_age_days = freshness_limits(self.config)["absolute"]
+        search_end = datetime.now(timezone.utc).date()
+        search_start = search_end - timedelta(days=max_age_days)
         priority_map = {"highest": 100, "high": 80, "medium": 55, "low": 30}
         for topic, direction in self.config.iter_directions():
             if created >= max_queries:
@@ -56,7 +60,9 @@ class Pipeline:
                 "direction_name": direction["name"],
                 "query": query,
                 "preferred_domains": domains,
-                "freshness_days": 14,
+                "freshness_days": max_age_days,
+                "date_from": search_start.isoformat(),
+                "date_to": search_end.isoformat(),
                 "max_results": 10,
             }
             self.tasks.create(
@@ -405,11 +411,16 @@ class Pipeline:
             input_data = {
                 "brief_item": read_json(self.root / item["json_path"]),
                 "facts": [read_json(self.root / row["json_path"]) for row in event_members],
+                "length": {
+                    "min_chars": self.config.settings.get("brief_item_min_chars", 300),
+                    "max_chars": self.config.settings.get("brief_item_max_chars", 450),
+                },
                 "rules": [
                     "All numbers must be supported by facts.",
                     "Baseline and experimental conditions must not be omitted when material.",
                     "Project inference must be labelled as project judgement, not source fact.",
                     "AI HOT summaries cannot be the sole evidence.",
+                    "Every field must be a complete sentence without ellipsis or dangling punctuation.",
                 ],
             }
             self.tasks.create(
@@ -436,7 +447,17 @@ class Pipeline:
         mode = self.config.settings.get("issue_mode", "compact")
         rows = self.db.fetchall(
             """
-            SELECT bi.*, e.topic_id, e.direction_id, e.canonical_title, e.last_pushed_at
+            SELECT bi.*, e.topic_id, e.direction_id, e.canonical_title,
+                   COALESCE(
+                     e.last_pushed_at,
+                     (SELECT MAX(e2.last_pushed_at) FROM events e2
+                      WHERE e.event_key IS NOT NULL AND e2.event_key=e.event_key)
+                   ) AS last_pushed_at,
+                   (SELECT MAX(r.published_at)
+                    FROM event_members em
+                    JOIN candidates c ON c.id=em.candidate_id
+                    JOIN raw_items r ON r.id=c.raw_item_id
+                    WHERE em.event_id=e.id) AS source_published_at
             FROM brief_items bi JOIN events e ON e.id=bi.event_id
             WHERE bi.run_id=? AND bi.fact_check_status='PASS'
             ORDER BY bi.score DESC, bi.id
@@ -444,7 +465,12 @@ class Pipeline:
             (self.run_id,),
         )
         if mode == "expanded_v2":
-            selected, _, _, _ = select_expanded_rows(self.root, self.config, rows)
+            selected, _, _, _ = select_expanded_rows(
+                self.root,
+                self.config,
+                rows,
+                reference_date=datetime.now(timezone.utc).date().isoformat(),
+            )
         else:
             threshold = float(self.config.scoring.get("thresholds", {}).get("issue_minimum", 70))
             max_items = int(self.config.scoring.get("thresholds", {}).get("max_issue_items", 6))

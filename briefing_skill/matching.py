@@ -6,6 +6,7 @@ from typing import Any
 
 from .config import ConfigBundle
 from .db import Database
+from .freshness import candidate_is_fresh
 from .utils import normalize_text, now_iso, stable_hash, tokenize
 
 
@@ -18,6 +19,8 @@ class RuleMatcher:
         raw_items = self.db.fetchall("SELECT * FROM raw_items WHERE run_id=? ORDER BY priority DESC", (run_id,))
         candidates: list[dict[str, Any]] = []
         for raw in raw_items:
+            if not candidate_is_fresh(raw.get("published_at"), self.config):
+                continue
             matches = self._matches(raw)
             limit = 1 if raw.get("direction_hint") else 2
             for topic_id, direction_id, score in matches[:limit]:

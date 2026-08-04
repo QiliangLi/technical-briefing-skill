@@ -9,7 +9,7 @@ import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 from dateutil import parser as date_parser
 
@@ -121,6 +121,46 @@ def canonicalize_url(url: str | None) -> str:
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), clean_path, urlencode(query), ""))
 
 
+def source_identity_key(url: str | None, external_id: str | None = None) -> str:
+    """Return a stable source identity across title, language, and arXiv-version changes."""
+    canonical = canonicalize_url(url)
+    parts = urlsplit(canonical) if canonical else None
+    host = (parts.hostname or "").lower() if parts else ""
+    path = unquote(parts.path or "").strip("/") if parts else ""
+
+    if host in {"arxiv.org", "www.arxiv.org", "export.arxiv.org"}:
+        match = re.search(r"(?:abs|pdf)/([^/?#]+)", f"/{path}", flags=re.I)
+        if match:
+            arxiv_id = re.sub(r"\.pdf$", "", match.group(1), flags=re.I)
+            arxiv_id = re.sub(r"v\d+$", "", arxiv_id, flags=re.I)
+            return f"arxiv:{arxiv_id.lower()}"
+
+    if host in {"doi.org", "dx.doi.org"} and path:
+        return f"doi:{path.lower()}"
+
+    doi_source = f"{external_id or ''} {canonical}"
+    doi_match = re.search(r"10\.\d{4,9}/[-._;()/:a-z0-9]+", doi_source, flags=re.I)
+    if doi_match:
+        return f"doi:{doi_match.group(0).lower().rstrip('.')}"
+
+    if host in {"github.com", "www.github.com"}:
+        segments = [segment for segment in path.split("/") if segment]
+        if len(segments) >= 5 and segments[2:4] == ["releases", "tag"]:
+            return f"github-release:{segments[0].lower()}/{segments[1].lower()}@{'/'.join(segments[4:]).lower()}"
+        if len(segments) >= 4 and segments[2] == "commit":
+            return f"github-commit:{segments[0].lower()}/{segments[1].lower()}@{segments[3].lower()}"
+        if len(segments) == 2:
+            return f"github:{segments[0].lower()}/{segments[1].lower()}"
+
+    if canonical:
+        return f"url:{canonical}"
+    if external_id:
+        normalized = normalize_text(external_id)
+        if normalized:
+            return f"external:{normalized}"
+    return ""
+
+
 def normalize_text(text: str | None) -> str:
     value = unicodedata.normalize("NFKC", text or "").lower()
     value = re.sub(r"\s+", " ", value)
@@ -230,4 +270,32 @@ def unique_preserve(items: Iterable[str]) -> list[str]:
         if item and item not in seen:
             seen.add(item)
             result.append(item)
+    return result
+
+
+def complete_sentence_excerpt(text: str | None, limit: int) -> str:
+    """Compress at sentence/clause boundaries without dangling text or ellipses."""
+    value = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not value:
+        return ""
+    if len(value) <= limit and re.search(r"[。！？.!?](?:[”’\"）)\]]*)$", value):
+        return value
+    sentence_boundary = r"(?:[。！？!?]|\.(?!\d)(?=\s|$)|[；;])"
+    units = [
+        match.group(0).strip()
+        for match in re.finditer(rf".+?{sentence_boundary}(?:[”’\"）)\]]*)?", value)
+    ]
+    if not units:
+        return value.rstrip("…，,:：;；、 ") + "。"
+    chosen: list[str] = []
+    for unit in units:
+        candidate = "".join(chosen + [unit])
+        if chosen and len(candidate) > limit:
+            break
+        chosen.append(unit)
+        if len(candidate) >= limit:
+            break
+    result = "".join(chosen).strip()
+    if result.endswith(("；", ";")):
+        result = result[:-1] + "。"
     return result

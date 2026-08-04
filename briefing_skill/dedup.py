@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .db import Database
-from .utils import stable_hash, title_similarity, tokenize
+from .utils import normalize_text, stable_hash, title_similarity
 
 
 @dataclass
@@ -23,7 +23,8 @@ class EventClusterer:
         rows = self.db.fetchall(
             """
             SELECT f.candidate_id, f.json_path, f.quality_score, f.event_hint,
-                   c.topic_id, c.direction_id, r.title, r.canonical_url, r.published_at
+                   c.topic_id, c.direction_id, r.title, r.canonical_url,
+                   r.identity_key, r.published_at
             FROM facts f
             JOIN candidates c ON c.id=f.candidate_id
             JOIN raw_items r ON r.id=c.raw_item_id
@@ -48,6 +49,8 @@ class EventClusterer:
 
     @staticmethod
     def _same_event(a: dict[str, Any], b: dict[str, Any]) -> bool:
+        if a.get("identity_key") and a.get("identity_key") == b.get("identity_key"):
+            return True
         if a.get("event_hint") and b.get("event_hint"):
             if title_similarity(a["event_hint"], b["event_hint"]) >= 0.72:
                 return True
@@ -57,8 +60,20 @@ class EventClusterer:
         result: list[dict[str, Any]] = []
         for cluster in clusters:
             primary = cluster.members[0]
-            fingerprint = stable_hash(cluster.topic_id, primary.get("event_hint") or primary["title"])
-            existing = self.db.fetchone("SELECT * FROM events WHERE fingerprint=?", (fingerprint,))
+            identities = sorted({str(member.get("identity_key")) for member in cluster.members if member.get("identity_key")})
+            event_key = identities[0] if identities else (
+                f"semantic:{cluster.topic_id}:{stable_hash(normalize_text(primary.get('event_hint') or primary['title']))}"
+            )
+            fingerprint = stable_hash("event-key", event_key)
+            existing = self.db.fetchone(
+                """
+                SELECT * FROM events WHERE event_key=?
+                ORDER BY (last_pushed_at IS NOT NULL) DESC, first_seen_at, id LIMIT 1
+                """,
+                (event_key,),
+            )
+            if not existing:
+                existing = self.db.fetchone("SELECT * FROM events WHERE fingerprint=?", (fingerprint,))
             event_id = existing["id"] if existing else stable_hash("event", fingerprint)
             payload = {
                 "run_id": run_id,
@@ -69,11 +84,14 @@ class EventClusterer:
             with self.db.connect() as conn:
                 conn.execute(
                     """
-                    INSERT INTO events(id, topic_id, direction_id, canonical_title, fingerprint,
+                    INSERT INTO events(id, topic_id, direction_id, canonical_title, fingerprint, event_key,
                                        score, first_seen_at, last_updated_at, last_pushed_at, payload_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
+                        topic_id=excluded.topic_id,
+                        direction_id=excluded.direction_id,
                         last_updated_at=excluded.last_updated_at,
+                        event_key=excluded.event_key,
                         payload_json=excluded.payload_json,
                         score=MAX(events.score, excluded.score)
                     """,
@@ -83,6 +101,7 @@ class EventClusterer:
                         cluster.direction_id,
                         primary.get("event_hint") or primary["title"],
                         fingerprint,
+                        event_key,
                         max(float(member.get("quality_score") or 0) for member in cluster.members),
                         existing["first_seen_at"] if existing else now,
                         now,

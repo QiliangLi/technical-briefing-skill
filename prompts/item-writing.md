@@ -4,6 +4,10 @@ Use only the structured facts and source metadata in the input. Write a Chinese 
 
 Target length: 300-450 Chinese characters across the substantive fields. The reader should understand the technique without opening the original source, while the source link remains available for verification.
 
+Write every field as one or two complete, compact sentences. Never end a field with `…`, `...`, a comma, colon, or semicolon. Do not write a fragment and rely on the renderer to shorten it; the renderer will display the complete field verbatim.
+
+Suggested field budgets: `core_conclusion` 70-120 characters, `mechanism` 45-100, `result` 45-100, `boundary` 30-75, and `project_relevance` 40-90. Stay within the limits supplied in the task input when they differ.
+
 Structure:
 
 - A factual, restrained title: technology/project + core change or value.

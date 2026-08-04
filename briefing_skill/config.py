@@ -66,6 +66,7 @@ class ConfigBundle:
             "agent_acceleration": "agent-acceleration.md",
             "cross_region": "cross-region.md",
             "optical_network": "optical-network.md",
+            "ai_infra_horizontal": "ai-infra-horizontal.md",
         }
         return paths.config / "project-context" / mapping[topic_id]
 

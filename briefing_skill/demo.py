@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timezone
 
 from .db import Database
 from .tasks import TaskService
@@ -43,20 +44,21 @@ def _demo_output(task_type: str, data: dict):
     if task_type == "item_writing":
         facts = data["facts"][0]
         agent = "CodeGraph" in facts["event_hint"]
+        today = datetime.now(timezone.utc).date().isoformat()
         return {
             "title": "CodeGraph先定位再读取，减少代码Agent重复探索" if agent else "KVCache状态进入网络调度，缩短推理通信关键路径",
             "type": "流程演示",
             "topic_name": data["topic"]["name"],
             "direction_name": data["direction"]["name"],
-            "published_at": "2026-07-30",
+            "published_at": today,
             "importance": "值得关注",
-            "core_conclusion": facts["problem"] + facts["mechanism"],
-            "mechanism": facts["mechanism"],
-            "result": "当前为离线流程样例，没有可用于技术判断的真实性能数字；其价值是验证采集、逐篇抽取、去重和图文生成链路能够完整运行。",
-            "boundary": facts["limitations"],
-            "project_relevance": facts["project_relevance"],
+            "core_conclusion": facts["problem"] + facts["mechanism"] + "该样例重点验证从来源到简报条目的信息链路是否完整。",
+            "mechanism": facts["mechanism"] + "任务按候选逐篇处理，并把原文事实压缩成结构化字段后再进入选刊。",
+            "result": "当前为离线流程样例，没有可用于技术判断的真实性能数字。它只证明采集、逐篇抽取、稳定去重、事实检查和邮件生成链路能够顺序完成。",
+            "boundary": facts["limitations"] + "样例不得用于推断真实系统的性能收益或生产可用性。",
+            "project_relevance": facts["project_relevance"] + "正式运行时仍需替换为近期一手来源，并逐项核验数据、基线和适用条件。",
             "keywords": ["CodeGraph", "Agent", "代码检索"] if agent else ["KVCache", "网络调度", "Prefill/Decode"],
-            "sources": [{"publisher": "Offline Fixture", "url": data["sources"][0]["url"], "source_level": "A", "primary": True, "published_at": "2026-07-30"}],
+            "sources": [{"publisher": "Offline Fixture", "url": data["sources"][0]["url"], "source_level": "A", "primary": True, "published_at": today}],
             "discovered_via": None,
             "incremental_update": False,
             "incremental_change": None,

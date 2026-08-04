@@ -14,7 +14,7 @@ from .adapters.rss import RSSCollector
 from .config import ConfigBundle
 from .db import Database
 from .http import HttpClient
-from .utils import canonicalize_url, content_hash, now_iso, stable_hash, write_json
+from .utils import canonicalize_url, content_hash, now_iso, source_identity_key, stable_hash, write_json
 
 LOGGER = logging.getLogger(__name__)
 
@@ -71,6 +71,7 @@ class CollectionService:
                 "original_url": item.original_url,
                 "aihot_url": item.aihot_url,
                 "canonical_url": canonical,
+                "identity_key": source_identity_key(canonical, item.external_id),
                 "published_at": item.published_at,
                 "discovered_at": item.discovered_at,
                 "authors_json": json.dumps(item.authors, ensure_ascii=False),
@@ -89,12 +90,12 @@ class CollectionService:
                         id, run_id, source_id, discovery_source, source_level, discovery_only,
                         title, summary, original_url, aihot_url, canonical_url, published_at,
                         discovered_at, authors_json, external_id, topic_hint, direction_hint,
-                        priority, content_hash, payload_json, created_at
+                        priority, content_hash, payload_json, created_at, identity_key
                     ) VALUES (
                         :id, :run_id, :source_id, :discovery_source, :source_level, :discovery_only,
                         :title, :summary, :original_url, :aihot_url, :canonical_url, :published_at,
                         :discovered_at, :authors_json, :external_id, :topic_hint, :direction_hint,
-                        :priority, :content_hash, :payload_json, :created_at
+                        :priority, :content_hash, :payload_json, :created_at, :identity_key
                     )
                     """,
                     row,

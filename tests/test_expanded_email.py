@@ -57,7 +57,7 @@ def test_aihot_radar_uses_only_local_seven_day_window_and_deduplicates(tmp_path:
     groups = service._aihot_groups("2026-08-02")
 
     assert sum(len(group["items"]) for group in groups) == 1
-    assert groups[0]["name"] == "Agent与生产力"
+    assert groups[0]["name"] == "Agent与开发工具"
     assert groups[0]["items"][0]["url"] == "https://example.com/a"
     assert groups[0]["items"][0]["source_name"] == "example.com"
 
@@ -75,7 +75,7 @@ def test_expanded_rebuild_is_current_run_only_resets_approval_and_is_idempotent(
     for event_id, run_id, item_id, score in (("event-core", "run-1", "core", 82), ("event-obs", "run-1", "obs", 65), ("event-other", "run-2", "other", 90)):
         db.execute("INSERT INTO events(id,topic_id,direction_id,canonical_title,fingerprint,score,first_seen_at,last_updated_at,payload_json) VALUES (?,?,?,?,?,?,?,?,?)", (event_id, "tpn", "d", event_id, event_id, score, now, now, "{}"))
         item_path = tmp_path / "workspace" / "runs" / run_id / "items" / f"{item_id}.json"
-        write_json(item_path, {"title": item_id, "score": score, "topic_name": "状态感知网络、TPN", "sources": [{"source_level": "A", "url": "https://example.com"}]})
+        write_json(item_path, {"title": item_id, "score": score, "published_at": "2026-08-01T00:00:00Z", "topic_name": "状态感知网络、TPN", "sources": [{"source_level": "A", "url": "https://example.com"}]})
         db.execute("INSERT INTO brief_items(id,run_id,event_id,json_path,score,fact_check_status,approved,created_at) VALUES (?,?,?,?,?,?,?,?)", (item_id, run_id, event_id, str(item_path.relative_to(tmp_path)), score, "PASS", 1, now))
     db.execute("INSERT INTO issue_items(issue_id,brief_item_id,position,item_role) VALUES (?,?,?,?)", ("issue-1", "core", 1, "core"))
 
@@ -141,7 +141,7 @@ def test_expanded_email_validator_checks_the_deliverable_not_unused_cards(tmp_pa
     assert "Expanded email judgements expose concrete item references" in report["passes"]
 
 
-def test_expanded_selection_excludes_high_score_without_a_level_source(tmp_path: Path) -> None:
+def test_expanded_selection_demotes_high_score_without_a_level_source(tmp_path: Path) -> None:
     db = Database(tmp_path / "workspace" / "briefing.sqlite")
     db.init()
     db.create_run("run-expanded", "ACTIVE")
@@ -160,7 +160,7 @@ def test_expanded_selection_excludes_high_score_without_a_level_source(tmp_path:
         item_path = tmp_path / "workspace" / "runs" / "run-expanded" / "items" / f"{item_id}.json"
         write_json(
             item_path,
-            {"title": item_id, "score": score, "sources": [{"source_level": source_level, "url": "https://example.com"}]},
+            {"title": item_id, "score": score, "published_at": now, "sources": [{"source_level": source_level, "url": "https://example.com"}]},
         )
         db.execute(
             "INSERT INTO brief_items(id,run_id,event_id,json_path,score,fact_check_status,created_at) VALUES (?,?,?,?,?,?,?)",
@@ -175,6 +175,7 @@ def test_expanded_selection_excludes_high_score_without_a_level_source(tmp_path:
     )
     assert [(row["brief_item_id"], row["item_role"]) for row in rows] == [
         ("core", "core"),
+        ("high-without-a", "observation"),
         ("observation", "observation"),
     ]
     synthesis = db.fetchone("SELECT input_path FROM tasks WHERE run_id=? AND task_type='issue_synthesis'", ("run-expanded",))

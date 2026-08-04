@@ -9,6 +9,7 @@ import httpx
 from ..config import ConfigBundle
 from ..http import HttpClient, HttpRetryError
 from ..feed import parse_feed
+from ..freshness import freshness_limits
 from .base import CollectedItem
 
 LOGGER = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class ArxivCollector:
         request_interval = float(self.source.get("request_interval_seconds", 3.0))
         if request_interval < 0:
             raise RuntimeError("arXiv request_interval_seconds must be non-negative")
-        cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=freshness_limits(self.config)["absolute"])
         request_started = False
         for topic, direction in self.config.iter_directions():
             terms = [str(term) for term in direction.get("include_terms", []) if len(str(term)) >= 3][:4]

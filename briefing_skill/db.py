@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
-from .utils import now_iso
+from .utils import now_iso, source_identity_key
 
 
 SCHEMA = """
@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS raw_items (
     original_url TEXT,
     aihot_url TEXT,
     canonical_url TEXT,
+    identity_key TEXT,
     published_at TEXT,
     discovered_at TEXT,
     authors_json TEXT,
@@ -128,6 +129,7 @@ CREATE TABLE IF NOT EXISTS events (
     direction_id TEXT NOT NULL,
     canonical_title TEXT NOT NULL,
     fingerprint TEXT NOT NULL,
+    event_key TEXT,
     score REAL NOT NULL DEFAULT 0,
     first_seen_at TEXT NOT NULL,
     last_updated_at TEXT NOT NULL,
@@ -188,6 +190,27 @@ CREATE TABLE IF NOT EXISTS send_history (
     status TEXT NOT NULL,
     error TEXT
 );
+
+CREATE TABLE IF NOT EXISTS issue_radar_items (
+    issue_id TEXT NOT NULL,
+    canonical_url TEXT NOT NULL,
+    normalized_title TEXT NOT NULL,
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT,
+    source_name TEXT NOT NULL,
+    published_at TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY(issue_id, canonical_url),
+    FOREIGN KEY(issue_id) REFERENCES issues(id)
+);
+
+CREATE TABLE IF NOT EXISTS radar_history (
+    canonical_url TEXT PRIMARY KEY,
+    normalized_title TEXT NOT NULL,
+    last_pushed_at TEXT NOT NULL,
+    issue_id TEXT NOT NULL
+);
 """
 
 
@@ -208,6 +231,53 @@ class Database:
             columns = {row[1] for row in conn.execute("PRAGMA table_info(issue_items)")}
             if "item_role" not in columns:
                 conn.execute("ALTER TABLE issue_items ADD COLUMN item_role TEXT NOT NULL DEFAULT 'core'")
+            raw_columns = {row[1] for row in conn.execute("PRAGMA table_info(raw_items)")}
+            if "identity_key" not in raw_columns:
+                conn.execute("ALTER TABLE raw_items ADD COLUMN identity_key TEXT")
+            event_columns = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+            if "event_key" not in event_columns:
+                conn.execute("ALTER TABLE events ADD COLUMN event_key TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_raw_identity ON raw_items(identity_key)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_event_key ON events(event_key)")
+
+            for row in conn.execute(
+                "SELECT id, canonical_url, external_id FROM raw_items WHERE identity_key IS NULL OR identity_key=''"
+            ).fetchall():
+                identity = source_identity_key(row[1], row[2])
+                if identity:
+                    conn.execute("UPDATE raw_items SET identity_key=? WHERE id=?", (identity, row[0]))
+
+            missing_events = conn.execute(
+                "SELECT id FROM events WHERE event_key IS NULL OR event_key=''"
+            ).fetchall()
+            for (event_id,) in missing_events:
+                identity_row = conn.execute(
+                    """
+                    SELECT r.identity_key
+                    FROM event_members em
+                    JOIN candidates c ON c.id=em.candidate_id
+                    JOIN raw_items r ON r.id=c.raw_item_id
+                    WHERE em.event_id=? AND r.identity_key IS NOT NULL AND r.identity_key!=''
+                    ORDER BY r.source_level='A' DESC, r.created_at
+                    LIMIT 1
+                    """,
+                    (event_id,),
+                ).fetchone()
+                if identity_row:
+                    conn.execute("UPDATE events SET event_key=? WHERE id=?", (identity_row[0], event_id))
+
+            # Historical duplicate events may already exist. Propagate the sent
+            # marker across the shared stable identity so they cannot reappear.
+            conn.execute(
+                """
+                UPDATE events
+                SET last_pushed_at=(
+                    SELECT MAX(e2.last_pushed_at) FROM events e2
+                    WHERE e2.event_key=events.event_key
+                )
+                WHERE event_key IS NOT NULL AND event_key!=''
+                """
+            )
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

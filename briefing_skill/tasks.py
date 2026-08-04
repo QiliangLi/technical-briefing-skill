@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,32 @@ from .db import Database
 from .utils import now_iso, read_json, stable_hash, write_json
 
 LOGGER = logging.getLogger(__name__)
+
+BRIEF_FIELDS = ("core_conclusion", "mechanism", "result", "boundary", "project_relevance")
+INCOMPLETE_ENDING_RE = re.compile(r"(?:…|\.\.\.|[，,:：;；、])(?:[”’\"）)\]]*)$")
+COMPLETE_ENDING_RE = re.compile(r"[。！？.!?](?:[”’\"）)\]]*)$")
+
+
+def brief_item_validation_errors(
+    item: dict[str, Any],
+    *,
+    min_chars: int = 300,
+    max_chars: int = 450,
+) -> list[str]:
+    errors: list[str] = []
+    substantive = []
+    for field in BRIEF_FIELDS:
+        value = " ".join(str(item.get(field) or "").split())
+        substantive.append(value)
+        if not value:
+            errors.append(f"{field} is empty")
+            continue
+        if INCOMPLETE_ENDING_RE.search(value) or not COMPLETE_ENDING_RE.search(value):
+            errors.append(f"{field} must end with a complete sentence")
+    total = len("".join(substantive))
+    if total < min_chars or total > max_chars:
+        errors.append(f"substantive text length {total} is outside {min_chars}-{max_chars}")
+    return errors
 
 
 class TaskService:
@@ -95,6 +122,26 @@ class TaskService:
                 if errors:
                     message = "; ".join(error.message for error in errors[:5])
                     raise ValueError(message)
+                if task["task_type"] == "item_writing":
+                    input_data = read_json(self.root / task["input_path"], {})
+                    length = input_data.get("length") or {}
+                    semantic_errors = brief_item_validation_errors(
+                        data,
+                        min_chars=int(length.get("min_chars", 300)),
+                        max_chars=int(length.get("max_chars", 450)),
+                    )
+                    if semantic_errors:
+                        raise ValueError("; ".join(semantic_errors))
+                elif task["task_type"] == "fact_check" and data.get("corrected_item"):
+                    input_data = read_json(self.root / task["input_path"], {})
+                    length = input_data.get("length") or {}
+                    semantic_errors = brief_item_validation_errors(
+                        data["corrected_item"],
+                        min_chars=int(length.get("min_chars", 300)),
+                        max_chars=int(length.get("max_chars", 450)),
+                    )
+                    if semantic_errors:
+                        raise ValueError("corrected_item: " + "; ".join(semantic_errors))
                 self.db.execute(
                     "UPDATE tasks SET status='COMPLETED', updated_at=?, error=NULL WHERE id=?",
                     (now_iso(), task["id"]),

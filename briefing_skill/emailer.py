@@ -177,7 +177,7 @@ class EmailService:
         subject = self.config.email.get("subject_template", "AI语义Fabric技术情报（内测版）").replace("{{ date_range }}", date_label).replace("{{ item_count }}", str(len(data.get("items", []))))
         topic_groups = self._topic_groups(data)
         judgement_refs = self._judgement_refs(data)
-        aihot_groups = self._aihot_groups(data.get("date_to"))
+        aihot_groups = self._aihot_groups(data.get("date_to"), issue_id=issue["id"], issue_data=data)
         html_text = template.render(
             issue=data,
             subject=subject,
@@ -195,9 +195,17 @@ class EmailService:
         return path
 
     @staticmethod
-    def _shorten(text: str | None, limit: int = 110) -> str:
-        value = re.sub(r"\s+", " ", str(text or "")).strip()
-        return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
+    def _clean_text(text: str | None) -> str:
+        return re.sub(r"\s+", " ", str(text or "")).strip()
+
+    @classmethod
+    def _complete_excerpt(cls, text: str | None, limit: int = 120) -> str:
+        """Keep a complete short sentence; never manufacture an ellipsis."""
+        value = cls._clean_text(text)
+        if len(value) <= limit:
+            return value
+        matches = list(re.finditer(r"[。！？.!?](?:[”’\"）)\]]*)", value[: limit + 1]))
+        return value[: matches[-1].end()].strip() if matches else ""
 
     def _topic_groups(self, data: dict[str, Any]) -> list[dict[str, Any]]:
         core_items = data.get("core_items")
@@ -208,11 +216,13 @@ class EmailService:
         observations_by_topic: dict[str, list[dict[str, Any]]] = {}
         for item in core_items:
             item.setdefault("anchor_id", f"item-{item.get('brief_item_id', '')}")
-            item["compact_conclusion"] = self._shorten(item.get("core_conclusion"), 150)
-            item["compact_mechanism"] = self._shorten(item.get("mechanism"), 105)
-            item["compact_result"] = self._shorten(item.get("result") or item.get("evidence_summary"), 105)
-            item["compact_boundary"] = self._shorten(item.get("boundary"), 90)
-            item["compact_relevance"] = self._shorten(item.get("project_relevance"), 105)
+            # Item-writing owns the text budget. Rendering must never cut a
+            # technical sentence after fact checking.
+            item["compact_conclusion"] = self._clean_text(item.get("core_conclusion"))
+            item["compact_mechanism"] = self._clean_text(item.get("mechanism"))
+            item["compact_result"] = self._clean_text(item.get("result") or item.get("evidence_summary"))
+            item["compact_boundary"] = self._clean_text(item.get("boundary"))
+            item["compact_relevance"] = self._clean_text(item.get("project_relevance"))
             by_topic.setdefault(item.get("topic_id", "unknown"), []).append(item)
         for item in observations:
             item.setdefault("anchor_id", f"item-{item.get('brief_item_id', '')}")
@@ -297,28 +307,128 @@ class EmailService:
     @staticmethod
     def _aihot_category(title: str, summary: str) -> str:
         text = f"{title} {summary}".lower()
-        if any(term in text for term in ("版权", "法院", "copyright", "suno", "政策")):
-            return "政策与产业"
-        if any(term in text for term in ("agent", "智能体", "office", "办公")):
-            return "Agent与生产力"
-        if any(term in text for term in ("记忆", "memory", "架构演进")):
-            return "模型与架构"
-        return "模型与科学前沿"
+        if any(term in text for term in ("agent", "智能体", "coding", "code", "repository", "tool call", "开发工具")):
+            return "Agent与开发工具"
+        if any(term in text for term in ("serving", "inference", "runtime", "compiler", "kernel", "quantization", "推理", "运行时", "编译")):
+            return "推理与系统"
+        if any(term in text for term in ("gpu", "accelerator", "hbm", "cxl", "rdma", "network", "optical", "memory", "chip", "芯片", "内存", "网络", "光互联")):
+            return "芯片、内存与网络"
+        return "模型与研究前沿"
 
-    def _aihot_groups(self, issue_date: str | None) -> list[dict[str, Any]]:
+    @staticmethod
+    def _radar_is_technical(title: str, summary: str) -> bool:
+        text = f" {title} {summary} ".lower()
+        blocked = (
+            "palantir", "alex karp", "ceo", "chief strategy officer", "earnings", "quarterly",
+            "stock", "shares", "revenue", "valuation", "融资", "财报", "股价", "营收", "高管",
+            "marxism", "马克思主义", "ai act", "regulation", "regulator", "government",
+            "copyright", "lawsuit", "法院", "法案", "监管", "版权", "政策争议",
+            "electronic arts", " ea ", "playable game", "game world", "gaming", "suno",
+            "游戏", "影视", "音乐版权", "consumer app", "消费应用",
+        )
+        if any(term in text for term in blocked):
+            return False
+        allowed = (
+            "agent", "智能体", "coding", "code search", "repository", "tool call", "context",
+            "llm", "model", "benchmark", "reasoning", "模型", "大模型", "评测", "推理",
+            "serving", "inference", "runtime", "compiler", "kernel", "quantization", "调度", "运行时", "编译器",
+            "gpu", "accelerator", "hbm", "cxl", "rdma", "smartnic", "dpu", "npu", "tpu",
+            "memory", "cache", "storage", "network", "optical", "interconnect", "fabric",
+            "芯片", "加速器", "内存", "缓存", "存储", "网络", "光互联",
+            "distributed training", "collective", "cluster", "observability", "failure recovery",
+            "分布式训练", "集群", "可观测", "故障恢复", "ai infrastructure", "ai infra",
+        )
+        return any(term in text for term in allowed)
+
+    def _persisted_radar_groups(self, issue_id: str) -> list[dict[str, Any]]:
+        rows = self.db.fetchall(
+            "SELECT * FROM issue_radar_items WHERE issue_id=? ORDER BY position",
+            (issue_id,),
+        )
+        categories: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            categories.setdefault(row["category"], []).append(
+                {
+                    "title": row["title"],
+                    "summary": row.get("summary") or "",
+                    "url": row["canonical_url"],
+                    "source_name": row["source_name"],
+                    "published_at": row["published_at"],
+                }
+            )
+        return [{"name": name, "items": items} for name, items in categories.items()]
+
+    def _backfill_radar_history(self) -> None:
+        """Recover radar URLs from sent HTML created before radar_history existed."""
+        from bs4 import BeautifulSoup
+
+        sent_issues = self.db.fetchall(
+            """
+            SELECT i.id, i.email_path, sh.sent_at
+            FROM issues i JOIN send_history sh ON sh.issue_id=i.id
+            WHERE sh.status='SENT' AND i.email_path IS NOT NULL
+            """
+        )
+        for issue in sent_issues:
+            if self.db.fetchone("SELECT 1 FROM radar_history WHERE issue_id=? LIMIT 1", (issue["id"],)):
+                continue
+            path = self.root / issue["email_path"]
+            if not path.exists():
+                continue
+            soup = BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
+            heading = soup.find(string=lambda value: bool(value) and str(value).strip() == "热点雷达")
+            if not heading:
+                continue
+            best_by_url: dict[str, str] = {}
+            for link in heading.find_all_next("a", href=True):
+                url = str(link.get("href") or "").strip()
+                if not url.startswith(("http://", "https://")):
+                    continue
+                label = self._clean_text(link.get_text(" ", strip=True))
+                if len(label) > len(best_by_url.get(url, "")):
+                    best_by_url[url] = label
+            for url, title in best_by_url.items():
+                self.db.execute(
+                    "INSERT OR IGNORE INTO radar_history(canonical_url, normalized_title, last_pushed_at, issue_id) VALUES (?, ?, ?, ?)",
+                    (url, self._normalise_reference(title), issue["sent_at"], issue["id"]),
+                )
+
+    def _aihot_groups(
+        self,
+        issue_date: str | None,
+        *,
+        issue_id: str | None = None,
+        issue_data: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        if issue_id:
+            persisted = self._persisted_radar_groups(issue_id)
+            if persisted:
+                return persisted
+        self._backfill_radar_history()
         configured_timezone = ZoneInfo(str(self.config.settings.get("timezone", "Asia/Shanghai")))
         end = (
             datetime.fromisoformat(f"{issue_date}T23:59:59").replace(tzinfo=configured_timezone).astimezone(timezone.utc)
             if issue_date
             else datetime.now(timezone.utc)
         )
-        start = end - timedelta(days=7)
+        radar_config = self.config.scoring.get("radar", {})
+        start = end - timedelta(days=int(radar_config.get("max_age_days", 7)))
+        total_max = int(radar_config.get("total_max", 6))
+        max_per_category = int(radar_config.get("max_per_category", 2))
         rows = self.db.fetchall(
-            "SELECT title, summary, original_url, aihot_url, canonical_url, published_at, discovered_at FROM raw_items WHERE source_id='aihot' ORDER BY priority DESC, LENGTH(COALESCE(summary,'')) DESC, COALESCE(published_at, discovered_at) DESC, title"
+            "SELECT title, summary, original_url, canonical_url, published_at, priority FROM raw_items WHERE source_id='aihot' ORDER BY priority DESC, published_at DESC, LENGTH(COALESCE(summary,'')) DESC, title"
         )
-        categories = {name: [] for name in ("模型与科学前沿", "Agent与生产力", "模型与架构", "政策与产业")}
+        category_order = ("Agent与开发工具", "推理与系统", "芯片、内存与网络", "模型与研究前沿")
+        categories = {name: [] for name in category_order}
         seen_urls: set[str] = set()
         seen_titles: set[str] = set()
+        history_rows = self.db.fetchall("SELECT canonical_url, normalized_title FROM radar_history")
+        seen_urls.update(str(row["canonical_url"]) for row in history_rows)
+        seen_titles.update(str(row["normalized_title"]) for row in history_rows)
+        for item in (issue_data or {}).get("items", []):
+            for source in item.get("sources", []):
+                if source.get("url"):
+                    seen_urls.add(str(source["url"]))
         for row in rows:
             original_url = str(row.get("original_url") or "").strip()
             parsed_url = urlparse(original_url)
@@ -327,28 +437,58 @@ class EmailService:
                 continue
             if hostname == "aihot.virxact.com" or hostname.endswith(".aihot.virxact.com"):
                 continue
-            published = self._parse_source_time(row.get("published_at") or row.get("discovered_at"))
+            published = self._parse_source_time(row.get("published_at"))
             if not published or not (start <= published <= end):
                 continue
             key = original_url
             title_key = self._normalise_reference(row["title"])
             if key in seen_urls or title_key in seen_titles:
                 continue
-            seen_urls.add(key)
-            seen_titles.add(title_key)
+            if not self._radar_is_technical(row["title"], row.get("summary") or ""):
+                continue
             category = self._aihot_category(row["title"], row.get("summary") or "")
+            if len(categories[category]) >= max_per_category:
+                continue
+            summary = self._complete_excerpt(row.get("summary"), 120)
             categories[category].append(
                 {
                     "title": row["title"],
-                    "summary": self._shorten(row.get("summary"), 105),
+                    "summary": summary,
                     "url": original_url,
                     "source_name": hostname.removeprefix("www."),
                     "published_at": published.date().isoformat(),
                 }
             )
-            if len(seen_urls) >= 12:
+            seen_urls.add(key)
+            seen_titles.add(title_key)
+            if sum(len(items) for items in categories.values()) >= total_max:
                 break
-        return [{"name": name, "items": items} for name, items in categories.items() if items]
+        groups = [{"name": name, "items": categories[name]} for name in category_order if categories[name]]
+        if issue_id:
+            position = 0
+            for group in groups:
+                for item in group["items"]:
+                    position += 1
+                    self.db.execute(
+                        """
+                        INSERT OR REPLACE INTO issue_radar_items(
+                            issue_id, canonical_url, normalized_title, category, title,
+                            summary, source_name, published_at, position
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            issue_id,
+                            item["url"],
+                            self._normalise_reference(item["title"]),
+                            group["name"],
+                            item["title"],
+                            item["summary"],
+                            item["source_name"],
+                            item["published_at"],
+                            position,
+                        ),
+                    )
+        return groups
 
     def _prepare_inline_images(self, html_text: str):
         from bs4 import BeautifulSoup
@@ -569,6 +709,14 @@ class EmailService:
         self.db.execute("UPDATE issues SET status='SENT', updated_at=? WHERE id=?", (sent_at, issue["id"]))
         self.db.execute(
             "UPDATE events SET last_pushed_at=? WHERE id IN (SELECT bi.event_id FROM issue_items ii JOIN brief_items bi ON bi.id=ii.brief_item_id WHERE ii.issue_id=? AND bi.approved=1)",
+            (sent_at, issue["id"]),
+        )
+        self.db.execute(
+            """
+            INSERT OR REPLACE INTO radar_history(canonical_url, normalized_title, last_pushed_at, issue_id)
+            SELECT canonical_url, normalized_title, ?, issue_id
+            FROM issue_radar_items WHERE issue_id=?
+            """,
             (sent_at, issue["id"]),
         )
         self.db.update_run(issue["run_id"], stage="SENT", status="COMPLETED")
