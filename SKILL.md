@@ -13,7 +13,7 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 
 ## 核心架构
 
-- Python负责确定性工作：采集、过滤、去重、状态、渲染、邮件和归档。
+- Python负责确定性工作：采集、过滤、去重、状态、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
 - 当前Agent负责智能工作：相关性、事实抽取、单条写作、事实校验、综合判断和视觉路由。
 - 不得在Python中绑定某家模型API。
 - 不得依赖聊天上下文记住历史；所有状态写入SQLite和`workspace/runs/`。
@@ -96,7 +96,9 @@ python briefing.py approve --all   # 仅在已人工确认全部条目时使用
 python briefing.py send --confirm-send
 ```
 
-没有`--confirm-send`时必须拒绝发送。
+没有`--confirm-send`时必须拒绝发送。使用默认`agently-cli`时，第一次带`--confirm-send`的调用只请求发送确认令牌并停止；将摘要展示给用户，等待用户确认后，再次运行同一命令完成发送。令牌保存在当前运行目录的被忽略文件中，不能提交到仓库。
+
+如果需要使用SMTP备用后端，先设置`EMAIL_BACKEND=smtp`，再按同一人工审核和`--confirm-send`门禁发送。
 
 ## 上下文硬规则
 

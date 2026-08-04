@@ -1,6 +1,16 @@
 import pytest
 
-from briefing_skill.emailer import resolve_smtp_config
+from briefing_skill.config import ConfigBundle
+from briefing_skill.db import Database
+from briefing_skill.emailer import (
+    AgentlyCLIError,
+    AgentlyConfirmationRequired,
+    EmailService,
+    resolve_agently_config,
+    resolve_email_backend,
+    resolve_smtp_config,
+)
+from briefing_skill.utils import now_iso
 
 
 BASE = {
@@ -60,3 +70,55 @@ def test_smtp_rejects_unknown_security_and_requires_explicit_recipient():
     without_recipient = {key: value for key, value in BASE.items() if key != "EMAIL_TO"}
     with pytest.raises(RuntimeError, match="explicit EMAIL_TO/SMTP_TO"):
         resolve_smtp_config(without_recipient)
+
+
+def test_agently_backend_defaults_to_agently_and_resolves_recipients():
+    assert resolve_email_backend({}) == "agently"
+    assert resolve_email_backend({"EMAIL_BACKEND": "SMTP"}) == "smtp"
+    config = resolve_agently_config({"EMAIL_TO": "one@example.com, two@example.com", "AGENTLY_TIMEOUT_SECONDS": "12"})
+    assert config.recipients == ("one@example.com", "two@example.com")
+    assert config.timeout_seconds == 12
+
+
+def test_agently_send_persists_confirmation_then_uses_token(tmp_path, monkeypatch):
+    db = Database(tmp_path / "workspace" / "briefing.sqlite")
+    db.init()
+    run_id = "run-agently"
+    now = now_iso()
+    db.create_run(run_id, "APPROVED")
+    db.execute(
+        "INSERT INTO issues(id, run_id, status, subject, email_path, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("issue-agently", run_id, "APPROVED", "Brief", "workspace/runs/run-agently/email.html", now, now),
+    )
+    body = tmp_path / "workspace" / "runs" / run_id / "email.html"
+    body.parent.mkdir(parents=True)
+    body.write_text("<html><body>brief</body></html>", encoding="utf-8")
+    service = EmailService(
+        tmp_path,
+        ConfigBundle(topics={}, sources={}, scoring={}, settings={}, email={}),
+        db,
+    )
+    monkeypatch.setenv("EMAIL_BACKEND", "agently")
+    monkeypatch.setenv("EMAIL_TO", "one@example.com")
+    calls = []
+
+    def first_call(_args, _config):
+        calls.append(_args)
+        raise AgentlyCLIError(
+            8,
+            "confirmation required",
+            {"data": {"confirmation_required": True, "confirmation_token": "ctk_test", "summary": {"to": ["one@example.com"]}}},
+        )
+
+    monkeypatch.setattr(service, "_run_agently_cli", first_call)
+    with pytest.raises(AgentlyConfirmationRequired):
+        service._agently_send(db.fetchone("SELECT * FROM issues WHERE id='issue-agently'"), run_id)
+    pending = tmp_path / "workspace" / "runs" / run_id / "agently-send-pending.json"
+    assert pending.exists()
+    assert "--confirmation-token" not in calls[0]
+
+    monkeypatch.setattr(service, "_run_agently_cli", lambda args, config: calls.append(args) or {"data": {"message_id": "msg_test"}})
+    service._agently_send(db.fetchone("SELECT * FROM issues WHERE id='issue-agently'"), run_id)
+    assert "--confirmation-token" in calls[1]
+    assert not pending.exists()
+    assert db.fetchone("SELECT message_id, status FROM send_history WHERE issue_id='issue-agently'") == {"message_id": "msg_test", "status": "SENT"}

@@ -15,7 +15,7 @@ from .collection import CollectionService
 from .config import ConfigBundle
 from .db import Database
 from .demo import complete_pending_demo_tasks
-from .emailer import EmailService
+from .emailer import AgentlyConfirmationRequired, EmailService, resolve_email_backend
 from .expanded import rebuild_expanded_issue
 from .paths import Paths, discover_root
 from .pipeline import Pipeline
@@ -82,11 +82,17 @@ def cmd_doctor(args) -> int:
     checks.append(("Guizang material illustration", (root / "vendor" / "guizang-material-illustration" / "SKILL.md").exists(), "python briefing.py setup --vendor"))
     persona = root / config.settings.get("visuals", {}).get("persona_reference", "assets/persona/reference.jpg")
     checks.append(("Persona reference (optional)", persona.exists(), str(persona)))
-    smtp_ready = bool(
-        os.getenv("SMTP_HOST", "").strip()
-        and (os.getenv("EMAIL_TO", "").strip() or os.getenv("SMTP_TO", "").strip())
-    )
-    checks.append(("SMTP (optional until send)", smtp_ready, "configure .env when ready"))
+    backend = resolve_email_backend()
+    if backend == "agently":
+        executable = os.getenv("AGENTLY_CLI", "agently-cli").strip() or "agently-cli"
+        checks.append(("agently-cli (required for send)", shutil.which(executable) is not None, executable))
+        checks.append(("Agently recipients (required for send)", bool(os.getenv("AGENTLY_TO", "").strip() or os.getenv("EMAIL_TO", "").strip() or os.getenv("SMTP_TO", "").strip()), "AGENTLY_TO or EMAIL_TO"))
+    else:
+        smtp_ready = bool(
+            os.getenv("SMTP_HOST", "").strip()
+            and (os.getenv("EMAIL_TO", "").strip() or os.getenv("SMTP_TO", "").strip())
+        )
+        checks.append(("SMTP (required for send)", smtp_ready, "configure .env when ready"))
     failed_required = False
     for label, ok, detail in checks:
         symbol = "✓" if ok else "!"
@@ -305,6 +311,9 @@ def main(argv: list[str] | None = None) -> int:
         return int(args.func(args))
     except KeyboardInterrupt:
         return 130
+    except AgentlyConfirmationRequired as exc:
+        print(f"CONFIRMATION_REQUIRED: {exc}", file=sys.stderr)
+        return exc.exit_code
     except Exception as exc:
         if args.verbose:
             raise
