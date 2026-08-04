@@ -51,7 +51,7 @@ SQLite stores runs, raw items, candidates, tasks, facts, events, issue items, se
 
 ## Security
 
-- SMTP and tokens come from environment variables.
-- The send command requires an APPROVED issue and explicit `--confirm-send`.
+- The default mail backend is the locally authenticated `agently-cli`; SMTP remains an explicit fallback via `EMAIL_BACKEND=smtp`.
+- The send command requires an APPROVED issue and explicit `--confirm-send`; agently-cli's confirmation token is persisted only in the ignored run directory between the two calls.
 - Internal project context is stored separately from fetched public content.
 - A failed send does not mark events as pushed.

@@ -15,7 +15,7 @@
 - Guizang Material Illustration中心配图；
 - Guizang Social Card卡片排版；
 - 个人“技术侦察员”视觉IP；
-- SMTP邮件发送、归档和断点恢复。
+- agently-cli邮件发送、SMTP备用发送、归档和断点恢复。
 
 ## 快速开始
 
@@ -57,6 +57,8 @@ python briefing.py review --serve
 python briefing.py approve --all
 python briefing.py send --confirm-send
 ```
+
+默认使用本机已授权的 `agently-cli` 发送 HTML 邮件。第一次执行会向 Agently Mail 请求发送确认令牌并停止；用户确认后，再次执行同一命令才会真正发送。若需要使用旧的 SMTP 后端，设置 `EMAIL_BACKEND=smtp`。
 
 ## Agent如何处理任务
 

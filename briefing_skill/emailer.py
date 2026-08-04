@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import json
 import re
+import shutil
 import smtplib
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -15,7 +18,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .config import ConfigBundle
 from .db import Database
-from .utils import now_iso, read_json
+from .utils import now_iso, read_json, stable_hash, write_json
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,36 @@ class SMTPConfig:
     recipients: tuple[str, ...]
     security: str
     port: int
+
+
+@dataclass(frozen=True)
+class AgentlyConfig:
+    executable: str
+    recipients: tuple[str, ...]
+    cc: tuple[str, ...]
+    bcc: tuple[str, ...]
+    timeout_seconds: int
+
+
+class AgentlyConfirmationRequired(RuntimeError):
+    """Raised after agently-cli prepares a send and returns its confirmation token."""
+
+    exit_code = 8
+
+    def __init__(self, summary: object):
+        self.summary = summary
+        super().__init__(
+            "agently-cli requires a second confirmation call. Review this summary, "
+            "then rerun `python briefing.py send --confirm-send`: "
+            f"{json.dumps(summary, ensure_ascii=False)}"
+        )
+
+
+class AgentlyCLIError(RuntimeError):
+    def __init__(self, exit_code: int, message: str, payload: object | None = None):
+        self.exit_code = exit_code
+        self.payload = payload
+        super().__init__(message)
 
 
 def _smtp_security(environ: Mapping[str, str]) -> str:
@@ -51,6 +84,40 @@ def _first_nonempty(environ: Mapping[str, str], *names: str) -> str:
         if value:
             return value
     return ""
+
+
+def _split_recipients(value: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in re.split(r"[,;]", value) if part.strip())
+
+
+def resolve_email_backend(environ: Mapping[str, str] | None = None) -> str:
+    env = os.environ if environ is None else environ
+    backend = env.get("EMAIL_BACKEND", "agently").strip().lower()
+    if backend not in {"agently", "smtp"}:
+        raise RuntimeError("EMAIL_BACKEND must be one of: agently, smtp")
+    return backend
+
+
+def resolve_agently_config(environ: Mapping[str, str] | None = None) -> AgentlyConfig:
+    env = os.environ if environ is None else environ
+    recipient_text = _first_nonempty(env, "AGENTLY_TO", "EMAIL_TO", "SMTP_TO")
+    recipients = _split_recipients(recipient_text)
+    if not recipients:
+        raise RuntimeError("AGENTLY_TO/EMAIL_TO/SMTP_TO is required for agently-cli sending")
+    raw_timeout = env.get("AGENTLY_TIMEOUT_SECONDS", "60").strip()
+    try:
+        timeout = int(raw_timeout)
+    except ValueError as exc:
+        raise RuntimeError("AGENTLY_TIMEOUT_SECONDS must be an integer") from exc
+    if timeout < 1 or timeout > 600:
+        raise RuntimeError("AGENTLY_TIMEOUT_SECONDS must be between 1 and 600")
+    return AgentlyConfig(
+        executable=env.get("AGENTLY_CLI", "agently-cli").strip() or "agently-cli",
+        recipients=recipients,
+        cc=_split_recipients(env.get("AGENTLY_CC", "")),
+        bcc=_split_recipients(env.get("AGENTLY_BCC", "")),
+        timeout_seconds=timeout,
+    )
 
 
 def resolve_smtp_config(environ: Mapping[str, str] | None = None) -> SMTPConfig:
@@ -308,18 +375,163 @@ class EmailService:
             related.append((cid, path, maintype, subtype))
         return str(soup), related
 
-    def send(self, run_id: str, *, confirm: bool = False) -> str:
-        if not confirm:
-            raise RuntimeError("Refusing to send without --confirm-send")
-        issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
-        if not issue or not issue.get("email_path"):
-            raise RuntimeError("Build email first")
-        if self.config.settings.get("require_human_approval", True) and issue.get("status") != "APPROVED":
-            raise RuntimeError("Human approval is required before sending")
-        validation_path = self.root / "workspace" / "runs" / run_id / "validation.json"
-        validation = read_json(validation_path, {})
-        if validation.get("failures"):
-            raise RuntimeError(f"Validation failures must be fixed: {validation['failures']}")
+    @staticmethod
+    def _parse_cli_payload(stdout: str) -> dict[str, Any] | None:
+        text = (stdout or "").strip()
+        if not text:
+            return None
+        try:
+            payload = json.loads(text)
+            return payload if isinstance(payload, dict) else None
+        except json.JSONDecodeError:
+            for line in reversed(text.splitlines()):
+                try:
+                    payload = json.loads(line)
+                    return payload if isinstance(payload, dict) else None
+                except json.JSONDecodeError:
+                    continue
+        return None
+
+    @staticmethod
+    def _payload_data(payload: dict[str, Any] | None) -> dict[str, Any]:
+        if not payload:
+            return {}
+        data = payload.get("data")
+        return data if isinstance(data, dict) else payload
+
+    @classmethod
+    def _payload_value(cls, payload: dict[str, Any] | None, *keys: str) -> Any:
+        data = cls._payload_data(payload)
+        for key in keys:
+            if key in data:
+                return data[key]
+        if payload:
+            for key in keys:
+                if key in payload:
+                    return payload[key]
+        return None
+
+    @classmethod
+    def _cli_error_message(cls, payload: dict[str, Any] | None, stdout: str, stderr: str) -> str:
+        error = payload.get("error") if payload else None
+        if isinstance(error, dict) and error.get("message"):
+            return str(error["message"])
+        if isinstance(error, str) and error:
+            return error
+        return (stderr or stdout or "agently-cli failed").strip()
+
+    def _run_agently_cli(self, args: list[str], config: AgentlyConfig) -> dict[str, Any] | None:
+        if not shutil.which(config.executable) and not Path(config.executable).exists():
+            raise RuntimeError(
+                f"agently-cli executable not found: {config.executable}. "
+                "Install @tencent-qqmail/agently-cli or set AGENTLY_CLI."
+            )
+        try:
+            completed = subprocess.run(
+                args,
+                cwd=self.root,
+                text=True,
+                capture_output=True,
+                timeout=config.timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"agently-cli timed out after {config.timeout_seconds}s") from exc
+        except OSError as exc:
+            raise RuntimeError(f"Unable to execute agently-cli: {exc}") from exc
+        payload = self._parse_cli_payload(completed.stdout)
+        if completed.returncode != 0:
+            raise AgentlyCLIError(
+                completed.returncode,
+                self._cli_error_message(payload, completed.stdout, completed.stderr),
+                payload,
+            )
+        return payload
+
+    @classmethod
+    def _message_id(cls, payload: dict[str, Any] | None) -> str:
+        value = cls._payload_value(payload, "message_id", "messageId", "id")
+        if value:
+            return str(value)
+        data = cls._payload_data(payload)
+        message = data.get("message")
+        if isinstance(message, dict):
+            value = message.get("message_id") or message.get("messageId") or message.get("id")
+            if value:
+                return str(value)
+        return "agently-cli"
+
+    def _agently_send(self, issue: dict[str, Any], run_id: str) -> str:
+        config = resolve_agently_config()
+        body_path = (self.root / str(issue["email_path"])).resolve()
+        try:
+            body_path.relative_to(self.root.resolve())
+        except ValueError as exc:
+            raise RuntimeError("Email body must be inside the Skill root") from exc
+        if not body_path.exists():
+            raise RuntimeError(f"Email body does not exist: {body_path}")
+        if body_path.stat().st_size > 1024 * 1024:
+            raise RuntimeError("agently-cli email body exceeds its 1 MB limit")
+
+        subject = issue.get("subject") or "AI语义Fabric技术情报（内测版）"
+        body_rel = body_path.relative_to(self.root.resolve()).as_posix()
+        request_key = stable_hash(subject, config.recipients, config.cc, config.bcc, body_path.read_bytes())
+        pending_path = self.root / "workspace" / "runs" / run_id / "agently-send-pending.json"
+        pending = read_json(pending_path, {}) if pending_path.exists() else {}
+        token = str(pending.get("confirmation_token") or "")
+        if token and pending.get("request_key") != request_key:
+            pending_path.unlink(missing_ok=True)
+            token = ""
+
+        args = [config.executable, "message", "+send", "--subject", str(subject)]
+        for recipient in config.recipients:
+            args.extend(["--to", recipient])
+        for recipient in config.cc:
+            args.extend(["--cc", recipient])
+        for recipient in config.bcc:
+            args.extend(["--bcc", recipient])
+        args.extend(["--body-file", body_rel])
+        if token:
+            args.extend(["--confirmation-token", token])
+
+        try:
+            payload = self._run_agently_cli(args, config)
+        except AgentlyCLIError as exc:
+            candidate = self._payload_value(exc.payload, "confirmation_token", "confirmationToken")
+            if exc.exit_code == 8 and candidate:
+                summary = self._payload_value(exc.payload, "summary") or {
+                    "subject": subject,
+                    "to": list(config.recipients),
+                }
+                write_json(
+                    pending_path,
+                    {
+                        "confirmation_token": str(candidate),
+                        "request_key": request_key,
+                        "summary": summary,
+                        "created_at": now_iso(),
+                    },
+                )
+                try:
+                    pending_path.chmod(0o600)
+                except OSError:
+                    pass
+                raise AgentlyConfirmationRequired(summary) from exc
+            raise
+
+        if self._payload_value(payload, "confirmation_required", "confirmationRequired"):
+            candidate = self._payload_value(payload, "confirmation_token", "confirmationToken")
+            if candidate:
+                summary = self._payload_value(payload, "summary") or {}
+                write_json(pending_path, {"confirmation_token": str(candidate), "request_key": request_key, "summary": summary, "created_at": now_iso()})
+                raise AgentlyConfirmationRequired(summary)
+
+        pending_path.unlink(missing_ok=True)
+        sent_at = now_iso()
+        self._record_sent(issue, sent_at, ",".join(config.recipients), self._message_id(payload))
+        return sent_at
+
+    def _smtp_send(self, issue: dict[str, Any]) -> str:
         smtp = resolve_smtp_config()
         password = os.getenv("SMTP_PASSWORD")
         msg = EmailMessage()
@@ -346,14 +558,33 @@ class EmailService:
         finally:
             client.quit()
         sent_at = now_iso()
+        self._record_sent(issue, sent_at, ",".join(smtp.recipients), msg.get("Message-ID"))
+        return sent_at
+
+    def _record_sent(self, issue: dict[str, Any], sent_at: str, recipients: str, message_id: str) -> None:
         self.db.execute(
             "INSERT OR REPLACE INTO send_history(issue_id, sent_at, recipients, message_id, status) VALUES (?, ?, ?, ?, ?)",
-            (issue["id"], sent_at, ",".join(smtp.recipients), msg.get("Message-ID"), "SENT"),
+            (issue["id"], sent_at, recipients, message_id, "SENT"),
         )
         self.db.execute("UPDATE issues SET status='SENT', updated_at=? WHERE id=?", (sent_at, issue["id"]))
         self.db.execute(
             "UPDATE events SET last_pushed_at=? WHERE id IN (SELECT bi.event_id FROM issue_items ii JOIN brief_items bi ON bi.id=ii.brief_item_id WHERE ii.issue_id=? AND bi.approved=1)",
             (sent_at, issue["id"]),
         )
-        self.db.update_run(run_id, stage="SENT", status="COMPLETED")
-        return sent_at
+        self.db.update_run(issue["run_id"], stage="SENT", status="COMPLETED")
+
+    def send(self, run_id: str, *, confirm: bool = False) -> str:
+        if not confirm:
+            raise RuntimeError("Refusing to send without --confirm-send")
+        issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
+        if not issue or not issue.get("email_path"):
+            raise RuntimeError("Build email first")
+        if self.config.settings.get("require_human_approval", True) and issue.get("status") != "APPROVED":
+            raise RuntimeError("Human approval is required before sending")
+        validation_path = self.root / "workspace" / "runs" / run_id / "validation.json"
+        validation = read_json(validation_path, {})
+        if validation.get("failures"):
+            raise RuntimeError(f"Validation failures must be fixed: {validation['failures']}")
+        if resolve_email_backend() == "agently":
+            return self._agently_send(issue, run_id)
+        return self._smtp_send(issue)

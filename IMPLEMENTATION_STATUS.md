@@ -12,7 +12,7 @@
 - 300–450 Chinese-character item contract, independent fact-check task, 4–6 item issue selection, and two-item-per-topic cap.
 - Visual routing and deterministic SVG chart generation for exact numeric data.
 - Guizang Material Illustration task briefs and Guizang Social Card adapter with a self-contained fallback renderer.
-- HTML email, local review page, explicit approval gate, SMTP confirmation gate, and CID image embedding.
+- HTML email, local review page, explicit approval gate, agently-cli two-phase confirmation gate, SMTP fallback, and CID image embedding for the SMTP path.
 - Optional personal “技术侦察员” specification. A real likeness is only used after an approved reference image is placed at `assets/persona/reference.jpg`.
 - Offline end-to-end demo and automated tests.
 
@@ -29,7 +29,7 @@
 ## Not executed in this runtime
 
 - Image-model generation: intentionally delegated to the current Agent so the Skill remains model-independent.
-- SMTP delivery: protected by approval and `--confirm-send`; no recipient was configured for the verification run.
+- Live mail delivery: requires a locally authenticated `agently-cli` account and explicit recipient confirmation; SMTP remains available only when `EMAIL_BACKEND=smtp`.
 
 ## First local test
 
