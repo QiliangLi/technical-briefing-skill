@@ -18,5 +18,6 @@ Structure:
 - `project_relevance`: what it means for the current project and what should be verified next. Clearly present this as project judgement.
 - 3-5 keywords.
 - Primary sources first; discovery sources may appear only as `discovered_via`.
+- Preserve `topic_name`, `direction_name`, `score`, publication date, and source URLs exactly from the task input. Never invent, replace, or generalise a source URL to a site homepage.
 
 Do not use hype language. Do not claim that a preprint is proven production technology. Do not copy long source text. Return JSON only.

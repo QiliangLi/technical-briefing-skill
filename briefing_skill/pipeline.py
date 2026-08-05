@@ -176,7 +176,7 @@ class Pipeline:
         }
 
     def _apply_task(self, task: dict[str, Any]) -> None:
-        output = read_json(self.root / task["output_path"])
+        output = self.tasks.read_result(task)
         task_type = task["task_type"]
         if task_type == "agent_web_search":
             metadata = read_json(self.root / task["input_path"])
@@ -219,7 +219,22 @@ class Pipeline:
         elif task_type == "fact_extraction":
             candidate_id = task["entity_id"]
             facts_path = self.run_dir / "facts" / f"{candidate_id}.json"
-            write_json(facts_path, output)
+            task_input = read_json(self.root / task["input_path"], {})
+            source = task_input.get("source") or {}
+            document = task_input.get("document") or {}
+            write_json(
+                facts_path,
+                {
+                    **output,
+                    "_provenance": {
+                        "task_id": task["id"],
+                        "candidate_id": candidate_id,
+                        "source_title": source.get("title"),
+                        "source_url": source.get("url"),
+                        "document_id": document.get("document_id"),
+                    },
+                },
+            )
             self.db.execute(
                 """
                 INSERT OR REPLACE INTO facts(id, run_id, candidate_id, json_path, quality_score, event_hint, created_at)
@@ -239,7 +254,18 @@ class Pipeline:
         elif task_type == "item_writing":
             event_id = task["entity_id"]
             item_path = self.run_dir / "items" / f"{event_id}.json"
-            write_json(item_path, output)
+            task_input = read_json(self.root / task["input_path"], {})
+            write_json(
+                item_path,
+                {
+                    **output,
+                    "_provenance": {
+                        "task_id": task["id"],
+                        "event_id": event_id,
+                        "source_urls": [source.get("url") for source in task_input.get("sources", [])],
+                    },
+                },
+            )
             self.db.execute(
                 """
                 INSERT OR REPLACE INTO brief_items(id, run_id, event_id, json_path, score, fact_check_status, approved, created_at)
@@ -261,7 +287,11 @@ class Pipeline:
             if not item:
                 raise KeyError(task["entity_id"])
             if output.get("corrected_item"):
-                write_json(self.root / item["json_path"], output["corrected_item"])
+                current_item = read_json(self.root / item["json_path"], {})
+                corrected = dict(output["corrected_item"])
+                if current_item.get("_provenance"):
+                    corrected["_provenance"] = current_item["_provenance"]
+                write_json(self.root / item["json_path"], corrected)
             self.db.execute(
                 "UPDATE brief_items SET fact_check_status=? WHERE id=?",
                 ("PASS" if output["pass"] else "FAIL", item["id"]),

@@ -12,7 +12,7 @@ from .config import ConfigBundle
 from .db import Database
 from .freshness import freshness_limits, item_age_days
 from .tasks import brief_item_validation_errors
-from .utils import complete_sentence_excerpt, now_iso, read_json
+from .utils import complete_sentence_excerpt, now_iso, read_json, source_url_is_resolved
 
 
 LEGACY_FIELD_BUDGETS = {
@@ -99,13 +99,16 @@ def select_expanded_rows(
         if row.get("last_pushed_at") and not item.get("incremental_update"):
             excluded.append({"id": row["id"], "score": score, "reason": "previously pushed without incremental update"})
             continue
-        source_levels = {str(source.get("source_level", "")) for source in item.get("sources", [])}
-        if age <= age_limits["core"] and score >= limits["core_score"] and "A" in source_levels:
+        has_resolved_a = any(
+            source.get("source_level") == "A" and source_url_is_resolved(source.get("url"))
+            for source in item.get("sources", [])
+        )
+        if age <= age_limits["core"] and score >= limits["core_score"] and has_resolved_a:
             role = "core"
-        elif age <= age_limits["adjacent"] and score >= limits["observation_score"]:
+        elif age <= age_limits["adjacent"] and score >= limits["observation_score"] and has_resolved_a:
             role = "observation"
         else:
-            reason = "high score but no A-level source" if score >= limits["core_score"] else "below expanded-v2 evidence threshold"
+            reason = "no resolved A-level source" if not has_resolved_a else "below expanded-v2 evidence threshold"
             excluded.append({"id": row["id"], "score": score, "reason": reason})
             continue
         eligible.append({**row, "item": item, "item_role": role, "age_days": age})

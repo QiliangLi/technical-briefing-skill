@@ -161,6 +161,30 @@ def source_identity_key(url: str | None, external_id: str | None = None) -> str:
     return ""
 
 
+def source_url_is_resolved(url: str | None) -> bool:
+    """Return whether a URL identifies a specific source rather than a site root."""
+    canonical = canonicalize_url(url)
+    if not canonical:
+        return False
+    try:
+        parts = urlsplit(canonical)
+    except ValueError:
+        return False
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        return False
+    path = unquote(parts.path or "").strip("/")
+    if not path:
+        return False
+    host = parts.hostname.lower()
+    if host in {"arxiv.org", "www.arxiv.org", "export.arxiv.org"}:
+        return source_identity_key(canonical).startswith("arxiv:")
+    if host in {"doi.org", "dx.doi.org"}:
+        return source_identity_key(canonical).startswith("doi:")
+    if host in {"github.com", "www.github.com"}:
+        return source_identity_key(canonical).startswith(("github:", "github-release:", "github-commit:"))
+    return bool(source_identity_key(canonical))
+
+
 def normalize_text(text: str | None) -> str:
     value = unicodedata.normalize("NFKC", text or "").lower()
     value = re.sub(r"\s+", " ", value)

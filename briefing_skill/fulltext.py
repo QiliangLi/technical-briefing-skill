@@ -41,8 +41,10 @@ class FulltextService:
         payload = __import__("json").loads(raw.get("payload_json") or "{}")
         try:
             if payload.get("fixture"):
-                raise RuntimeError("offline fixture: use embedded summary")
-            text, media_type = self._fetch(url, raw)
+                text = self._fallback_text(raw)
+                media_type = "text/plain"
+            else:
+                text, media_type = self._fetch(url, raw)
         except Exception as exc:
             LOGGER.warning("Fulltext failed %s: %s", url, exc)
             text = self._fallback_text(raw)

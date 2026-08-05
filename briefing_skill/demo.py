@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 from .db import Database
-from .tasks import TaskService
+from .tasks import TASK_BINDING_KEY, TaskService
 from .utils import read_json, write_json
 
 
@@ -17,7 +17,10 @@ def complete_pending_demo_tasks(root: Path, db: Database, run_id: str) -> int:
         output = _demo_output(task["task_type"], input_data)
         if output is None:
             continue
-        write_json(root / task["output_path"], output)
+        write_json(
+            root / task["output_path"],
+            {TASK_BINDING_KEY: input_data[TASK_BINDING_KEY], **output},
+        )
         count += 1
     return count
 
@@ -33,7 +36,11 @@ def _demo_output(task_type: str, data: dict):
             "event_hint": "CodeGraph代码Agent仓库索引" if agent else "KVCache感知网络调度",
             "problem": "Agent反复搜索代码导致工具调用和上下文开销增加。" if agent else "Prefill和Decode流量竞争使KVCache传输和请求排队增加。",
             "mechanism": "预先构建符号、文件和调用关系图，先通过图查询定位代码，再调用Read/Grep读取必要文件。" if agent else "跟踪KVCache位置和Decode紧迫度，并将这些状态用于带宽与传输队列调度。",
-            "evidence": [{"claim": "离线示例只验证流程，不代表真实论文性能数据", "value": None, "baseline": None, "condition": "offline fixture", "source_locator": "fixture summary"}],
+            "evidence": [
+                {"claim": "离线示例只验证流程，不代表真实论文性能数据", "value": None, "baseline": None, "condition": "offline fixture", "source_locator": "fixture summary"},
+                {"claim": "夹具包含可定位的机制说明", "value": None, "baseline": None, "condition": "offline fixture", "source_locator": "fixture mechanism"},
+                {"claim": "夹具包含明确的适用边界", "value": None, "baseline": None, "condition": "offline fixture", "source_locator": "fixture limitations"},
+            ],
             "evaluation_context": "离线fixture，用于验证Skill工作流和数据结构。",
             "limitations": "没有真实实验数据，不应作为正式简报发送。",
             "project_relevance": "可用于验证信息抽取、事件聚类和卡片渲染链路。",
@@ -62,13 +69,10 @@ def _demo_output(task_type: str, data: dict):
             "discovered_via": None,
             "incremental_update": False,
             "incremental_change": None,
-            # The offline fixture validates orchestration, not freshness. Keep
-            # it above the normal issue threshold so the demo remains stable as
-            # its fixed publication date ages.
-            "score": max(float(data["score"]), 80.0)
+            "score": float(data["score"])
         }
     if task_type == "fact_check":
-        return {"pass": True, "issues": [], "corrected_item": data["brief_item"]}
+        return {"pass": True, "issues": [], "corrected_item": None}
     if task_type == "issue_synthesis":
         return {"headline": "本期离线样例验证了Agent加速与KVCache网络调度两类信息可以进入同一条可追溯工作流。", "judgements": ["Agent语义加速需要落到Read、Grep和工具链次数，而不是停留在缓存概念。", "KVCache调度只有进入网络、带宽或通信关键路径时，才属于TPN相关信息。"], "topic_names": [item["topic_name"] for item in data["items"]], "watch_next": ["替换fixture为真实AI HOT和arXiv结果", "补充真实原文数据与图表"]}
     if task_type == "visual_routing":

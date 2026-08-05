@@ -12,9 +12,9 @@ from urllib.parse import urlparse
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from .config import ConfigBundle
+from .config import ConfigBundle, ConfigError
 from .db import Database
-from .utils import read_json, write_json
+from .utils import read_json, source_url_is_resolved, write_json
 
 
 class Renderer:
@@ -326,6 +326,21 @@ const fs = require('fs');
                     report["warnings"].append(f"Item may be too short: {item.get('title')}")
                 if not item.get("sources"):
                     report["failures"].append(f"Missing sources: {item.get('title')}")
+                elif not any(
+                    source.get("source_level") == "A" and source_url_is_resolved(source.get("url"))
+                    for source in item.get("sources", [])
+                ):
+                    report["failures"].append(f"Missing resolved A-level source: {item.get('title')}")
+                topic_id = item.get("topic_id")
+                try:
+                    expected_topic_name = self.config.topic(str(topic_id))["name"]
+                except (ConfigError, KeyError, ValueError):
+                    report["failures"].append(f"Unknown topic id {topic_id}: {item.get('title')}")
+                else:
+                    if item.get("topic_name") != expected_topic_name:
+                        report["failures"].append(
+                            f"Topic id/name mismatch: {item.get('title')} ({topic_id} != {item.get('topic_name')})"
+                        )
                 from .tasks import brief_item_validation_errors
                 completeness_errors = brief_item_validation_errors(
                     item,
