@@ -227,7 +227,12 @@ const { pathToFileURL } = require('url');
 
     def _closing_section(self, issue: dict[str, Any]) -> str:
         judgements = issue.get("synthesis", {}).get("judgements") or []
-        rows = "".join(f"<div class='ledger-row'><b>{idx:02d}</b><p>{html.escape(str(judgement))}</p></div>" for idx, judgement in enumerate(judgements, 1))
+        rows = "".join(
+            f"<div class='ledger-row'><b>{idx:02d}</b><p><strong>{html.escape(str(judgement.get('title') or ''))}</strong><br>{html.escape(str(judgement.get('body') or ''))}</p></div>"
+            if isinstance(judgement, dict)
+            else f"<div class='ledger-row'><b>{idx:02d}</b><p>{html.escape(str(judgement))}</p></div>"
+            for idx, judgement in enumerate(judgements, 1)
+        )
         return f"""
 <section class="poster xhs brief-closing" id="issue-closing" data-accent="ikb">
   <div class="content stack gap-7">
@@ -425,6 +430,10 @@ const fs = require('fs');
             report["failures"].append("Expanded email judgements lack concrete item references")
         else:
             report["passes"].append("Expanded email judgements expose concrete item references")
+        if "对应：" in visible_text:
+            report["failures"].append("Expanded email uses the deprecated judgement reference label")
+        else:
+            report["passes"].append("Expanded email uses natural judgement reference labels")
         if "热点雷达" not in visible_text or "未经本简报深度核验" not in visible_text:
             report["failures"].append("Expanded email hotspot radar or disclaimer is missing")
         else:

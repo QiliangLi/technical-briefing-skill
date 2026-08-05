@@ -152,7 +152,7 @@ class EmailService:
 
     def build(self, run_id: str, *, status_after: str = "AWAITING_APPROVAL") -> Path:
         issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
-        if not issue or not issue.get("issue_json_path"):
+        if not issue or not issue.get("issue_json_path") or not issue.get("synthesis_path"):
             raise RuntimeError("Issue not ready")
         data = read_json(self.root / issue["issue_json_path"])
         # Keep the archived HTML directly previewable from its run directory.
@@ -249,8 +249,39 @@ class EmailService:
 
     def _judgement_refs(self, data: dict[str, Any]) -> list[dict[str, Any]]:
         core_items = data.get("core_items") or [item for item in data.get("items", []) if item.get("item_role", "core") == "core"]
+        judgements = data.get("synthesis", {}).get("judgements", [])
+        if judgements and all(isinstance(judgement, dict) for judgement in judgements):
+            items_by_id = {str(item.get("brief_item_id")): item for item in core_items if item.get("brief_item_id")}
+            result = []
+            for judgement in judgements:
+                refs = []
+                for item_id in judgement.get("evidence_item_ids") or []:
+                    item = items_by_id.get(str(item_id))
+                    if not item:
+                        continue
+                    refs.append(
+                        {
+                            "anchor_id": item.get("anchor_id") or f"item-{item_id}",
+                            "title": str(item.get("title") or ""),
+                        }
+                    )
+                result.append(
+                    {
+                        "title": judgement.get("title"),
+                        "text": judgement.get("body"),
+                        "refs": refs,
+                    }
+                )
+            return result
+        return self._legacy_judgement_refs(core_items, judgements)
+
+    def _legacy_judgement_refs(
+        self,
+        core_items: list[dict[str, Any]],
+        judgements: list[Any],
+    ) -> list[dict[str, Any]]:
         result = []
-        for judgement in data.get("synthesis", {}).get("judgements", []):
+        for judgement in judgements:
             normalised_judgement = self._normalise_reference(str(judgement))
             refs = []
             for item in core_items:
@@ -291,7 +322,7 @@ class EmailService:
                 best_score, _, best = max(ranked, key=lambda entry: (entry[0], entry[1], str(entry[2].get("brief_item_id", ""))))
                 if best_score > 0:
                     refs.append({"anchor_id": best.get("anchor_id") or f"item-{best.get('brief_item_id', '')}", "title": str(best.get("title", ""))})
-            result.append({"text": judgement, "refs": refs})
+            result.append({"title": None, "text": judgement, "refs": refs})
         return result
 
     @staticmethod

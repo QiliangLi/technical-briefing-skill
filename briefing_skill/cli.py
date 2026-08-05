@@ -231,8 +231,6 @@ def cmd_rebuild_existing(args) -> int:
         raise RuntimeError("rebuild-existing requires an explicit --run ID")
     run_id = _resolve_run(db, args.run)
     result = rebuild_expanded_issue(root, config, db, run_id, confirm=args.confirm_rebuild)
-    if args.confirm_rebuild:
-        result["email"] = str(EmailService(root, config, db).build(run_id))
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

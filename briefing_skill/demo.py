@@ -74,7 +74,8 @@ def _demo_output(task_type: str, data: dict):
     if task_type == "fact_check":
         return {"pass": True, "issues": [], "corrected_item": None}
     if task_type == "issue_synthesis":
-        return {"headline": "本期离线样例验证了Agent加速与KVCache网络调度两类信息可以进入同一条可追溯工作流。", "judgements": ["Agent语义加速需要落到Read、Grep和工具链次数，而不是停留在缓存概念。", "KVCache调度只有进入网络、带宽或通信关键路径时，才属于TPN相关信息。"], "topic_names": [item["topic_name"] for item in data["items"]], "watch_next": ["替换fixture为真实AI HOT和arXiv结果", "补充真实原文数据与图表"]}
+        ids = [item["brief_item_id"] for item in data["items"]]
+        return {"headline": "本期离线样例验证了Agent加速与KVCache网络调度可以进入同一条可追溯工作流。", "judgements": [{"title": "状态要进入执行链", "body": "Agent检索状态和KVCache位置只有进入工具选择、网络带宽与队列调度，才可能转化为可验证的系统收益。", "evidence_item_ids": ids}], "topic_names": list(dict.fromkeys(item["topic_name"] for item in data["items"])), "watch_next": ["替换fixture为真实一手来源", "补充真实原文数据与图表"]}
     if task_type == "visual_routing":
         agent = "CodeGraph" in data["item"]["title"]
         return {"visual_mode": "material_mechanism", "visual_purpose": "解释先索引后读取的Agent代码探索路径" if agent else "解释KVCache状态如何进入网络调度", "structure": "before_after" if agent else "pipeline", "labels": ["反复搜索", "代码索引", "直接定位"] if agent else ["推理状态", "缓存位置", "带宽调度", "Token输出"], "aspect_ratio": "1.9:1", "accent": "IKB Blue", "factual_constraints": ["不虚构性能数字", "只表达fixture中的机制"], "persona_mode": "observer", "persona_action": "检查证据链", "asset_path": None, "source_asset_url": None, "reason": "当前没有真实源图，机制图能帮助验证视觉流程。"}
