@@ -4,12 +4,14 @@
 
 ## 主要能力
 
-- 六个技术专题及窄检索方向；
+- 六个技术专题及窄检索方向，并保留AI Infra横向动态；
 - AI HOT、arXiv、RSS、GitHub Release、Follow Builders、YeeKal AI Daily和当前Agent开放搜索；
 - AI/Agent/KVCache相关查询提高AI HOT采集优先级；
-- 一手来源核验，AI HOT只作为发现源；
+- 一手来源核验，AI HOT、Follow Builders和YeeKal只作为发现源；
 - URL、标题、正文与事件级去重；
-- 每篇原文独立处理，防止上下文爆炸；
+- 深度解读与横向Radar双通道，避免所有线索都进入全文分析；
+- 模糊相关性候选按专题批量处理；
+- 缺口驱动的开放搜索和按专题设置的深读预算；
 - 300～450字单条技术信息；
 - 独立事实校验和人工审核；
 - Guizang Material Illustration中心配图；
@@ -60,17 +62,43 @@ python briefing.py send --confirm-send
 
 默认使用本机已授权的 `agently-cli` 发送 HTML 邮件。第一次执行会向 Agently Mail 请求发送确认令牌并停止；用户确认后，再次执行同一命令才会真正发送。若需要使用旧的 SMTP 后端，设置 `EMAIL_BACKEND=smtp`。
 
+## 低Token双通道
+
+默认执行策略将候选分为两条路径：
+
+```text
+A级原始来源、高相关候选
+→ 批量相关性判断或规则高置信通过
+→ 每期最多10条进入全文事实抽取
+→ 写作、事实检查和综合判断
+
+AI Infra、Agent生态、KVCache生态、存储与介质线索
+以及B/C级或discovery-only来源
+→ 横向Radar
+→ 默认不读取全文、不逐条写作和事实检查
+```
+
+开放Web搜索只补充固定信源没有覆盖的重点方向，默认最多4次。只有已解析、非discovery-only的A级原始来源才算“已覆盖”；二手线索不会阻止系统继续寻找原始材料。
+
+相关配置位于 `config/settings.yaml` 的 `efficiency` 段。可通过下面的命令估算任务数量变化：
+
+```bash
+python scripts/estimate_efficiency.py
+```
+
+估算值表示计划生成的Agent任务数量，不等同于实际Codex Token账单。正式启用后仍应比较关键事件召回率、人工修改量、实际耗时和订阅额度变化。
+
 ## Agent如何处理任务
 
 该Skill不调用固定模型API。Python脚本会生成任务文件，当前Agent负责：
 
 1. 读取任务指定的Prompt；
-2. 读取单个输入文件及必要的专题上下文；
+2. 读取输入文件及必要的专题上下文；
 3. 输出符合JSON Schema的结果；
 4. 写到指定输出路径；
 5. 运行`python briefing.py advance`。
 
-因此同一仓库可以在Claude Code、Codex、Hermes等不同Agent中运行。
+模糊候选使用 `relevance_batch` 任务，每个任务最多处理12条同专题候选；输出必须对每个输入候选返回且只返回一条结果，缺失、重复或未知ID都会被拒绝。
 
 `item_writing` 和 `issue_synthesis` 任务会要求当前Agent先按结构化事实写初稿，再依次调用本地 `$human-writing` 与 `$humanizer`。这两个Skill只负责自然中文润色和AI句式审查，不是Python运行时依赖，也不会被vendor到本仓库。
 
@@ -83,18 +111,11 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 
 Follow Builders只补充Builder观点、工程实践和访谈线索；YeeKal AI Daily只解析日报里的外部原始链接。两者均为B级发现源，不能独立支撑重点技术结论，YeeKal日报日期也不能替代外部原始发布日期。
 
-对旧期次执行 `rebuild-existing --confirm-rebuild` 后，流程会停在 `AWAITING_ISSUE_SYNTHESIS`。必须完成新的结构化综合判断并执行 `advance`，才能重新渲染、验证和审核邮件。
+对旧期次执行 `rebuild-existing --confirm-rebuild` 后，流程会停在 `AWAITING_ISSUE_SYNTHESIS`。必须完成新的结构化综合判断并执行`advance`，才能重新渲染、验证和审核邮件。
 
 ## AI HOT优先策略
 
-`config/topics.yaml`为每个专题设置`aihot_priority`：
-
-- `highest`：Agent语义加速；
-- `high`：TPN/KVCache网络、跨域传输；
-- `medium`：内存/DSA、DPU；
-- `low`：光交换。
-
-高优先级会增加AI HOT关键词查询数量和候选排序权重，但不会提高最终证据等级。AI HOT条目必须回到`links.original`指向的一手来源后才能成为重点条目。
+`config/topics.yaml`为每个专题设置`aihot_priority`。高优先级会增加AI HOT候选排序权重，但不会提高最终证据等级。AI HOT条目必须回到`links.original`指向的一手来源后才能成为重点条目。
 
 ## 配图策略
 
