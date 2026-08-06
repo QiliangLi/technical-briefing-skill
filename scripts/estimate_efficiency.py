@@ -18,7 +18,7 @@ def main() -> int:
     parser.add_argument("--ambiguous", type=int, default=36)
     parser.add_argument("--batch-size", type=int, default=12)
     parser.add_argument("--facts-before", type=int, default=17)
-    parser.add_argument("--fact-budget", type=int, default=12)
+    parser.add_argument("--fact-budget", type=int, default=10)
     parser.add_argument("--items-before", type=int, default=17)
     parser.add_argument("--item-budget", type=int, default=10)
     parser.add_argument("--search-before", type=int, default=18)
