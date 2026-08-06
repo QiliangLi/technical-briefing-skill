@@ -1,0 +1,120 @@
+{
+  "_task": {
+    "id": "ebb7d95f2d1802b804e9d298",
+    "type": "fact_check",
+    "entity_id": "6021681dfabbd750735c3135",
+    "input_digest": "635e7d996a27299ba3b20dcd0e0fb085"
+  },
+  "brief_item": {
+    "title": "Meganeura用Vulkan与Metal统一GPU训练推理编译",
+    "type": "论文",
+    "topic_name": "AI Infra横向动态",
+    "direction_name": "推理服务、运行时与编译优化",
+    "published_at": "2026-08-03T00:42:55Z",
+    "importance": "重点关注",
+    "core_conclusion": "Meganeura用紧凑编译器同时覆盖训练与推理，将静态类型图、自动微分、内存规划和运行时下沉到Vulkan或Metal，减少模型导出与平台运行时转换。",
+    "mechanism": "训练阶段在优化forward图上追加反向图和梯度，推理阶段从同名checkpoint创建独立session并做融合。Blade生成SPIR-V或Metal kernel，支持严格f32与经验证的快速算术路径。",
+    "result": "50个设备工作负载单元中，48个同时通过forward与backward正确性门。20个GPU参考单元赢12个，合法训练中位差距1.8倍。RX 7900 XT四个推理单元延迟不超过ROCm参考1.10倍。",
+    "boundary": "评测覆盖有限，设备间PyTorch版本和编译状态不完全对称。一个Radeon 780M反向单元未过梯度门，Android案例未测端到端显示延迟。它也不是完整PyTorch或CUDA替代。",
+    "project_relevance": "共享训练到部署编译栈可减少导出转换，秒级特化和13MiB运行时适合边缘部署。用于GPU集群时，应在统一算术契约下补测多请求P95、吞吐和跨设备传输。",
+    "keywords": [
+      "Meganeura",
+      "Vulkan",
+      "Metal",
+      "训练推理统一",
+      "GPU编译"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2608.01563v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-08-03T00:42:55Z"
+      }
+    ],
+    "discovered_via": "arXiv",
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 84.6,
+    "_provenance": {
+      "task_id": "3504c8cbbf17924dec748cd4",
+      "event_id": "bb71257a34ddcc571b8cd0f3",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.01563v1"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "title": "Meganeura: Portable GPU Training and Inference through Vulkan and Metal",
+      "event_hint": "Meganeura Vulkan/Metal共享训练部署编译栈",
+      "problem": "训练和部署推理通常跨越导出、转换及平台专用运行时边界，导致同一模型难以在消费级GPU上共享图语义、自动微分、内存规划和部署运行时。Meganeura探索用一个紧凑的原生编译器同时覆盖训练与推理，并以Vulkan/Metal跨厂商落地。",
+      "mechanism": "Meganeura采用静态类型图、自动微分、优化器、checkpoint、内存规划器和运行时，训练阶段在优化forward图上追加反向图和梯度输出，推理阶段从同名参数checkpoint创建独立session并可应用推理融合。共享编译器把图和dispatch plan下沉到Vulkan（NVIDIA/AMD/Intel/Android）或Metal（Apple），支持f32严格模式与经验证的快速算术路径；Blade提供生成的SPIR-V/Metal kernel及运行时。",
+      "evidence": [
+        {
+          "claim": "在五台设备、五个工作负载、严格f32协议的50个device–workload–mode单元中，48个同时通过forward和backward正确性门；其余两个是同一个新支持AMD APU工作负载的backward参考不一致。Meganeura在20个GPU参考的最小延迟单元中赢12个，合法训练单元的中位差距为1.8×。",
+          "value": "48/50 pass both gates; 12/20 minimal-latency wins; median valid training gap 1.8×",
+          "baseline": "matched PyTorch reference with independent forward/backward gates",
+          "condition": "NVIDIA/AMD discrete GPUs, AMD APU, Intel iGPU and Apple M3; strict f32",
+          "source_locator": "PDF pages 1–2 and Section 5 results"
+        },
+        {
+          "claim": "在离散AMD Radeon RX 7900 XT上，五个推理工作负载中四个相对编译ROCm PyTorch的延迟比不超过1.10×，且三个训练工作负载更快；但卷积类ResNet-50仍为推理1.85×、训练2.41×。",
+          "value": "4/5 inference <=1.10×; 3 training workloads faster; ResNet-50 1.85×/2.41×",
+          "baseline": "compiled PyTorch ROCm 7.1 on RX 7900 XT",
+          "condition": "strict f32 matched workloads, five inference/training cells",
+          "source_locator": "PDF pages 10–11, Table 6 and AMD results"
+        },
+        {
+          "claim": "每个工作负载的图构建、优化、自动微分和GPU pipeline创建在严格模式耗时0.08–1.5秒，启用cooperative variants最多2.4秒；对应torch.compile特化耗时6.5–96秒，最高差距为ROCm上的SmolLM 96秒对0.47秒。Meganeura剥离后的可执行文件约13 MiB。",
+          "value": "0.08–1.5 s strict / <=2.4 s accelerated vs 6.5–96 s torch.compile; 13 MiB binary",
+          "baseline": "torch.compile specialization on supported GPU paths; package closure is much larger",
+          "condition": "on-device compile/startup across the frozen device matrix",
+          "source_locator": "PDF page 10, Section 5.5 Compilation and startup; artifact footprint section"
+        },
+        {
+          "claim": "在accelerated contracts下，最差训练差距为4.6×（NVIDIA ResNet-50）；AMD两台设备仍接近编译ROCm参考，RX 7900 XT四个推理单元不超过0.99×、四个合法训练单元在0.75–1.16×。",
+          "value": "worst training gap 4.6×; RX 7900 XT 4/5 inference <=0.99× and valid training 0.75–1.16×",
+          "baseline": "compiled vendor PyTorch with accelerated arithmetic permissions",
+          "condition": "accelerated contracts, independent forward/backward gates",
+          "source_locator": "PDF pages 10–11, accelerated results and Table 7"
+        },
+        {
+          "claim": "Android XR的DinoVision案例把Meganeura训练的decoder部署到Adreno/OpenXR并共享图形队列；两块chunk在live co-tenancy时使render submissions提高18.8%、lower-eye update rate提高8.7%，median worker latency相对一块降低20.2%，但隔离测量的chunking成本随16块达到18.5%。",
+          "value": "18.8% submission gain; 8.7% update-rate gain; 20.2% worker-latency reduction; 18.5% isolated cost at 16 chunks",
+          "baseline": "one-chunk live co-tenancy and isolated submission path",
+          "condition": "Quest 3S OpenXR 90-second live-worn sweep; worker latency is not capture-to-photon latency",
+          "source_locator": "PDF page 8, Physical Android correctness and Table 5 discussion"
+        }
+      ],
+      "evaluation_context": "论文以五个匹配工作负载（SmolLM2、SmolVLA、Diffusion U-Net、ResNet-50、Whisper-tiny）和五类设备（RTX 5070、RX 7900 XT、Radeon 780M、Intel RPL-U iGPU、Apple M3）对比PyTorch，分别报告strict f32和accelerated contracts，独立验证forward与backward。Vulkan覆盖Linux/Windows/Android，Metal覆盖Apple；PyTorch在Apple/Intel为eager参考，NVIDIA/AMD离散卡使用compiled参考。另有Adreno/Quest 3S物理XR部署案例。",
+      "limitations": "五个工作负载不代表完整算子/模型覆盖；不同设备的PyTorch版本和编译状态不一致，Apple/Intel为eager参考、Intel甚至CPU fallback，比较不完全对称。一个Radeon 780M Whisper backward单元未通过5%梯度门，不能用于性能结论。Android案例未测设备端训练、PyTorch-on-Android加速、capture-to-photon或端到端相机质量；worker latency不等于显示延迟。Meganeura仍不是PyTorch/CUDA/cuDNN的完整替代，动态Python和大型生产编译器覆盖有限。",
+      "project_relevance": "（项目推断）共享训练—部署编译栈可减少模型导出和跨运行时转换，13MiB运行时与秒级特化适合边缘/端侧部署；但本项目若面向GPU集群，需先区分编译启动收益与稳定吞吐收益，并在统一compiled参考、同一算术契约下补测多请求P95和跨设备内存传输。",
+      "primary_source_resolved": true,
+      "quality_score": 93,
+      "source_notes": [
+        "Primary arXiv PDF and linked artifact were fetched; evidence retains strict/accelerated and compiled/eager conditions.",
+        "Android worker latency is explicitly not treated as capture-to-photon latency."
+      ],
+      "_provenance": {
+        "task_id": "ca8a873971009faf0ef4e397",
+        "candidate_id": "e719c5d8803e8512ae292496",
+        "source_title": "Meganeura: Portable GPU Training and Inference through Vulkan and Metal",
+        "source_url": "https://arxiv.org/abs/2608.01563v1",
+        "document_id": "b5d88055c209f68faf3ac893"
+      }
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

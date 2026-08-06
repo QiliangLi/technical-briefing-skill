@@ -1,0 +1,26 @@
+{
+  "title": "Ray Serve Prefill/Decode分离部署(NIXL与LMCache连接器)",
+  "type": "官方文档",
+  "topic_name": "跨域传输",
+  "direction_name": "Prefill/Decode跨域解耦",
+  "published_at": "2026-08-04",
+  "importance": "值得关注",
+  "core_conclusion": "LLM推理中prefill与decode争抢同一GPU且资源/伸缩画像不同，单池部署无法分别优化。Ray Serve(v2.56)的build_pd_openai_app部署两个独立配置的LLM实例，经vLLM的kv_transfer_config用NIXL或LMCache连接器在实例间传递KV Cache，prefill与decode副本池独立伸缩。",
+  "mechanism": "NIXLConnector封装NVIDIA NIXL库(后端UCX/libfabric/EFA)，prefill设kv_producer、decode设kv_consumer；LMCacheConnectorV1以LMCache分层存储为中介，可搭载NIXL后端(1GB CUDA缓冲)或Mooncake分布式存储(RDMA+etcd元数据)。示例：Llama-3.1-8B，prefill 2-4、decode 6-10副本。",
+  "result": "无性能数据(配置指南)。官方建议监控KV传输开销以确保分离收益大于网络成本，并验证实例间带宽/RDMA支持。要求vLLM v1引擎(legacy v0需先升级)。",
+  "boundary": "无TTFT/吞吐/传输时延量化；所有传输(UCX/libfabric/EFA/RDMA)为LAN/单数据中心fabric，无WAN或跨地域放置、带宽、RTT指导；开销监控与真实负载验证留给运维。",
+  "project_relevance": "[项目判断]直接命中KVCache跨节点传输与分离推理：NIXL正成为vLLM与LMCache的事实KV传输层，Mooncake是DPU/SmartNIC卸载或CXL分离内存候选；但文档定位为同址prefill/decode池而非地理分布节点，更偏集群内传输机制而非跨域WAN权衡。",
+  "keywords": ["PD分离", "NIXL", "LMCache", "KV Cache传输", "Ray Serve"],
+  "sources": [
+    {
+      "publisher": "Ray (docs.ray.io)",
+      "url": "https://docs.ray.io/en/latest/serve/llm/user-guides/prefill-decode.html",
+      "source_level": "A",
+      "primary": true
+    }
+  ],
+  "discovered_via": "Agent Web Search",
+  "score": 76,
+  "incremental_update": false,
+  "incremental_change": null
+}

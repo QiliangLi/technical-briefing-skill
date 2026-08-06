@@ -1,0 +1,119 @@
+{
+  "_task": {
+    "id": "7580c5007498099add9fdf43",
+    "type": "fact_check",
+    "entity_id": "0c86a965e23c3a5fbf9a8023",
+    "input_digest": "ee207f00412a69976ab2c782b510aca1"
+  },
+  "brief_item": {
+    "title": "FPGA固定点特征门控的精度与推理成本评估",
+    "type": "研究论文",
+    "topic_name": "AI Infra横向动态",
+    "direction_name": "推理服务、运行时与编译优化",
+    "published_at": "2026-07-27T15:36:06Z",
+    "importance": "值得关注",
+    "core_conclusion": "研究在32→128→11的MLP调制分类器中加入32元素、8-bit输入相关特征门控，并把8个checkpoint分别编译到Intel Cyclone V。四组匹配比较均未见精度提升，PTQ和QAT的平均精度差分别为−0.784和−0.616个百分点。",
+    "mechanism": "门控模块对32个输入特征做变换，再与原特征逐项相乘，经过PTQ或QAT后形成固定点数据通路。研究用整数参考、实体板分类和中间值回读检查实现的一致性。",
+    "result": "门控数据通路每个观测需要27374个周期，非门控为24234个，硬件还增加1318个ALM、1557个寄存器和4个DSP block。352000次实体板分类与整数参考完全一致。",
+    "boundary": "证据来自紧凑的自动调制分类器和Intel Cyclone V原型，不能外推到GPU、Transformer或生产LLM服务。两个训练seed也不足以证明门控效果具有普适性。",
+    "project_relevance": "它说明运行时或编译优化应同时验收精度、资源、周期和位级一致性，不能只看软件侧特征收益。对LLM serving仍需另测端到端延迟、吞吐和集群规模。",
+    "keywords": [
+      "FPGA",
+      "固定点推理",
+      "特征门控",
+      "位级一致性"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2607.24568v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-07-27T15:36:06Z"
+      }
+    ],
+    "discovered_via": null,
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 76.5,
+    "_provenance": {
+      "task_id": "766843aa7409fd674cbc2813",
+      "event_id": "ba5c05024e8f7826380ce2de",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.24568v1"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "title": "Bit-Accurate FPGA Evaluation of Learned Feature Gating in a Fixed-Point Fourier-Feature Automatic Modulation Classifier",
+      "event_hint": "固定点FPGA调制分类器中学习特征门控的精确成本收益评估",
+      "problem": "软件中的学习特征重加权可能提升自动调制分类，但在FPGA固定点实现中会增加乘法器、寄存器、逻辑和处理周期；若没有端到端硬件对照，难以判断精度收益能否抵消推理资源与延迟成本。",
+      "mechanism": "研究比较带与不带32元素、8-bit输入相关特征门控的32→128→11 MLP，均使用24个稀疏DFT能量特征和8个相位/统计特征，并分别进行PTQ和QAT、两个匹配训练seed。8个checkpoint独立编译到Intel Cyclone V FPGA，以整数参考和实体板分类验证精度、资源、周期及中间值的一致性。",
+      "evidence": [
+        {
+          "claim": "在四组匹配的门控/非门控比较中，非门控模型测试精度均更高；门控减非门控的两seed均值在PTQ为−0.784个百分点、QAT为−0.616个百分点。",
+          "value": "−0.784 pp PTQ; −0.616 pp QAT",
+          "baseline": "Matched ungated classifier",
+          "condition": "两个训练seed、PTQ和QAT；Intel Cyclone V物理板",
+          "source_locator": "PDF pp.1-2 and p.12, Section VI-A/Table V"
+        },
+        {
+          "claim": "门控数据通路每个观测需要27,374个核心周期，非门控为24,234个，门控增加3,140周期；增加来自32×32门控变换、32个门控-特征乘积和控制器状态。",
+          "value": "27,374 vs 24,234 cycles; +3,140 cycles",
+          "baseline": "Ungated fixed-point datapath",
+          "condition": "完整物理板推理数据通路",
+          "source_locator": "PDF p.6, Section IV-D"
+        },
+        {
+          "claim": "硬件上门控平均增加1,318个ALM、1,557个寄存器和4个DSP block；额外DSP中两个用于门控稠密变换、两个用于特征乘法。",
+          "value": "+1,318 ALMs; +1,557 registers; +4 DSPs",
+          "baseline": "Ungated architecture",
+          "condition": "四个编译构建、资源利用率略随综合布局变化",
+          "source_locator": "PDF pp.1-2 and pp.13-14, Section VI-C/Table VIII"
+        },
+        {
+          "claim": "352,000次实体板分类全部与独立整数参考完全一致，另有一个训练seed捕获的3,760个中间值也全部匹配。",
+          "value": "352,000/352,000 board predictions; 3,760 intermediate values exact match",
+          "baseline": "Independent integer reference model",
+          "condition": "8个checkpoint的物理板评估与中间值调试回读",
+          "source_locator": "PDF pp.1-2 and Section V-C/VI"
+        },
+        {
+          "claim": "在该特征表示和实现下，学习门控没有带来分类精度提升，却增加FPGA资源和处理周期；QAT相对PTQ的效果在两个seed间方向不一致。",
+          "value": "No accuracy gain; QAT gated +0.389 pp / −0.275 pp across seeds",
+          "baseline": "Ungated and PTQ counterparts",
+          "condition": "两个训练seed的matched comparisons",
+          "source_locator": "PDF pp.12-13, Section VI-B"
+        }
+      ],
+      "evaluation_context": "评估采用24个稀疏DFT能量特征、8个相位/统计特征和32→128→11 MLP，在PTQ/QAT与两个匹配seed下生成8个checkpoint，独立编译到Intel Cyclone V FPGA并进行352,000次实体板分类。报告分类精度、SNR/类别召回、ALM、寄存器、DSP、最大时钟和处理周期，并用独立整数参考检查位级一致性。",
+      "limitations": "这是紧凑的自动调制分类器和Intel Cyclone V原型，不是LLM推理服务或生产AI集群；论文明确未提供应用层流式吞吐。门控收益依赖特征表示、量化和任务，两个seed不足以证明普适统计结论；资源/周期数据也不能直接外推到GPU、Transformer或跨硬件部署。",
+      "project_relevance": "该工作提醒推理运行时或编译优化必须同时验收精度、硬件资源、处理周期和位级一致性，不能仅凭软件侧特征门控收益宣称端到端加速。对AI基础设施横向观察而言，它提供了可复核的硬件成本—精度边界，但与LLM serving的端到端延迟、吞吐和集群规模仍无直接对应。",
+      "primary_source_resolved": true,
+      "quality_score": 92,
+      "source_notes": [
+        "arXiv PDF已抓取，标题与候选一致，正文包含架构、FPGA实现、精度和资源对照。",
+        "精度差异、周期、资源和352,000次一致性均有章节或表格定位；未将硬件分类吞吐外推为LLM serving收益。"
+      ],
+      "_provenance": {
+        "task_id": "cc6e9df5507bb17c6528239d",
+        "candidate_id": "ab4fcd557c00e798d2e15aa7",
+        "source_title": "Bit-Accurate FPGA Evaluation of Learned Feature Gating in a Fixed-Point Fourier-Feature Automatic Modulation Classifier",
+        "source_url": "https://arxiv.org/abs/2607.24568v1",
+        "document_id": "f53b3f0793b2d6531447c328"
+      }
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "title": "Beyond HBM Limits: Accelerating Inference with KV Cache, AMD Instinct, and VAST Data",
+  "event_hint": "VAST/AMD 用 800Gbps NFS over RDMA 远程卸载 KV Cache 的厂商测试",
+  "problem": "128K 及更长 Agent 上下文会使单会话 KV Cache 达到 20–50GB，多并发会超过 GPU HBM；若不卸载，只能缩短上下文、每轮重新计算或降低活跃会话数。",
+  "mechanism": "VAST/AMD 在 AMD MI355X、800Gbps Infinity Fabric NIC、Mellanox MSN4700 和 NFSv3 over RDMA 上，用 LMCache 将 KV Cache 写入本地 host RAM 或远程 VAST 存储。配置启用异步加载、8,192 token chunk、远程 fs plugin、16MiB read-ahead 和 NFS multipath，使 GPU 在 decode 时从共享存储读取已保存 KV，避免每轮重新 prefill。",
+  "evidence": [
+    {
+      "claim": "厂商在 800Gbps NFS/RDMA、120K token context 的测试中声称 TTFT 最高 9× 加速、token throughput 9.7×。",
+      "value": "9× TTFT; 9.7× throughput",
+      "baseline": "每个 decode turn 重新计算、无 KV offload",
+      "condition": "AMD MI355X、GPT-oss 120B TP=1、并发 1–300",
+      "source_locator": "The Core Challenge; Results"
+    },
+    {
+      "claim": "测试比较本地 host RAM offload 与通过 NFSv3 over RDMA + multipath 的 VAST remote storage offload。",
+      "value": null,
+      "baseline": "local host RAM / no offload recomputation",
+      "condition": "vLLM 0.22.1 + LMCache，AMD ROCm",
+      "source_locator": "Solution, Testing, and Setup"
+    },
+    {
+      "claim": "单用户 128K 上下文的 KV Cache 规模在文中估计为 20–50GB，生产多 Agent 并发时会超过本地 GPU HBM。",
+      "value": "20–50GB",
+      "baseline": null,
+      "condition": "128K token context，模型与数据类型不同",
+      "source_locator": "The Core Challenge: Avoiding Context Recomputation"
+    },
+    {
+      "claim": "VAST 文章宣称共享全局存储层可让大规模 GPU 节点从统一 context pool 拉取 KV，实现跨节点负载均衡；这是产品能力主张，不是独立实验结果。",
+      "value": null,
+      "baseline": null,
+      "condition": "VAST global shared storage tier",
+      "source_locator": "Why This Matters for Production AI"
+    },
+    {
+      "claim": "文章明确称所有性能/成本主张由 VAST 提供、未由 AMD 独立验证，结果受变量影响且可能不具普适性。",
+      "value": null,
+      "baseline": null,
+      "condition": "厂商实验披露",
+      "source_locator": "Note on baselines and results"
+    }
+  ],
+  "evaluation_context": "VAST Data 与 AMD 的厂商博客和实验披露，硬件为 AMD MI355X、GPT-oss 120B TP-1，vLLM 0.22.1 + LMCache，800Gbps NFS/RDMA，测试并发 1–300；没有公开原始数据表或独立复现实验。source discovery_only=true。",
+  "limitations": "primary_source_resolved=false，因为该候选被标记 discovery_only。9×/9.7× 是 VAST 自报且未由 AMD 独立验证，基线是每轮重算而非本地/远程 KV 方案的直接对比；文章未报告 WAN RTT、实际传输字节、命中率、P95 或一致性/故障恢复。远程共享存储的全局池能力也需独立验证。",
+  "project_relevance": "这条线索提示跨域 KV 复用的关键基线应是‘远程读取 vs 重新 prefill’，并同时测量网络带宽、读取粒度、缓存命中、异步重叠和一致性。只有在厂商声明用独立 A 级文档或可复现实验核验后，才适合进入重点结论。",
+  "primary_source_resolved": false,
+  "quality_score": 53,
+  "source_notes": [
+    "discovery_only=true，来源为 VAST 厂商博客。",
+    "性能数字按厂商自报并明确未独立验证。"
+  ],
+  "_provenance": {
+    "task_id": "c9fcf3b46b9946f44d4d83fd",
+    "candidate_id": "e9af4287abadd0a7fb144c82",
+    "source_title": "Beyond HBM Limits: Accelerating Inference with KV Cache, AMD Instinct, and VAST Data",
+    "source_url": "https://www.vastdata.com/blog/beyond-hbm-limits-accelerating-inference-with-vast-amd",
+    "document_id": "87e5b94471a5e7548178cd22"
+  }
+}

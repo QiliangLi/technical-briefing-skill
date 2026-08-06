@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "6b71b57b0d827d1bdcf7a6ee",
+    "type": "fact_extraction",
+    "entity_id": "c07d0ffe4e283c6d3c4b857e",
+    "input_digest": "a0a79d920f166f20bb3492a5e353aa83"
+  },
+  "title": "AiFlow: Token-Native Reactive Orchestration with Bounded Backpressure for Streaming LLM Applications",
+  "event_hint": "AiFlow makes token-level LLM application events typed graph data with declarative bounded queues and backpressure",
+  "problem": "Streaming LLM workflows often expose provider deltas through callbacks while leaving queue capacity, worker allocation, ordering, cancellation, retry, and backpressure to ad hoc code. Aggregating a full response delays downstream work and unbounded queues can exhaust memory under slow consumers.",
+  "mechanism": "AiFlow normalizes provider deltas and control signals into typed Context<T> events on a directed graph. A Node Guardian owns each node's bounded input queue, worker budget, ordering buffer, cancellation and retry state, overflow policy, side-effect mode, and metrics. A DSL/JSON compiler validates edge types, cycles, state-concurrency, and injection compatibility before execution; token-level routing overlaps generation with downstream processing while backpressure propagates or applies declared overflow behavior.",
+  "evidence": [
+    {
+      "claim": "AiFlow does not change provider-side Model TTFT but reduces Application TTFPT by 70.9–94.7% versus aggregation across captured DeepSeek and local Ollama workloads.",
+      "value": "70.9–94.7% Application TTFPT reduction",
+      "baseline": "aggregation that waits for the complete model response",
+      "condition": "paired trace replay or local controlled replay; Model TTFT unchanged",
+      "source_locator": "PDF p.1 abstract; p.17 Table 12; p.20 conclusion"
+    },
+    {
+      "claim": "Compared with unbounded policies, declared bounded queues reduce MaxQ by 93.7–96.5% while preserving first-token latency.",
+      "value": "93.7–96.5% MaxQ reduction",
+      "baseline": "no-backpressure replay policy",
+      "condition": "DeepSeek semantic routing, DeepSeek streaming RAG, and Ollama qwen2.5:3b",
+      "source_locator": "PDF p.17 Table 12; p.18 Section 9.1"
+    },
+    {
+      "claim": "In controlled semantic routing, Application TTFPT was 210±10 ms for AiFlow versus 10,940±60 ms for aggregation, while Model TTFT was 101±2 ms for both.",
+      "value": "210±10 ms vs 10,940±60 ms; Model TTFT 101±2 ms",
+      "baseline": "aggregation",
+      "condition": "deterministic stream; 30 measured runs after 5 warmups",
+      "source_locator": "PDF p.13 Section 8.1; p.14 Table 6"
+    },
+    {
+      "claim": "With a slow TTS-like consumer taking 500 ms per token, AiFlow kept maximum queue depth at the declared bound of 8 with no drops or errors.",
+      "value": "MaxQ=8; 0 drops; 0 errors",
+      "baseline": "no-backpressure policy reached MaxQ=131 in the controlled ablation",
+      "condition": "slow downstream consumer; queue capacity q=8",
+      "source_locator": "PDF p.14 Section 8.2; p.15 Table 7"
+    },
+    {
+      "claim": "In 30-run DeepSeek semantic-routing replay, AiFlow reduced Application TTFPT from 5,495.0±1,564.3 ms aggregation to 1,151.9±352.4 ms while limiting MaxQ to 8.0 instead of 231.2.",
+      "value": "TTFPT 5495.0→1151.9 ms; MaxQ 231.2→8.0",
+      "baseline": "aggregation",
+      "condition": "same captured provider-arrival traces; n=30",
+      "source_locator": "PDF p.16 Section 8.4; Table 8"
+    }
+  ],
+  "evaluation_context": "The paper separates provider Model TTFT from application-layer TTFPT. Controlled runs use a deterministic stream on a Java/OpenJDK 21 Linux CPU-only prototype with 5 warmups and 30 measured runs; captured DeepSeek replay uses 30 identical traces and paired statistical tests; online and LangGraph checks are descriptive.",
+  "limitations": "AiFlow is an application-layer orchestration model and does not optimize transformer serving, KV cache, GPU batching, provider scheduling, or remote provider buffers. The study does not measure distributed placement, provider multi-tenancy/GPU contention, long-running fault recovery, large-scale RAG quality, or adaptive runtime scheduling. Carefully configured async baselines approach its raw latency, so the primary contribution is declaration, validation, and bounded orchestration rather than a new primitive.",
+  "project_relevance": "AiFlow's typed events, declarative queue/worker policies, and evidence of bounded MaxQ map directly to tool-calling and streaming Agent pipelines. It suggests separating model TTFT from application TTFPT and enforcing task-specific backpressure/cancellation outside the model, while preserving ordering and auditing side effects.",
+  "primary_source_resolved": true,
+  "quality_score": 96,
+  "source_notes": [
+    "The arXiv v1 PDF and all three referenced chunks were fetched; evidence locators refer to PDF pages and tables.",
+    "Performance claims are stated with their baseline and paired/replay conditions; provider-side speedup is not inferred."
+  ]
+}

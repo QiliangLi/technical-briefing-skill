@@ -1,0 +1,144 @@
+{
+  "_task": {
+    "id": "ba063e073909f4114a704321",
+    "type": "fact_check",
+    "entity_id": "0e6c91614f2a443a3f5b046a",
+    "input_digest": "3fa9128191672b164446017a1b78b69f"
+  },
+  "brief_item": {
+    "title": "SmartGen按KV重要性选择性传输，缓解Prefill/Decode阻塞",
+    "type": "论文",
+    "topic_name": "状态感知网络、TPN",
+    "direction_name": "KVCache感知的网络与带宽调度",
+    "published_at": "2026-07-30T12:56:05Z",
+    "importance": "重点关注",
+    "core_conclusion": "SmartGen把KV条目按重要性分级，在Prefill阶段主动推送高价值条目，Decode阶段按需拉取其余上下文，并利用空闲网络投机补齐。选择性传输让网络策略直接跟随推理阶段和KV稀疏性。",
+    "mechanism": "系统用配置文件预测通用重要条目，按需路径把上下文相关条目的远程读取与本地加载重叠，投机路径利用空闲带宽发送剩余条目。缺失条目保留远程获取能力，避免每层注意力都等待网络往返。",
+    "result": "48K Token提示在阿里云L20和25Gbps RDMA上，KV传输耗时是Prefill计算的6.5倍，阶段切换阻塞最多占作业42.2%。相比完整KV传输，SmartGen将TTST最多降低4.3倍，后续解码精度保持接近。",
+    "boundary": "结果绑定Llama、Qwen、Gemma和Phi模型及L20配置。按需读取仍受远程带宽影响，重要性预测和投机补齐会改变收益，未覆盖更快网络和广泛精度边界。",
+    "project_relevance": "TPN可按推理阶段和KV重要性预留带宽，重叠按需读取与本地计算，并用空闲容量补齐。评估时记录TTST、TTFT、尾延迟和传输量，拆分稀疏注意力与网络调度贡献。",
+    "keywords": [
+      "SmartGen",
+      "选择性KV传输",
+      "Prefill/Decode",
+      "RDMA",
+      "TTST"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2607.28150v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-07-30T12:56:05Z"
+      }
+    ],
+    "discovered_via": "Agent Web Search",
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 100.0,
+    "_provenance": {
+      "task_id": "e92ce53d2e91c6329c265266",
+      "event_id": "5ebbf8eee109eea365dd517d",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.28150v1",
+        "https://arxiv.org/abs/2607.28150"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "title": "SmartGen: Seamless Disaggregated LLM Inference with Selective KV Cache Transfer",
+      "event_hint": "arXiv paper on selective KV-cache transfer for disaggregated LLM inference",
+      "problem": "The fetched source page provides only bibliographic metadata, so the network bottleneck and concrete disaggregated-inference problem cannot be established from the available text.",
+      "mechanism": "The title indicates selective KV-cache transfer in disaggregated LLM inference, but the fetched document contains no transfer paths, selection policy, runtime design, or correctness mechanism; no further detail is asserted.",
+      "evidence": [],
+      "evaluation_context": "The fetched metadata classifies the paper under Distributed, Parallel, and Cluster Computing and provides no workload, topology, baseline, metric, or measurement details.",
+      "limitations": "Only the arXiv metadata page was available; the abstract and paper body were not present in the referenced chunk. The summary's claims about active/on-demand/speculative paths and TTST reduction cannot be independently supported and are omitted.",
+      "project_relevance": "If verified from the full paper, selective KV-cache transfer could inform disaggregated serving and network-aware cache movement; the available document is insufficient to assess performance or correctness trade-offs.",
+      "primary_source_resolved": true,
+      "quality_score": 18,
+      "source_notes": [
+        "The specific arXiv primary URL was fetched, but the referenced text contains only title and bibliographic metadata.",
+        "No evidence records were emitted because no technical claims or results appear in the available text."
+      ],
+      "_provenance": {
+        "task_id": "32034e6c9a1a813c7275e676",
+        "candidate_id": "688e1c851d1358820fb1d510",
+        "source_title": "SmartGen: Seamless Disaggregated LLM Inference with Selective KV Cache Transfer",
+        "source_url": "https://arxiv.org/abs/2607.28150",
+        "document_id": "2723dfd9db88dac6bb82c6e6"
+      }
+    },
+    {
+      "title": "SmartGen: Seamless Disaggregated LLM Inference with Selective KV Cache Transfer",
+      "event_hint": "SmartGen importance-aware selective KV cache transfer for disaggregated LLM inference",
+      "problem": "Prefill/decoding disaggregation requires moving large KV caches between nodes. On low-bandwidth rented cloud instances this transfer can saturate the RDMA link, stall decoding, and increase time-to-second-token, especially for long prompts.",
+      "mechanism": "SmartGen divides KV entries into universally important, context-dependent, and less-important classes. A profile-based proactive path pushes universally important entries during prefill; a parallel on-demand path fetches context-dependent entries during decoding while overlapping remote fetch with local KV loading; a speculative path transfers remaining entries during network idle periods. The design uses dynamic KV sparsity to reduce bytes on the transition path while retaining missing entries for accuracy.",
+      "evidence": [
+        {
+          "claim": "Compared with typical full KV-cache transfer, SmartGen reduces time-to-second-token by up to 4.3x while keeping subsequent decoding performance and accuracy comparable.",
+          "value": "up to 4.3x lower TTST",
+          "baseline": "typical full KV cache transfer",
+          "condition": "Evaluated across Llama-3.1, Qwen3, Gemma-3, and Phi-4 with real-world workloads",
+          "source_locator": "PDF page 2, Introduction summary"
+        },
+        {
+          "claim": "For 48K-token prompts on Alibaba Cloud L20 instances with a 25 Gbps RDMA network, KV transfer takes 6.5x longer than prefill computation.",
+          "value": "6.5x",
+          "baseline": "prefill computation time",
+          "condition": "Llama and Qwen models; long-context prompt of 48K tokens; L20 GPUs; 25 Gbps RDMA",
+          "source_locator": "PDF page 1, Introduction"
+        },
+        {
+          "claim": "The stage-transition KV-transfer stall can account for up to 42.2% of job completion time.",
+          "value": "42.2%",
+          "baseline": null,
+          "condition": "Disaggregated inference under limited inter-node bandwidth",
+          "source_locator": "PDF page 1, Introduction"
+        },
+        {
+          "claim": "The analysis testbed used three Alibaba Cloud prefill instances, each with two NVIDIA L20 GPUs, one decoding instance with one L20 GPU, and a 25 Gbps RDMA interface; KV caches were offloaded to host memory.",
+          "value": "25 Gbps RDMA",
+          "baseline": null,
+          "condition": "Three prefill ecs.gn8is-2x.8xlarge instances and one decoding ecs.gn8is.4xlarge instance",
+          "source_locator": "PDF page 3, Section 3 Analysis of KV Cache Transfer"
+        },
+        {
+          "claim": "SmartGen addresses two implementation challenges: selecting important KV entries before decoding queries are available and fetching missing entries without putting a network round trip on every attention layer's critical path.",
+          "value": null,
+          "baseline": null,
+          "condition": "Selective KV transfer in prefill/decode-disaggregated serving",
+          "source_locator": "PDF pages 1-2, Introduction"
+        }
+      ],
+      "evaluation_context": "The paper integrates SmartGen with sparse-attention algorithms and evaluates Llama-3.1, Qwen3, Gemma-3, and Phi-4 over multiple real-world workloads. The motivating transfer analysis uses Alibaba Cloud instances with L20 GPUs, host-memory KV offload, and 25 Gbps RDMA; it assumes a 75% prefix-cache hit ratio for that analysis.",
+      "limitations": "The reported results are tied to the evaluated model families, sparse-attention integrations, workloads, and Alibaba Cloud L20/25 Gbps setup; the excerpt does not establish behavior on faster fabrics, other GPU/network combinations, or a broad accuracy envelope across sequence lengths. Selective transfer also depends on the quality of profile-based importance prediction and still requires on-demand remote fetches for context-dependent entries. The need for speculative completion and remote accesses implies residual bandwidth and latency sensitivity (inference).",
+      "project_relevance": "For TPN/KV-network scheduling, this is a concrete case where network policy can be driven by inference phase and KV-entry importance: proactively reserve bandwidth for predicted-important entries, overlap on-demand fetches with local work, and use idle capacity for speculative completion. It suggests evaluating TTST/TTFT and tail latency alongside transfer volume, while separating gains from sparse attention itself from gains attributable to network scheduling (inference).",
+      "primary_source_resolved": true,
+      "quality_score": 90,
+      "source_notes": [
+        "Facts extracted from the fetched arXiv PDF chunk; title copied exactly from input metadata.",
+        "The paper uses TTST (time-to-second-token) in the reported result; the project context tracks TTFT/TPOT separately."
+      ],
+      "_provenance": {
+        "task_id": "e42fc65fa765ae4e2f89359d",
+        "candidate_id": "784d8fee9edbd0d0056f31d9",
+        "source_title": "SmartGen: Seamless Disaggregated LLM Inference with Selective KV Cache Transfer",
+        "source_url": "https://arxiv.org/abs/2607.28150v1",
+        "document_id": "6d90192b8f37f3bb0dbe25d3"
+      }
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

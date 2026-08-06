@@ -1,0 +1,50 @@
+{
+  "_task": {"id": "f76b14c1278713b68fc8bc84", "type": "fact_extraction", "entity_id": "0878f9cf9fadbf8287dc8494", "input_digest": "8cc2ae3e7424c16ee497c854f6ed1270"},
+  "title": "Addressable Recall Compaction for Long Context-Window Control in AI Agents",
+  "event_hint": "ARC可寻址回忆式Agent上下文压缩",
+  "problem": "长时程Agent的推理轨迹、工具观察和环境响应会超过固定context window；滑动窗口、摘要或相似度RAG可能丢弃任务关键细节，且无法可靠恢复被压缩内容，导致上下文溢出、错误答案或重复执行工具。",
+  "mechanism": "ARC将归档存储与活动提示分离：每个工具观察先以稳定ID逐字写入append-only Addressable Store，活动上下文超过预算时只保留短引用citation。模型通过recall工具按ID取回原文，不需重执行对应工具，也不依赖相似度检索；已出现的引用句柄在后续压缩中持久保留。压缩例程是确定性的，不增加额外模型调用。",
+  "evidence": [
+    {
+      "claim": "在Needle-in-a-Haystack、Qwen3-8B/16k上下文和Qwen3-32B/32k上下文上，ARC平均准确率分别为99.00%和99.80%；对应最强RAG_memory基线为79.57%和96.67%。",
+      "value": "Qwen3-8B: 99.00% vs 79.57%; Qwen3-32B: 99.80% vs 96.67%",
+      "baseline": "RAG_memory at same context/completion settings",
+      "condition": "Needle-in-a-Haystack, 3 seeds, 1000 tasks/seed, 4096-token max completion",
+      "source_locator": "PDF page 5, Table 2"
+    },
+    {
+      "claim": "在LongBench-v2 Hard的311个任务上，ARC在Qwen3-8B/16k和Qwen3-32B/32k的平均准确率分别为27.47%和32.47%；同设置下最强对照分别为LLM_summary 25.83%和Sliding_window 30.67%。",
+      "value": "27.47% vs 25.83%; 32.47% vs 30.67%",
+      "baseline": "best reported baseline per model: LLM_summary (8B), Sliding_window (32B)",
+      "condition": "LongBench-v2 hard subset, 3 seeds (933 attempts/method), 4096-token completion cap",
+      "source_locator": "PDF page 5, Table 1"
+    },
+    {
+      "claim": "在单张NVIDIA H200（141 GB HBM、4.8 TB/s）roofline模型上，Qwen3-8B的16k/8k recall budget下，ARC相对Sliding_window把每次成功轨迹解码HBM流量从27.70 TB降至4.87 TB（80.3%），roofline总时间从6.378 s降至1.256 s（5.08×），且成功数991高于基线571。",
+      "value": "27.70 TB -> 4.87 TB; 80.3% savings; 6.378 s -> 1.256 s; 5.08×; 991 vs 571 successes",
+      "baseline": "Sliding_window at Qwen3-8B 16k/8k recall budget",
+      "condition": "single H200 roofline replay; same Qwen3-8B trajectories and hardware constants",
+      "source_locator": "PDF pages 17–18, HBM analysis and Table 10"
+    },
+    {
+      "claim": "ARC的核心保证是：在活动提示受限时，任意有效ID都能取回精确的历史观察；该保证依赖地址正确，不能保证模型一定会请求正确ID。",
+      "value": null,
+      "baseline": "lossy summary/sliding-window methods without exact addressable recall",
+      "condition": "append-only verbatim archive, persistent citation catalog, bounded active context",
+      "source_locator": "PDF pages 4–5, Informal ARC guarantee"
+    },
+    {
+      "claim": "跨硬件复现实验在AMD MI300X上保持ARC准确率：Qwen3-8B为99.57%（H200 99.00%），Qwen3-32B为99.77%（H200 99.80%）；MI300X roofline中Qwen3-8B每次成功1.01 s、4.38 TB HBM，较Sliding_window节省79.6%时间。",
+      "value": "99.57%/99.77% accuracy; 1.01 s, 4.38 TB, 79.6% time saving",
+      "baseline": "H200 accuracy and MI300X Sliding_window roofline",
+      "condition": "AMD Instinct MI300X 192 GB HBM3, ROCm, same seeds/protocol, Qwen3-8B 16k and Qwen3-32B 32k",
+      "source_locator": "PDF pages 19–20, Cross-Platform Validation and Tables 12–13"
+    }
+  ],
+  "evaluation_context": "ARC在vLLM上评估Qwen3-8B（16k context）与Qwen3-32B（32k context），最大completion 4096 token；LongBench-v2 Hard含311任务，Needle-in-a-Haystack含1000合成任务/seed、3 seeds。HBM/roofline结果把相同轨迹回放到单张NVIDIA H200（141 GB、4.8 TB/s、989 TFLOPS BF16）并另行在AMD MI300X验证，比较Full_context、Sliding_window、LLM_summary、Structured_state和RAG_memory。",
+  "limitations": "ARC保证的是有效ID可精确回忆，不保证Agent会选择正确ID；append-only归档外存最坏情况随历史线性增长。LongBench准确率对recall budget呈任务/模型相关的倒U形，过紧或过大的预算都可能降低效果；Needle是稀疏单事实合成任务，不能代表真实多事实工作流。HBM和服务时间是固定硬件roofline估算而非线上P95，未测跨区域网络、归档存储成本、并发多租户或一致性。",
+  "project_relevance": "（项目推断）对代码Agent可把大型Read/Grep/工具输出写入ID化本地或跨域归档，仅在需要时按引用回取，从而保持活动上下文短并避免重复执行工具；跨区域部署仍需评估归档读延迟、带宽、权限与一致性，ARC的本地HBM节省不能直接视为WAN收益。",
+  "primary_source_resolved": true,
+  "quality_score": 95,
+  "source_notes": ["Primary arXiv PDF fetched; evidence covers algorithm guarantee, task accuracy and H200/MI300X roofline estimates.", "Roofline numbers are explicitly treated as hardware-cost-model estimates, not production latency."]
+}

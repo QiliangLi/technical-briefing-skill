@@ -1,0 +1,59 @@
+{
+  "title": "Efficiency and Cost Alignment in Batched LLM Serving via Resource-Fair Scheduling",
+  "event_hint": "ISJL 以 KV footprint 公平约束缓解异构请求连续 batching 外部性",
+  "problem": "连续 batching 中，短请求与长请求共批时，batch step 的墙钟成本由最大活跃 KV-cache footprint 主导；短请求承担与自身 token 量不成比例的延迟和 GPU 资源消耗，形成 batching externality。",
+  "mechanism": "论文将资源公平定义为同一 batch 内请求的 decode progress/KV footprint 差距不超过参数 α，并建立公平约束与吞吐的调度模型。LJF 通过按最长请求静态成批实现绝对公平但牺牲吞吐；ISJL（Insert Short Jobs with Limit）用 α 控制可插入的短请求，Phase ONE 构建公平的初始 cohort，Phase TWO 恢复事件驱动连续 batching；Robust-ISJL 在输出长度未知时用上下界保持公平与竞争比保证。",
+  "evidence": [
+    {
+      "claim": "ISJL 对所有 batch size B≥2 给出全局 competitive-ratio 下界 3/4；B=2 的特例下界约 0.77。",
+      "value": 0.75,
+      "baseline": "clairvoyant offline optimum",
+      "condition": "ISJL，资源公平参数 α；任意 B≥2",
+      "source_locator": "Abstract; Theorem 3"
+    },
+    {
+      "claim": "公平约束限制同批请求的 decode progress 或等价 KV-cache footprint 差距，直接控制 schedule-induced batching externality。",
+      "value": null,
+      "baseline": "FCFS/SJF continuous batching 无该约束",
+      "condition": "batched LLM serving",
+      "source_locator": "Abstract; Resource fairness as an operational batching discipline"
+    },
+    {
+      "claim": "LJF 对任意 α 满足公平约束，但因等待整个 batch 完成后才组成下一批，吞吐较差；ISJL 在允许有限公平偏差下换取更高吞吐。",
+      "value": null,
+      "baseline": "LJF absolute fairness",
+      "condition": "静态/连续 batching 对比",
+      "source_locator": "Section 3.1; Section 3.2"
+    },
+    {
+      "claim": "论文的成本分解包含 intrinsic workload、time/overhead 和 schedule-induced batching externality；公平约束界定外部性，ISJL 竞争比控制时间/开销项。",
+      "value": 3,
+      "baseline": null,
+      "condition": "token-metered API pricing analysis",
+      "source_locator": "Abstract; cost decomposition"
+    },
+    {
+      "claim": "Robust-ISJL 在输出长度到达时未知、仅有区间上下界的情况下仍满足公平约束，并恢复至少 3/4 的竞争比保证。",
+      "value": 0.75,
+      "baseline": "clairvoyant optimum with known lengths",
+      "condition": "interval uncertainty ℓᵢ≤oᵢ≤uᵢ",
+      "source_locator": "Theorem 4; Theorem 5"
+    }
+  ],
+  "evaluation_context": "arXiv 论文以数学调度模型、竞争比证明和数值实验比较 FCFS、LJF 与 ISJL/Robust-ISJL；关注 token-metered pricing 下吞吐、延迟和成本对齐，不是特定推理引擎的 GPU 实测。",
+  "limitations": "3/4 是理论竞争比下界，不是实际吞吐提升百分比；数值实验和 α/β 参数依赖请求长度分布、batch size 与到达序列。公平约束可能降低 batching 灵活性，且输出长度预测误差会影响 Robust-ISJL 的上界；论文未提供真实 vLLM/SGLang、KV 传输或跨域网络 P95。",
+  "project_relevance": "对 Agent/LLM serving 调度，可将 KV footprint 或 decode progress 作为 batch admission 的公平信号，避免长上下文请求拖累短请求；需要在真实请求 trace 上调 α，联合评估 TTFT、TPOT、GPU 利用率、吞吐和 token-metered 成本。",
+  "primary_source_resolved": true,
+  "quality_score": 91,
+  "source_notes": [
+    "arXiv PDF 已获取，source_level A。",
+    "理论保证与经验结果分开记录，未把竞争比当作实测收益。"
+  ],
+  "_provenance": {
+    "task_id": "2f3420fe1219a412d6bd538e",
+    "candidate_id": "33f882273bf2cc0e59c68e69",
+    "source_title": "Efficiency and Cost Alignment in Batched LLM Serving via Resource-Fair Scheduling",
+    "source_url": "https://arxiv.org/abs/2608.02244v1",
+    "document_id": "9bba5f2a2a6ccca16b2967c5"
+  }
+}

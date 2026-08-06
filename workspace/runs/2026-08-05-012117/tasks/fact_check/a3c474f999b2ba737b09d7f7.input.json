@@ -1,0 +1,100 @@
+{
+  "brief_item": {
+    "title": "DeltaServe：推理与LoRA微调主机无关共址serving",
+    "type": "论文",
+    "topic_name": "AI Infra横向动态",
+    "direction_name": "推理服务、运行时与编译优化",
+    "published_at": "2026-07-30",
+    "importance": "值得关注",
+    "core_conclusion": "LLM serving按峰值配置致低峰GPU闲置，Nutanix生产trace平均负载约60%；DeltaServe将闲置推理容量转为LoRA微调吞吐并保推理SLO，比LLMStation高2.9倍吞吐。",
+    "mechanism": "通过仅需multi-LoRA batching的紧凑hook接口集成现有引擎，利用推理prefill与LoRA微调前向的共享执行结构，用SLO-aware调度器仅在推理有headroom时执行微调。",
+    "result": "在Nutanix trace上比LLMStation高2.9×微调吞吐且推理SLO合规100%对85%；比vLLM+torchtune高39%，无额外硬件。",
+    "boundary": "共址前提是推理与LoRA可共享冻结权重，主要适配PEFT；SLO依赖延迟模型标定与trace代表性；吞吐跨workload泛化未充分评估。",
+    "project_relevance": "判断：将推理闲置算力转为微调吞吐且保SLO，直接提升GPU利用率与成本效率，与训练推理共址方向相关。",
+    "keywords": [
+      "LLM serving",
+      "LoRA微调",
+      "共址",
+      "GPU利用率",
+      "SLO调度"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2607.28848v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-07-30"
+      }
+    ],
+    "discovered_via": null,
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 78
+  },
+  "facts": [
+    {
+      "title": "Before Reasoning Fails: Pre-Evidence Procedural Failures in Agentic RAG",
+      "event_hint": "READ-GATE/Agentic RAG证据检查前程序性失败与运行时约束",
+      "problem": "Agentic RAG可能在检索到候选片段后、未读取任何证据前就给出最终答案(pre-evidence finalization)；最终答案正确率无法揭示Agent是否真正执行了证据检查过程，且这种程序性失败与读完证据后的推理失败混为一谈，掩盖了一个可操作的失败来源。",
+      "mechanism": "将错误轨迹按优先级分解为discipline(证据检查不充分)、post-gold-read(读完gold证据仍错)、retrieval、ambiguity四类(基于保存的工具调用轨迹、检索证据、读取段落与答案)。据此提出READ-GATE运行时不变量：搜索后、finalize前必须执行read，否则环境拒绝final动作并返回纠正提示引导读取一个候选块；该约束在推理时执行，不改模型权重、检索、index、judge、解码温度或推理预算。",
+      "evidence": [
+        {
+          "claim": "12000配对轨迹上discipline与post-gold-read两类失败的both-trigger率在[11.2%, 13.1%](regex与spaCy抽取器)",
+          "value": "[11.2%, 13.1%]",
+          "baseline": null,
+          "condition": "HotpotQA/2WikiMultiHopQA/MuSiQue, 12000 trajectories",
+          "source_locator": "Abstract; Section 5.1 (PDF Page 1/6)"
+        },
+        {
+          "claim": "READ-GATE在零读子集上使LLM-Acc提升14.9–19.9点(HotpotQA +14.9, 2Wiki +19.9, MuSiQue +14.9)",
+          "value": "+14.9~+19.9pp",
+          "baseline": "voluntary zero-read finalization",
+          "condition": "paired McNemar p<1e-4",
+          "source_locator": "Table 1 (PDF Page 6)"
+        },
+        {
+          "claim": "完整minimal-reasoning cell上READ-GATE使LLM-Acc提升3.2–9.4点",
+          "value": "+3.2~+9.4pp",
+          "baseline": "minimal-reasoning without gate",
+          "condition": "HotpotQA/2Wiki/MuSiQue",
+          "source_locator": "Abstract; Section 5.3 (PDF Page 1/6)"
+        },
+        {
+          "claim": "更大hidden thinking budget不一定增加证据检查",
+          "value": "not guaranteed",
+          "baseline": null,
+          "condition": "Gemini 2.5 Flash thinking-budget diagnostic",
+          "source_locator": "Abstract (PDF Page 1)"
+        },
+        {
+          "claim": "discipline-only份额是post-gold-read-only份额的两倍多(regex: 46.5% vs 21.4%)",
+          "value": "46.5% vs 21.4%",
+          "baseline": null,
+          "condition": "wrong cases, regex extractor",
+          "source_locator": "Section 5.1 (PDF Page 6)"
+        }
+      ],
+      "evaluation_context": "三个Wikipedia风格多跳QA数据集(HotpotQA、2WikiMultiHopQA、MuSiQue)，每数据集×条件n=1000按question ID配对；控制器gpt-4o-mini、gpt-5-mini(minimal/medium)；混合检索(BM25+dense，reciprocal-rank fusion k=60，top-5)；LLM-Acc由固定gpt-5-mini judge(温度0)；Gemini 2.5 Pro重判κ=0.924。",
+      "limitations": "仅适用于暴露离散search/read/final动作边界的Agent，隐式交织检索与生成的Agent不在范围；MuSiQue缺per-chunk gold evidence，post-gold-read分析仅限HotpotQA/2Wiki；discipline的snippet-only/low-evidence子类型依赖表面匹配启发式；READ-GATE非通用最优解码策略，仅为靶向诊断干预。",
+      "project_relevance": "关联Agent语义加速专题的“减少重复Read/工具执行链优化”：证据检查应作为轨迹级控制问题、与答案侧推理分离评估；READ-GATE这类低成本运行时约束可回收单纯加大推理预算无法解决的程序性失败，对代码Agent“搜索—读取—验证”链路的过程/状态约束设计有直接启发。",
+      "primary_source_resolved": true,
+      "quality_score": 83,
+      "source_notes": [
+        "一手arXiv论文(PDF转MD)，含Table 1与Figure 3定量结果，并公开33950条原始轨迹与复现脚本",
+        "post-gold-read解释依赖HotpotQA/2Wiki的完整gold证据标注"
+      ]
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

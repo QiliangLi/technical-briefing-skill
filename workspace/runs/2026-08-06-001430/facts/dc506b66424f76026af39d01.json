@@ -1,0 +1,59 @@
+{
+  "title": "LEAP: Lean Environment-Feedback via Adaptive Pruning for Code RL in GPU Kernel Generation",
+  "event_hint": "LEAP adaptive pruning and rank-based rewards for multi-turn GPU-kernel code RL",
+  "problem": "CUDA kernel生成的二元验证奖励稀疏，多轮编译、内存分配和硬件执行反馈延迟高；把最终奖励平均传播到所有turn还会稀释早期正确性并浪费简单任务上的调试计算。",
+  "mechanism": "LEAP在GRPO多轮RL中加入Difficulty-Conditioned Pruning：按当前rollout组失败率将简单任务和过难任务绕过多轮扩展，只对处于有效难度区间的任务进入编译/硬件调试。它用组内成功turn数的序关系构造无参数rank-based pairwise reward，首轮成功排名最高，后续修复按turn递减，失败为最低，以同时鼓励首轮效率和困难样本的增量修复。",
+  "evidence": [
+    {
+      "claim": "KernelBench上LEAP总体准确率首轮70%、第二轮79.2%、第三轮80.8%，高于Baseline的66%、75.2%、75.2%；Level 3首轮30%高于Baseline 18%。",
+      "value": "Overall 70/79.2/80.8%; Level 3 first-turn 30%",
+      "baseline": "Baseline overall 66/75.2/75.2%; Level 3 first-turn 18%",
+      "condition": "KernelBench；最多三轮；累计准确率",
+      "source_locator": "PDF p.8, Table 1"
+    },
+    {
+      "claim": "LEAP每步训练约700秒，低于Murphy和Dr.Kernel约950秒但高于Baseline约600秒；每次通过所需turn为1.77，低于Baseline 1.90、Murphy 1.93和Dr.Kernel 1.84。",
+      "value": "~700 s step time; 1.77 turns/pass",
+      "baseline": "Baseline ~600s/1.90; Murphy ~950s/1.93; Dr.Kernel ~950s/1.84",
+      "condition": "KernelBench训练成本表；论文以首轮准确率-墙钟时间宣称约1.93×更快收敛",
+      "source_locator": "PDF p.8, Table 2 and Figure 1 discussion"
+    },
+    {
+      "claim": "KodCode测试中LEAP首轮准确率90.2%，高于Murphy 88.5%和Dr.Kernel 88.3%；LiveCodeBench总体Pass@1为0.185、Pass@5为0.274。",
+      "value": "KodCode first-turn 90.2%; LiveCodeBench Pass@1 0.185; Pass@5 0.274",
+      "baseline": "KodCode Murphy 88.5%, Dr.Kernel 88.3%; LiveCodeBench Baseline 0.174/0.251",
+      "condition": "KodCode test set；LiveCodeBench按Easy/Medium/Hard与Pass@k统计",
+      "source_locator": "PDF p.9, Tables 3-4"
+    },
+    {
+      "claim": "DCP只把困难任务（初始失败率阈值≥50%）送入多轮时，三轮准确率80.8%，而≤50%设置77.6%、全量多轮80.4%；激活组比例为43.9%。",
+      "value": "80.8% Acc@3-turns; 43.9% activated groups",
+      "baseline": "≤50% 77.6%; Full 80.4%; baseline 75.2%",
+      "condition": "Pruning range ablation；阈值按rollout组初始通过率定义",
+      "source_locator": "PDF p.9, Table 5"
+    },
+    {
+      "claim": "作者将结果归因于DCP减少简单任务的冗余编译和硬件探索，并以rank-based reward惩罚不必要的推理turn；论文未提供生产GPU集群吞吐或部署成本。",
+      "value": null,
+      "baseline": null,
+      "condition": "GPU kernel生成RL；训练在两台服务器、8张NVIDIA A100上进行",
+      "source_locator": "PDF p.7-8 experimental setup and conclusion"
+    }
+  ],
+  "evaluation_context": "实验覆盖KernelBench、KodCode和LiveCodeBench，比较标准GRPO、Murphy、Dr.Kernel与LEAP，最多三轮生成；训练部署于两台服务器的8张NVIDIA A100。KernelBench表格报告按难度层级的准确率、训练步时间和每次通过的turn数。",
+  "limitations": "论文主要测量离线代码RL训练准确率、训练步时间和turn效率，未给出实际GPU kernel执行吞吐、端到端推理时延或不同硬件上的生产部署结果。DCP依赖按组失败率设置的阈值，过难任务被直接跳过多轮调试，可能牺牲可恢复性；训练任务与验证沙箱也不等同于真实编译器/硬件生态。",
+  "project_relevance": "LEAP的门控思路适合当前Agent执行链：先用轻量验收估计任务难度，只把高价值、可恢复的失败交给昂贵编译/工具调试，同时用相对排名惩罚无谓交互turn。迁移时应单独记录被剪枝任务比例、编译时间、GPU占用、首轮成功率和最终成功率，防止节省训练计算却掩盖困难任务覆盖不足。",
+  "primary_source_resolved": true,
+  "quality_score": 93,
+  "source_notes": [
+    "arXiv v2 PDF已抓取且标题与输入一致。",
+    "准确率、训练时间、turn效率和剪枝消融均带表格与条件定位。"
+  ],
+  "_provenance": {
+    "task_id": "1f53638eb91b658949dffd50",
+    "candidate_id": "dc506b66424f76026af39d01",
+    "source_title": "LEAP: Lean Environment-Feedback via Adaptive Pruning for Code RL in GPU Kernel Generation",
+    "source_url": "https://arxiv.org/abs/2608.01804v2",
+    "document_id": "ae34447a148ab1e23edd0aa9"
+  }
+}

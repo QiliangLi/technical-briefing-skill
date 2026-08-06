@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "b5fbd675e9cf3311329c09bd",
+    "type": "fact_extraction",
+    "entity_id": "0aa334a77244a2cea3f38a6c",
+    "input_digest": "153e8071725ce22ae19fba75e72268da"
+  },
+  "title": "Unpacking ChatGPT Work: the Agent for a Billion Users",
+  "event_hint": "外部实测拆解ChatGPT Work的云端Agent、跨任务记忆、调度与浏览器架构",
+  "problem": "知识工作Agent需要在云端执行长任务、调用外部应用并跨任务保留上下文，但工作目录、会话历史、文件库和记忆之间的边界会影响复用、一致性与安全。",
+  "mechanism": "文章将Work描述为运行在Codex harness上的云端Agent：每个任务使用隔离microVM和单独托管Chrome，通过插件/MCP工具连接外部服务；任务内状态写入工作目录并可持久恢复，跨线程上下文由产品层注入压缩摘要、Personal Context和Library，而不是让Agent自由浏览全部历史；Scheduled Tasks提供独立新任务或带heartbeat的原线程唤醒。",
+  "evidence": [
+    {
+      "claim": "作者观察到Work云端使用隔离microVM；Pro配置为8 CPUs、20GB RAM、64GB磁盘，Plus配置为14GB RAM，并配套独立托管Chrome服务。",
+      "value": "Pro: 8 CPU/20GB RAM/64GB disk; Plus: 14GB RAM",
+      "baseline": null,
+      "condition": "作者对2026年7月Work云模式的外部重构与试用。",
+      "source_locator": "Latent Space §What is Work?; chunk 01 lines 9-24"
+    },
+    {
+      "claim": "任务工作状态会同步到持久存储并按需恢复到新的隔离microVM；新线程默认仅接收近期任务和文件的压缩摘要，原始会话由Personal Context服务按需查询。",
+      "value": null,
+      "baseline": null,
+      "condition": "跨任务连续性；云端Work模式。",
+      "source_locator": "Latent Space §Persistence & Memory; chunk 01 lines 50-80"
+    },
+    {
+      "claim": "上传文件同时存在任务内工作副本与Library规范副本，两者不自动同步；其他线程修改Library版本后，已恢复的任务仍可能读取旧本地副本。",
+      "value": null,
+      "baseline": null,
+      "condition": "跨线程文件复用与版本一致性。",
+      "source_locator": "Latent Space §Persistence & Memory; chunk 01 lines 80-98"
+    },
+    {
+      "claim": "Scheduled Tasks支持保存prompt后启动全新任务，也支持在既有会话中以heartbeat唤醒并保留原上下文；作者称heartbeat当时在桌面端可用、Web端未暴露。",
+      "value": "两类调度模式",
+      "baseline": null,
+      "condition": "文章撰写时的产品行为，非稳定API承诺。",
+      "source_locator": "Latent Space §Scheduled Tasks; chunk 01 lines 122-151"
+    },
+    {
+      "claim": "云端浏览器与Agent计算机分离，通过工具调用传输页面操作和文件；作者报告Amazon US拒绝云端会话、Google Photos多次超时，而本地模式成功。",
+      "value": "2个外部服务失败案例",
+      "baseline": "本地模式",
+      "condition": "作者个人试用；站点会话/CAPTCHA和云数据中心限制。",
+      "source_locator": "Latent Space §Browser Use; chunk 01 lines 180-204"
+    }
+  ],
+  "evaluation_context": "这是Latent Space的外部重构与个人试用记录，不是OpenAI官方架构或性能评测。观察覆盖Work云模式、Codex harness、隔离microVM、Personal Context/Library、Scheduled Tasks、托管Chrome和插件/MCP；未提供WAN RTT、传输字节、命中率或P95等可复现实验指标。",
+  "limitations": "文章明确是external reconstruction，部分产品行为来自作者观察和推测，不能替代官方文档或服务级承诺；规格、界面和Web/桌面能力可能快速变化。没有量化跨区域同步延迟、缓存命中率、一致性窗口、成本或可靠性，也未验证多租户隔离和故障恢复。Library工作副本不自动同步、跨任务目录需显式指示等结论应视为当前实现观察，而非长期协议。",
+  "project_relevance": "对跨域Agent Cache设计的启示是把任务内热状态、跨任务摘要、规范文件库和浏览器会话拆成不同一致性域，并显式定义版本/失效、权限和恢复策略；WAN优化应优先传输压缩摘要或可验证工具结果，而不是默认复制完整工作目录。落地前需实测跨区RTT、字节量、版本冲突与重试成本。",
+  "primary_source_resolved": false,
+  "quality_score": 82,
+  "source_notes": [
+    "已读取输入URL对应的Latent Space全文；该页面明确标注为外部重构与作者个人试用。",
+    "未把编辑按语气或未来预测当作官方事实，且未从本文推导缺失的网络性能数字。"
+  ]
+}

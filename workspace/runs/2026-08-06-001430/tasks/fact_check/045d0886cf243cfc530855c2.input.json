@@ -1,0 +1,145 @@
+{
+  "_task": {
+    "id": "045d0886cf243cfc530855c2",
+    "type": "fact_check",
+    "entity_id": "e14512d9b7a21fb135124e57",
+    "input_digest": "62b06e4500df9e0610fc01cf99bbcdc2"
+  },
+  "brief_item": {
+    "title": "LMCache rc3修复vLLM与Torch ABI假成功检查",
+    "type": "版本发布",
+    "topic_name": "状态感知网络、TPN",
+    "direction_name": "KVCache传输与通信优化",
+    "published_at": "2026-08-05T01:15:09Z",
+    "importance": "值得关注",
+    "core_conclusion": "LMCache v0.5.3rc3修复稳定版vLLM与Torch错配造成的原生扩展加载失败，并让检查直接触发dlopen和符号解析。扩展失效会以非零状态暴露，避免禁用CUDA kernel的镜像继续运行。",
+    "mechanism": "稳定vLLM 0.26.0配套Torch 2.11.0。新增assert_native_ops.py直接加载扩展，ABI错误时退出1，绕过内部shim对ImportError的吞掉。",
+    "result": "v0.5.3rc2把Torch固定为2.13.0，稳定vLLM使用2.11.0，lmcache.c_ops因此出现undefined symbol。旧smoke check返回0，新脚本在扩展失败时返回1。",
+    "boundary": "该版本修复ABI可见性，没有KVCache网络吞吐、TTFT或跨节点数据。稳定、nightly和dev镜像路径不同，部署仍需执行原生扩展检查。",
+    "project_relevance": "项目应把直接加载关键扩展、检查kernel路径和版本矩阵作为运行前门禁。显式失败更适合后续判断KVCache和网络性能。",
+    "keywords": [
+      "LMCache",
+      "vLLM",
+      "Torch ABI",
+      "原生扩展",
+      "Smoke Check"
+    ],
+    "sources": [
+      {
+        "publisher": "LMCache GitHub Release",
+        "url": "https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc3",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-08-05T01:15:09Z"
+      }
+    ],
+    "discovered_via": "GitHub Release",
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 100.0,
+    "_provenance": {
+      "task_id": "9eed4c6fb350b7691e72c5b6",
+      "event_id": "545d832ddee2e7013d597949",
+      "source_urls": [
+        "https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc3",
+        "https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc4"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "title": "LMCache/LMCache v0.5.3rc4",
+      "event_hint": "LMCache v0.5.3rc4 发布候选，记录 lazy offload 设计文档变更",
+      "problem": "当前抓取的 GitHub release 页面主要显示加载错误和版本标题，无法确认该 release 的完整变更内容。",
+      "mechanism": "已获取内容只明确列出一个变更：新增 lazy offload design doc（PR #4196）；没有文档正文，不能推断其 KV offload 实现或网络行为。",
+      "evidence": [
+        {
+          "claim": "v0.5.3rc4 release 页面列出 “[Design Doc] add lazy offload design doc (#4196)” 这一变更。",
+          "value": null,
+          "baseline": null,
+          "condition": "LMCache v0.5.3rc4 GitHub release",
+          "source_locator": "Release v0.5.3rc4"
+        }
+      ],
+      "evaluation_context": "GitHub release 页面的抓取文本，版本标签为 v0.5.3rc4，页面多处显示 Uh oh/加载错误；没有性能、传输量、TTFT、TPOT 或实现细节。",
+      "limitations": "无法确认 lazy offload 设计文档的内容、状态或是否包含可用代码；不能从 release 标题推断 KVCache 传输收益。需要直接读取该设计文档和 commit/源码后重新抽取。",
+      "project_relevance": "仅可作为 LMCache lazy offload 设计线索，不能据此判断状态感知网络或跨节点 KVCache 通信效果。",
+      "primary_source_resolved": true,
+      "quality_score": 25,
+      "source_notes": [
+        "GitHub release URL 为具体 A 级来源但页面内容不完整。",
+        "仅记录页面明确显示的变更。"
+      ],
+      "_provenance": {
+        "task_id": "07f33e51d4b406cbe84de333",
+        "candidate_id": "20cae9732b0aa94846e33f36",
+        "source_title": "LMCache/LMCache v0.5.3rc4",
+        "source_url": "https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc4",
+        "document_id": "6a3a0104872c18c72b6a1750"
+      }
+    },
+    {
+      "title": "LMCache/LMCache v0.5.3rc3",
+      "event_hint": "LMCache v0.5.3rc3 修复 vLLM/Torch ABI 兼容和原生扩展 smoke check",
+      "problem": "v0.5.3rc2 的 CI 从 vLLM main 错误同步 torch 2.13.0，而稳定 vLLM 0.26.0 仍使用 torch 2.11.0，导致 lmcache.c_ops 原生扩展符号解析失败；旧 smoke check 又会被兼容 shim 或 ImportError swallow 掩盖，使镜像看似正常但 CUDA kernel 全部禁用。",
+      "mechanism": "release 将 torch pin 同步目标改为最新 stable vLLM release，并回退到与 vLLM 0.26.0 匹配的 torch 2.11.0；新增 assert_native_ops.py，直接加载 extension 文件触发 dlopen 和 symbol resolution，不依赖 lmcache 内部 shim，从而让 ABI 失败以非零状态暴露。",
+      "evidence": [
+        {
+          "claim": "v0.5.3rc2 的 torch pin 为 2.13.0，而稳定 vLLM 0.26.0 使用 2.11.0，导致 lmcache.c_ops 加载时报 undefined symbol。",
+          "value": "2.13.0 vs 2.11.0",
+          "baseline": "stable vLLM 0.26.0 torch 2.11.0",
+          "condition": "lmcache/vllm-openai:v0.5.3rc2",
+          "source_locator": "[Build] pin torch to vLLM stable"
+        },
+        {
+          "claim": "CudaDeviceOps.ensure_native() 会 swallow ImportError，旧 python -c 'import lmcache.c_ops' smoke check 在扩展无法加载时仍返回 0。",
+          "value": 0,
+          "baseline": "期望失败时非零退出",
+          "condition": "v0.5.3rc2 broken extension",
+          "source_locator": "[CI] make the c_ops smoke check able to fail"
+        },
+        {
+          "claim": "新 assert_native_ops.py 直接加载 extension 文件，遇到 dlopen/symbol resolution 失败会报告错误并退出 1。",
+          "value": 1,
+          "baseline": "旧 smoke check exit 0",
+          "condition": "任意发布 wheel 或 container image",
+          "source_locator": "[CI] make the c_ops smoke check able to fail"
+        },
+        {
+          "claim": "修复将同步源指向最新 stable vLLM release（排除 drafts 和 pre-releases），并把 pin 恢复到 2.11.0；nightly/dev 镜像仍从源码匹配现有 torch。",
+          "value": null,
+          "baseline": "从 vLLM main 同步",
+          "condition": "published lmcache wheel 与 stable vLLM",
+          "source_locator": "[Build] pin torch to vLLM stable"
+        }
+      ],
+      "evaluation_context": "LMCache GitHub v0.5.3rc3 release notes，内容聚焦 CI、wheel/container 构建和 c_ops smoke checks；没有 KVCache 网络吞吐、TTFT 或跨节点传输性能数据。",
+      "limitations": "该 release 修的是构建/运行时 ABI 可见性，不代表 KVCache 传输性能提升；未提供完整 CI 运行日志或多版本矩阵。稳定 vLLM、nightly 和 dev 镜像的兼容路径不同，部署时仍需执行 assert_native_ops.py。",
+      "project_relevance": "对本项目的 Agent/推理端到端流程，原生扩展的‘假成功’比显式失败更危险；应把直接加载关键扩展、检查实际 kernel 路径和版本矩阵作为运行前验收门禁，避免 silently fallback 造成性能判断失真。",
+      "primary_source_resolved": true,
+      "quality_score": 84,
+      "source_notes": [
+        "GitHub release 具体页面已获取，source_level A。",
+        "事实均来自 release notes 的 ABI/CI 修复说明。"
+      ],
+      "_provenance": {
+        "task_id": "f18767fa5fec0cb3d6654ae2",
+        "candidate_id": "8bbd0ac21a03bd9d34ee71a9",
+        "source_title": "LMCache/LMCache v0.5.3rc3",
+        "source_url": "https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc3",
+        "document_id": "f04003bb96ac06549bf5e8fd"
+      }
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

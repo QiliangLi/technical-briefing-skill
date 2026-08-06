@@ -1,0 +1,59 @@
+{
+  "title": "Practical Online KV Cache Compaction for LLM Agents: An Empirical Study",
+  "event_hint": "在线 Agent KV Cache 压缩实证：延迟代理查询与 Token Eviction 的收益",
+  "problem": "Agent 的长轨迹包含多轮推理、工具调用和环境反馈，KV cache 会成为推理内存瓶颈；但未来相关性在当前 turn 尚未知，静态上下文中的离线压缩方法不能直接套用。",
+  "mechanism": "论文将 token eviction（TE）和 attention matching（AM）适配到在线 Agent turn。压缩前用廉价 proxy query 对缓存 token 打分，候选来源包括当前 turn 边界、repeat-prefill 和延后一轮的 assistant generation/tool response；TE 保留高分原始 KV，AM 在选中的 key 上拟合 value 以匹配代理查询。通过延迟压缩等待后续 Agent 查询，可用更接近未来访问模式的信号；保留结构边界 token，并用峰值 KV 决定可承载 serving batch。",
+  "evidence": [
+    {
+      "claim": "在不同规模模型上，TE 可在 KV cache 减少 80% 的同时保留大部分准确率；立即压缩常损害任务表现，延后一轮使用 Agent 后续查询可恢复大部分差距。",
+      "value": "80% KV reduction",
+      "baseline": "no-compaction",
+      "condition": "BrowseComp-Plus 与 WideSearch，在线压缩实验",
+      "source_locator": "Abstract"
+    },
+    {
+      "claim": "Qwen3.5-27B 无压缩准确率 52.50%，AM 51.00%，TE 52.00%；峰值 KV 从 612.9K tokens 降至 AM 172.8K、TE 175.2K。",
+      "value": "612.9K→172.8/175.2K tokens",
+      "baseline": "no compaction 52.50% accuracy",
+      "condition": "Qwen3.5-27B，大模型 serving simulation，compaction ratio 0.2",
+      "source_locator": "Table 2: Task performance and simulated serving efficiency"
+    },
+    {
+      "claim": "在 Qwen3.5-27B 上，峰值 KV 压缩使 serving batch 从 8 提升到 32，吞吐从 217 queries/hour 增至 AM 918、TE 717，分别为 4.2× 和 3.3×。",
+      "value": "4.2×/3.3×",
+      "baseline": "217 q/h without compaction",
+      "condition": "Qwen3.5-27B，batch determined by peak KV",
+      "source_locator": "Section 4; Table 2 discussion"
+    },
+    {
+      "claim": "Gemma-4-31B 上峰值 KV 从 272.1K 降至 AM 99.6K、TE 121.3K，serving batch 从 8 提升到 16，吞吐提升 1.7×/1.5×。",
+      "value": "1.7×/1.5×",
+      "baseline": "no-compaction throughput",
+      "condition": "Gemma-4-31B，大模型 serving simulation",
+      "source_locator": "Table 2 discussion"
+    },
+    {
+      "claim": "proxy 选择具有场景依赖：当前 turn 的最佳 proxy 随基准变化，组合多个 proxy 没有稳定收益；延后一轮的未来 turn 查询则持续改善表现，TE 在不完美 proxy 下通常比 AM 更稳健。",
+      "value": null,
+      "baseline": "immediate/current-turn proxy",
+      "condition": "BROWSECOMP-PLUS 与 WIDESEARCH 的 proxy-source ablation",
+      "source_locator": "Proxy-source ablation discussion"
+    }
+  ],
+  "evaluation_context": "arXiv 论文在 BrowseComp-Plus、WideSearch 上比较 TE/AM、立即与一轮延迟 proxy、不同 compaction ratio 和模型规模，并用峰值 KV、任务准确率、平均 turns、serving batch 与模拟吞吐评估。",
+  "limitations": "吞吐来自生产导向 serving simulation，不是实际多节点部署；立即/延迟 proxy 的可用性依赖 Agent 轨迹和等待策略，延迟会改变在线内存占用。Proxy 选择对 benchmark 敏感，AM 的额外优化在在线约束下不总是有益；论文没有直接测量跨区域传输、WAN RTT 或一致性开销。",
+  "project_relevance": "对 Agent Cache 的启发是压缩时机和未来查询预测与压缩算法同等重要：可先用 turn 边界做低成本 signal，再评估延迟一轮压缩是否值得等待。跨域部署前应把 KV 体量下降、延迟窗口、网络传输量和端到端 P95 联合测量。",
+  "primary_source_resolved": true,
+  "quality_score": 94,
+  "source_notes": [
+    "arXiv PDF 已获取，source_level A。",
+    "吞吐和 KV 数字均标注模型、基线及模拟条件。"
+  ],
+  "_provenance": {
+    "task_id": "ecd4c6cdbb350034932574d8",
+    "candidate_id": "9524499e3bad20828454e308",
+    "source_title": "Practical Online KV Cache Compaction for LLM Agents: An Empirical Study",
+    "source_url": "https://arxiv.org/abs/2608.00902v1",
+    "document_id": "28053449393803d7eb50ba84"
+  }
+}

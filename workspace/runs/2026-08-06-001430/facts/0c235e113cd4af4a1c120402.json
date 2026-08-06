@@ -1,0 +1,59 @@
+{
+  "title": "RestoreKV: Recovering Full-Cache Behavior Under Aggressive Query-Agnostic KV Cache Eviction",
+  "event_hint": "RestoreKV在固定KV预算内用少量全缓存条件化restore tokens补回查询无关eviction丢失的信息",
+  "problem": "查询无关的KV eviction可一次压缩并复用于任意未来查询，但在紧预算下质量显著下降；仅改进保留哪些原始KV对无法恢复被丢弃信息。",
+  "mechanism": "RestoreKV在context prefill后让少量restore tokens一次性注意完整KV cache，生成与上下文相关的compact restore cache；基础importance scorer和eviction规则不变，后续query/decoding关闭adapter。它用冻结full-cache模型做参数高效self-distillation，仅训练LoRA适配参数，在相同总KV预算内把保留cache与restore cache组合。",
+  "evidence": [
+    {
+      "claim": "在Qwen3-4B、五种base eviction方法的60个配对且预算匹配设置中，RestoreKV有59个设置改善了结果。",
+      "value": "59/60",
+      "baseline": "对应base eviction without RestoreKV",
+      "condition": "Qwen3-4B；四backbone、四benchmark总体实验。",
+      "source_locator": "PDF p.1 Abstract; chunk 02 lines 110-113"
+    },
+    {
+      "claim": "RULER-4K、Qwen3-4B、5% KV预算下，KVzip准确率由38.2升至73.2。",
+      "value": "38.2 → 73.2",
+      "baseline": "KVzip 38.2",
+      "condition": "KV budget ratio r=0.05；8 restore tokens默认配置。",
+      "source_locator": "PDF Table 3/4; chunk 02 lines 16-22, 81-87"
+    },
+    {
+      "claim": "在KVPress Benchmark上，KVzip+结合RestoreKV在16×压缩下达到RULER准确率86.4，32K context一次性cache构建额外开销低于0.5%。",
+      "value": "86.4; <0.5%",
+      "baseline": "KVzip+ without restoration",
+      "condition": "16× compression；32K context；one-time cache construction overhead。",
+      "source_locator": "PDF p.1 Abstract; chunk 02 lines 64-70"
+    },
+    {
+      "claim": "RestoreKV只优化约0.4%的参数（16.5M），并通过full-context conditioning把KVzip在5%预算从38.2提升至73.2。",
+      "value": "0.4% parameters",
+      "baseline": "frozen full-cache model",
+      "condition": "parameter-efficient self-distillation；same total KV budget。",
+      "source_locator": "PDF Table 2; chunk 02 lines 27-37"
+    },
+    {
+      "claim": "将RestoreKV接到Fast KVzip后，在Qwen3-8B的RULER-4K 16×压缩下准确率由46.7恢复到79.3。",
+      "value": "46.7 → 79.3",
+      "baseline": "Fast KVzip 46.7",
+      "condition": "Qwen3-8B；16× compression。",
+      "source_locator": "Appendix Figure A; chunk 02 lines 310-318, 341-343"
+    }
+  ],
+  "evaluation_context": "实验覆盖四个backbone、四个long-context benchmark和五种base eviction方法，重点报告RULER-4K/KVPress Benchmark、Qwen3-4B/8B，比较相同总KV预算下的准确率与一次性cache构建开销；Restore tokens在prefill后生成，后续查询不再运行adapter。",
+  "limitations": "RestoreKV是离线查询无关压缩/恢复机制，主要指标是长上下文任务准确率，不是WAN传输字节、P95时延或跨域一致性。需要额外restore cache构建和训练checkpoint；收益随evictor、预算、上下文长度和查询分布变化，论文没有证明跨地域传输或多租户共享中的成本/故障边界。",
+  "project_relevance": "对跨域KV传输可借鉴‘共享基础压缩器+少量上下文条件化补偿cache’思路：传输时可评估恢复cache是否比保留更多原始KV更省带宽，并把一次构建开销与未来查询复用次数联立。落地前需测WAN RTT、restore cache字节、命中率、重建开销和质量退化，而不能直接把RULER准确率当传输收益。",
+  "primary_source_resolved": true,
+  "quality_score": 95,
+  "source_notes": [
+    "arXiv原始论文2608.01247v1已抓取并读取实验表格。",
+    "数值保留KV预算、压缩倍数、backbone和baseline条件；未将准确率恢复误写成网络性能。"
+  ],
+  "_provenance": {
+    "task_id": "e5f8f900b784c18f36c7b68e",
+    "candidate_id": "0c235e113cd4af4a1c120402",
+    "source_title": "RestoreKV: Recovering Full-Cache Behavior Under Aggressive Query-Agnostic KV Cache Eviction",
+    "source_url": "https://arxiv.org/abs/2608.01247v1",
+    "document_id": "f1a9a636818b69129eb4cf62"
+  }
+}

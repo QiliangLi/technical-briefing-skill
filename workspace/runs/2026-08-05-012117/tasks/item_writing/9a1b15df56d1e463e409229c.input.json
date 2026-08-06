@@ -1,0 +1,228 @@
+{
+  "event_id": "05e36b8448af7b29750823a5",
+  "topic": {
+    "id": "cross_region",
+    "name": "跨域传输",
+    "description": "KVCache、Agent Cache、工具结果和记忆在跨地域或跨集群环境中的传输、放置与一致性。",
+    "max_items_per_issue": 2,
+    "aihot_priority": "high",
+    "aihot_boost_terms": [
+      "cross-region KV cache",
+      "remote prefill",
+      "agent memory",
+      "distributed cache"
+    ],
+    "current_questions": [
+      "KVCache跨域传输在什么场景值得付出WAN成本",
+      "Agent Cache、工具结果和记忆能否跨域复用",
+      "压缩、增量传输和预取如何降低带宽与时延"
+    ],
+    "valuable_evidence": [
+      "WAN RTT",
+      "传输字节数",
+      "缓存命中率",
+      "P95时延",
+      "压缩比",
+      "一致性开销"
+    ],
+    "directions": [
+      {
+        "id": "kv_cross_region",
+        "name": "KVCache跨域迁移与远程访问",
+        "queries": [
+          "\"cross-region KV cache\"",
+          "\"remote KV cache\" WAN",
+          "\"KV cache migration\" distributed inference"
+        ],
+        "aihot_queries": [
+          "cross-region KV cache",
+          "remote KV cache",
+          "KV cache migration"
+        ],
+        "arxiv_query": "(\"cross-region KV cache\" OR \"remote KV cache\" OR \"KV cache migration\")",
+        "include_terms": [
+          "kv cache",
+          "remote",
+          "cross-region",
+          "migration",
+          "wan"
+        ],
+        "exclude_terms": [
+          "cpu cache"
+        ]
+      },
+      {
+        "id": "remote_prefill",
+        "name": "Prefill/Decode跨域解耦",
+        "queries": [
+          "\"remote prefill\" KV cache handoff",
+          "\"prefill decode disaggregation\" WAN",
+          "\"KV cache handoff\" network placement"
+        ],
+        "aihot_queries": [
+          "remote prefill",
+          "KV cache handoff",
+          "disaggregated inference"
+        ],
+        "arxiv_query": "((\"remote prefill\" OR \"KV cache handoff\") AND (network OR WAN OR placement))",
+        "include_terms": [
+          "prefill",
+          "decode",
+          "kv cache",
+          "handoff",
+          "remote"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "agent_cache",
+        "name": "Agent Cache、工具结果与记忆共享",
+        "queries": [
+          "\"distributed agent memory\"",
+          "\"cross-region agent cache\"",
+          "\"tool result sharing\" agent distributed"
+        ],
+        "aihot_queries": [
+          "distributed agent memory",
+          "agent cache",
+          "tool result sharing"
+        ],
+        "arxiv_query": "((agent AND (memory OR cache OR \"tool result\")) AND distributed)",
+        "include_terms": [
+          "agent",
+          "cache",
+          "memory",
+          "tool result",
+          "distributed"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "transfer_placement",
+        "name": "压缩、增量传输、预取与放置",
+        "queries": [
+          "KV cache compression transfer prefetch placement",
+          "distributed cache incremental transfer WAN"
+        ],
+        "aihot_queries": [
+          "KV cache compression",
+          "cache prefetch placement",
+          "incremental transfer"
+        ],
+        "arxiv_query": "((\"KV cache\" OR \"distributed cache\") AND (compression OR prefetch OR placement OR \"incremental transfer\"))",
+        "include_terms": [
+          "cache",
+          "compression",
+          "prefetch",
+          "placement",
+          "transfer"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "consistency_isolation",
+        "name": "跨域一致性、安全与多租户隔离",
+        "queries": [
+          "cross-region cache consistency multi-tenant isolation",
+          "distributed agent memory security consistency"
+        ],
+        "aihot_queries": [
+          "agent memory security",
+          "cross-region cache consistency"
+        ],
+        "arxiv_query": "((\"cross-region cache\" OR \"distributed agent memory\") AND (consistency OR security OR multi-tenant))",
+        "include_terms": [
+          "cross-region",
+          "distributed",
+          "consistency",
+          "security",
+          "multi-tenant"
+        ],
+        "exclude_terms": []
+      }
+    ]
+  },
+  "direction": {
+    "id": "transfer_placement",
+    "name": "压缩、增量传输、预取与放置",
+    "queries": [
+      "KV cache compression transfer prefetch placement",
+      "distributed cache incremental transfer WAN"
+    ],
+    "aihot_queries": [
+      "KV cache compression",
+      "cache prefetch placement",
+      "incremental transfer"
+    ],
+    "arxiv_query": "((\"KV cache\" OR \"distributed cache\") AND (compression OR prefetch OR placement OR \"incremental transfer\"))",
+    "include_terms": [
+      "cache",
+      "compression",
+      "prefetch",
+      "placement",
+      "transfer"
+    ],
+    "exclude_terms": []
+  },
+  "score": 80.4,
+  "facts": [
+    {
+      "title": "DeltaServe: Host-Agnostic Co-Serving of Inference and Fine-Tuning for LLMs",
+      "event_hint": "DeltaServe/推理与LoRA微调主机无关共址serving",
+      "problem": "LLM serving按峰值负载配置以满足严格延迟目标，流量低于峰值时大量GPU算力闲置；作者从Nutanix生产trace观察到平均负载约60%(约40% GPU未用)，且该模式持续六个月。现有prefill/decode分离或MIG/MPS等共享原语粒度过粗，无法跟踪亚秒级推理波动而不违反延迟目标。",
+      "mechanism": "DeltaServe将闲置推理容量转为LoRA微调吞吐同时保推理SLO：通过仅需multi-LoRA batching支持的紧凑hook接口与现有推理引擎集成；利用推理prefill与LoRA微调前向的共享执行结构(共享冻结权重/kernel/内存)；用SLO-aware调度器仅在推理有足够headroom时准入并执行微调，调度由离线标定、在线refine的CUDA-graph-aware延迟模型驱动。",
+      "evidence": [
+        {
+          "claim": "在Nutanix生产trace上，DeltaServe on vLLM比LLMStation高2.9×微调吞吐，同时100%推理SLO合规(LLMStation为85%)",
+          "value": "2.9x / 100% vs 85%",
+          "baseline": "LLMStation",
+          "condition": "Nutanix production trace, vLLM",
+          "source_locator": "Abstract (PDF Page 1)"
+        },
+        {
+          "claim": "比vLLM+torchtune baseline高39%微调吞吐，无额外硬件且保SLO",
+          "value": "+39%",
+          "baseline": "vLLM+torchtune",
+          "condition": "no additional hardware, full SLO",
+          "source_locator": "Abstract (PDF Page 1)"
+        },
+        {
+          "claim": "平均负载约为已配置容量的60.6%(约40% GPU未用)，模式持续六个月trace",
+          "value": "~60%",
+          "baseline": "provisioned capacity",
+          "condition": "Nutanix co-pilot-style coding trace",
+          "source_locator": "Figure 1, Introduction (PDF Page 1)"
+        },
+        {
+          "claim": "通过紧凑hook接口集成vLLM、SGLang与S-LoRA，仅需multi-LoRA batching支持",
+          "value": "vLLM/SGLang/S-LoRA",
+          "baseline": null,
+          "condition": "multi-LoRA batching hook",
+          "source_locator": "Abstract (PDF Page 1)"
+        }
+      ],
+      "evaluation_context": "Nutanix生产推理trace(co-pilot风格coding服务)；集成vLLM、SGLang、S-LoRA；对比LLMStation与vLLM+torchtune；指标为微调吞吐与推理SLO合规率；延迟模型CUDA-graph感知、离线标定在线refine。",
+      "limitations": "共址前提是推理与LoRA微调可共享冻结权重/kernel/内存，主要适配PEFT/LoRA而非全参数训练；SLO保证依赖延迟模型标定质量与trace代表性；吞吐数字来自特定生产trace，跨workload/硬件泛化未充分评估。",
+      "project_relevance": "归入AI Infra横向/serving：将推理闲置算力转为微调吞吐且保SLO，直接提升GPU利用率与端到端效率/成本；与“训练+推理共址”工程方向相关，对资源调度与容量利用有参考价值。",
+      "primary_source_resolved": true,
+      "quality_score": 82,
+      "source_notes": [
+        "一手arXiv论文(PDF转MD)，定量结果在摘要与Figure 1",
+        "对比baseline为LLMStation与vLLM+torchtune，trace为Nutanix生产数据"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "title": "DART: Decoded Attention over Recurrent States for Efficient Long-Context Sequence Modeling",
+      "url": "https://arxiv.org/abs/2608.02032v1",
+      "source_level": "A",
+      "discovery_source": "arXiv",
+      "published_at": "2026-08-03T10:30:27Z"
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  }
+}

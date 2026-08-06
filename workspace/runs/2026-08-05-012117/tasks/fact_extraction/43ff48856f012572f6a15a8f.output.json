@@ -1,0 +1,52 @@
+{
+  "title": "DART: Decoded Attention over Recurrent States for Efficient Long-Context Sequence Modeling",
+  "event_hint": "DART/在Mamba-2循环状态上做state-memory attention的长上下文模型",
+  "problem": "循环模型(SSM/线性注意力)用紧凑状态压缩历史，在长程联想召回与检索上弱于注意力；现有混合架构通常把注意力与循环作为分离层，未探索同一记忆表示能否同时支持循环压缩与注意力式检索。",
+  "mechanism": "基于Mamba-2的状态空间对偶(SSD)视角——SSM状态即压缩KV cache，Mamba-2从中解码token条件value但不解码key。DART保留chunk scan产生的chunk state contribution作为chunk state memory，从中同时解码token条件的key和value，执行state-memory attention(SMA)，再以门控残差(初始化为零)与原生Mamba-2输出融合。SMA复用Mamba-2 chunked scan并用FlashAttention式kernel实现；共享SSM读向量C_t作为SMA的value侧读向量。",
+  "evidence": [
+    {
+      "claim": "推理cache相比匹配的token级注意力节省75%(cache比例N/(2S))",
+      "value": "75%",
+      "baseline": "matched token-level attention KV cache",
+      "condition": "chunk size S=256, state size N=128",
+      "source_locator": "Abstract; Section 4 Eq.(14) (PDF Page 5)"
+    },
+    {
+      "claim": "MQAR上N=64时DART在所有测试序列长度与宽度下接近完美精度，N=16时甚至超过N=64的Mamba-2",
+      "value": "near-perfect",
+      "baseline": "Mamba-2",
+      "condition": "L∈{256,512,1024}, d_model∈{32,64,128}",
+      "source_locator": "Section 5.1, Figure 4 (PDF Page 7)"
+    },
+    {
+      "claim": "Pile 100B tokens预训练：DART保持困惑度并提升验证准确率与零样本下游均值(780M: 46.20→46.85)",
+      "value": "46.85",
+      "baseline": "Mamba-2 780M avg 46.20",
+      "condition": "100B tokens, S=256",
+      "source_locator": "Table 1 & Table 2 (PDF Page 8)"
+    },
+    {
+      "claim": "kernel forward时间低于FlashAttention-2，持久推理cache在24层24头模型上测量低74%",
+      "value": "-37.5% / -74.0%",
+      "baseline": "FlashAttention-2",
+      "condition": "A800 80GB, batch 1, 24 heads, head dim 64, N=128, S=256",
+      "source_locator": "Section 5.3, Figure 5 (PDF Page 11)"
+    },
+    {
+      "claim": "SMA分支在受测规模仅增加不到3%参数(780M→795M)",
+      "value": "<3%",
+      "baseline": "Mamba-2 backbone",
+      "condition": "130M/370M/780M scales",
+      "source_locator": "Section 5.2 (PDF Page 8)"
+    }
+  ],
+  "evaluation_context": "MQAR合成召回、Pile 100B tokens预训练(130M/370M/780M及对应DART规模)、零样本下游、NIAH与真实抽取(SWDE/FDA/SQuAD/TriviaQA等)、kernel效率(A800 80GB，batch 1)；对比Mamba-2与Transformer++/Pythia(约100B tokens公开参考)。",
+  "limitations": "最难的4096-token NIAH-Single-2/3对两模型仍困难；SMA增益任务相关，并非解决所有合成长上下文检索变体；仅在中小规模(≤795M)验证，未在真正大规模模型上验证；共享C_t设计在受限状态下必要(独立读向量无法学习召回)。",
+  "project_relevance": "与跨域传输的压缩/放置方向相关：以循环状态的固定小cache替代随长度线性增长的token级KV，显著降低长上下文推理的cache体积与跨域传输成本；SMA在固定紧凑状态上提供类注意力检索，启发“在压缩cache上做检索”的设计思路。",
+  "primary_source_resolved": true,
+  "quality_score": 82,
+  "source_notes": [
+    "一手arXiv论文全文(PDF转MD)，含Tables 1–6、Figures 4/5定量结果",
+    "效率为kernel forward/cache测量，端到端大规模部署性能未评估"
+  ]
+}

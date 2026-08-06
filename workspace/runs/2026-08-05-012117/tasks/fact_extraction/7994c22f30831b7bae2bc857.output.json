@@ -1,0 +1,48 @@
+{
+  "title": "LightRot 轻量旋转量化方案与专用加速器，实现 4 比特 LLM 推理 27.4 TOPS/W",
+  "event_hint": "LightRot/低比特LLM推理旋转量化加速器/INT4能效27.4 TOPS/W",
+  "problem": "低比特 LLM 推理中，旋转量化（rotation-based quantization）虽能压制输入激活（IA）与 KV cache 的离群值、提升可量化性，但在线旋转必须在量化前以浮点运算完成，FP 单元的功耗与面积分别是 INT4 MAC 的 25.9 倍和 5.6 倍，在 LLaMA2-7B 层配置中旋转带来超过 35.7% 的能耗开销；且非 2 的幂维度下纯矩阵乘法（MM）旋转可占 MAC 工作量的 49.6%，使专用加速器的旋转单元成为能效瓶颈。",
+  "mechanism": "LightRot 在 QuaRot 基础上引入两个算法组件。Grouped Local Rotation（GLR）把旋转切成更小的分组，每组 g=128 通道施加 g×g Hadamard 旋转，使 FP-Add 运算量降到 n×d²ffn/G，并允许 g 取 2 的幂以支持纯快速 Hadamard 变换（FHT）实现。Outlier Direction Aligning（ODA）利用 Hadamard 矩阵全 1 行特性，将每组最大离群值对齐到全 1 行，避免双峰分布并缩小量化范围（需非对称量化，零点项可离线预算）。配套硬件用两级层次化 FHT（16 路 + 8 路）与可转置寄存器堆（TRF），相对 128 路 FHT 面积降 12.55 倍，相对无 TRF 的 16 路 FHT 能耗降 1.82 倍。",
+  "evidence": [
+    {
+      "claim": "28nm CMOS 加速器 4 比特推理峰值能效",
+      "value": "27.4 TOPS/W",
+      "baseline": "此前 SOTA 设计 1.91–22.9 TOPS/W",
+      "condition": "28nm 工艺, 250MHz, 0.9V, 峰值 1.64 TOPS, 面积 4.86mm², 1430KB SRAM",
+      "source_locator": "PDF Page 1 Abstract 及 Page 10-11 Implementation Result, Fig.13(a)"
+    },
+    {
+      "claim": "GLR 相对 MM 旋转与 FHT 旋转的运算和能耗下降",
+      "value": "MM 旋转运算降 71–94 倍、能耗降 96–127 倍；FHT 旋转运算降 9–36 倍、能耗降 12–49 倍",
+      "source_locator": "PDF Page 5, Section III.A, Fig.5"
+    },
+    {
+      "claim": "ODA 在 LLaMA2-7B top 5% 离群组的量化范围缩减",
+      "value": "平均 3.87 倍（最小 1.97 倍，最大 28.1 倍）",
+      "condition": "WikiText-2 基准, top 5% 离群组",
+      "source_locator": "PDF Page 5-6, Fig.8"
+    },
+    {
+      "claim": "WikiText-2 困惑度（Rot+GQ+GLR+ODA, group 128, 全 INT4 IA/W/KV）",
+      "value": "LLaMA2-7B 5.73, LLaMA2-13B 5.08, LLaMA3-8B 6.98",
+      "baseline": "FP16 分别 5.47/4.88/6.14；SpinQuant(group128) LLaMA3-8B 7.39；QuaRot(group128) LLaMA2 5.93/5.26",
+      "source_locator": "PDF Page 6, Table I"
+    },
+    {
+      "claim": "LLaMA3-8B 单块能耗经 GLR+ODA+层次 FHT 优化后",
+      "value": "4.0 mJ/block",
+      "baseline": "8b w/o Rot 15.7 mJ；朴素旋转 31.3 mJ（相对 8b baseline 改善 3.9 倍）",
+      "condition": "Prefilling, Input Token Length=128",
+      "source_locator": "PDF Page 10-11, Fig.13(b)"
+    }
+  ],
+  "evaluation_context": "评测在 LLaMA2-7B/13B 与 LLaMA3-8B 上进行：WikiText-2 困惑度（全 INT4 IA/W/KV）、MT-Bench LLM-as-Judge 胜负率（LLaMA3-8B-instruct）以及 28nm 芯片实现指标；GLR 组大小 g=128，与组量化组大小对齐。",
+  "limitations": "GLR 单独使用因组间尺度不一致会掉精度，必须与同组大小的 Group Quantization 联用；ODA 引入非对称量化与零点处理开销（虽用较大组 128 缓解）；硬件为 28nm 实现/仿真，未给出真实流片芯片端到端服务时延或集群部署数据；压缩只作用于全注意力层，未涵盖混合注意力架构的滑动窗口层。",
+  "project_relevance": "落在「推理服务、运行时与编译优化」方向，提供 INT4 推理专用加速器的明确能效数字（27.4 TOPS/W）与机制边界（GLR 降旋转运算、ODA 处理极端离群值、层次 FHT 降硬件成本），可作为低比特推理硬件评测的一手参照；属专用 NPU 设计而非通用 GPU 部署，对关注能耗的 AI Infra 横向观察有参考价值。",
+  "primary_source_resolved": true,
+  "quality_score": 88,
+  "source_notes": [
+    "arXiv:2607.27704v1 全文已抓取（IEEE JETCAS 2025 录用稿），算法、硬件实现与对比表数据均可定位",
+    "能耗与 TOPS/W 为论文自报，未经第三方独立复测"
+  ]
+}

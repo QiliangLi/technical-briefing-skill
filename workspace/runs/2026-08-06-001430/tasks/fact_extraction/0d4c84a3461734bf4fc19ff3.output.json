@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "0d4c84a3461734bf4fc19ff3",
+    "type": "fact_extraction",
+    "entity_id": "2de5d66a8d2775c1b61dfbf9",
+    "input_digest": "43f490767b4e87e72c1a93ff70c09fef"
+  },
+  "title": "Fewer Paths, Better Performance: Understanding the ZCube Topology through Braess's Paradox",
+  "event_hint": "ZCube deterministic topology avoids ECMP structural congestion for LLM traffic",
+  "problem": "Clos/Fat-Tree multipath fabrics use static ECMP hashing suited to many small uncorrelated flows, but LLM AllReduce and disaggregated Prefill-to-Decode KV transfers are few, synchronized, and topology-correlated. Hashing can create persistent hotspots that rehashing only moves rather than removes.",
+  "mechanism": "ZCube removes the Spine layer and routes every GPU pair over one deterministic path formed by orthogonal odd/modular and even/contiguous partitions. With no competing steady-state routes it is immune to Braess's paradox; its orthogonal dual partition spreads arbitrary traffic matrices across core links, yielding corollaries for AllReduce and KV-cache transfers. The design trades automatic hash failover for control-plane recovery while relying on upper-layer retries and KV replication.",
+  "evidence": [
+    {
+      "claim": "On a 1,000-GPU GLM-5.1 coding-inference cluster, migrating from rail-optimized Fat-Tree (ROFT) to ZCube reduced switch/optics network cost by 33%, increased GPU inference throughput by 15%, and reduced P99 TTFT by 40.6%.",
+      "value": "-33% cost; +15% throughput; -40.6% P99 TTFT",
+      "baseline": "ROFT",
+      "condition": "Same GPUs, software stack, and serving configuration; topology was the changed variable",
+      "source_locator": "PDF pages 2 and 4, Table 2 and Section 3.2"
+    },
+    {
+      "claim": "Static hashing has unbounded worst-case load imbalance: with m equal-cost paths, two flows can collide on one path while m−1 remain idle; for m=128 this is a 128x max-to-mean penalty.",
+      "value": "128x example penalty",
+      "baseline": "Balanced path load",
+      "condition": "Static congestion-oblivious hashing; Fat-Tree with 128 spine switches",
+      "source_locator": "PDF page 5, Proposition 1"
+    },
+    {
+      "claim": "Greedy routing with affine latency functions is guaranteed within 4/3 of optimal, while static hashing has no comparable guarantee and exceeds 4/3 whenever a collision occurs.",
+      "value": "4/3 bound",
+      "baseline": "Social optimum",
+      "condition": "Affine link latencies; responsive selfish routing versus static hashing",
+      "source_locator": "PDF pages 3 and 5, Braess theory and Proposition 1"
+    },
+    {
+      "claim": "ZCube has exactly one steady-state route per GPU pair, path diversity index 1, no Braess subgraph, and a Price of Anarchy identically equal to 1 under its routing.",
+      "value": "PDI=1; PoA=1",
+      "baseline": "Fat-Tree PDI=m with multiple Spine paths",
+      "condition": "Deterministic ZCube routing",
+      "source_locator": "PDF pages 3 and 6, ZCube topology and Immunity Theorem"
+    },
+    {
+      "claim": "ZCube trades microsecond hash recovery for millisecond control-plane recovery; upper-layer request retries and KV-cache replication are cited as making the trade favorable.",
+      "value": "microseconds vs milliseconds",
+      "baseline": "Automatic multipath/hash failover",
+      "condition": "Failure handling in LLM serving",
+      "source_locator": "PDF pages 1-2, Abstract and analysis overview"
+    }
+  ],
+  "evaluation_context": "The paper combines production measurements from a stable several-week migration of a 1,000-GPU GLM-5.1 cluster with simulations of canonical LLM traffic and topology proofs. The production comparison changed only the fabric from ROFT to ZCube; no GPU, software, or serving configuration changed.",
+  "limitations": "The production evidence is one cluster, model, workload, and topology migration, so it does not establish general superiority over all multipath fabrics or traffic patterns. ZCube's deterministic steady-state routes reduce automatic failover and require new cabling, addressing, configuration generation, and programmatic wiring validation. The theorem assumes the stated orthogonal partition and traffic/routing model; gains beyond the reported workload, especially under arbitrary failures or non-LLM traffic, remain uncertain (inference).",
+  "project_relevance": "For TPN, the paper argues that topology and routing must match structured KV-transfer matrices; adding paths without congestion feedback can worsen persistent hotspots. Useful acceptance metrics are P99 TTFT, GPU throughput, network cost, hotspot persistence, rehash invariance, and recovery latency, while separately checking the operational cost of deterministic topology and upper-layer resilience (inference).",
+  "primary_source_resolved": true,
+  "quality_score": 94,
+  "source_notes": [
+    "Facts extracted from the fetched arXiv PDF chunk; title copied exactly from input metadata.",
+    "Production measurements and theoretical claims are separated; mechanism beyond measured deltas is labelled as analysis/inference where appropriate."
+  ]
+}

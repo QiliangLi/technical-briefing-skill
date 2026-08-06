@@ -1,0 +1,120 @@
+{
+  "_task": {
+    "id": "6128ab7f49b8c443fc00a42f",
+    "type": "fact_check",
+    "entity_id": "ec2a77574c89534a03140d2b",
+    "input_digest": "ab32502d8902a63d6bf336cdac825d33"
+  },
+  "brief_item": {
+    "title": "DART用分块状态记忆压缩长上下文缓存",
+    "type": "论文",
+    "topic_name": "跨域传输",
+    "direction_name": "压缩、增量传输、预取与放置",
+    "published_at": "2026-08-03T10:30:27Z",
+    "importance": "重点关注",
+    "core_conclusion": "DART在Mamba-2的chunk state memory上解码key/value做块级检索，缓存按chunk而非token增长。S=256、N=128时，cache为匹配token-level KV的25%，节省75%。",
+    "mechanism": "每块状态贡献保留为memory，state-memory attention检索后经gated residual加回Mamba-2输出。训练复用chunked SSD scan。",
+    "result": "MQAR中N=64接近完美召回。795M模型S=256时，SWDE得分56.5，高于Mamba-2的39.9；FDA为28.9，高于17.2。",
+    "boundary": "DART只在Mamba-2和有限规模验证，S、N与SMA会改变召回和计算权衡。未测WAN传输和跨域一致性，缓存节省不是网络实测。",
+    "project_relevance": "可将recurrent state作为chunk级Agent Cache传输单位，按需解码key/value。迁移前测块大小、召回率、重构计算、WAN字节和P95，并保留token级回退。",
+    "keywords": [
+      "DART",
+      "Mamba-2",
+      "state memory",
+      "长上下文",
+      "KV压缩"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2608.02032v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-08-03T10:30:27Z"
+      }
+    ],
+    "discovered_via": "arXiv",
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 80.7,
+    "_provenance": {
+      "task_id": "388014a109a268bba820110f",
+      "event_id": "05e36b8448af7b29750823a5",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.02032v1"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "title": "DART: Decoded Attention over Recurrent States for Efficient Long-Context Sequence Modeling",
+      "event_hint": "DART state-memory attention augmenting Mamba-2 recurrent compression",
+      "problem": "Mamba-2用紧凑 recurrent state压缩历史并降低KV缓存流量，但原生状态只解码token-conditioned values、不解码keys，导致关联召回和长上下文检索弱于token级attention；匹配attention baseline又需要随长度增长的KV缓存。",
+      "mechanism": "DART保留Mamba-2 chunked scan产生的每块状态贡献作为chunk state memory，从同一记忆解码token-conditioned key/value，在state-memory attention中对块级KV做检索，再通过gated residual加回原生Mamba-2输出。训练复用chunked SSD scan，SMA用FlashAttention风格计算；推理缓存按chunk数量存储状态，而不是每个token的KV。",
+      "evidence": [
+        {
+          "claim": "chunk size S=256、state size N=128时，DART的chunk state-memory cache为匹配token-level attention KV cache的25%，节省75%的长度相关缓存。",
+          "value": "25% cache ratio; 75% savings",
+          "baseline": "Matched token-level attention baseline O(2LP) per head",
+          "condition": "Inference cache；每head；chunked state memory",
+          "source_locator": "PDF p.4, Section 3 memory analysis; PDF p.6 cache ratio"
+        },
+        {
+          "claim": "在MQAR关联召回实验中，DART在相同model width和SSD state size下持续优于Mamba-2；N=64时在测试长度和宽度上接近完美准确率，N=16也高于Mamba-2 N=64的匹配配置。",
+          "value": "Near-perfect MQAR accuracy at N=64",
+          "baseline": "Mamba-2 with matched width/state size",
+          "condition": "Synthetic multi-query associative recall；chunk size S=16；N∈{16,64}",
+          "source_locator": "PDF p.7, MQAR evaluation paragraph and Figure 4"
+        },
+        {
+          "claim": "100B-token Pile预训练后，DART仅增加不到3%参数；130M/370M/780M模型的Pile perplexity分别为12.25/10.10/9.20，对应Mamba-2为12.36/10.18/9.19。",
+          "value": "<3% parameter increase; PPL 12.25/10.10/9.20",
+          "baseline": "Mamba-2 PPL 12.36/10.18/9.19",
+          "condition": "Pile validation；100B-token pretraining；DART sizes 133M/380M/795M",
+          "source_locator": "PDF p.8, Table 1"
+        },
+        {
+          "claim": "真实提取任务上，DART显著提升SWDE和FDA；例如795M模型S=256时SWDE 56.5、FDA 28.9，而Mamba-2分别39.9和17.2；NIAH多种长度也大幅改善。",
+          "value": "SWDE 56.5 vs 39.9; FDA 28.9 vs 17.2",
+          "baseline": "Mamba-2 780M",
+          "condition": "Pile预训练模型；real-world retrieval and NIAH；S=256",
+          "source_locator": "PDF p.8-9, Table 3 and retrieval-capacity discussion"
+        },
+        {
+          "claim": "作者指出DART在训练和推理中增加SMA计算，缓存比例随N/(2S)缩小；评估使用A800 80GB、batch 1并强调需在匹配kernel条件下比较运行时。",
+          "value": null,
+          "baseline": "Mamba-2 native recurrent state",
+          "condition": "A800 80GB；batch size 1；state size 128；head dimension 64",
+          "source_locator": "PDF p.9-10 and Appendix D efficiency setup"
+        }
+      ],
+      "evaluation_context": "DART在MQAR、NIAH、真实提取任务、Pile预训练和zero-shot下游任务评估，模型规模130M/370M/780M，主要chunk size S=256，另测S=64/32。效率分析比较Mamba-2与匹配attention baseline的状态缓存和SMA计算，使用A800 80GB GPU、batch 1。",
+      "limitations": "DART只在Mamba-2 SSD结构和有限模型规模上验证，chunk size、state size与SMA分支会改变检索/计算权衡；NIAH最难4096-token设置对两者仍具挑战。论文未提供长输出、分布式节点、WAN传输或跨域一致性数据，75%缓存节省是本地模型架构级缓存而非跨域传输实测。",
+      "project_relevance": "DART说明可把 recurrent state作为压缩的分块KV表示，并在需要时解码token-conditioned key/value做检索；这可启发跨域Agent Cache采用chunk级状态传输而非逐tokenKV。迁移前应测块大小、召回率、重构计算、WAN字节与P95，并为需要精确token级证据的任务保留attention回退。",
+      "primary_source_resolved": true,
+      "quality_score": 94,
+      "source_notes": [
+        "arXiv PDF已抓取且标题与输入一致。",
+        "缓存比例、召回、语言建模和检索数值均带模型/实验条件及定位。"
+      ],
+      "_provenance": {
+        "task_id": "f4c33b8f0621c3591ad23c22",
+        "candidate_id": "1bc948c7f482a919aca05d0d",
+        "source_title": "DART: Decoded Attention over Recurrent States for Efficient Long-Context Sequence Modeling",
+        "source_url": "https://arxiv.org/abs/2608.02032v1",
+        "document_id": "a8b2df7dd718f0bfa6514bf6"
+      }
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

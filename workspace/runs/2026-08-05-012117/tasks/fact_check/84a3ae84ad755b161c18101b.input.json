@@ -1,0 +1,100 @@
+{
+  "brief_item": {
+    "title": "Meta GEM 推荐模型训练效率翻倍至 20–25% MFU",
+    "type": "工程实践",
+    "topic_name": "AI Infra横向动态",
+    "direction_name": "GPU集群、分布式训练与工程可靠性",
+    "published_at": "2026-08-04",
+    "importance": "值得关注",
+    "core_conclusion": "Meta 把广告推荐基础模型 GEM 的大规模训练端到端效率提升到 20–25% MFU，并在一年内将训练算力扩大 4 倍。它靠算力效率与扩展效率协同设计，让变长稀疏负载能在数千卡上稳定训练。",
+    "mechanism": "算力侧自建变长注意力内核消除 padding 浪费、统一加速类注意力模块、把长序列注意力降至近线性，并用 MXFP8 低精度不掉精度提速；扩展侧用 5D 并行匹配网络拓扑，并把通信的显存占用从 24 降到 1。",
+    "result": "端到端 MFU 翻倍至 20–25%，一年内算力扩 4 倍并跑在数千张最新代 GPU 上；变长注意力内核较上代提速 40%–140%，通信优化回收约 5% 的端到端吞吐。",
+    "boundary": "为厂商一手工程自述、无独立论文或第三方复测，GPU 型号与规模未完整披露，数字受其功率与拓扑约束未必可外推。",
+    "project_relevance": "判断：其变长输入内核、免通信调度与稀疏参数近零开销并行对大规模训练工程有直接参考价值，应核实能否迁移到我方集群拓扑与精度敏感负载，并评估通信优化在我方互联拓扑下的实际收益。",
+    "keywords": [
+      "MFU",
+      "Jagged Flash Attention",
+      "NCCLX",
+      "混合并行",
+      "推荐模型训练"
+    ],
+    "sources": [
+      {
+        "publisher": "Meta Engineering",
+        "url": "https://engineering.fb.com",
+        "source_level": "B",
+        "primary": true,
+        "published_at": "2026-08-04"
+      }
+    ],
+    "discovered_via": null,
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 76
+  },
+  "facts": [
+    {
+      "title": "Meta GEM 训练：把广告推荐基础模型训练效率翻倍到 20–25% MFU",
+      "event_hint": "Meta GEM 训练——推荐基础模型 LLM 规模训练（20–25% MFU、12 个月 FLOPs 扩 4×）",
+      "problem": "Meta 的生成式广告推荐模型 GEM 是混合架构（万亿级稀疏嵌入 + 数十亿稠密参数），要在数千卡上做 LLM 规模训练。但面向 LLM 优化的基础设施无法直接迁移：推荐负载有变长 jagged 输入（padding 浪费最多 50% 算力）、非对称注意力形状、大量访存受限算子，且 CTR/CVR 对数值精度高度敏感，朴素低精度训练会掉质量。",
+      "mechanism": "Meta 通过算力效率与扩展效率两条线协同设计。算力侧：自建推荐内核库——Jagged Flash Attention 直接处理变长 jagged 张量消除 padding；GDPA 统一并加速非 softmax 的类注意力模块；BlockAttention 把自注意力从全量→滑窗→块对齐降至近线性；MXFP8 attention+MLP 把低精度 Tensor Core 吞吐转为端到端提速且不掉精度。扩展侧：与 Meta 三层网络拓扑匹配的 5D 并行（稠密 2D FSDP+EP、稀疏 Fully Sharded 2D MP）、SM-free 通信（NCCLX 把 all-gather 的 SM 占用从 24 降到 1）、自动激活检查点+激活量化、以及面向 jagged 序列的 Base Batch Shuffling 负载均衡。",
+      "evidence": [
+        {
+          "claim": "结果：GEM 端到端训练效率翻倍到 20–25% MFU，12 个月内训练 FLOPs 扩大 4×，运行在数千张最新代 GPU 上",
+          "value": "20–25% MFU / 4× FLOPs",
+          "baseline": "12 个月前的 GEM 训练",
+          "condition": "数千卡 LLM 规模训练",
+          "source_locator": "876e6564ba25ba27c0630e7b.md 首页要点与结尾结果段"
+        },
+        {
+          "claim": "JFA v4（TLX）相对 v2 提速 40%–140% TFLOPS，带来 18.5% 相对 local MFU 与 12% QPS 提升；GDPA 相对基线 2× 前向（1145 BF16 TFLOPs、约 97% Tensor Core 利用）、1.6× 反向，短 K/V 下相对 FA4 最高 3.5× 前向",
+          "value": "40%–140% / 2× / 3.5×",
+          "baseline": "JFA v2 / 基线 / FA4",
+          "condition": "生产 jagged 分布（sparsity 0.5）/ 短 K/V 生产设置",
+          "source_locator": "876e6564ba25ba27c0630e7b.md JFA 与 GDPA 小节"
+        },
+        {
+          "claim": "BlockAttention：滑窗注意力把长序列自注意力时延最多降 68%（NE 中性），块对齐+TLX+fused RoPE 使自注意力层 MFU 较 Triton 块注意力 +30.6%、较 SWA 基线约 +44%",
+          "value": "68% 时延降 / +30.6% / +44% MFU",
+          "baseline": "全量自注意力 / Triton 块注意力 / SWA",
+          "condition": "GEM 自注意力层",
+          "source_locator": "876e6564ba25ba27c0630e7b.md BlockAttention 小节"
+        },
+        {
+          "claim": "MXFP8：GEM 代表形状上前向 kernel 提速 >1.3×、反向 >1.5×；并采用 pre-all-gather 分片量化与量化 FSDP 通信摊销开销",
+          "value": ">1.3× 前向 / >1.5× 反向",
+          "baseline": "基线精度 kernel",
+          "condition": "Meta 内部功率受限最新代 GPU、GEM 代表形状",
+          "source_locator": "876e6564ba25ba27c0630e7b.md 低精度 Flash Attention 小节"
+        },
+        {
+          "claim": "扩展效率：NCCLX 把 all-gather 的 SM 占用从 24 降到 1（约回收 23 SM、约 5% 端到端 QPS）；稀疏并行演进到 Fully Sharded 2D MP 近零内存开销；Base Batch Shuffling 带来 4% 效率（QPS 与峰值内存各改善）",
+          "value": "SM 24→1 / 约 5% QPS / 4% BBS",
+          "baseline": "标准 NCCL / 1D/2D 模型并行 / 无均衡",
+          "condition": "全训练规模",
+          "source_locator": "876e6564ba25ba27c0630e7b.md 网络/稀疏并行/负载均衡小节"
+        }
+      ],
+      "evaluation_context": "来源为 Meta 官方 Engineering 博客（B 级，AI HOT 发现源）。GEM 为 Instagram/Facebook 广告推荐背后的基础模型，训练在数千张最新代 GPU 上进行。E2E MFU 分解为 local MFU（单卡算力效率）× scaling ratio（扩展效率），数字为作者自报的生产结果。",
+      "limitations": "为官方工程博客、无独立论文或第三方复测，具体 GPU 型号/规模/能耗未完整披露；MFU 与 kernel 提升为生产环境自报，受其功率与拓扑约束，未必可外推到其他模型/集群；部分数字（如 GDPA 相对 FA4）限定于短 K/V 生产设置。",
+      "project_relevance": "强相关 GPU 集群与分布式训练：给出了推荐/混合架构模型在 LLM 规模训练中的内核-精度-并行-网络-内存协同设计范例，特别是 jagged 输入内核、SM-free 通信与稀疏参数近零开销并行，对大规模训练工程可靠性与扩展效率有直接参考价值。",
+      "primary_source_resolved": true,
+      "quality_score": 80,
+      "source_notes": [
+        "来源为 Meta 官方 Engineering 博客（engineering.fb.com），全文已读取，B 级但属厂商一手工程自述，机制与数字具体。",
+        "为 AI HOT 发现源（discovery_only），数字未经第三方独立验证，已在 limitations 与 quality_score 中体现。"
+      ]
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

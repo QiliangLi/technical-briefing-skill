@@ -1,0 +1,95 @@
+{
+  "brief_item": {
+    "title": "OwlPath：用多跳结构查询减少代码Agent反复探索",
+    "type": "论文（预印本）",
+    "topic_name": "Agent语义加速",
+    "direction_name": "上下文定位、构建与裁剪",
+    "published_at": "2026-07-28T08:42:57Z",
+    "importance": "值得关注",
+    "core_conclusion": "grep、Embedding和一跳代码图难以直接回答传递调用、继承链和接口实现，Agent往往要多轮拼接关系。OwlPath把代码图投影为可查询本体，用按需多跳闭包和小型知识地图缩短探索路径。",
+    "mechanism": "系统把CodeGraph中的符号及extends、implements、calls、imports等边映射为OWL2，用SPARQL property path查询传递闭包并缓存结果；约3KB的知识地图从目录、符号密度和Issue关键词生成，只在Agent首次主动搜索时提供，后续闭包也按需展开。",
+    "result": "SWE-bench Pro实验中，相比CodeGraph基线，混合方案平均少28.8% Token、少16.7% API调用，墙钟时间从1071秒降至648秒；严格补丁应用率为68.4%对66.7%。67个离线实例上Recall为0.464对0.226。",
+    "boundary": "端到端完整配对仅18个实例，分母并不完全一致；140万符号仓库一次构建需4.7分钟，闭包只覆盖有限关系且不能捕获跨语言边。持续编辑下的增量更新、缓存一致性和多租户成本尚未评估。",
+    "project_relevance": "项目判断：CodeGraph可增加按需的多跳调用/继承工具，并用知识地图引导首次检索，但不应强制注入全部图信息。验证需覆盖首次Gold命中轮次、Read/Grep、Token、端到端时延及索引更新成本。",
+    "keywords": [
+      "CodeGraph",
+      "OWL2",
+      "多跳检索",
+      "代码Agent",
+      "知识地图"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2607.27249v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-07-28T08:42:57Z"
+      }
+    ],
+    "discovered_via": "arXiv",
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 81.8
+  },
+  "facts": [
+    {
+      "title": "OwlPath: Lossless Knowledge Compression for LLM Bug Repair",
+      "event_hint": "OwlPath 在 CodeGraph 上增加 OWL2 多跳结构检索与按需知识地图",
+      "problem": "普通 grep、Embedding 和一跳代码图难以直接回答子类链、传递调用者和接口实现等多跳关系，Agent 需要通过多轮搜索和读取自行拼接依赖路径，消耗上下文、工具轮次与墙钟时间。",
+      "mechanism": "OwlPath 将 tree-sitter/CodeGraph SQLite 中的符号节点及 extends、implements、calls、contains、references、imports 边逐项投影为 OWL2 本体，用 SPARQL 1.1 property path 查询继承、实现、调用和导入的传递闭包；闭包首次物化后缓存。另一个 OWL-SKM 层从目录、符号密度和 Issue 关键词生成约 3KB 的模块与候选符号摘要，只在 Agent 第一次主动调用 owlpath search 时给出，后续闭包扩展也由 Agent 按需请求，而非每轮强制注入。",
+      "evidence": [
+        {
+          "claim": "OwlPath 混合臂较 CodeGraph 基线平均少用 28.8% Token、少 16.7% API 调用，并将平均墙钟时间从 1,071 秒降至 648 秒。",
+          "value": "tokens 1,989K->1,416K; calls 31.1->25.9; time 1071s->648s",
+          "baseline": "仅提供 CodeGraph 六个子命令的 Hermes Agent",
+          "condition": "SWE-bench Pro；相同 DeepSeek-V4-Flash、Prompt、70 轮上限和 Git 封存；18 个配对实例，混合臂另有 19 次总运行",
+          "source_locator": "Token and time efficiency, Table 2"
+        },
+        {
+          "claim": "严格补丁应用率与基线接近，为 68.4%（13/19）对 66.7%（12/18）。",
+          "value": "68.4% vs 66.7% strict-apply",
+          "baseline": "CodeGraph-only Agent",
+          "condition": "SWE-bench Pro 四臂实验；两臂运行数不同，论文另称 18 个 matched 实例的严格结果相同",
+          "source_locator": "End-to-End Evaluation, Table 2"
+        },
+        {
+          "claim": "在 67 个实例、5,229 个 Gold 符号的离线检索中，OwlPath 的 Recall 为 0.464、命中率 88.1%。",
+          "value": "Recall 0.464 vs 0.226; hit rate 88.1% vs 59.7%",
+          "baseline": "CodeGraph 字符串匹配，MRR/Recall/Hit 使用相同 Gold 符号",
+          "condition": "67 个 SWE-bench Pro 实例、11 个仓库；离线检索，不受 Agent 随机决策影响",
+          "source_locator": "Offline retrieval, Table 1"
+        },
+        {
+          "claim": "在 37 个结构查询上，总 Recall@all 从 4.4% 提升到 28.8%，接口实现和传递调用任务达到 69% 至 80%。",
+          "value": "4.4% -> 28.8%; 69%-80%",
+          "baseline": "SQLite/CodeGraph 字符串匹配",
+          "condition": "七类预验证结构问题，不设 top-k 截断；接口实现与传递调用的字符串基线为 0%",
+          "source_locator": "Structural retrieval, Figure 4"
+        },
+        {
+          "claim": "强制注入结构信息使 Token 约翻倍，却几乎不改善严格应用率。",
+          "value": "2,835K vs 1,416K tokens; 68.8% vs 68.4% strict-apply",
+          "baseline": "按需调用 OwlPath 的 hybrid 臂",
+          "condition": "SWE-bench Pro 四臂对比；annotated 臂把 SKM 与 closure 强制注入 Prompt",
+          "source_locator": "Experimental setup, Table 2"
+        }
+      ],
+      "evaluation_context": "端到端主实验从 731 个 SWE-bench Pro 公共实例中分层选 23 个，18 个有两臂完整配对；Agent 为 Hermes，模型为 DeepSeek-V4-Flash，70 轮、3,600 秒上限。离线检索使用另外 67 个实例；结构查询基准含 37 个问题。补充实验仅有 9 个 SWE-bench Lite 实例、模型为 GLM-5.2。",
+      "limitations": "来源明确指出，本体投影在 140 万符号仓库上一次构建需 4.7 分钟；SKM 依赖 Issue 关键词，模糊描述可能漏检；传递闭包仅覆盖 extends、implements、calls、imports 四类属性，不能捕获跨语言关系。端到端样本很小，严格率分母不完全一致；9 个 Lite 实例中两个失败案例使混合臂全样本平均 Token 反而高于基线。项目侧推断：论文未测持续编辑下本体增量更新、闭包缓存一致性或多租户内存成本，其“lossless”仅针对已进入 CodeGraph 且指定 property path 可达的结构边，不代表完整代码语义无损。",
+      "project_relevance": "项目推断：OwlPath 对 CodeGraph 类 Agent 加速最有价值的启发是把多跳调用/继承查询收敛为一次结构操作，并用小型知识地图引导第一次检索；同时，强制注入所有图信息会适得其反。内部验证应采用按需 MCP 工具，测首次 Gold 命中轮次、API/Read/Grep 次数、Token、端到端时延、索引更新耗时和多跳关系正确率。",
+      "primary_source_resolved": true,
+      "quality_score": 88,
+      "source_notes": [
+        "原始来源为 arXiv:2607.27249v1。",
+        "端到端样本规模较小且部分运行数不配对，离线检索证据比严格应用率更稳定。"
+      ]
+    }
+  ],
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence."
+  ]
+}

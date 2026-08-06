@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "14a12772e95f8b005e834507",
+    "type": "fact_extraction",
+    "entity_id": "5358d9df34fc3763c3291b57",
+    "input_digest": "ef9fd61cf01729b17c664680205f3408"
+  },
+  "title": "S$^4$R: Selective Sampling, Subspaces, and Sparse Reconstruction for Compressed Long-Context KV Caching",
+  "event_hint": "S$^4$R prompt-aware low-rank KV-cache compression with selective sampling and sparse reconstruction",
+  "problem": "长上下文推理会让KV缓存占用大量显存；固定压缩方法依赖外部校准数据且难适应当前提示词，在线方法若对完整长提示词分解和重构则会增加prefill与解码开销。",
+  "mechanism": "S$^4$R在prefill阶段保留前4个attention sink token的全精度表示，对非sink token按早期均匀采样与最近连续块组成的代表子集，逐token归一化后分别做截断SVD，保存key/value低秩系数与基矩阵。解码时将新KV投影到系数空间，用固定长度查询窗口在潜空间估计token相关性，经池化后保留最近窗口和top-k全局位置，只重构这些KV并与sink token拼接做最终注意力。",
+  "evidence": [
+    {
+      "claim": "在LongBench上，Qwen3-4B的S$^4$R平均分为47.79；延迟导向查询窗口W=4时平均分为47.73，输出吞吐为8.32 tokens/s。",
+      "value": "47.79 average; 47.73 with W=4; 8.32 tokens/s",
+      "baseline": "Qwen3-4B Full KV average score 49.62; Full KV output throughput 9.33 tokens/s",
+      "condition": "Qwen3-4B；LongBench；默认W=32，效率实验W=4；表1、表3",
+      "source_locator": "PDF p.6, Table 1 and surrounding LongBench text; PDF p.8, Table 3 footnote"
+    },
+    {
+      "claim": "在RULER的128k上下文、2.5×压缩设置下，S$^4$R平均分93.61，接近Full KV的93.97；多键和多查询检索任务保持满分，但FWE为76.67，低于Full KV的83.33。",
+      "value": "93.61 average; 100/100 on MK1 and MK2; 76.67 on FWE",
+      "baseline": "Full KV average 93.97; Full KV FWE 83.33",
+      "condition": "Qwen2.5-7B-Instruct-1M；128k context；2.5× compression",
+      "source_locator": "PDF p.6-7, RULER paragraph and Table 2"
+    },
+    {
+      "claim": "在120k-token GovReport上下文的效率实验中，S$^4$R相较xKV将TTFT从79.90s降至27.65s、512-token生成延迟从260.76s降至61.54s，并将输出吞吐从1.96升至8.32 tokens/s。",
+      "value": "TTFT 27.65s; latency512 61.54s; output throughput 8.32 tokens/s",
+      "baseline": "xKV TTFT 79.90s; latency512 260.76s; output throughput 1.96 tokens/s",
+      "condition": "Qwen3-4B；120k-token context sampled from GovReport；未使用system/kernel/operator优化",
+      "source_locator": "PDF p.7, Efficiency Evaluation; PDF p.8, Table 3"
+    },
+    {
+      "claim": "S$^4$R的持久KV缓存由全精度sink状态、key/value系数缓存、固定查询系数窗口和基矩阵组成；当非sink缓存长度远大于sink数和秩时，持久内存比例趋近于r/D′，且只重构W+max(floor(ρL_t)-W,0)个非sink token。",
+      "value": "persistent ratio tends to r/D′; reconstructed count max(W, floor(ρL_t))",
+      "baseline": "Full KV stores 2(s+L_t)D′ scalar elements per layer",
+      "condition": "论文公式(19)-(24)的每层内存分析",
+      "source_locator": "PDF p.5, Section 3.3 Memory Analysis, equations (19)-(24)"
+    },
+    {
+      "claim": "论文明确限制包括未做系统、kernel或算子级优化，仅评估Llama/Qwen在LongBench和RULER上的长输入短输出负载；方法依赖超参数与固定采样启发式，分散证据任务可能因潜空间打分漏掉相关位置而退化。",
+      "value": null,
+      "baseline": null,
+      "condition": "作者Limitations段；FWE是已报告的退化示例",
+      "source_locator": "PDF p.8, Limitations"
+    }
+  ],
+  "evaluation_context": "评测覆盖Llama-3.2-1B、Llama-3.1-8B、Qwen3-4B、Qwen2.5-14B的LongBench，以及Qwen2.5-7B-Instruct-1M在128k上下文下的RULER；效率对比使用Qwen3-4B、从GovReport采样的120k-token上下文，比较Full KV、Palu、ShadowKV和xKV，且未启用系统级、内核级或算子级优化。",
+  "limitations": "作者说明当前实现缺少系统、内核和算子级优化，效率结果主要反映算法开销；实验模型与任务范围有限，尚未验证很长输出、其他架构和更广泛工作负载。方法依赖秩、重构比例、查询窗口等超参数及固定的7:3近期/均匀采样启发式；对FWE这类证据分散任务，潜空间相关性估计可能漏掉重要位置。由此推断，跨地域KV传输的WAN字节、RTT、缓存命中率和一致性开销并未被该论文直接测量。",
+  "project_relevance": "该方法可作为跨域KV传输前的本地压缩与选择层：先在源集群以提示感知低秩系数和稀疏重构减少需要持久化或传输的KV规模，再按业务场景比较压缩带来的带宽节省与重构计算、命中损失和一致性成本。论文没有WAN实验，因此不能直接证明跨域收益；落地前应补测传输字节、WAN RTT、端到端P95及不同任务的命中率，尤其覆盖分散证据和长输出场景。",
+  "primary_source_resolved": true,
+  "quality_score": 94,
+  "source_notes": [
+    "来源为arXiv论文PDF，input URL与抓取文档标题一致。",
+    "数值证据均带有模型、数据集、压缩比或上下文长度等条件及页码/表格定位。"
+  ]
+}

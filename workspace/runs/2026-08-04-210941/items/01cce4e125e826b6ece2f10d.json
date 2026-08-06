@@ -1,0 +1,32 @@
+{
+  "title": "SpectrumKV：PD解耦KVCache按token混合精度传输",
+  "type": "论文",
+  "topic_name": "状态感知网络、TPN",
+  "direction_name": "Prefill/Decode解耦通信",
+  "published_at": "2026-06-07",
+  "importance": "重点关注",
+  "core_conclusion": "PD解耦推理把KVCache变成网络负载，现有方法只能在全精度与丢弃之间二选一，对INT4敏感模型会造成质量崩塌。SpectrumKV按token重要性分配FP16/INT8/INT4精度并通过部署期探测决定INT4是否可用，在半数KV预算下将困惑度扰动压到个位百分点，同时把传输路径TTFT降低50-62%。",
+  "mechanism": "按注意力重要性对token分级：高重要性token（如attention sink）保留FP16，中等token用INT8，低重要性token在模型容忍时降为INT4。由于INT4耐受性因模型而异，系统在部署期用三次激进的针草堆（NIAH）探测，通过则启用三档策略、否则回退FP16+INT8。",
+  "result": "在WikiText-2半数KV预算下，相对PDTrim的困惑度恶化（Qwen +25.85%、Mistral +22.07%、Gemma +35.63%），SpectrumKV仅 +1.97% / -0.06% / -0.44%；4096 token NIAH检索在激进预算b=0.3下Qwen达到52.6%（PDTrim 26.3%），b=0.5时达到100%；端到端GPU传输路径在b=0.5下TTFT降低50-62%。",
+  "boundary": "证据来自arXiv摘要，全文未获取，绝对TTFT与网络字节数有待全文验证；INT4安全性模型相关，仅在三款7-9B模型上验证，泛化性未知；部署期探测对分布外负载的鲁棒性未验证。",
+  "project_relevance": "本项目启发：精度即预算的思路可直接减少TPN跨节点PD交接的字节数，与网络侧优化（NetKV、SmartGen）互补，适合作为DPU随路KV压缩的一个维度。待验证：探测策略在长上下文Agent服务场景下的稳定性，以及与CXL/分解内存带宽分配的契合度。",
+  "keywords": [
+    "KV cache",
+    "混合精度",
+    "PD解耦",
+    "TTFT",
+    "token传输"
+  ],
+  "sources": [
+    {
+      "publisher": "arXiv",
+      "url": "https://arxiv.org/abs/2606.08635",
+      "source_level": "A",
+      "primary": true
+    }
+  ],
+  "discovered_via": null,
+  "score": 85,
+  "incremental_update": false,
+  "incremental_change": null
+}

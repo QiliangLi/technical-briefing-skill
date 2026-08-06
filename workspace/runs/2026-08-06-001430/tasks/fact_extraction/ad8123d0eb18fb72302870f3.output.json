@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "ad8123d0eb18fb72302870f3",
+    "type": "fact_extraction",
+    "entity_id": "ba22c7cd1207cee1d5c9cc1e",
+    "input_digest": "d7a0d3c10ec9920efa2c547b9aab1a78"
+  },
+  "title": "Pictura: Perspective-View Self-Play at Scale for Driving",
+  "event_hint": "Pictura CUDA perspective-view renderer enabling image-based multi-agent driving self-play",
+  "problem": "大规模驾驶自博弈通常依赖含精确位姿、速度和遮挡体信息的特权向量观测，和部署时摄像头的部分观测存在表示鸿沟；将特权策略蒸馏到视觉学生会让学生模仿其无法从自身视角解释的决策。",
+  "mechanism": "Pictura用自定义CUDA栅格化器在每个仿真步为每个Agent渲染自车视角图像，并将渲染、CARLA多Agent环境和PyTorch PPO训练环路结合。Alberti直接以四路96×54相机图像进行普通PPO自博弈训练，不使用特权教师或蒸馏；训练时只保留相机可见的信息，避免先用特权策略再迁移造成的非因果行为。",
+  "evidence": [
+    {
+      "claim": "Pictura在单张H100上可达500K agent-steps/s，即四路相机约2M images/s。",
+      "value": "500K agent-steps/s; 2M images/s",
+      "baseline": null,
+      "condition": "单H100；渲染循环吞吐",
+      "source_locator": "PDF p.1 Abstract; PDF p.8-9 Figure 5 caption and throughput section"
+    },
+    {
+      "claim": "相同分辨率和无墙体配置下，Pictura CUDA栅格化器比Gigapixel最快配置快1.4–4.1×；从A100L换到H100时Pictura加速约1.5×。",
+      "value": "1.4-4.1× vs Gigapixel; 1.5× A100L-to-H100 speedup",
+      "baseline": "Gigapixel fastest configuration; Madrona reimplementation slows to 0.2-0.7× of A100L throughput",
+      "condition": "渲染-only agent-steps/s；同场景/分辨率对比",
+      "source_locator": "PDF p.9, Figure 5 throughput comparison text"
+    },
+    {
+      "claim": "Alberti以50B agent steps、约35M km自博弈训练；在CARLA中等交通密度下，目标完成11.21、越界率0.018，对比可感知变量一致的Vectorized†分别为12.81和0.020。",
+      "value": "50B agent steps; ~35M km; goals 11.21; off-road 0.018",
+      "baseline": "Vectorized† goals 12.81; off-road 0.020",
+      "condition": "CARLA in-domain；100% medium traffic；四路96×54相机",
+      "source_locator": "PDF p.10-11 Section 5.1 and Table 1a"
+    },
+    {
+      "claim": "在重新渲染的WOMD零样本布局、全量交通下，Alberti目标完成率0.858，高于完整特权Vectorized的0.718和Vectorized†的0.585；碰撞率0.006、越界率0.014也更低。",
+      "value": "Goals 0.858; collisions 0.006; off-road 0.014",
+      "baseline": "Vectorized goals 0.718, collisions 0.015, off-road 0.067; Vectorized† goals 0.585",
+      "condition": "WOMD zero-shot；100% recorded road users；Pictura重新渲染布局",
+      "source_locator": "PDF p.11, Table 1b and zero-shot paragraph"
+    },
+    {
+      "claim": "作者明确指出Pictura渲染帧与真实摄像头图像仍有差距；Alberti的in-domain红灯违规率高于向量基线（中等密度0.058 vs 0.009），可能因红绿灯在渲染视图中只占少量像素。",
+      "value": "red-light violation 0.058 vs 0.009 at medium density",
+      "baseline": "Vectorized† red-light violation 0.009",
+      "condition": "CARLA in-domain medium traffic；论文结论与限制性讨论",
+      "source_locator": "PDF p.11, in-domain discussion; PDF p.12, Conclusion"
+    }
+  ],
+  "evaluation_context": "Pictura渲染器在单A100L、H100和H100 NVL上进行吞吐与训练迭代分解；Alberti使用32张H100（8节点×4）训练，向量基线使用单节点4张H100。策略在CARLA地图自博弈和重新渲染的Waymo Open Motion Dataset布局上评估，比较碰撞、越界、红灯违规、目标完成和每次违规距离等车辆级指标。",
+  "limitations": "作者承认Pictura的栅格化帧与真实摄像头图像存在域差距；Alberti虽在WOMD零样本布局表现较好，但CARLA中红灯违规和每次违规距离仍明显弱于向量特权基线。论文的吞吐主要是仿真渲染与自博弈训练基准，未提供真实车辆部署、网络传输或多机扩展成本的端到端测量；训练策略仍使用合成渲染和固定相机配置。",
+  "project_relevance": "Pictura展示了把视觉观测直接纳入仿真闭环时，通用计算核心上的CUDA渲染可以避免图形固定功能管线成为AI训练瓶颈；这对评估GPU集群中仿真、渲染与策略更新的资源耦合有参考价值。若迁移到当前项目，应分别测量渲染吞吐、训练步端到端时间、显存占用和多GPU扩展效率，不能把单H100的渲染数字直接当成实际部署收益。",
+  "primary_source_resolved": true,
+  "quality_score": 93,
+  "source_notes": [
+    "输入arXiv URL对应已抓取PDF，标题与文档一致。",
+    "吞吐、训练规模和策略指标均带硬件/场景/基线条件及表格或页码定位。"
+  ]
+}

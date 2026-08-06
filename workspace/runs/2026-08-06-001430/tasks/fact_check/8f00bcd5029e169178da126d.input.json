@@ -1,0 +1,120 @@
+{
+  "_task": {
+    "id": "8f00bcd5029e169178da126d",
+    "type": "fact_check",
+    "entity_id": "f05980222b6b97bcc5d1a529",
+    "input_digest": "dfb7f19edd7a3811c735c2039ce06832"
+  },
+  "brief_item": {
+    "title": "反事实评估审计稀疏KV对内容权重的影响",
+    "type": "论文",
+    "topic_name": "跨域传输",
+    "direction_name": "压缩、增量传输、预取与放置",
+    "published_at": "2026-08-03T04:12:02Z",
+    "importance": "重点关注",
+    "core_conclusion": "该论文用反事实probe审计稀疏attention和KV驱逐对内容因果影响的改变。四种架构、两类任务的16个单元中，BSFA路由回放改变13个输出决策；identity replay无label flip。",
+    "mechanism": "Gold、Poison和Benign各含128-token probe，配合六种位置布局和dense-calibrated counterfactual，比较logit差异、路由选择率与压缩比。",
+    "result": "隔离probe并切断跨block attention后，影响从4.48 logits降至0。Qwen3-8B的SCBench-KV差异随压缩从−0.31变为+0.16和+0.93，SciFact从+0.19变为−0.08。",
+    "boundary": "实验固定128-token block并依赖人工probe与路由回放，不能代表所有模型和请求。未测跨域网络和服务P95，压缩比改变影响方向需按工作负载验收。",
+    "project_relevance": "可在KV压缩回归中注入正确、错误和无关块，比较压缩前后决策和路由命中。跨域部署应重点测误导内容与跨块依赖。",
+    "keywords": [
+      "反事实评估",
+      "稀疏Attention",
+      "KV驱逐",
+      "内容影响",
+      "安全回归"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2608.01676v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-08-03T04:12:02Z"
+      }
+    ],
+    "discovered_via": "arXiv",
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 80.7,
+    "_provenance": {
+      "task_id": "779aaa2c78e09f1f0ed26cb8",
+      "event_id": "c4c74c8f4c900a9ad1ee2c74",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.01676v1"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "title": "Understanding Sparse Attention Selectivity in Long-Context Foundation Models via Counterfactual Evaluation",
+      "event_hint": "Counterfactual audit of content influence under sparse attention and KV eviction",
+      "problem": "稀疏attention和KV驱逐通常只看吞吐、显存或总体准确率，无法发现丢弃block如何改变特定内容对模型输出的因果影响，例如放大误导内容或切断跨block证据整合。",
+      "mechanism": "论文用同一提示下的Gold（正确标签）、Poison（错误标签）和Benign（填充）128-token probe card，配合六种位置布局和dense-calibrated counterfactual，单独改变稀疏路由。通过BSFA route replay、controlled block-top-k和KV-cache eviction三条实验路径，比较内容影响logit差异、路由选择率和压缩比，区分信号集中（G≈P≫B）与跨block整合损失。",
+      "evidence": [
+        {
+          "claim": "BSFA强制路由回放在四种架构、两种任务和16个单元中改变13个输出决策；identity replay没有label flip，说明变化不是kernel路径差异。",
+          "value": "13/16 cells changed; 0 identity-replay flips",
+          "baseline": "Identity replay under same BSFA kernel path",
+          "condition": "Llama-3.1-8B、Mistral-7B、Qwen2.5-7B、Qwen3-8B；SCBench-KV/SciFact；c=0.25/0.50",
+          "source_locator": "PDF p.1 and Section 3; Table 10 appendix"
+        },
+        {
+          "claim": "隔离probe block、切断跨block attention后，其影响从4.48 logits降至0，证明整合损失可完全消除该块对输出的作用。",
+          "value": "4.48 logits -> 0",
+          "baseline": "Dense full cross-block attention",
+          "condition": "Controlled counterfactual probe；1536 units",
+          "source_locator": "PDF p.1 and Section 4 integration-loss ablation"
+        },
+        {
+          "claim": "Qwen3-8B在SCBench-KV的thin-probe对比∆从c=0.25的−0.31变为c=0.50的+0.16、c=0.75的+0.93；在SciFact则从+0.19变为−0.08，显示压缩比可造成方向反转。",
+          "value": "SCBench-KV -0.31 -> +0.16 -> +0.93; SciFact +0.19 -> -0.08",
+          "baseline": "Dense-calibrated counterfactual ∆=0",
+          "condition": "c∈{0.25,0.50,0.75}; 64 items per cell for sweep",
+          "source_locator": "PDF p.2 and Table 5"
+        },
+        {
+          "claim": "自然路由选择率在四个模型-任务单元中均偏向Gold和Poison而非Benign（G≈P≫B），表明selector保留语义信号并可能同时保留错误信号。",
+          "value": "G≈P≫B",
+          "baseline": "Benign filler-matched blocks",
+          "condition": "Gold/Poison/Benign probe cards；routing receipts；c=0.25/0.50",
+          "source_locator": "PDF p.2 and Table 6"
+        },
+        {
+          "claim": "KVPress中的Expected Attention和SnapKV在Qwen2.5-7B/Qwen3-8B与SciFact的8个压缩-稠密配对中都改变poisoning rate，三条机制不同的实验臂收敛到同一稀疏影响变化现象。",
+          "value": "8/8 KVPress cells directional change",
+          "baseline": "Dense run poisoning rate",
+          "condition": "Token-level eviction；c=0.25/0.50；real SciFact passages",
+          "source_locator": "PDF p.4 and Table 7"
+        }
+      ],
+      "evaluation_context": "评测覆盖四个开源架构、SCBench-KV和SciFact任务、BSFA route replay、controlled block-top-k及KVPress eviction三条路径；block size固定128，压缩比例c=0.25/0.50/0.75，使用bootstrap置信区间和dense-calibrated counterfactual。",
+      "limitations": "受控协议固定128-token block并依赖BSFA路由回放、六种布局和人工probe card；自然语言与真实生产请求的内容分布更复杂。作者指出aggregate accuracy无法替代内容影响审计，且结果不能直接推断所有稀疏kernel或模型。论文未测跨地域传输、网络利用率或端到端服务P95；压缩比改变信号集中/整合损失的方向，需按工作负载单独验收。",
+      "project_relevance": "该审计框架可用于验证KV压缩或跨域缓存策略是否悄然改变Agent证据权重：在相同任务中注入正确、错误和无关块，比较压缩前后的logit/决策和路由命中，而不只看总体准确率。跨域部署前应将误导内容、跨块依赖和不同压缩比列为安全回归测试。",
+      "primary_source_resolved": true,
+      "quality_score": 95,
+      "source_notes": [
+        "arXiv PDF已抓取且标题与输入一致。",
+        "因果回放、logit变化、压缩比反转和自然选择率均有表格/章节定位。"
+      ],
+      "_provenance": {
+        "task_id": "a03d4afbe2eb25e8bf02f295",
+        "candidate_id": "707f632791990e9a0433efbe",
+        "source_title": "Understanding Sparse Attention Selectivity in Long-Context Foundation Models via Counterfactual Evaluation",
+        "source_url": "https://arxiv.org/abs/2608.01676v1",
+        "document_id": "e42853d736d55fbf620ce587"
+      }
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "title": "IETF BMWG Draft: Benchmarking Methodology for AI Inference Serving Network Fabrics",
+  "event_hint": "IETF Internet-Draft (draft-calabria-bmwg-ai-fabric-inference-bench-00) defining vendor-independent KPI framework and test methodology for Ethernet-based AI inference network fabrics",
+  "problem": "As LLM inference scales to disaggregated prefill/decode architectures spanning hundreds or thousands of accelerators, the interconnect fabric becomes the critical bottleneck determining TTFT, inter-token latency (ITL), and aggregate throughput. However, there is no vendor-independent, reproducible benchmarking methodology for evaluating Ethernet-based inference network fabrics, making apples-to-apples comparison across NIC transport stacks (RoCEv2, UET) and fabric architectures impossible.",
+  "mechanism": "Defines a four-tier KPI framework and nine test categories for benchmarking Ethernet-based AI inference serving network fabrics under realistic workloads. (1) KPI tiers: Primary Latency KPIs (TTFT, ITL, TTFT_fabric, ITL_fabric, E2E_latency), Primary Throughput KPIs (TPS_input, TPS_output, TPS_per_GPU, Goodput, KV_BW, Request_Rate), Fabric-Level KPIs (KV_xfer_latency, KV_xfer_bandwidth, EP_alltoall_latency, EP_alltoall_bandwidth, Fabric_FCT, Buffer_utilization, ECN_marking_rate, PFC_frame_count, Link_utilization, Packet_drop_rate), and Fabric Health Indicators (switch CPU/memory, FEC errors, CRC errors, routing stability, NIC QP state, GPU-NIC PCIe BW). (2) Test categories: RDMA KV cache transfer (point-to-point throughput, latency, concurrent scaling, multi-tier storage), PD disaggregation (end-to-end TTFT decomposition, xPyD ratio optimization, heterogeneous parallelism, prefill queue depth), MoE expert parallelism (AllToAll throughput, normal vs low-latency dispatch, wide EP scaling, EP/KV contention), congestion management (ECN incast, PFC bursts, CC convergence, PFC storm resilience), request routing (KV-aware routing, prefix-aware cache hit, ECMP load balancing, JFI), latency (TTFT by prompt length, ITL tail, multi-tenant, congestion sensitivity), throughput (aggregate TPS, batch scaling, goodput under preemption), scale/autoscaling (cluster scale limits, autoscaling response, link failure convergence), and soak/stability (24-hour sustained load, memory leak detection, long-running stability). Tests follow RFC 2544 conventions: minimum 60-second trials, minimum 20 repetitions for latency (50 for burst). Defines five DUT/SUT configurations: DUT-S (single switch), DUT-F (complete fabric), DUT-N (NIC transport), DUT-PD (prefill-decode path), SUT-E (end-to-end system).",
+  "evidence": [
+    {
+      "claim": "The draft establishes a fabric-specific TTFT decomposition: TTFT_fabric is defined as the fabric contribution to TTFT (KV cache transfer latency) with an informational target of < 300 ms P99, measured NIC-to-NIC at DUT-PD.",
+      "source_locator": "Section 4.1, Table 2 (Primary Latency KPIs)",
+      "value": "< 300 ms P99",
+      "condition": "Informational reference target for interactive inference, not a pass/fail threshold"
+    },
+    {
+      "claim": "For a 70B parameter model at FP16 with 4K context, KV cache is approximately 1.34 GB per request; at FP16 it is approximately 0.33 MB per token, establishing the scale of per-request fabric transfer demand.",
+      "source_locator": "Section 2 (Terminology) and Section 10.1",
+      "value": "1.34 GB per request (70B, FP16, 4K context); ~0.33 MB per token",
+      "baseline": "70B model at FP16"
+    },
+    {
+      "claim": "Wide expert parallelism (e.g., 96-way EP across 12 nodes of 8 GPUs each) generates fine-grained, latency-sensitive inter-node traffic that contends with KV cache transfers on shared fabric links; for a 256-expert top-2 MoE model with 61 layers and 30 ms decode target, the Low-Latency Dispatch path requires ~2000 dispatches/s consuming ~54 GB/s aggregate inter-node bandwidth.",
+      "source_locator": "Section 1 (Introduction) and Appendix D (MoE AllToAll Communication Pattern)",
+      "value": "~54 GB/s aggregate inter-node bandwidth for decode-phase MoE dispatch",
+      "baseline": "256 experts, top-2 routing, hidden_dim=7168, EP=96 across 12 nodes, 61 MoE layers, 30 ms decode target"
+    },
+    {
+      "claim": "The methodology covers RDMA-based KV cache transfer (one-sided PUT/PUT-with-signal), MoE expert parallelism AllToAll communication, request routing and load balancing, congestion management under bursty inference traffic, and scale/soak testing, enabling comparison across RoCEv2 and UET transport stacks.",
+      "source_locator": "Abstract and Section 1.2 (Scope and Applicability)",
+      "condition": "Ethernet-based fabrics, controlled laboratory environment"
+    },
+    {
+      "claim": "The draft defines five DUT/SUT configurations isolating different measurement scopes: DUT-S (single switch), DUT-F (complete fabric end-to-end), DUT-N (NIC RDMA transport), DUT-PD (prefill-decode path including NVLink/PCIe/fabric segments), and SUT-E (complete serving system for TTFT/ITL/TPS).",
+      "source_locator": "Section 3.3, Table 1 (DUT Configuration Definitions)"
+    }
+  ],
+  "evaluation_context": "This is a methodology/standards document, not an experimental paper, so it defines test procedures rather than reporting measured results. Reference workload parameters: prompt lengths 128–16384 tokens; message sizes 64 KB–1 GB for KV transfer; EP group sizes 8–96 GPUs; xPyD ratios 1P11D through 11P1D; batch sizes 1–512; request rates 10–200 req/s; QP counts 1–128; background load 0–95% of fabric capacity. Tests target clusters up to 1024 nodes / 8192 GPUs. Transport stacks covered: RoCEv2 and UET (Ultra Ethernet Transport). The draft is version 00 of an IETF Internet-Draft (expires August 2026), companion to a training-fabric benchmarking draft. Authors: Fernando Calabria, Carlos Pignataro, Qin Wu, Giuseppe Fioccola.",
+  "limitations": "This is a standards/methodology draft, not an experimental study — it defines how to measure but does not report actual benchmark results from any specific vendor implementation. All numerical 'Target' values in the KPI tables (TTFT < 500 ms, ITL < 50 ms, TTFT_fabric < 300 ms, etc.) are explicitly marked NON-NORMATIVE informational reference points, not acceptance criteria. The draft states: 'Per the BMWG charter, the definition of acceptance criteria or performance requirements is explicitly outside the scope.' As an Internet-Draft (version 00), it has no formal IETF standing and may be updated, replaced, or obsoleted. It expires August 2026. [Inference] The draft does not yet include a populated References section (Sections 17.1 and 17.2 are empty), suggesting it is early-stage.",
+  "project_relevance": "This document is foundational for the TPN briefing. It directly defines the standardized KPI vocabulary (TTFT, ITL, TTFT_fabric, KV_BW, KV_xfer_latency, EP_alltoall_latency) and measurement methodology that any TPN-style network-aware inference system must be evaluated against. Key relevance points: (1) The TTFT_fabric decomposition (Section 4.1) provides the exact metric for quantifying the fabric's contribution to TTFT — directly answering the briefing question about network-side value vs pure GPU-memory scheduling. (2) The RDMA KV cache transfer benchmarks (Section 5) define how to measure cross-node KVCache transfer performance, which is central to the briefing's KVCache cross-node transfer interest. (3) The PD disaggregation tests (Section 6) formalize xPyD ratio optimization and TTFT decomposition including the T_transfer component. (4) The MoE AllToAll dispatch characterization (Section 7, Appendix D) quantifies the inter-node bandwidth demands of expert-parallel inference (~54 GB/s for decode), relevant to understanding total fabric load. (5) The DUT-PD configuration explicitly isolates the prefill-to-decode data path including NVLink, PCIe, and fabric segments — enabling CXL/disaggregated memory and DPU/SmartNIC offload relevance assessment. This draft effectively establishes the measurement contract for the entire TPN/inference-network space.",
+  "primary_source_resolved": true,
+  "quality_score": 88,
+  "source_notes": [
+    "Full IETF Internet-Draft text was fetched (69784 chars across 3 chunks) — this IS the primary source document.",
+    "The draft is version 00, dated February 2026, with latest revision state 'Active'. A later version (01, 02, 03) may exist per the version selector.",
+    "GitHub source: https://github.com/fcalabri/bmwg-ai-fabric-inference-bench — useful for tracking revisions.",
+    "The document is companion to a training-fabric benchmarking draft [TRAINING-BENCH] and references a shared terminology document [TERMINOLOGY]."
+  ]
+}

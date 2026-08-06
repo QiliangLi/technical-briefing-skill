@@ -1,0 +1,52 @@
+{
+  "title": "Celty: SpMspV GPU Kernel and SIMT Co-Design for Efficient Dual-Sparse LLM Inference",
+  "event_hint": "Celty/dual-sparsity spMspV GPU kernel与SIMT微架构协同设计",
+  "problem": "dual-sparsity(非结构化权重剪枝+运行时激活稀疏)对单用户解码是模型大小/精度/延迟的良好折中，但构成Sparse Matrix–Sparse Vector(spMspV)负载；现有GPU kernel面向单稀疏源(spMM，面向batched多用户)或图遍历(近99%稀疏)，在LLM推理的中等dual-sparsity(30–70%)下表现差。",
+  "mechanism": "Celty协同设计三者：(1)RLC-CSC稀疏格式——4-bit游程压缩CSC，保持索引与非零值一一对应以支持向量化加载；(2)GPU kernel——每warp处理256行×64列tile，零输入触发整列跳过，shared memory做scatter-accumulate(比全局原子累加快14.4×)；(3)Sparse SIMT Core微架构——集成3级流水线RLC解码器消除软件索引重建，复用本地寄存器做无冲突累积，直接作用于同一RLC-CSC格式而无需数据布局改变。",
+  "evidence": [
+    {
+      "claim": "Celty GPU kernel比cuBLAS快至2.8×、比Flash-LLM快至2.4×",
+      "value": "2.8x / 2.4x",
+      "baseline": "cuBLAS / Flash-LLM",
+      "condition": "spMspV kernel, dual-sparse",
+      "source_locator": "Abstract; Contributions (PDF Page 1)"
+    },
+    {
+      "claim": "加Sparse SIMT Core后比cuBLAS快至5.3×(70% dual-sparsity)，比Coruscant稀疏tensor core快至2.8×(单用户解码)",
+      "value": "5.3x / 2.8x",
+      "baseline": "cuBLAS / Coruscant sparse tensor core",
+      "condition": "70% dual-sparsity, single-user decoding",
+      "source_locator": "Abstract; Contributions (PDF Page 1)"
+    },
+    {
+      "claim": "LLaMA-2-13B端到端比cuBLAS快至2.63×(60% dual-sparsity)，WikiText-2困惑度7.2(FP16 dense为4.9)",
+      "value": "2.63x / 7.2",
+      "baseline": "cuBLAS / FP16 dense PPL 4.9",
+      "condition": "60% dual-sparsity, LLaMA-2-13B",
+      "source_locator": "Contribution (3) (PDF Page 2)"
+    },
+    {
+      "claim": "50% dual-sparsity下shared-memory scatter-accumulate超过81%迭代遭遇≥3 stall周期(write group=64)",
+      "value": ">81%",
+      "baseline": null,
+      "condition": "LLaMA-2-7B block, wrt group=64, A5000",
+      "source_locator": "Figure 4(b) (PDF Page 5)"
+    },
+    {
+      "claim": "RLC-CSC行索引重建可占总kernel执行时间40%",
+      "value": "up to 40%",
+      "baseline": null,
+      "condition": "A5000, varied dual-sparsity/shapes",
+      "source_locator": "Figure 5 (PDF Page 5)"
+    }
+  ],
+  "evaluation_context": "kernel级与端到端(LLaMA-2-7B/13B)；4-bit RLC-CSC在50%稀疏4096×4096层约63%压缩效率；对比cuBLAS、Flash-LLM、Coruscant；Sparse SIMT Core硬件面积开销<0.01%；寄存器累积可调比例。",
+  "limitations": "面向单用户解码(N=1, memory-bound)，不针对batched多用户(spMM)；Sparse SIMT Core为硬件微架构修改，需硬件支持，纯软件kernel无法获得全部增益；困惑度由4.9升至7.2存在精度代价；评估规模有限(LLaMA-2级)。",
+  "project_relevance": "归入AI Infra横向/推理kernel优化：dual-sparsity spMspV降低单用户LLM解码的模型体积与显存带宽需求，对端到端/边缘单用户推理延迟有直接价值；但核心增益依赖硬件微架构修改，作横向观察。",
+  "primary_source_resolved": true,
+  "quality_score": 78,
+  "source_notes": [
+    "一手arXiv/ICCAD论文(PDF转MD)，含定量加速比与profiling数据",
+    "Sparse SIMT Core为提出但尚未在量产硬件实现的微架构修改"
+  ]
+}

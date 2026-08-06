@@ -1,0 +1,47 @@
+{
+  "title": "Scalio: Scaling DPU-based JBOF Key-Value Store with NVMe-oF Target Offload (OSDI '25)",
+  "event_hint": "OSDI'25 paper from Tsinghua that scales DPU-based JBOF KV stores by offloading SSD I/O to the DPU's network hardware (NVMe-oF Target Offload + inline RDMA cache + batched writes), with a custom RDMA cache-consistency protocol",
+  "problem": "DPU-based JBOF (Just a Bunch of Flash) storage is energy- and cost-efficient (e.g. NVIDIA BlueField-3 at 75-150W vs a 300-500W Xeon), and increasing SSDs-per-DPU should maximize throughput-per-watt. But existing JBOF key-value stores (e.g. LEED) do not scale beyond ~4 SSDs because every SSD I/O operation is handled by the DPU's weak Arm cores: LEED dedicates one core per SSD for SSD I/O plus cores for RDMA/control-plane, saturating the CPU at 4 SSDs. Meanwhile the DPU's network I/O (ConnectX HCA, up to ~200M IOPS) sits at <1% utilization — a three-order-of-magnitude gap between SSD IOPS and RDMA capability that current software wastes.",
+  "mechanism": "Scalio is a disaggregated KV store that offloads as many SSD I/O operations as possible off the DPU CPU and onto the DPU's network hardware. Three mechanisms: (1) Offloaded reads via NVMe over Fabrics (NVMe-oF) Target Offload — clients send NVMe commands directly to server-side SSDs over the network; the DPU's Host Channel Adapter (HCA) processes all regular I/O in hardware via peer-to-peer PCIe, bypassing the DPU CPU entirely (0% target CPU vs 562% for standard NVMe-oF). (2) An inline in-memory cache: a compact RDMA-accessible hash table in DPU DRAM (blocks up to 1KB, ~10 slots of ~100-byte KV pairs) shared between the DPU CPU and clients' remote one-sided RDMA operations; clients fetch a whole hash block in one round trip, perform a linear search, and on a cache hit return immediately. On a miss, the client locks a victim slot via RDMA CAS, reads the SSD directly via NVMe-oF target offload, and fills the cache. (3) Batched writes with group commit: clients append write requests to an in-memory ring buffer via RDMA send; the DPU CPU polls, flushes a batch to SSDs in a single operation (fitting within a 4KB SSD block), updates the next_offset, and notifies clients. To maintain linearizability despite clients bypassing the DPU, Scalio adds an RDMA-based cache-consistency protocol using two per-slot flags (occupied, complete) defining four states (A empty, B being-filled, C valid, D invalidated-while-filling), plus a double-read to prevent key collisions and an optional lease (timeout_timestamp) to reclaim slots from failed clients. The protocol deliberately minimizes heavy RDMA CAS (whose max IOPS is ~10x lower than RDMA read/write) by partitioning synchronization roles between clients and the DPU.",
+  "evidence": [
+    {
+      "claim": "LEED throughput plateaus at 4 SSDs because DPU CPU saturates: LEED allocates 1 core for control-plane, 3 for RDMA, and 4 (one per SSD) for SSD I/O.",
+      "source_locator": "Section 2.1 / Figure 5",
+      "value": "Throughput max at 4 SSDs; CPU usage approaches 400% (4 cores) for SSD I/O",
+      "condition": "YCSB C, 1-7 SSDs"
+    },
+    {
+      "claim": "Network I/O is heavily underutilized: LEED achieved no more than 600K IOPS over the network while the ConnectX-6 HCA can handle up to 200M IOPS — less than 1% utilization.",
+      "source_locator": "Section 2.1",
+      "value": "<1% network IOPS utilization; 600K IOPS observed vs 200M IOPS HCA capacity"
+    },
+    {
+      "claim": "NVMe-oF target offload achieves similar read IOPS to standard NVMe-oF while consuming 0 target CPU, versus 562% target CPU for the standard implementation.",
+      "source_locator": "Section 2.2 / Figure 6",
+      "value": "0% target CPU (offload) vs 562% target CPU (standard NVMe-oF)",
+      "condition": "fio read IOPS test, 1-7 SSDs"
+    },
+    {
+      "claim": "Scalio achieves 1.8x-3.3x speedup over LEED+Ditto and 2.5x-17x over LEED across YCSB A/B/C/D/F; read workloads see up to 3x and write workloads up to 2x.",
+      "source_locator": "Section 1.2 and Section 6.2 / Figure 11",
+      "value": "1.8x-3.3x vs LEED+Ditto; 2.5x-17x vs LEED",
+      "condition": "YCSB A/B/C/D/F, 1-7 SSDs"
+    },
+    {
+      "claim": "Offloaded read contributes 1.5x-3.2x; inline cache absorbs 72.2%/85.2%/62.6% of operations under YCSB B/C/D (yielding 3.6x/6.7x/2.7x); batched write cuts SSD writes per KV update from 2 to ~1 (up to 1.96x).",
+      "source_locator": "Section 6.3 / Figure 13",
+      "value": "Cache absorption 72.2%/85.2%/62.6%; SSD writes per update ~1 vs 2",
+      "condition": "7-SSD configuration, YCSB B/C/D"
+    }
+  ],
+  "evaluation_context": "Emulated DPU-based JBOF testbed: 1 storage node + 5 client nodes (up to 160 client threads) over high-speed RDMA. Storage node = 7 Samsung 970 PRO SSDs (500K IOPS each at 4KB) on a ConnectX-6 HCA; DPU emulated by limiting an Intel Xeon Gold to 8 cores and 8 GB memory (matching commodity DPU JBOF platforms). Linux 5.15.0, MLNX_OFED 24.04-0.7.0, nvmet with attr_offload for NVMe-oF target offload, SPDK stack. Workloads: YCSB A/B/C/D/F (E omitted — range queries), 20M KV pairs (key<=16B, value<=64B), Zipfian 0.99, ~1GB cache (~2M KV pairs). Baselines: LEED, and LEED+Ditto (Ditto as in-memory cache). Sensitivity sweeps: skewness (Zipf 0.5-1.01), dataset size (20M-80M), CPU cores (4/8/16), hash-block slots (4/8/16). Code at github.com/madsys-dev/scalio-osdi25-ae.",
+  "limitations": "Explicit: the DPU is emulated (8 constrained Xeon cores, 8GB) rather than a real BlueField-3/Stingray DPU. The authors argue benefits hold regardless of CPU power since they stem from offloading SSD I/O to the HCA, and they matched LEED's SPDK/RDMA/data-structure setup for fairness — but real-DPU numbers are not reported. Explicit: batched write trades latency for throughput (e.g. YCSB A: 2.1x throughput at 1.97x latency, 614us). Users must choose low-latency mode (no batching) or high-throughput mode. Explicit: server failure handling is delegated to orthogonal redundancy (RAID, dual-DPU) — not implemented inside Scalio's core protocol. Inference: the cache-consistency protocol relies on clients correctly executing RDMA CAS/double-read/invalidation; a misbehaving or non-cooperative client is not addressed beyond the optional lease mechanism. Inference: results are for small KV pairs (<=64B values); large-value workloads were not evaluated and the inline-cache block-size tuning may not transfer.",
+  "project_relevance": "Directly on-target for the DPU inline-offload and protocol/metadata-offload directions. (1) It is a concrete proof point that moving the SSD-I/O datapath onto the DPU's network hardware (NVMe-oF Target Offload + one-sided RDMA) bypasses the DPU CPU entirely and is the key to scaling — exactly the 'which data-path operations can be done inline on the DPU' question. (2) The RDMA-based cache-consistency protocol (occupied/complete flags, double-read, lease) is a reusable pattern for any disaggregated KV/cache layer where clients bypass the server CPU — relevant to CXL/disaggregated-memory and cross-node cache designs. (3) The observation that network I/O is <1% utilized while the CPU is the bottleneck generalizes to other DPU-offload scenarios (Agent acceleration, KVCache transfer): the network datapath has headroom that software rarely exploits. (4) For the briefing's interest in NVMe-oF/protocol offload combos, Scalio shows protocol offload + metadata/cache offload composing into an end-to-end win.",
+  "primary_source_resolved": true,
+  "quality_score": 88,
+  "source_notes": [
+    "Primary source is the full OSDI '25 conference paper (77239 chars, 4 chunks covering pages 1-17). Published by USENIX, July 7-9 2025, Boston. Authors: Xun Sun, Mingxing Zhang, Yingdi Shan, Kang Chen, Jinlei Jiang, Yongwei Wu (Tsinghua University; Quan Cheng Laboratory).",
+    "Artifact-evaluation code repository referenced: https://github.com/madsys-dev/scalio-osdi25-ae.",
+    "Full text with figures, evaluation tables, correctness proof, and related work was available for extraction."
+  ]
+}

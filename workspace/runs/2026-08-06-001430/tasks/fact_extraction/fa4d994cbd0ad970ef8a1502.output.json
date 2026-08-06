@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "fa4d994cbd0ad970ef8a1502",
+    "type": "fact_extraction",
+    "entity_id": "56e98628a2a055f47d81ef52",
+    "input_digest": "728bc1f4ffcff23be7f35a309aabd2f6"
+  },
+  "title": "SAKI: Score-Aware Low-Rank Key Indexing for Long-Context KV Retrieval",
+  "event_hint": "SAKI attention-score-aware low-rank key index for KV retrieval",
+  "problem": "现有低秩KV方法通常保持权重或key方差，而不是直接保持推理时决定top-k检索的attention score；key重构误差小不代表重要位置仍能被正确检索。",
+  "mechanism": "SAKI从rank-r key压缩导致的期望attention score畸变推导covariance-weighted低秩目标，在query-key算子上做闭式非对称分解，直接优化分数而非key重构。其training-free index按head生成低秩映射，理论上在margin条件下控制score畸变可提升top-k recall。",
+  "evidence": [
+    {
+      "claim": "在LLaMA-3.1-8B、4096-token自然文本、1024 heads的top-64 recall上，rank32的SAKI-opt为0.799，高于key-PCA 0.748；rank16/64分别为0.731/0.876。",
+      "value": "0.799 vs 0.748 at rank 32",
+      "baseline": "Key PCA 0.748 at rank 32",
+      "condition": "4,096-token context；last 512 queries；median across 1,024 heads",
+      "source_locator": "PDF p.4, Table 1"
+    },
+    {
+      "claim": "相对PCA剩余top-64 recall误差，SAKI在rank16/32/64分别移除16%/20%/26%；rank32每head中位提升+0.041，76.9% heads改善。",
+      "value": "16%/20%/26%; median +0.041; 76.9% heads",
+      "baseline": "Key PCA residual recall error",
+      "condition": "LLaMA-3.1-8B；rank16/32/64",
+      "source_locator": "PDF p.7-8, main result and Figure 1"
+    },
+    {
+      "claim": "跨四个模型，SAKI在所有测试rank都击败key-PCA；rank32移除PCA剩余误差13–30%，提升68–89% heads，Qwen2.5-7B最大（30%、89%）。",
+      "value": "13-30% error removed; 68-89% heads improved",
+      "baseline": "Key PCA",
+      "condition": "LLaMA-3.1-8B、Qwen2.5-7B、Mistral-7B-v0.1、Llama-3.2-3B",
+      "source_locator": "PDF p.1 and p.8, Table 2"
+    },
+    {
+      "claim": "理论预测的score-MSE下降与真实因果query-key对上的测量高度一致，1024 heads的Pearson相关为0.997，中位绝对差0.0009。",
+      "value": "Pearson r=0.997; median gap=0.0009",
+      "baseline": null,
+      "condition": "LLaMA-3.1-8B；rank32；自然文本真实causal pairs",
+      "source_locator": "PDF p.1 and p.7, score-MSE validation"
+    },
+    {
+      "claim": "当前证据仅来自一个4K校准域且只测recall，没有端到端生成；所有配置在rank≤32时都未达到0.95 recall。",
+      "value": "No configuration reaches 0.95 recall at r≤32",
+      "baseline": "Full-rank/uncompressed retrieval not used as end-to-end generation result",
+      "condition": "作者Limitations；跨模型复制但任务/上下文受限",
+      "source_locator": "PDF p.8-9, What is not yet shown and Limitations"
+    }
+  ],
+  "evaluation_context": "实验在LLaMA-3.1-8B的4096-token自然文本和top-64 retrieval上建立主结果，再复制到Qwen2.5-7B、Mistral-7B-v0.1、Llama-3.2-3B；以rank16/32/64比较SAKI与key-PCA，并报告每head recall、score-MSE预测和理论变体。",
+  "limitations": "验证集中在单一4K校准域、recall指标和固定top-64，未展示端到端生成、不同上下文长度或跨任务检索效果；rank≤32尚未达到0.95 recall。SAKI的margin条件、query/key协方差估计和RoPE处理可能随模型/任务变化。论文没有测量KV跨域传输字节、WAN RTT、压缩解码开销或P95。",
+  "project_relevance": "SAKI提示跨域KV压缩应直接优化下游attention分数与命中率，而不是只最小化key重构误差。可在Agent Cache上用真实query-key对估计score畸变并按top-k margin设回退，联合测量压缩字节、召回率、端到端P95和跨域传输成本。",
+  "primary_source_resolved": true,
+  "quality_score": 94,
+  "source_notes": [
+    "arXiv PDF已抓取且标题与输入一致。",
+    "recall、误差移除、head覆盖和预测相关性均有表格/页码定位。"
+  ]
+}

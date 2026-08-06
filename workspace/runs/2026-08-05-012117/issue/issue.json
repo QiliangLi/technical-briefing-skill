@@ -1,0 +1,976 @@
+{
+  "id": "2c41fe6558d526c9bffc3c27",
+  "run_id": "2026-08-05-012117",
+  "date_from": "2026-08-05",
+  "date_to": "2026-08-05",
+  "synthesis": {
+    "headline": "本期围绕推理与训练基础设施的精细化：KV压缩在降本的同时暴露对注意力分布与agent轨迹的隐性影响，集合通信走向片上集成与可观测的量化决策，解码加速持续向算子与微架构协同收敛。",
+    "judgements": [
+      "KV压缩与驱逐的收益已很显著——在线压缩把峰值KV降至约29%、吞吐提升约3.3倍，5%预算下用学习式恢复缓存把RULER-4K准确率从38.2拉回73.2；但反事实评测表明块选择会改变内容影响力且聚合准确率无法察觉，在线压缩还会让agent轨迹变长、搜索重复增多。这类隐性偏移必须在生产前补做反事实与agent级评估，而不能只看准确率。",
+      "集合通信正从占用计算grid的设备kernel转向片上集成加编译式卸载（Meta HCCL协同MTIA 300），而Clos与torus的选择可由解析模型判定（AllGather宜torus、大规模AllReduce宜Clos），再配合NIXT这类端到端开销低于2%的通信级可观测性，大规模训练的通信正从经验调参变成可量化决策。",
+      "Bole面向混合注意力的树推测验证、Celty双稀疏微架构、AFlex算子级DVFS、LightRot旋转量化加速器共同指向同一结论：解码与推理的下一台阶来自硬件与算子的联合设计而非单一软件技巧；这些工作普遍缺生产SLO下的长尾时延与显存上限实测，落地前须重点补齐。"
+    ],
+    "topic_names": [
+      "AI Infra横向动态",
+      "Agent语义加速",
+      "跨域传输",
+      "状态感知网络、TPN"
+    ],
+    "watch_next": [
+      "KV压缩与驱逐在生产agent真实负载下对长尾时延与轨迹质量的端到端影响——在线压缩与Bole目前均缺生产SLO实测。",
+      "Meta HCCL式片上集成网络加编译式集合通信在通用LLM负载（而非推荐模型）下的端到端收益与可移植性。",
+      "RestoreKV等学习式恢复缓存接入既有驱逐器与模型后的迁移效果，以及在激进预算下的端到端收益与准确率稳定性。"
+    ]
+  },
+  "layout_mode": "expanded_v2",
+  "core_items": [
+    {
+      "title": "在线KV Cache压缩实证：延迟压缩配TE把峰值KV降至约29%并提吞吐",
+      "type": "论文",
+      "topic_name": "AI Infra横向动态",
+      "direction_name": "加速器、内存、存储与AI Fabric",
+      "published_at": "2026-08-02",
+      "importance": "值得关注",
+      "core_conclusion": "针对LLM agent长程任务KV cache成为推理瓶颈，该研究将token驱逐与注意力匹配适配到在线轨迹，发现延迟一轮压缩配合token驱逐在保准确率下将峰值KV降至约29%、吞吐提升约3.3倍。",
+      "mechanism": "按turn完成即压缩并冻结，未来生成只读压缩表示；用代理查询诱导的注意力质量选top-m保留原始KV，注意力匹配则额外拟合偏置与重建值以匹配全cache输出。",
+      "result": "Qwen3.5-27B在BROWSECOMP-PLUS上峰值KV从612.9K降至175.2K，吞吐从217升至717 q/h；无压缩准确率52.50%，TE为52.00%，基本无损。",
+      "boundary": "仅覆盖搜索与文档阅读类agent，未涉及代码编辑或GUI控制；大模型吞吐为SGLang/vLLM轨迹重放仿真，非端到端真实服务实测。",
+      "project_relevance": "判断：延迟压缩优于即时压缩，TE在不完美代理下比AM稳健，但压缩会改变agent行为（轨迹变长、搜索重复增多），须作为agent级干预评估。",
+      "keywords": [
+        "KV cache压缩",
+        "在线压缩",
+        "token驱逐",
+        "agent推理",
+        "吞吐优化"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.00902v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-02"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 82,
+      "brief_item_id": "e7e170bd922c84386b2232cb",
+      "topic_id": "ai_infra_horizontal",
+      "direction_id": "accelerator_memory_interconnect",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-e7e170bd922c84386b2232cb",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "反事实评测揭示稀疏注意力块选择会改变内容影响力",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent工具执行链优化",
+      "published_at": "2026-08-03",
+      "importance": "值得关注",
+      "score": 78,
+      "core_conclusion": "稀疏注意力广泛部署于长上下文服务但缺乏审计丢弃块如何改变特定内容影响力的方法，聚合准确率无法发现正负相消的隐性偏移。论文用密集校准的反事实审计量化稀疏化特有的内容效应。",
+      "mechanism": "用Gold、Poison、Benign匹配探针在六种位置对称下隔离稀疏化效应，以稀疏与密集内容效应之差度量，识别信号集中与整合损失两种竞争模式，并由路由重放、受控block-top-k与KV驱逐三条路径给出收敛证据。",
+      "result": "路由重放在16个模型任务比率单元中13个显著增大错误答案边际且身份重放零翻转，将探针块与跨块通信隔离使其影响力从4.48 logits塌缩到0。",
+      "boundary": "该审计是测量框架而非新选择器，不提供吞吐或显存收益，结论依赖最大局部性放置假设且探针为受控合成卡。",
+      "project_relevance": "判断其揭示块选择与KV驱逐会改变内容影响力且准确率无法察觉，对压缩部署质量评估有参考价值，应核实真实内容分布下的偏移。",
+      "keywords": [
+        "稀疏注意力",
+        "反事实评测",
+        "KV压缩",
+        "内容影响力"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01676v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "e1cdacddb5a27e06d2f54ea8",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-e1cdacddb5a27e06d2f54ea8",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "解析模型对比Clos与torus训练拓扑的集合通信完成时间",
+      "type": "论文",
+      "topic_name": "AI Infra横向动态",
+      "direction_name": "加速器、内存、存储与AI Fabric",
+      "published_at": "2026-08-03",
+      "importance": "值得关注",
+      "score": 76,
+      "core_conclusion": "大规模ML训练部署在胖树Clos与环面torus两类拓扑上但缺乏考虑放置、链路失败与交换机增强时的解析级性能比较。论文用alpha-beta模型推导三类集合通信在两种拓扑上的完成时间下界。",
+      "mechanism": "用Hockney模型推导AllReduce、AllGather与AlltoAll在Clos和torus上的完成时间下界，并扩展到链路失败与作业放置，用消息投递模型分析规模、带宽与torus维度的影响。",
+      "result": "默认参数下Clos在多数集合取得更优完成时间，torus仅在AllGather上因额外接入带宽始终更优，以现实带宽比rb等于0.5衡量AllReduce大规模更宜Clos而AllGather始终宜torus。",
+      "boundary": "该结论为alpha-beta解析推导而非生产实测，采用store-and-forward与最优路由等简化假设，未涵盖功耗、布局与重配置，需实测集群验证。",
+      "project_relevance": "判断其为Clos与torus拓扑选择提供可复核的解析框架与边界条件，应结合自有集群规模与通信模式做实测校准。",
+      "keywords": [
+        "网络拓扑",
+        "Clos",
+        "torus",
+        "集合通信"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01707v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "9df5773692104bba73726c90",
+      "topic_id": "ai_infra_horizontal",
+      "direction_id": "accelerator_memory_interconnect",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-9df5773692104bba73726c90",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "Celty 双稀疏 spMspV 内核与 SIMT 微架构协同设计加速单用户解码",
+      "type": "研究进展",
+      "topic_name": "AI Infra横向动态",
+      "direction_name": "推理服务、运行时与编译优化",
+      "published_at": "2026-08-04",
+      "importance": "值得关注",
+      "core_conclusion": "Celty 面向双稀疏的非结构化权重剪枝加运行时激活稀疏构成的负载，协同设计稀疏格式、GPU 内核与精简指令微架构。其内核比对照基线快至 2.8 倍，加专用微架构后快至 5.3 倍。",
+      "mechanism": "用 4 比特游程压缩保持索引与非零值一一对应以支持向量化加载，每线程束处理固定 tile 并以共享内存累加替代全局原子，专用核心集成流水线解码器消除软件索引重建，并复用本地寄存器做无冲突累积。",
+      "result": "13B 模型端到端比基线快至 2.63 倍（60% 双稀疏），困惑度 7.2 对比稠密 FP16 的 4.9，专用微架构硬件面积开销低于 0.01%，稀疏格式在半数稀疏下约六成三压缩效率。",
+      "boundary": "面向单用户解码、不针对批量多用户，专用核心为尚未量产的微架构修改、纯软件无法获得全部增益，且存在困惑度上升的精度代价，原始论文编号未保留需回查。",
+      "project_relevance": "判断：对端到端与边缘单用户推理延迟有直接价值，但核心增益依赖硬件微架构修改，宜作横向观察并跟踪其硬件落地，并关注其批量场景的适用性。",
+      "keywords": [
+        "dual-sparsity",
+        "spMspV",
+        "GPU内核",
+        "SIMT",
+        "单用户解码"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-04"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 74,
+      "brief_item_id": "2c6b4cf8745ac8def5b6e7cb",
+      "topic_id": "ai_infra_horizontal",
+      "direction_id": "serving_runtime_compiler",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-2c6b4cf8745ac8def5b6e7cb",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "Bole用闭式树验证加速混合注意力LLM推测解码",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "Agent Cache、工具结果与记忆共享",
+      "published_at": "2026-08-03",
+      "importance": "重点关注",
+      "score": 85,
+      "core_conclusion": "混合注意力LLM解码受内存带宽限制，树推测可加速但现有系统面向全注意力KV设计，在混合模型上需逐分支串行遍历循环层致验证时延与瞬时显存恶化。Bole以kernel-runtime协同设计从单一pre-tree状态并行验证所有提案。",
+      "mechanism": "将线性注意力递推转化为树结构闭式并用value-tiling核并行验证，以token级因子无损编码候选状态更新，采样后仅重建被接受状态，并集成进SGLang生产引擎。",
+      "result": "线性注意力树验证加速3.4至7.7倍，瞬时状态显存降低82至99倍，离线解码吞吐达自回归4.72倍与最强树推测基线2.03倍，在线Agent负载TTFT最高降67.6%。",
+      "boundary": "收益依赖硬件相关的有效验证容量且固定每请求预算不可靠，闭式最大支持深度由树深度限定，已读部分未给出长尾时延完整曲线。",
+      "project_relevance": "判断其并行树验证与因子化状态压缩对MoE与混合模型推理服务有工程价值，应核实生产SLO下的长尾时延与显存上限。",
+      "keywords": [
+        "推测解码",
+        "混合注意力",
+        "树验证",
+        "SGLang"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01651v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "828679dda7041d29c47f677a",
+      "topic_id": "cross_region",
+      "direction_id": "agent_cache",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-828679dda7041d29c47f677a",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "仓库级代码问答：语义检索在准确率与性价比上反超深度智能体搜索",
+      "type": "研究论文",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "面向Token指标的网络优化",
+      "published_at": "2026-08-03",
+      "importance": "值得关注",
+      "core_conclusion": "针对可预先建索引的仓库级只读代码问答，实证表明语义检索在准确率与性价比上反超 subagent 式深度智能体搜索，且后者会引入大量静默的协调失败。",
+      "mechanism": "在 SWE-QA（15 仓库、720 题）以同一 LangChain 框架对比：语义检索用 ReAct 加向量检索，深度搜索借 Deep Agents 把探索委托给隔离子 Agent，并由 Claude Sonnet 4.6 对失败编码。",
+      "result": "语义检索 Pass 率 65.2% 对深度搜索 46.2%，每个正确答案成本约为后者 0.43 倍；深度搜索协调崩溃占其失败 41.8%（语义检索 0），91% 仍返回自信错误答案。",
+      "boundary": "结论仅限可索引、只读问答场景，深度搜索在不可索引或需写代码任务上未测；每种范式仅用一个 harness，仅覆盖 Python 与四模型。",
+      "project_relevance": "判断：可索引仓库的只读代码问答应优先廉价语义索引；若用 subagent 探索须加交接校验防静默失败，下一步应验证本仓库检索命中率与混合路由。",
+      "keywords": [
+        "语义检索",
+        "深度智能体搜索",
+        "仓库级代码问答",
+        "静默失败"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01507v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 82,
+      "brief_item_id": "bafc81a8b9858c59fad3cfab",
+      "topic_id": "tpn",
+      "direction_id": "token_metric_network",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-bafc81a8b9858c59fad3cfab",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "AFlex：Attention-FFN 解耦的算子级 DVFS 节能 LLM 服务框架",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-08-03",
+      "importance": "重点关注",
+      "core_conclusion": "AFlex 在 SGLang 上把 Attention 与 FFN 解耦并叠加每算子 DVFS，在满足 TTFT 与 TPOT 的前提下相对最强基线把每 token 能耗降低最高 49%，证明算子级而非阶段级是节能关键粒度。",
+      "mechanism": "全局调度器周期求解整数规划，在资源与时延约束下选定四个算子池的频率对与 TP 度，局部控制器按毫秒级 batch 调频并以交错流水线减气泡。",
+      "result": "在两台 8×A800 上跑 Qwen3-32B 与 Mixtral-8×7B 的 Azure trace，相对 DistServe 每 token 能耗最高降 49%，相对 DynamoLLM 降 48%。",
+      "boundary": "硬件为 A800 未在 B200 验证，隐状态传输与频率切换需流水线摊销且依赖离线 profiling，目前仅实现于 SGLang。",
+      "project_relevance": "判断：算子级频率敏感度与 SLO 感知调度可为服务节能提供量化参考，并与 KVCache 调度专题互补，需先确认迁移成本。",
+      "keywords": [
+        "算子级 DVFS",
+        "Attention-FFN 解耦",
+        "LLM 服务节能",
+        "SGLang"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01891v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 80.4,
+      "brief_item_id": "9327ddbb97b86e132937c084",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-9327ddbb97b86e132937c084",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "RestoreKV 用学习式 restore cache 弥补激进 KV 驱逐的信息损失",
+      "type": "研究进展",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Read、Grep、Glob和代码搜索加速",
+      "published_at": "2026-08-04",
+      "importance": "值得关注",
+      "core_conclusion": "该方法在预填充后、驱逐前用少量可学习恢复令牌经单次适配前向生成紧凑恢复缓存，与保留的原始项在相同预算下组合，弥补查询无关驱逐丢失的信息。在 5% 预算下把 Qwen3-4B 上 KVzip 的 RULER-4K 准确率从 38.2 提升到 73.2。",
+      "mechanism": "基础重要性评分与驱逐规则不变，适配层仅在恢复缓存生成时启用，训练采用冻结全缓存教师的自蒸馏并只更新约 0.4% 参数，无需任务特定调优。",
+      "result": "60 个预算匹配设置中改进 59 个，16 倍压缩下达 86.4 准确率，32K 上下文恢复过程仅增 0.03–0.04 秒与 84MB 峰值显存，消融显示适配层贡献最大。",
+      "boundary": "恢复需按模型与驱逐器离线训练约 2 小时，训练与推理驱逐器需匹配、跨驱逐器迁移有限，增益主要在激进预算下，原始论文编号未保留需回查。",
+      "project_relevance": "判断：可作为既有驱逐流水线的即插即用增强以降低长上下文缓存的传输与存储成本，应验证其在我方驱逐器与模型上的迁移效果，并测量其在激进预算下的端到端收益。",
+      "keywords": [
+        "KV cache",
+        "驱逐",
+        "restore cache",
+        "LoRA",
+        "长上下文"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-04"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 76,
+      "brief_item_id": "ec0c59bd7dc9b40db143de12",
+      "topic_id": "agent_acceleration",
+      "direction_id": "read_grep",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-ec0c59bd7dc9b40db143de12",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "NIXT 把 NCCL 集合通信日志转为大规模训练可观测性工具",
+      "type": "研究进展",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-08-02",
+      "importance": "值得关注",
+      "score": 80,
+      "core_conclusion": "NIXT 在 NCCL 自带 Inspector 之上构建导出工具，把每次集合通信的高维记录灌入列式存储，提供框架无关、低开销的通信级可观测性。在 16 到 2048 卡真实训练上端到端开销低于 2%。",
+      "mechanism": "提出按标识符、配置、工作负载、测量与计数器划分的度量分类法，派生仅走高速互联、仅走网卡、混合等链路类别，并在其上提供摘要统计、时空与资源相关性分析及异常检测与根因归因。",
+      "result": "最大规模训练的 17.7GB 原始日志压缩 26 倍至 0.67GB，单条分析低于 0.3 秒；生产中集合通信带宽变异系数是隔离重放的 2 至 5 倍，最紧案例带宽下降 3 至 4 倍。",
+      "boundary": "案例聚焦预训练，定位慢点后确认链路 CRC 错误与热降频等物理根因仍需联合 DCGM 与链路遥测；生产与重放的变异差距无法区分框架调度停顿与拥塞两种机制。",
+      "project_relevance": "判断：可作为大规模训练故障恢复与性能归因的参考工具链，与既有卡级导出器互补，应试点验证其与现有可观测性栈的集成成本，并量化其对端到端训练开销的影响。",
+      "keywords": [
+        "NCCL",
+        "集合通信",
+        "可观测性",
+        "DuckDB",
+        "分布式训练"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01449v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-02"
+        },
+        {
+          "publisher": "Zenodo",
+          "url": "https://zenodo.org/records/21755872",
+          "source_level": "B",
+          "primary": false,
+          "published_at": "2026-08-02"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "6900c39f7782c5034f138abb",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-6900c39f7782c5034f138abb",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    }
+  ],
+  "observations": [
+    {
+      "title": "Meta HCCL用片上集成网络与编译式集合通信卸载计算grid",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-08-01",
+      "importance": "重点关注",
+      "score": 82,
+      "core_conclusion": "传统GPU-NIC架构把集合通信当设备kernel执行占用计算grid，通信随推荐模型规模成为一阶瓶颈。HCCL与Meta首款片上集成后端网络的MTIA 300协同设计，用编译式通信完全卸载计算grid。",
+      "mechanism": "由host生成每个集合含依赖的完整子图描述并分发到消息引擎自主执行，近存计算单元在线速完成归约，通过显式门铃降低启动时延并在非对称网络做拓扑感知算法选择。",
+      "result": "训练场景机架内集合通信达940 GB每秒且并发计算吞吐劣化低于0.5%，推理优化路径集合时延低于6µs，NMC以2.8 TB每秒在线速保持归约。",
+      "boundary": "显式门铃将WQE存于NIC内存限制了队列对总量且不支持缓存，评测主要面向Meta自有推荐排序负载，片上网络绑定MTIA 300难移植GPU生态。",
+      "project_relevance": "判断其片上集成网络加编译式集合通信的机制对定制加速器通信栈有工程参考价值，应核实通用LLM负载下的端到端收益。",
+      "keywords": [
+        "HCCL",
+        "MTIA 300",
+        "集合通信",
+        "片上网络"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.00358v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-01"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "5b126924d057b449f43cd89d",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-5b126924d057b449f43cd89d",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "LightRot 轻量旋转量化加专用加速器实现 4 比特推理 27.4 TOPS/W",
+      "type": "研究进展",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent工具执行链优化",
+      "published_at": "2026-07-30",
+      "importance": "值得关注",
+      "core_conclusion": "LightRot 在已有旋转量化上引入分组局部旋转与离群值方向对齐以降低在线旋转浮点开销，并配套两级层次化快速变换与可转置寄存器堆硬件；其 28nm 加速器 4 比特推理峰值能效达 27.4 TOPS/W。",
+      "mechanism": "分组旋转把变换切成更小分组施加 Hadamard 旋转以支持纯快速变换实现，离群值对齐用全 1 行把最大离群值对齐以缩小量化范围，层次变换相对单级面积降 12.55 倍。",
+      "result": "相对此前最优 1.91–22.9 TOPS/W 达到 27.4 TOPS/W，7B 模型全 4 比特困惑度 5.73 对比 FP16 的 5.47，单块能耗经优化降至 4.0 mJ，离群值对齐使量化范围平均缩 3.87 倍。",
+      "boundary": "分组旋转须与同组大小的组量化联用否则掉精度，离群值对齐引入非对称量化开销，28nm 实现未给真实流片端到端时延，压缩仅作用于全注意力层。",
+      "project_relevance": "判断：提供 4 比特推理专用加速器的能效数字与机制边界，可作低比特推理硬件评测一手参照，属专用设计而非通用部署，并跟踪其在混合注意力架构的扩展。",
+      "keywords": [
+        "旋转量化",
+        "INT4",
+        "加速器",
+        "能效",
+        "离群值"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.27704v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-30"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 84,
+      "brief_item_id": "85aff8a0f3bc2c18d2c28e88",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-85aff8a0f3bc2c18d2c28e88",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    }
+  ],
+  "items": [
+    {
+      "title": "在线KV Cache压缩实证：延迟压缩配TE把峰值KV降至约29%并提吞吐",
+      "type": "论文",
+      "topic_name": "AI Infra横向动态",
+      "direction_name": "加速器、内存、存储与AI Fabric",
+      "published_at": "2026-08-02",
+      "importance": "值得关注",
+      "core_conclusion": "针对LLM agent长程任务KV cache成为推理瓶颈，该研究将token驱逐与注意力匹配适配到在线轨迹，发现延迟一轮压缩配合token驱逐在保准确率下将峰值KV降至约29%、吞吐提升约3.3倍。",
+      "mechanism": "按turn完成即压缩并冻结，未来生成只读压缩表示；用代理查询诱导的注意力质量选top-m保留原始KV，注意力匹配则额外拟合偏置与重建值以匹配全cache输出。",
+      "result": "Qwen3.5-27B在BROWSECOMP-PLUS上峰值KV从612.9K降至175.2K，吞吐从217升至717 q/h；无压缩准确率52.50%，TE为52.00%，基本无损。",
+      "boundary": "仅覆盖搜索与文档阅读类agent，未涉及代码编辑或GUI控制；大模型吞吐为SGLang/vLLM轨迹重放仿真，非端到端真实服务实测。",
+      "project_relevance": "判断：延迟压缩优于即时压缩，TE在不完美代理下比AM稳健，但压缩会改变agent行为（轨迹变长、搜索重复增多），须作为agent级干预评估。",
+      "keywords": [
+        "KV cache压缩",
+        "在线压缩",
+        "token驱逐",
+        "agent推理",
+        "吞吐优化"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.00902v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-02"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 82,
+      "brief_item_id": "e7e170bd922c84386b2232cb",
+      "topic_id": "ai_infra_horizontal",
+      "direction_id": "accelerator_memory_interconnect",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-e7e170bd922c84386b2232cb",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "反事实评测揭示稀疏注意力块选择会改变内容影响力",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent工具执行链优化",
+      "published_at": "2026-08-03",
+      "importance": "值得关注",
+      "score": 78,
+      "core_conclusion": "稀疏注意力广泛部署于长上下文服务但缺乏审计丢弃块如何改变特定内容影响力的方法，聚合准确率无法发现正负相消的隐性偏移。论文用密集校准的反事实审计量化稀疏化特有的内容效应。",
+      "mechanism": "用Gold、Poison、Benign匹配探针在六种位置对称下隔离稀疏化效应，以稀疏与密集内容效应之差度量，识别信号集中与整合损失两种竞争模式，并由路由重放、受控block-top-k与KV驱逐三条路径给出收敛证据。",
+      "result": "路由重放在16个模型任务比率单元中13个显著增大错误答案边际且身份重放零翻转，将探针块与跨块通信隔离使其影响力从4.48 logits塌缩到0。",
+      "boundary": "该审计是测量框架而非新选择器，不提供吞吐或显存收益，结论依赖最大局部性放置假设且探针为受控合成卡。",
+      "project_relevance": "判断其揭示块选择与KV驱逐会改变内容影响力且准确率无法察觉，对压缩部署质量评估有参考价值，应核实真实内容分布下的偏移。",
+      "keywords": [
+        "稀疏注意力",
+        "反事实评测",
+        "KV压缩",
+        "内容影响力"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01676v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "e1cdacddb5a27e06d2f54ea8",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-e1cdacddb5a27e06d2f54ea8",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "解析模型对比Clos与torus训练拓扑的集合通信完成时间",
+      "type": "论文",
+      "topic_name": "AI Infra横向动态",
+      "direction_name": "加速器、内存、存储与AI Fabric",
+      "published_at": "2026-08-03",
+      "importance": "值得关注",
+      "score": 76,
+      "core_conclusion": "大规模ML训练部署在胖树Clos与环面torus两类拓扑上但缺乏考虑放置、链路失败与交换机增强时的解析级性能比较。论文用alpha-beta模型推导三类集合通信在两种拓扑上的完成时间下界。",
+      "mechanism": "用Hockney模型推导AllReduce、AllGather与AlltoAll在Clos和torus上的完成时间下界，并扩展到链路失败与作业放置，用消息投递模型分析规模、带宽与torus维度的影响。",
+      "result": "默认参数下Clos在多数集合取得更优完成时间，torus仅在AllGather上因额外接入带宽始终更优，以现实带宽比rb等于0.5衡量AllReduce大规模更宜Clos而AllGather始终宜torus。",
+      "boundary": "该结论为alpha-beta解析推导而非生产实测，采用store-and-forward与最优路由等简化假设，未涵盖功耗、布局与重配置，需实测集群验证。",
+      "project_relevance": "判断其为Clos与torus拓扑选择提供可复核的解析框架与边界条件，应结合自有集群规模与通信模式做实测校准。",
+      "keywords": [
+        "网络拓扑",
+        "Clos",
+        "torus",
+        "集合通信"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01707v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "9df5773692104bba73726c90",
+      "topic_id": "ai_infra_horizontal",
+      "direction_id": "accelerator_memory_interconnect",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-9df5773692104bba73726c90",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "Celty 双稀疏 spMspV 内核与 SIMT 微架构协同设计加速单用户解码",
+      "type": "研究进展",
+      "topic_name": "AI Infra横向动态",
+      "direction_name": "推理服务、运行时与编译优化",
+      "published_at": "2026-08-04",
+      "importance": "值得关注",
+      "core_conclusion": "Celty 面向双稀疏的非结构化权重剪枝加运行时激活稀疏构成的负载，协同设计稀疏格式、GPU 内核与精简指令微架构。其内核比对照基线快至 2.8 倍，加专用微架构后快至 5.3 倍。",
+      "mechanism": "用 4 比特游程压缩保持索引与非零值一一对应以支持向量化加载，每线程束处理固定 tile 并以共享内存累加替代全局原子，专用核心集成流水线解码器消除软件索引重建，并复用本地寄存器做无冲突累积。",
+      "result": "13B 模型端到端比基线快至 2.63 倍（60% 双稀疏），困惑度 7.2 对比稠密 FP16 的 4.9，专用微架构硬件面积开销低于 0.01%，稀疏格式在半数稀疏下约六成三压缩效率。",
+      "boundary": "面向单用户解码、不针对批量多用户，专用核心为尚未量产的微架构修改、纯软件无法获得全部增益，且存在困惑度上升的精度代价，原始论文编号未保留需回查。",
+      "project_relevance": "判断：对端到端与边缘单用户推理延迟有直接价值，但核心增益依赖硬件微架构修改，宜作横向观察并跟踪其硬件落地，并关注其批量场景的适用性。",
+      "keywords": [
+        "dual-sparsity",
+        "spMspV",
+        "GPU内核",
+        "SIMT",
+        "单用户解码"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-04"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 74,
+      "brief_item_id": "2c6b4cf8745ac8def5b6e7cb",
+      "topic_id": "ai_infra_horizontal",
+      "direction_id": "serving_runtime_compiler",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-2c6b4cf8745ac8def5b6e7cb",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "Bole用闭式树验证加速混合注意力LLM推测解码",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "Agent Cache、工具结果与记忆共享",
+      "published_at": "2026-08-03",
+      "importance": "重点关注",
+      "score": 85,
+      "core_conclusion": "混合注意力LLM解码受内存带宽限制，树推测可加速但现有系统面向全注意力KV设计，在混合模型上需逐分支串行遍历循环层致验证时延与瞬时显存恶化。Bole以kernel-runtime协同设计从单一pre-tree状态并行验证所有提案。",
+      "mechanism": "将线性注意力递推转化为树结构闭式并用value-tiling核并行验证，以token级因子无损编码候选状态更新，采样后仅重建被接受状态，并集成进SGLang生产引擎。",
+      "result": "线性注意力树验证加速3.4至7.7倍，瞬时状态显存降低82至99倍，离线解码吞吐达自回归4.72倍与最强树推测基线2.03倍，在线Agent负载TTFT最高降67.6%。",
+      "boundary": "收益依赖硬件相关的有效验证容量且固定每请求预算不可靠，闭式最大支持深度由树深度限定，已读部分未给出长尾时延完整曲线。",
+      "project_relevance": "判断其并行树验证与因子化状态压缩对MoE与混合模型推理服务有工程价值，应核实生产SLO下的长尾时延与显存上限。",
+      "keywords": [
+        "推测解码",
+        "混合注意力",
+        "树验证",
+        "SGLang"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01651v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "828679dda7041d29c47f677a",
+      "topic_id": "cross_region",
+      "direction_id": "agent_cache",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-828679dda7041d29c47f677a",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "Meta HCCL用片上集成网络与编译式集合通信卸载计算grid",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-08-01",
+      "importance": "重点关注",
+      "score": 82,
+      "core_conclusion": "传统GPU-NIC架构把集合通信当设备kernel执行占用计算grid，通信随推荐模型规模成为一阶瓶颈。HCCL与Meta首款片上集成后端网络的MTIA 300协同设计，用编译式通信完全卸载计算grid。",
+      "mechanism": "由host生成每个集合含依赖的完整子图描述并分发到消息引擎自主执行，近存计算单元在线速完成归约，通过显式门铃降低启动时延并在非对称网络做拓扑感知算法选择。",
+      "result": "训练场景机架内集合通信达940 GB每秒且并发计算吞吐劣化低于0.5%，推理优化路径集合时延低于6µs，NMC以2.8 TB每秒在线速保持归约。",
+      "boundary": "显式门铃将WQE存于NIC内存限制了队列对总量且不支持缓存，评测主要面向Meta自有推荐排序负载，片上网络绑定MTIA 300难移植GPU生态。",
+      "project_relevance": "判断其片上集成网络加编译式集合通信的机制对定制加速器通信栈有工程参考价值，应核实通用LLM负载下的端到端收益。",
+      "keywords": [
+        "HCCL",
+        "MTIA 300",
+        "集合通信",
+        "片上网络"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.00358v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-01"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "5b126924d057b449f43cd89d",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-5b126924d057b449f43cd89d",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "仓库级代码问答：语义检索在准确率与性价比上反超深度智能体搜索",
+      "type": "研究论文",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "面向Token指标的网络优化",
+      "published_at": "2026-08-03",
+      "importance": "值得关注",
+      "core_conclusion": "针对可预先建索引的仓库级只读代码问答，实证表明语义检索在准确率与性价比上反超 subagent 式深度智能体搜索，且后者会引入大量静默的协调失败。",
+      "mechanism": "在 SWE-QA（15 仓库、720 题）以同一 LangChain 框架对比：语义检索用 ReAct 加向量检索，深度搜索借 Deep Agents 把探索委托给隔离子 Agent，并由 Claude Sonnet 4.6 对失败编码。",
+      "result": "语义检索 Pass 率 65.2% 对深度搜索 46.2%，每个正确答案成本约为后者 0.43 倍；深度搜索协调崩溃占其失败 41.8%（语义检索 0），91% 仍返回自信错误答案。",
+      "boundary": "结论仅限可索引、只读问答场景，深度搜索在不可索引或需写代码任务上未测；每种范式仅用一个 harness，仅覆盖 Python 与四模型。",
+      "project_relevance": "判断：可索引仓库的只读代码问答应优先廉价语义索引；若用 subagent 探索须加交接校验防静默失败，下一步应验证本仓库检索命中率与混合路由。",
+      "keywords": [
+        "语义检索",
+        "深度智能体搜索",
+        "仓库级代码问答",
+        "静默失败"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01507v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 82,
+      "brief_item_id": "bafc81a8b9858c59fad3cfab",
+      "topic_id": "tpn",
+      "direction_id": "token_metric_network",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-bafc81a8b9858c59fad3cfab",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "AFlex：Attention-FFN 解耦的算子级 DVFS 节能 LLM 服务框架",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-08-03",
+      "importance": "重点关注",
+      "core_conclusion": "AFlex 在 SGLang 上把 Attention 与 FFN 解耦并叠加每算子 DVFS，在满足 TTFT 与 TPOT 的前提下相对最强基线把每 token 能耗降低最高 49%，证明算子级而非阶段级是节能关键粒度。",
+      "mechanism": "全局调度器周期求解整数规划，在资源与时延约束下选定四个算子池的频率对与 TP 度，局部控制器按毫秒级 batch 调频并以交错流水线减气泡。",
+      "result": "在两台 8×A800 上跑 Qwen3-32B 与 Mixtral-8×7B 的 Azure trace，相对 DistServe 每 token 能耗最高降 49%，相对 DynamoLLM 降 48%。",
+      "boundary": "硬件为 A800 未在 B200 验证，隐状态传输与频率切换需流水线摊销且依赖离线 profiling，目前仅实现于 SGLang。",
+      "project_relevance": "判断：算子级频率敏感度与 SLO 感知调度可为服务节能提供量化参考，并与 KVCache 调度专题互补，需先确认迁移成本。",
+      "keywords": [
+        "算子级 DVFS",
+        "Attention-FFN 解耦",
+        "LLM 服务节能",
+        "SGLang"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01891v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-03"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 80.4,
+      "brief_item_id": "9327ddbb97b86e132937c084",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-9327ddbb97b86e132937c084",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "RestoreKV 用学习式 restore cache 弥补激进 KV 驱逐的信息损失",
+      "type": "研究进展",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Read、Grep、Glob和代码搜索加速",
+      "published_at": "2026-08-04",
+      "importance": "值得关注",
+      "core_conclusion": "该方法在预填充后、驱逐前用少量可学习恢复令牌经单次适配前向生成紧凑恢复缓存，与保留的原始项在相同预算下组合，弥补查询无关驱逐丢失的信息。在 5% 预算下把 Qwen3-4B 上 KVzip 的 RULER-4K 准确率从 38.2 提升到 73.2。",
+      "mechanism": "基础重要性评分与驱逐规则不变，适配层仅在恢复缓存生成时启用，训练采用冻结全缓存教师的自蒸馏并只更新约 0.4% 参数，无需任务特定调优。",
+      "result": "60 个预算匹配设置中改进 59 个，16 倍压缩下达 86.4 准确率，32K 上下文恢复过程仅增 0.03–0.04 秒与 84MB 峰值显存，消融显示适配层贡献最大。",
+      "boundary": "恢复需按模型与驱逐器离线训练约 2 小时，训练与推理驱逐器需匹配、跨驱逐器迁移有限，增益主要在激进预算下，原始论文编号未保留需回查。",
+      "project_relevance": "判断：可作为既有驱逐流水线的即插即用增强以降低长上下文缓存的传输与存储成本，应验证其在我方驱逐器与模型上的迁移效果，并测量其在激进预算下的端到端收益。",
+      "keywords": [
+        "KV cache",
+        "驱逐",
+        "restore cache",
+        "LoRA",
+        "长上下文"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-04"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 76,
+      "brief_item_id": "ec0c59bd7dc9b40db143de12",
+      "topic_id": "agent_acceleration",
+      "direction_id": "read_grep",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-ec0c59bd7dc9b40db143de12",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "LightRot 轻量旋转量化加专用加速器实现 4 比特推理 27.4 TOPS/W",
+      "type": "研究进展",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent工具执行链优化",
+      "published_at": "2026-07-30",
+      "importance": "值得关注",
+      "core_conclusion": "LightRot 在已有旋转量化上引入分组局部旋转与离群值方向对齐以降低在线旋转浮点开销，并配套两级层次化快速变换与可转置寄存器堆硬件；其 28nm 加速器 4 比特推理峰值能效达 27.4 TOPS/W。",
+      "mechanism": "分组旋转把变换切成更小分组施加 Hadamard 旋转以支持纯快速变换实现，离群值对齐用全 1 行把最大离群值对齐以缩小量化范围，层次变换相对单级面积降 12.55 倍。",
+      "result": "相对此前最优 1.91–22.9 TOPS/W 达到 27.4 TOPS/W，7B 模型全 4 比特困惑度 5.73 对比 FP16 的 5.47，单块能耗经优化降至 4.0 mJ，离群值对齐使量化范围平均缩 3.87 倍。",
+      "boundary": "分组旋转须与同组大小的组量化联用否则掉精度，离群值对齐引入非对称量化开销，28nm 实现未给真实流片端到端时延，压缩仅作用于全注意力层。",
+      "project_relevance": "判断：提供 4 比特推理专用加速器的能效数字与机制边界，可作低比特推理硬件评测一手参照，属专用设计而非通用部署，并跟踪其在混合注意力架构的扩展。",
+      "keywords": [
+        "旋转量化",
+        "INT4",
+        "加速器",
+        "能效",
+        "离群值"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.27704v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-30"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 84,
+      "brief_item_id": "85aff8a0f3bc2c18d2c28e88",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-85aff8a0f3bc2c18d2c28e88",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    },
+    {
+      "title": "NIXT 把 NCCL 集合通信日志转为大规模训练可观测性工具",
+      "type": "研究进展",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-08-02",
+      "importance": "值得关注",
+      "score": 80,
+      "core_conclusion": "NIXT 在 NCCL 自带 Inspector 之上构建导出工具，把每次集合通信的高维记录灌入列式存储，提供框架无关、低开销的通信级可观测性。在 16 到 2048 卡真实训练上端到端开销低于 2%。",
+      "mechanism": "提出按标识符、配置、工作负载、测量与计数器划分的度量分类法，派生仅走高速互联、仅走网卡、混合等链路类别，并在其上提供摘要统计、时空与资源相关性分析及异常检测与根因归因。",
+      "result": "最大规模训练的 17.7GB 原始日志压缩 26 倍至 0.67GB，单条分析低于 0.3 秒；生产中集合通信带宽变异系数是隔离重放的 2 至 5 倍，最紧案例带宽下降 3 至 4 倍。",
+      "boundary": "案例聚焦预训练，定位慢点后确认链路 CRC 错误与热降频等物理根因仍需联合 DCGM 与链路遥测；生产与重放的变异差距无法区分框架调度停顿与拥塞两种机制。",
+      "project_relevance": "判断：可作为大规模训练故障恢复与性能归因的参考工具链，与既有卡级导出器互补，应试点验证其与现有可观测性栈的集成成本，并量化其对端到端训练开销的影响。",
+      "keywords": [
+        "NCCL",
+        "集合通信",
+        "可观测性",
+        "DuckDB",
+        "分布式训练"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.01449v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-02"
+        },
+        {
+          "publisher": "Zenodo",
+          "url": "https://zenodo.org/records/21755872",
+          "source_level": "B",
+          "primary": false,
+          "published_at": "2026-08-02"
+        }
+      ],
+      "discovered_via": null,
+      "incremental_update": false,
+      "incremental_change": null,
+      "brief_item_id": "6900c39f7782c5034f138abb",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-6900c39f7782c5034f138abb",
+      "visual_plan": {
+        "visual_mode": "text_only"
+      },
+      "illustration": {}
+    }
+  ]
+}

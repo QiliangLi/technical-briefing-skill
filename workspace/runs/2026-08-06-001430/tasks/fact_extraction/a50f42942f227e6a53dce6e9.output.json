@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "a50f42942f227e6a53dce6e9",
+    "type": "fact_extraction",
+    "entity_id": "41ff26bef22b95e28aec401b",
+    "input_digest": "4f937436d4f476ac90d7ab3b315dae6b"
+  },
+  "title": "SpecForge v0.3.0 发布：统一解耦与共置投机解码栈，新增开放 SpecBundle 草稿模型",
+  "event_hint": "SpecForge v0.3.0 将投机解码目标推理与草稿训练解耦，并统一多种草稿算法",
+  "problem": "旧版 SpecForge 将冻结目标模型推理和草稿模型训练绑定在同一进程生命周期与资源拓扑，导致推理/训练扩缩容耦合、资源互相干扰并共享失败边界；捕获的大张量若经 Python 队列或控制数据库传输也会成为瓶颈。",
+  "mechanism": "新运行时以 producer/consumer 两个池分离目标特征捕获与草稿训练：打补丁的 SGLang capture server 将特征张量写入 Mooncake 数据面，控制面只传轻量 SampleRef；FeatureDataLoader 在组 batch 时解析引用，优化器确认后释放特征。高低 in-flight 水位控制捕获领先程度，SQLite ledger 记录已完成样本以支持中断恢复。统一入口支持 EAGLE3/EAGLE3.1/P-EAGLE/DFlash/Domino/DSpark，并提供训练-导出-SGLang serving 一致性门禁。",
+  "evidence": [
+    {
+      "claim": "在 8×H20、Qwen3-8B Domino、3K token 上下文的测试中，3 个 SGLang capture server + 5 个 trainer worker 的解耦拓扑使端到端训练吞吐比共置实现约高 10%。",
+      "value": 1.10,
+      "baseline": "previous colocated version 1.00×",
+      "condition": "8×H20，Qwen3-8B Domino，3K-token context",
+      "source_locator": "Preliminary system result: 3 capture servers + 5 trainers"
+    },
+    {
+      "claim": "大特征张量留在 Mooncake 数据面，控制面仅传 tensor-free SampleRef；消费者解析引用形成训练 batch，并在 optimizer acknowledgement 后释放 feature objects。",
+      "value": null,
+      "baseline": "通过 Python queue 或 control database 转发张量会成为瓶颈",
+      "condition": "online-disaggregated training",
+      "source_locator": "One Boundary, Three Contracts; delivery contract"
+    },
+    {
+      "claim": "生命周期契约以完整 optimizer-step 为单位释放引用，使用高低 in-flight 水位暂停/恢复捕获，并用 SQLite ledger 跳过已完成 sample ID、重放剩余引用。",
+      "value": null,
+      "baseline": null,
+      "condition": "分布式训练中断恢复",
+      "source_locator": "The lifecycle contract"
+    },
+    {
+      "claim": "在 2×A100、并发 1 的六个数据集上，Qwen3.6-27B Domino-B16 相对 target-only AR 的 speedup 为 3.34×（Alpaca）至 5.72×（MATH500）。",
+      "value": "3.34–5.72×",
+      "baseline": "target-only autoregressive decoding AR=1.00×",
+      "condition": "Qwen3.6-27B-Domino，2×A100，concurrency=1",
+      "source_locator": "Draft-Model Serving Performance; Concurrency = 1"
+    },
+    {
+      "claim": "训练-服务一致性门禁依次检查样本合法性、公共训练路径上的受控过拟合、导出并用 SGLang DFlash 验证每请求 acceptance metadata 与目标 token 前缀一致。",
+      "value": 3,
+      "baseline": null,
+      "condition": "DFlash-family/ Domino 模型",
+      "source_locator": "Verifying Training-Serving Consistency"
+    }
+  ],
+  "evaluation_context": "LMSYS 官方 SpecForge v0.3.0 发布文章；系统结果含 8×H20 训练吞吐和 2×A100 并发 1 serving speedup，另列多种算法、配置和一致性 gate。source discovery_only=true，需回到正式代码/模型或论文作为重点的一手依据。",
+  "limitations": "输入将该来源标为 discovery_only，因此 primary_source_resolved=false；尽管页面为 LMSYS 发布文章，后续重点解读仍需核验代码、模型卡或正式 release。10% 是特定 8×H20/Qwen3-8B/3K workload 的训练吞吐结果，3.34–5.72× 是并发 1 的 serving speedup，不代表高并发或所有模型。文中一致性 gate 只覆盖一个受控样本，不替代 held-out 质量和生产性能评估。",
+  "project_relevance": "该设计提供‘大张量走数据面、轻量引用走控制面’的 Agent/推理训练流水线范式，可作为跨池缓存传输与生命周期恢复的参考；若引入本项目，应单独测量跨节点带宽、队列深度、恢复时间和高并发收益，并先完成一手来源核验。",
+  "primary_source_resolved": false,
+  "quality_score": 62,
+  "source_notes": [
+    "discovery_only=true，未将其作为已解析 A 级来源。",
+    "页面含具体系统数据，但需正式 release/代码/模型卡复核。"
+  ]
+}

@@ -1,0 +1,223 @@
+{
+  "event_id": "7d465bb403b58739b1e8c6f1",
+  "topic": {
+    "id": "cross_region",
+    "name": "跨域传输",
+    "description": "KVCache、Agent Cache、工具结果和记忆在跨地域或跨集群环境中的传输、放置与一致性。",
+    "max_items_per_issue": 2,
+    "aihot_priority": "high",
+    "aihot_boost_terms": [
+      "cross-region KV cache",
+      "remote prefill",
+      "agent memory",
+      "distributed cache"
+    ],
+    "current_questions": [
+      "KVCache跨域传输在什么场景值得付出WAN成本",
+      "Agent Cache、工具结果和记忆能否跨域复用",
+      "压缩、增量传输和预取如何降低带宽与时延"
+    ],
+    "valuable_evidence": [
+      "WAN RTT",
+      "传输字节数",
+      "缓存命中率",
+      "P95时延",
+      "压缩比",
+      "一致性开销"
+    ],
+    "directions": [
+      {
+        "id": "kv_cross_region",
+        "name": "KVCache跨域迁移与远程访问",
+        "queries": [
+          "\"cross-region KV cache\"",
+          "\"remote KV cache\" WAN",
+          "\"KV cache migration\" distributed inference"
+        ],
+        "aihot_queries": [
+          "cross-region KV cache",
+          "remote KV cache",
+          "KV cache migration"
+        ],
+        "arxiv_query": "(\"cross-region KV cache\" OR \"remote KV cache\" OR \"KV cache migration\")",
+        "include_terms": [
+          "kv cache",
+          "remote",
+          "cross-region",
+          "migration",
+          "wan"
+        ],
+        "exclude_terms": [
+          "cpu cache"
+        ]
+      },
+      {
+        "id": "remote_prefill",
+        "name": "Prefill/Decode跨域解耦",
+        "queries": [
+          "\"remote prefill\" KV cache handoff",
+          "\"prefill decode disaggregation\" WAN",
+          "\"KV cache handoff\" network placement"
+        ],
+        "aihot_queries": [
+          "remote prefill",
+          "KV cache handoff",
+          "disaggregated inference"
+        ],
+        "arxiv_query": "((\"remote prefill\" OR \"KV cache handoff\") AND (network OR WAN OR placement))",
+        "include_terms": [
+          "prefill",
+          "decode",
+          "kv cache",
+          "handoff",
+          "remote"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "agent_cache",
+        "name": "Agent Cache、工具结果与记忆共享",
+        "queries": [
+          "\"distributed agent memory\"",
+          "\"cross-region agent cache\"",
+          "\"tool result sharing\" agent distributed"
+        ],
+        "aihot_queries": [
+          "distributed agent memory",
+          "agent cache",
+          "tool result sharing"
+        ],
+        "arxiv_query": "((agent AND (memory OR cache OR \"tool result\")) AND distributed)",
+        "include_terms": [
+          "agent",
+          "cache",
+          "memory",
+          "tool result",
+          "distributed"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "transfer_placement",
+        "name": "压缩、增量传输、预取与放置",
+        "queries": [
+          "KV cache compression transfer prefetch placement",
+          "distributed cache incremental transfer WAN"
+        ],
+        "aihot_queries": [
+          "KV cache compression",
+          "cache prefetch placement",
+          "incremental transfer"
+        ],
+        "arxiv_query": "((\"KV cache\" OR \"distributed cache\") AND (compression OR prefetch OR placement OR \"incremental transfer\"))",
+        "include_terms": [
+          "cache",
+          "compression",
+          "prefetch",
+          "placement",
+          "transfer"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "consistency_isolation",
+        "name": "跨域一致性、安全与多租户隔离",
+        "queries": [
+          "cross-region cache consistency multi-tenant isolation",
+          "distributed agent memory security consistency"
+        ],
+        "aihot_queries": [
+          "agent memory security",
+          "cross-region cache consistency"
+        ],
+        "arxiv_query": "((\"cross-region cache\" OR \"distributed agent memory\") AND (consistency OR security OR multi-tenant))",
+        "include_terms": [
+          "cross-region",
+          "distributed",
+          "consistency",
+          "security",
+          "multi-tenant"
+        ],
+        "exclude_terms": []
+      }
+    ]
+  },
+  "direction": {
+    "id": "remote_prefill",
+    "name": "Prefill/Decode跨域解耦",
+    "queries": [
+      "\"remote prefill\" KV cache handoff",
+      "\"prefill decode disaggregation\" WAN",
+      "\"KV cache handoff\" network placement"
+    ],
+    "aihot_queries": [
+      "remote prefill",
+      "KV cache handoff",
+      "disaggregated inference"
+    ],
+    "arxiv_query": "((\"remote prefill\" OR \"KV cache handoff\") AND (network OR WAN OR placement))",
+    "include_terms": [
+      "prefill",
+      "decode",
+      "kv cache",
+      "handoff",
+      "remote"
+    ],
+    "exclude_terms": []
+  },
+  "score": 81.0,
+  "facts": [
+    {
+      "title": "Ray Serve Prefill/Decode Disaggregation with NIXL and LMCache Connectors",
+      "event_hint": "Official Ray Serve (v2.56) user guide for deploying prefill/decode-disaggregated LLM serving with network-based KV cache transfer connectors.",
+      "problem": "Prefill and decode phases of LLM inference contend for the same GPU resources: prefill operations interfere with in-flight decode (and vice versa), causing unpredictable degradation under traffic spikes, and the two phases have different resource/scaling profiles that a single pooled deployment cannot exploit.",
+      "mechanism": "Ray Serve's build_pd_openai_app deploys two separately-configured LLM instances (prefill and decode). KV cache is moved between them via vLLM's kv_transfer_config using one of two connectors: (1) NIXLConnector — wraps NVIDIA's NIXL library with backends UCX, libfabric, and EFA for direct network transfer, configured with kv_role kv_producer on prefill and kv_consumer on decode (or kv_both on both); (2) LMCacheConnectorV1 — uses LMCache as a tiered store, which can itself ride on a NIXL backend (sender/receiver over a configured host:port with a CUDA-side buffer) or on a Mooncake distributed store (RDMA + etcd metadata server). Prefill and decode replica pools autoscale independently (e.g., prefill min/max 2/4, decode 6/10).",
+      "evidence": [
+        {
+          "claim": "Disaggregation is motivated by independent optimization, reduced prefill/decode interference, independent scaling, and heterogeneous-node cost optimization.",
+          "source_locator": "Section 'Prefill/decode disaggregation' intro bullets"
+        },
+        {
+          "claim": "NIXLConnector provides network-based KV cache transfer using NVIDIA NIXL with backends UCX, libfabric, and EFA.",
+          "source_locator": "Section 'Deploy with NIXLConnector' / kv transfer backends list"
+        },
+        {
+          "claim": "LMCacheConnectorV1 can use a NIXL backend with a 1GB (1073741824-byte) CUDA buffer and sender/receiver roles, or a Mooncake store backend using RDMA (device rdma0) coordinated by an etcd metadata server.",
+          "source_locator": "lmcache_prefiller.yaml / lmcache_mooncake.yaml examples",
+          "value": "nixl_buffer_size = 1073741824 bytes (1 GB); Mooncake global_segment_size = 3355443200 bytes (~3.125 GB)",
+          "condition": "Llama-3.1-8B-Instruct example deployment"
+        },
+        {
+          "claim": "The feature requires vLLM v1 (the default engine); legacy v0 deployments must upgrade first.",
+          "source_locator": "Warning callout near top of guide"
+        },
+        {
+          "claim": "Best practice explicitly warns to monitor KV transfer overhead so disaggregation benefits outweigh network transfer costs, and to verify network bandwidth/RDMA support between prefill and decode instances.",
+          "source_locator": "Sections 'Best practices' and 'Troubleshooting > Prefill and decode instances can't communicate'"
+        }
+      ],
+      "evaluation_context": "Configuration-guide deployment (not a benchmark). Example model: meta-llama/Llama-3.1-8B-Instruct. Example autoscaling: prefill 2-4 replicas, decode 6-10 replicas (NIXL) or fixed 2 / 6 (LMCache-NIXL) or 2 / 1 (Mooncake). Backends assume LAN-class high-bandwidth fabrics (RDMA/UCX/EFA). Requires ray-project/ray-llm images or manual install of nixl / lmcache wheels.",
+      "limitations": "Explicit (doc-level): no performance measurements (TTFT, throughput, transfer latency) are provided; it is a how-to configuration guide. Explicit: KV transfer overhead monitoring and realistic-workload validation are left to the operator. Inferred: all described transports (UCX/libfabric/EFA/RDMA) are LAN/single-datacenter fabrics; no guidance for WAN or cross-region placement, bandwidth, or RTT — so direct applicability to cross-region KV handoff cannot be confirmed from this source.",
+      "project_relevance": "Directly on-brief for KVCache cross-node transfer and disaggregated inference (TPN/inference-network). NIXL is emerging as the de-facto KV transfer layer across vLLM and LMCache, and Mooncake is a candidate for DPU/SmartNIC-offloaded or CXL/disaggregated-memory style stores. However, the guide frames the split as co-located prefill/decode pools rather than geo-distributed nodes, so it informs the intra-cluster transfer mechanism more than the cross-region WAN tradeoff that is the briefing's central question.",
+      "primary_source_resolved": true,
+      "quality_score": 78,
+      "source_notes": [
+        "Source IS the original official documentation for the feature (docs.ray.io, Ray 2.56.0), so primary_source_resolved = true.",
+        "Content is configuration/usage oriented; quantitative evidence (transfer bytes, RTT, hit rate, P95) is absent by design and would need the referenced LMCache/NIXL benchmarks."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "title": "Prefill/Decode Disaggregation (Ray Serve LLM User Guide)",
+      "url": "https://docs.ray.io/en/latest/serve/llm/user-guides/prefill-decode.html",
+      "source_level": "A",
+      "discovery_source": "Agent Web Search",
+      "published_at": null
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  }
+}

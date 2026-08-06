@@ -1,0 +1,59 @@
+{
+  "title": "SpecBox: Speculative Sandbox Scheduling for Efficient LLM Agent Serving",
+  "event_hint": "SpecBox以意图预热、随机预取、语义结果缓存和零拷贝数据面降低Agent沙箱尾延迟",
+  "problem": "多租户、多轮LLM Agent调用MCP外部沙箱时，永久保留所有沙箱会产生高额空闲内存，按需实例化又会在工具调用关键路径引入冷启动、握手和大结果序列化开销，导致交互尾延迟随并发和会话步数增长。",
+  "mechanism": "SpecBox在LLM生成token期间用关键词匹配与流式语义嵌入识别即将执行的工具意图并提前预热沙箱；基于沙箱依赖图和历史转移概率，对后续ReAct步骤做带阈值和预算的随机预取。执行侧以同工具身份、规范化调用签名和语义相似度阈值0.8做保守语义结果缓存，命中时跳过沙箱启动与工具执行；未命中时将大结果写入主机内存映射共享内存，控制面只传64-bit token_id，实现控制与零拷贝数据传输分离。",
+  "evidence": [
+    {
+      "claim": "在QPS=20的高并发多轮轨迹下，SpecBox变体Laplace的P99端到端延迟为88.7秒，相比按需运行时257.2秒达到2.9×加速。",
+      "value": "88.7s P99 E2E; 2.9× over 257.2s on-demand",
+      "baseline": "On-demand runtime",
+      "condition": "200条MCPBench多轮轨迹、32个MCP工具服务器、QPS 1–20；QPS=20",
+      "source_locator": "PDF p.8, Section 5.2.2"
+    },
+    {
+      "claim": "SpecBox将多轮会话累计沙箱配置延迟相对按需基线降低4.53×，与永久Reserved基线的性能差距为10.6%。",
+      "value": "4.53× lower cumulative provisioning latency; 10.6% gap to Reserved",
+      "baseline": "On-demand and Reserved runtimes",
+      "condition": "5–8步为主的多轮Agent会话，仅统计环境配置开销，不含沙箱内计算",
+      "source_locator": "PDF p.8, Section 5.2.1"
+    },
+    {
+      "claim": "峰值内存方面，SpecBox最高49.4GiB，而Reserved最高80.6GiB，峰值内存降低45.9%；峰值CPU约12.2核，比按需和Reserved的15.8–15.9核低22.8%–23.3%。",
+      "value": "49.4GiB vs 80.6GiB; 45.9% memory reduction; 12.2 vs 15.8–15.9 CPU cores",
+      "baseline": "Reserved and on-demand runtimes",
+      "condition": "QPS并发扩展实验；16核CPU、256GiB内存的单机Docker沙箱",
+      "source_locator": "PDF pp.9-10, Section 5.2.3 and Figure 10"
+    },
+    {
+      "claim": "语义缓存仅在工具身份相同且规范化调用的语义相似度达到阈值时复用确定性结果；命中同时跳过沙箱初始化和工具执行，未命中则沿正常路径执行并追加结果。",
+      "value": "Tool identity match and semantic similarity τc=0.8; deterministic-only reuse",
+      "baseline": "Exact argument matching or unconstrained semantic matching",
+      "condition": "同一可信主机/受管集群内；side-effecting调用不提前执行",
+      "source_locator": "PDF pp.6-7, Section 3.3 and p.7, Implementation"
+    },
+    {
+      "claim": "SpecBox使用200条多轮轨迹，平均每会话6.4步、每步2.96个工具；轨迹来自32个开源MCP工具服务器，评估指标包括P99端到端延迟、峰值CPU/内存和预热/预取/缓存预测准确率与误报率。",
+      "value": "200 trajectories; 6.4 steps/session; 2.96 tools/step; 32 MCP servers",
+      "baseline": "Replay of full traces under Reserved, On-demand and SpecBox",
+      "condition": "Qwen3.5-Max云API、AgentScope、Docker容器，固定随机种子",
+      "source_locator": "PDF pp.7-8, Section 5.1"
+    }
+  ],
+  "evaluation_context": "实验在一台16核CPU、256GiB内存、2TB NVMe服务器上，基于AgentScope和Docker沙箱，用Qwen3.5-Max并发重放来自MCPBench的200条多轮轨迹。对比永久Reserved、按需On-demand和SpecBox/Laplace，使用QPS 1–20的并发负载，报告P99端到端延迟、累计配置延迟、峰值CPU/内存，以及意图预热、随机预取和语义缓存的命中/误报表现。",
+  "limitations": "结果来自单机、特定模型与MCP工具轨迹，未验证跨地域WAN部署；共享内存数据面要求同一可信主机或受管集群边界，不能直接消除跨域传输。语义缓存仅适用于确定性且兼容的调用，副作用、缓存一致性、失效策略和跨租户安全不在威胁模型内；论文未给出跨域RTT、实际传输字节、缓存命中率或长时生产工作负载下的成本。",
+  "project_relevance": "对跨域Agent Cache和工具结果共享的启发是把复用边界、预取和数据面分开：先用工具身份与语义等价约束避免错误复用，再用预取隐藏未来调用的准备时间，并以引用/零拷贝路径减少大结果搬运。若扩展到跨地域，需要额外测量WAN RTT、传输字节、命中率、一致性与安全开销，不能把单机共享内存收益直接外推为跨域收益。",
+  "primary_source_resolved": true,
+  "quality_score": 94,
+  "source_notes": [
+    "arXiv PDF已抓取且标题与输入一致；正文含架构、实现、端到端、资源和微基准章节。",
+    "2.9×、4.53×、45.9%、4.53×及轨迹规模等数值均有页码/章节定位；缓存阈值和共享内存边界来自实现说明。"
+  ],
+  "_provenance": {
+    "task_id": "27c8f478a52d0f0f77d2f0c2",
+    "candidate_id": "bfb2d12a8753d757bb6bd922",
+    "source_title": "SpecBox: Speculative Sandbox Scheduling for Efficient LLM Agent Serving",
+    "source_url": "https://arxiv.org/abs/2607.23933v1",
+    "document_id": "df4e5cbfd43fa4267958f8fe"
+  }
+}

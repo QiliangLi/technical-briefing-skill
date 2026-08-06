@@ -1,0 +1,100 @@
+{
+  "brief_item": {
+    "title": "SLIM 用饱和感知模型刻画 LLM serving 吞吐平台并给 batch 建议",
+    "type": "研究进展",
+    "topic_name": "AI Infra横向动态",
+    "direction_name": "推理服务、运行时与编译优化",
+    "published_at": "2026-08-04",
+    "importance": "值得关注",
+    "core_conclusion": "SLIM 通过硬件刻画证明推理的吞吐饱和源于解码阶段注意力内核算术强度近恒定、显存带宽需求随活跃上下文增长，并提出半解析性能模型与配置顾问。该顾问为所测模型识别出至多 55GB 可避免的显存分配。",
+    "mechanism": "用硬件级刻画把计算与内存流量写成解析式加少量部署常数标定的半解析模型预测吞吐与延迟，配置顾问据此选择满足目标延迟约束的最高吞吐批配置。",
+    "result": "对未见操作条件泛化时预测误差平均降低 79.3%，组合模型与输出长度泛化下吞吐误差为 17.6%，标定刻画时间比穷举搜索少 43.85%。",
+    "boundary": "半解析模型依赖部署标定常数、跨硬件需重新标定，配置顾问为离线建议而非在线调度器，评估主要在某模型族与单型 GPU，原始论文编号未保留需回查。",
+    "project_relevance": "判断：对推理部署的容量规划、批配置与 GPU 资源利用有工程参考价值，可作为配置调优的决策辅助先行试点，并复核其跨硬件的迁移性与在线化可行性。",
+    "keywords": [
+      "LLM serving",
+      "吞吐饱和",
+      "性能模型",
+      "batch配置",
+      "显存"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-08-04"
+      }
+    ],
+    "discovered_via": null,
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 76
+  },
+  "facts": [
+    {
+      "title": "SLIM: Saturation-Aware Lightweight Performance Modeling for LLM Serving",
+      "event_hint": "SLIM+BCA/LLM serving吞吐饱和分析与batch配置顾问",
+      "problem": "LLM serving靠增大batch提升吞吐，但存在部署相关的吞吐plateau，越过该点batch增大收益边际而延迟与GPU显存持续增长；此前往将此归因于HBM/DRAM带宽限制，但仅有概念性论证或高层性能观察，缺乏kernel级证据与可据此优化的配置建议。",
+      "mechanism": "用硬件profiling(Nsight)做GPU级刻画，证明吞吐饱和源于decode阶段attention kernel：随active context增长其算术强度近恒定，DRAM带宽需求正比增长而算力远低于硬件极限，矩阵乘kernel则随active context利用率提升。据此提出SLIM半解析模型(Transformer计算与内存流量的解析式+少量部署常数标定)预测吞吐/延迟；BCA据此选择满足目标延迟约束与最低批处理效率的最高吞吐batch配置，并识别可避免的显存分配。",
+      "evidence": [
+        {
+          "claim": "BCA为所测OPT模型识别出可避免的至多55GB显存分配(吞吐损失极小)",
+          "value": "55GB",
+          "baseline": "exhaustive allocation",
+          "condition": "evaluated OPT models",
+          "source_locator": "Abstract; Contributions (PDF Page 1–2)"
+        },
+        {
+          "claim": "SLIM对未见操作条件泛化时MAPE平均降低79.3%(对比LLMVisor与Imai等)",
+          "value": "-79.3% MAPE",
+          "baseline": "LLMVisor / Imai et al.",
+          "condition": "unseen operating conditions",
+          "source_locator": "Section I (PDF Page 2)"
+        },
+        {
+          "claim": "组合模型+输出长度泛化下吞吐MAPE为17.6%",
+          "value": "17.6%",
+          "baseline": null,
+          "condition": "combined model-and-output-length generalization",
+          "source_locator": "Contributions (PDF Page 2)"
+        },
+        {
+          "claim": "标定阶段profiling时间比穷举配置搜索少43.85%",
+          "value": "-43.85%",
+          "baseline": "exhaustive configuration search",
+          "condition": "lightweight calibration",
+          "source_locator": "Abstract; Contributions (PDF Page 1–2)"
+        },
+        {
+          "claim": "attention kernel算术强度近恒定、矩阵乘kernel随active context利用率提升，驱动DRAM带宽饱和",
+          "value": "near-constant arithmetic intensity",
+          "baseline": null,
+          "condition": "decode phase, large active context",
+          "source_locator": "Section V (PDF Page 1, Sec I)"
+        }
+      ],
+      "evaluation_context": "vLLM 0.15.1，online(HTTP client-server)与offline(Nsight profiling)模式；模型OPT-125M~6.7B、Mistral-7B、Granite-8B、Qwen-32B/72B；硬件4×NVIDIA H100(64GB HBM2)、512GB RAM；ShareGPT与合成workload；对比LLMVisor、Imai等、Vidur。",
+      "limitations": "半解析模型依赖少量部署标定常数，跨硬件/架构需重新标定；BCA为advisory建议框架而非在线调度器；评估主要在OPT族及部分Qwen，硬件限于H100；attention带宽饱和结论与具体GPU内存层次相关，迁移性需验证。",
+      "project_relevance": "归入AI Infra横向/serving运行时优化：量化attention带宽饱和驱动的吞吐plateau并提供轻量性能模型与显存节省建议，对推理部署的容量规划、batch配置与GPU资源利用有工程参考价值；可作为serving配置调优的决策辅助。",
+      "primary_source_resolved": true,
+      "quality_score": 80,
+      "source_notes": [
+        "一手arXiv期刊扩展版(PDF转MD)，含profiling与MAPE对比定量结果",
+        "BCA为离线建议框架，非端到端在线调度系统"
+      ]
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

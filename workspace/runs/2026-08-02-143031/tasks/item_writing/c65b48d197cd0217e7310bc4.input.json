@@ -1,0 +1,236 @@
+{
+  "event_id": "e046880bcba12c9cce193f35",
+  "topic": {
+    "id": "cross_region",
+    "name": "跨域传输",
+    "description": "KVCache、Agent Cache、工具结果和记忆在跨地域或跨集群环境中的传输、放置与一致性。",
+    "max_items_per_issue": 2,
+    "aihot_priority": "high",
+    "aihot_boost_terms": [
+      "cross-region KV cache",
+      "remote prefill",
+      "agent memory",
+      "distributed cache"
+    ],
+    "current_questions": [
+      "KVCache跨域传输在什么场景值得付出WAN成本",
+      "Agent Cache、工具结果和记忆能否跨域复用",
+      "压缩、增量传输和预取如何降低带宽与时延"
+    ],
+    "valuable_evidence": [
+      "WAN RTT",
+      "传输字节数",
+      "缓存命中率",
+      "P95时延",
+      "压缩比",
+      "一致性开销"
+    ],
+    "directions": [
+      {
+        "id": "kv_cross_region",
+        "name": "KVCache跨域迁移与远程访问",
+        "queries": [
+          "\"cross-region KV cache\"",
+          "\"remote KV cache\" WAN",
+          "\"KV cache migration\" distributed inference"
+        ],
+        "aihot_queries": [
+          "cross-region KV cache",
+          "remote KV cache",
+          "KV cache migration"
+        ],
+        "arxiv_query": "(\"cross-region KV cache\" OR \"remote KV cache\" OR \"KV cache migration\")",
+        "include_terms": [
+          "kv cache",
+          "remote",
+          "cross-region",
+          "migration",
+          "wan"
+        ],
+        "exclude_terms": [
+          "cpu cache"
+        ]
+      },
+      {
+        "id": "remote_prefill",
+        "name": "Prefill/Decode跨域解耦",
+        "queries": [
+          "\"remote prefill\" KV cache handoff",
+          "\"prefill decode disaggregation\" WAN",
+          "\"KV cache handoff\" network placement"
+        ],
+        "aihot_queries": [
+          "remote prefill",
+          "KV cache handoff",
+          "disaggregated inference"
+        ],
+        "arxiv_query": "((\"remote prefill\" OR \"KV cache handoff\") AND (network OR WAN OR placement))",
+        "include_terms": [
+          "prefill",
+          "decode",
+          "kv cache",
+          "handoff",
+          "remote"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "agent_cache",
+        "name": "Agent Cache、工具结果与记忆共享",
+        "queries": [
+          "\"distributed agent memory\"",
+          "\"cross-region agent cache\"",
+          "\"tool result sharing\" agent distributed"
+        ],
+        "aihot_queries": [
+          "distributed agent memory",
+          "agent cache",
+          "tool result sharing"
+        ],
+        "arxiv_query": "((agent AND (memory OR cache OR \"tool result\")) AND distributed)",
+        "include_terms": [
+          "agent",
+          "cache",
+          "memory",
+          "tool result",
+          "distributed"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "transfer_placement",
+        "name": "压缩、增量传输、预取与放置",
+        "queries": [
+          "KV cache compression transfer prefetch placement",
+          "distributed cache incremental transfer WAN"
+        ],
+        "aihot_queries": [
+          "KV cache compression",
+          "cache prefetch placement",
+          "incremental transfer"
+        ],
+        "arxiv_query": "((\"KV cache\" OR \"distributed cache\") AND (compression OR prefetch OR placement OR \"incremental transfer\"))",
+        "include_terms": [
+          "cache",
+          "compression",
+          "prefetch",
+          "placement",
+          "transfer"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "consistency_isolation",
+        "name": "跨域一致性、安全与多租户隔离",
+        "queries": [
+          "cross-region cache consistency multi-tenant isolation",
+          "distributed agent memory security consistency"
+        ],
+        "aihot_queries": [
+          "agent memory security",
+          "cross-region cache consistency"
+        ],
+        "arxiv_query": "((\"cross-region cache\" OR \"distributed agent memory\") AND (consistency OR security OR multi-tenant))",
+        "include_terms": [
+          "cross-region",
+          "distributed",
+          "consistency",
+          "security",
+          "multi-tenant"
+        ],
+        "exclude_terms": []
+      }
+    ]
+  },
+  "direction": {
+    "id": "transfer_placement",
+    "name": "压缩、增量传输、预取与放置",
+    "queries": [
+      "KV cache compression transfer prefetch placement",
+      "distributed cache incremental transfer WAN"
+    ],
+    "aihot_queries": [
+      "KV cache compression",
+      "cache prefetch placement",
+      "incremental transfer"
+    ],
+    "arxiv_query": "((\"KV cache\" OR \"distributed cache\") AND (compression OR prefetch OR placement OR \"incremental transfer\"))",
+    "include_terms": [
+      "cache",
+      "compression",
+      "prefetch",
+      "placement",
+      "transfer"
+    ],
+    "exclude_terms": []
+  },
+  "score": 80.4,
+  "facts": [
+    {
+      "title": "C²KV: Compressed and Composable KV Cache Reuse for Efficient LLM Inference",
+      "event_hint": "C²KV proposes learned compressed, position-agnostic KV blocks for non-prefix document reuse",
+      "problem": "Existing non-prefix KV-cache reuse reduces repeated prefill computation but still loads large, context-dependent KV states from lower-tier memory. Generic compression cannot simply be stacked onto such reuse because compressed states are not designed to remain valid when documents are reordered or concatenated, causing large quality losses.",
+      "mechanism": "C²KV attaches a lightweight trainable C²Extractor to a frozen base LLM. It inserts one learnable C²Token per block of k document tokens and uses separate per-layer QKV projections only for those tokens. A structured attention mask keeps original-token computation unchanged, lets each C²Token aggregate its local block and sink block, and permits causal accumulation across earlier C²Tokens. Only the resulting compressed KV pairs are stored. At reuse time, independently extracted document KVs receive new positional alignment/RoPE according to their placement and are concatenated directly, without blending or recomputing the original documents. The extractor is trained end-to-end on answers after multi-document KV concatenation, forcing its compressed representation to remain useful under varying document orders and compositions.",
+      "evidence": [
+        {
+          "claim": "The paper reports up to 17× inference speedup while reducing KV storage and transfer cost and preserving generation quality.",
+          "value": "up to 17×",
+          "baseline": "existing approaches",
+          "condition": "long-context inference with reusable document KV caches; the headline result is reported by the authors without a single table cell specifying the maximizing workload",
+          "source_locator": "Abstract; Introduction contribution summary"
+        },
+        {
+          "claim": "At 128k context on Llama3.1-8B, loading full KV states takes 0.839 seconds while the blending component is 0.132 seconds, supporting the paper's claim that cache movement can dominate reuse preparation.",
+          "value": "0.839 s load vs 0.132 s blend",
+          "baseline": "full-size non-prefix reused KV loading and blending",
+          "condition": "Llama3.1-8B, 128k-token context",
+          "source_locator": "Figure 3, 'Llama3.1-8 Blend vs Load Time'"
+        },
+        {
+          "claim": "With 4× compression on Llama3.1-8B, C²KV reaches 0.3587 on MuSiQue and 0.4477 on 2WikiMQA, exceeding the full-recompute scores of 0.3198 and 0.4018 on those two tasks, although it trails full recompute on some other datasets.",
+          "value": "MuSiQue 0.3587; 2WikiMQA 0.4477",
+          "baseline": "Full Recompute: MuSiQue 0.3198; 2WikiMQA 0.4018",
+          "condition": "Llama3.1-8B-Instruct, 4× KV compression, LongBench evaluation",
+          "source_locator": "Table 1 and Table 5"
+        },
+        {
+          "claim": "A single model trained by sampling 4×, 8×, and 16× compression ratios generalizes to an unseen 10× ratio; on Llama3.1-8B it scores 0.3198 on MuSiQue and 0.4310 on 2WikiMQA at 10×.",
+          "value": "10× unseen ratio: 0.3198 MuSiQue, 0.4310 2WikiMQA",
+          "baseline": "dynamic-ratio training sampled only 4×, 8×, and 16×",
+          "condition": "Llama3.1-8B, dynamic-ratio C²KV model",
+          "source_locator": "Section 4.4 and Table 1"
+        },
+        {
+          "claim": "Naively adding 4× SnapKV compression to existing reuse methods sharply reduces accuracy; for example CacheBlend falls from 0.2970 to 0.0532 on HotpotQA and from 0.2720 to 0.1311 on MuSiQue.",
+          "value": "HotpotQA 0.2970→0.0532; MuSiQue 0.2720→0.1311",
+          "baseline": "CacheBlend without SnapKV compression",
+          "condition": "Llama3.1-8B-Instruct, SnapKV 4× compression",
+          "source_locator": "Section 4.7, Table 3"
+        }
+      ],
+      "evaluation_context": "The C²Extractor is trained for one epoch on 120,000 multi-document QA examples sampled equally from HotpotQA, 2WikiMQA, and LongMagpie, with the base LLM frozen and only C²Token embeddings plus per-layer QKV heads trainable. Evaluation covers LongBench QA and summarization tasks on Qwen3-4B-Instruct-2507, Llama-3.1-8B-Instruct, and Qwen2.5-7B-Instruct, plus Qwen3-14B scaling and RULER contexts from 4k to 64k. Baselines include full recompute, naive reuse, EPIC, CacheBlend, Block-Attention, and SnapKV combinations. TTFT excludes offline document extraction and the short system/query-token prefill; document KVs are loaded from host memory to GPU, so the reported system evaluation is intra-node memory-tier movement rather than WAN transfer.",
+      "limitations": "The authors explicitly limit the current system to document-level reuse where reusable content is identifiable and extracted offline; online or incremental extraction is future work. Compression is uniform across documents and layers rather than adaptive or content-aware. The extractor adds about 10% parameters for the evaluated Qwen3-4B and Llama3.1-8B models and requires model-specific training, even though the base model stays frozen. The evaluation does not measure WAN RTT, cross-region cache placement, multi-tenant isolation, cache hit rate, or end-to-end P95 latency. Therefore, applying the result to cross-datacenter KV transfer is an inference: compression reduces bytes, but the paper does not establish that this benefit exceeds remote lookup, consistency, or network costs.",
+      "project_relevance": "For the cross-region project, C²KV is relevant as evidence that KV transfer optimization may require representations co-designed for later composition, not just generic token eviction or quantization. A useful prototype would compare full KV, generic compressed KV, and composable compressed KV under actual WAN bandwidth/RTT, measuring transferred bytes, cache hit rate, TTFT/P95, extraction amortization, and quality after arbitrary document reordering. Its direct-concatenation and position-realignment mechanism is especially relevant to a distributed document-cache service, but the current paper alone does not validate cross-region economics.",
+      "primary_source_resolved": true,
+      "quality_score": 95,
+      "source_notes": [
+        "Primary source is the KDD 2026 paper/arXiv v1 with DOI and a public code link.",
+        "The headline 17× speedup is stated in the abstract and contribution summary, but the extracted text does not expose the exact maximizing workload as a table entry; retain that qualifier in downstream writing.",
+        "All reported transfer timings concern host-memory-to-GPU loading, not WAN or cross-region networking."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "title": "C$^2$KV: Compressed and Composable KV Cache Reuse for Efficient LLM Inference",
+      "url": "https://arxiv.org/abs/2607.17715v1",
+      "source_level": "A",
+      "discovery_source": "arXiv",
+      "published_at": "2026-07-20T09:09:23Z"
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  }
+}

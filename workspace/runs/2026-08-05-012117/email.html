@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI语义Fabric技术情报（内测版）｜2026-08-05</title>
+  <style>
+    @media only screen and (max-width:620px) {
+      .mail-shell { width:100% !important; }
+      .pad-x { padding-left:18px !important; padding-right:18px !important; }
+      .stack-col { display:block !important; width:100% !important; box-sizing:border-box !important; }
+      .card-gap { padding-right:0 !important; padding-left:0 !important; padding-bottom:10px !important; }
+      .topic-nav a { display:inline-block !important; margin-bottom:6px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;background:#e9e9e5;color:#151515;font-family:'Microsoft YaHei','微软雅黑',Arial,sans-serif;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">本期围绕推理与训练基础设施的精细化：KV压缩在降本的同时暴露对注意力分布与agent轨迹的隐性影响，集合通信走向片上集成与可观测的量化决策，解码加速持续向算子与微架构协同收敛。</div>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#e9e9e5"><tr><td align="center">
+<table role="presentation" width="720" cellspacing="0" cellpadding="0" border="0" class="mail-shell" style="width:100%;max-width:720px;background:#f8f8f5;margin:16px auto">
+
+<tr><td class="pad-x" style="padding:24px 28px 20px;border-bottom:3px solid #002fa7">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+    <td valign="top" class="stack-col">
+      <div style="font-size:11px;letter-spacing:1.6px;font-family:'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;font-weight:bold">TECHNICAL BRIEFING</div>
+      <h1 style="font-size:28px;line-height:1.15;font-weight:600;margin:8px 0 7px">AI语义Fabric技术情报（内测版）</h1>
+      <div style="font-size:13px;line-height:1.4;color:#666">2026-08-05</div>
+    </td>
+  </tr></table>
+</td></tr>
+
+<tr><td class="pad-x topic-nav" style="padding:12px 28px 10px;background:#f0f1ed;border-bottom:1px solid #d5d5cf;font-size:12px;line-height:1.8">
+  <b style="color:#555;margin-right:8px">专题导航</b>
+  <a href="#topic-tpn" style="color:#002fa7;text-decoration:none;margin-right:12px">状态感知网络、TPN（2）</a><a href="#topic-agent_acceleration" style="color:#002fa7;text-decoration:none;margin-right:12px">Agent语义加速（3）</a><a href="#topic-cross_region" style="color:#002fa7;text-decoration:none;margin-right:12px">跨域传输（3）</a><a href="#topic-ai_infra_horizontal" style="color:#002fa7;text-decoration:none;margin-right:12px">AI Infra横向动态（3）</a>
+</td></tr>
+
+<tr><td class="pad-x" style="padding:18px 28px 8px">
+  <div style="font-size:11px;letter-spacing:1.4px;font-family:'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;font-weight:bold;margin-bottom:5px">本期判断</div>
+  
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" data-judgement-ref-count="1" style="border-top:1px solid #c8c8c2"><tr>
+    <td width="30" valign="top" style="padding:9px 0;color:#002fa7;font:700 12px 'Microsoft YaHei','微软雅黑',Arial,sans-serif">01</td>
+    <td style="padding:9px 0;font-size:14px;line-height:1.45;color:#222">
+      KV压缩与驱逐的收益已很显著——在线压缩把峰值KV降至约29%、吞吐提升约3.3倍，5%预算下用学习式恢复缓存把RULER-4K准确率从38.2拉回73.2；但反事实评测表明块选择会改变内容影响力且聚合准确率无法察觉，在线压缩还会让agent轨迹变长、搜索重复增多。这类隐性偏移必须在生产前补做反事实与agent级评估，而不能只看准确率。
+      <div style="margin-top:5px;font-size:11px;line-height:1.5;color:#777">对应：<a href="#item-ec0c59bd7dc9b40db143de12" style="color:#002fa7;text-decoration:none">RestoreKV 用学习式 restore cache 弥补激进 KV 驱逐的信息损失</a></div>
+    </td>
+  </tr></table>
+  
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" data-judgement-ref-count="1" style="border-top:1px solid #c8c8c2"><tr>
+    <td width="30" valign="top" style="padding:9px 0;color:#002fa7;font:700 12px 'Microsoft YaHei','微软雅黑',Arial,sans-serif">02</td>
+    <td style="padding:9px 0;font-size:14px;line-height:1.45;color:#222">
+      集合通信正从占用计算grid的设备kernel转向片上集成加编译式卸载（Meta HCCL协同MTIA 300），而Clos与torus的选择可由解析模型判定（AllGather宜torus、大规模AllReduce宜Clos），再配合NIXT这类端到端开销低于2%的通信级可观测性，大规模训练的通信正从经验调参变成可量化决策。
+      <div style="margin-top:5px;font-size:11px;line-height:1.5;color:#777">对应：<a href="#item-6900c39f7782c5034f138abb" style="color:#002fa7;text-decoration:none">NIXT 把 NCCL 集合通信日志转为大规模训练可观测性工具</a></div>
+    </td>
+  </tr></table>
+  
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" data-judgement-ref-count="3" style="border-top:1px solid #c8c8c2"><tr>
+    <td width="30" valign="top" style="padding:9px 0;color:#002fa7;font:700 12px 'Microsoft YaHei','微软雅黑',Arial,sans-serif">03</td>
+    <td style="padding:9px 0;font-size:14px;line-height:1.45;color:#222">
+      Bole面向混合注意力的树推测验证、Celty双稀疏微架构、AFlex算子级DVFS、LightRot旋转量化加速器共同指向同一结论：解码与推理的下一台阶来自硬件与算子的联合设计而非单一软件技巧；这些工作普遍缺生产SLO下的长尾时延与显存上限实测，落地前须重点补齐。
+      <div style="margin-top:5px;font-size:11px;line-height:1.5;color:#777">对应：<a href="#item-2c6b4cf8745ac8def5b6e7cb" style="color:#002fa7;text-decoration:none">Celty 双稀疏 spMspV 内核与 SIMT 微架构协同设计加速单用户解码</a> · <a href="#item-828679dda7041d29c47f677a" style="color:#002fa7;text-decoration:none">Bole用闭式树验证加速混合注意力LLM推测解码</a> · <a href="#item-9327ddbb97b86e132937c084" style="color:#002fa7;text-decoration:none">AFlex：Attention-FFN 解耦的算子级 DVFS 节能 LLM 服务框架</a></div>
+    </td>
+  </tr></table>
+  
+</td></tr>
+
+
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-tpn"></a>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-bottom:2px solid #002fa7"><tr>
+    <td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">状态感知网络、TPN</span></td>
+    <td width="60" align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7">2 ITEMS</td>
+  </tr></table>
+</td></tr>
+
+<tr><td class="pad-x" style="padding:0 28px 10px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+    
+    <td width="50%" valign="top" class="stack-col card-gap" style="padding:0 5px 0 0">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff;border:1px solid #d2d2cc"><tr><td id="item-bafc81a8b9858c59fad3cfab" style="padding:12px 13px 11px">
+        <div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">研究论文 · 2026-08-03 · 82分</div>
+        <h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.01507v1" style="color:#151515;text-decoration:none">仓库级代码问答：语义检索在准确率与性价比上反超深度智能体搜索</a></h2>
+        <p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">针对可预先建索引的仓库级只读代码问答，实证表明语义检索在准确率与性价比上反超 subagent 式深度智能体搜索，且后者会引入大量静默的协调失败。</p>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 在 SWE-QA（15 仓库、720 题）以同一 LangChain 框架对比：语义检索用 ReAct 加向量检索，深度搜索借 Deep Agents 把探索委托给隔离子 Agent，并由 Claude Sonnet 4.6 对失败编码。</div>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 语义检索 Pass 率 65.2% 对深度搜索 46.2%，每个正确答案成本约为后者 0.43 倍；深度搜索协调崩溃占其失败 41.8%（语义检索 0），91% 仍返回自信错误答案。</div>
+        <div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 结论仅限可索引、只读问答场景，深度搜索在不可索引或需写代码任务上未测；每种范式仅用一个 harness，仅覆盖 Python 与四模型。</div>
+        <div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 判断：可索引仓库的只读代码问答应优先廉价语义索引；若用 subagent 探索须加交接校验防静默失败，下一步应验证本仓库检索命中率与混合路由。</div>
+        <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.01507v1" style="color:#002fa7">arXiv</a></div>
+      </td></tr></table>
+    </td>
+    
+    <td width="50%" valign="top" class="stack-col card-gap" style="padding:0 0 0 5px">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff;border:1px solid #d2d2cc"><tr><td id="item-6900c39f7782c5034f138abb" style="padding:12px 13px 11px">
+        <div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">研究进展 · 2026-08-02 · 80分</div>
+        <h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.01449v1" style="color:#151515;text-decoration:none">NIXT 把 NCCL 集合通信日志转为大规模训练可观测性工具</a></h2>
+        <p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">NIXT 在 NCCL 自带 Inspector 之上构建导出工具，把每次集合通信的高维记录灌入列式存储，提供框架无关、低开销的通信级可观测性。在 16 到 2048 卡真实训练上端到端开销低于 2%。</p>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 提出按标识符、配置、工作负载、测量与计数器划分的度量分类法，派生仅走高速互联、仅走网卡、混合等链路类别，并在其上提供摘要统计、时空与资源相关性分析及异常检测与根因归因。</div>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 最大规模训练的 17.7GB 原始日志压缩 26 倍至 0.67GB，单条分析低于 0.3 秒；生产中集合通信带宽变异系数是隔离重放的 2 至 5 倍，最紧案例带宽下降 3 至 4 倍。</div>
+        <div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 案例聚焦预训练，定位慢点后确认链路 CRC 错误与热降频等物理根因仍需联合 DCGM 与链路遥测；生产与重放的变异差距无法区分框架调度停顿与拥塞两种机制。</div>
+        <div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 判断：可作为大规模训练故障恢复与性能归因的参考工具链，与既有卡级导出器互补，应试点验证其与现有可观测性栈的集成成本，并量化其对端到端训练开销的影响。</div>
+        <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.01449v1" style="color:#002fa7">arXiv</a> · <a href="https://zenodo.org/records/21755872" style="color:#002fa7">Zenodo</a></div>
+      </td></tr></table>
+    </td>
+    
+  </tr></table>
+</td></tr>
+
+
+
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-agent_acceleration"></a>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-bottom:2px solid #002fa7"><tr>
+    <td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">Agent语义加速</span></td>
+    <td width="60" align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7">3 ITEMS</td>
+  </tr></table>
+</td></tr>
+
+<tr><td class="pad-x" style="padding:0 28px 10px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+    
+    <td width="50%" valign="top" class="stack-col card-gap" style="padding:0 5px 0 0">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff;border:1px solid #d2d2cc"><tr><td id="item-e1cdacddb5a27e06d2f54ea8" style="padding:12px 13px 11px">
+        <div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-03 · 78分</div>
+        <h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.01676v1" style="color:#151515;text-decoration:none">反事实评测揭示稀疏注意力块选择会改变内容影响力</a></h2>
+        <p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">稀疏注意力广泛部署于长上下文服务但缺乏审计丢弃块如何改变特定内容影响力的方法，聚合准确率无法发现正负相消的隐性偏移。论文用密集校准的反事实审计量化稀疏化特有的内容效应。</p>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 用Gold、Poison、Benign匹配探针在六种位置对称下隔离稀疏化效应，以稀疏与密集内容效应之差度量，识别信号集中与整合损失两种竞争模式，并由路由重放、受控block-top-k与KV驱逐三条路径给出收敛证据。</div>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 路由重放在16个模型任务比率单元中13个显著增大错误答案边际且身份重放零翻转，将探针块与跨块通信隔离使其影响力从4.48 logits塌缩到0。</div>
+        <div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 该审计是测量框架而非新选择器，不提供吞吐或显存收益，结论依赖最大局部性放置假设且探针为受控合成卡。</div>
+        <div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 判断其揭示块选择与KV驱逐会改变内容影响力且准确率无法察觉，对压缩部署质量评估有参考价值，应核实真实内容分布下的偏移。</div>
+        <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.01676v1" style="color:#002fa7">arXiv</a></div>
+      </td></tr></table>
+    </td>
+    
+    <td width="50%" valign="top" class="stack-col card-gap" style="padding:0 0 0 5px">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff;border:1px solid #d2d2cc"><tr><td id="item-ec0c59bd7dc9b40db143de12" style="padding:12px 13px 11px">
+        <div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">研究进展 · 2026-08-04 · 76分</div>
+        <h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org" style="color:#151515;text-decoration:none">RestoreKV 用学习式 restore cache 弥补激进 KV 驱逐的信息损失</a></h2>
+        <p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该方法在预填充后、驱逐前用少量可学习恢复令牌经单次适配前向生成紧凑恢复缓存，与保留的原始项在相同预算下组合，弥补查询无关驱逐丢失的信息。在 5% 预算下把 Qwen3-4B 上 KVzip 的 RULER-4K 准确率从 38.2 提升到 73.2。</p>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 基础重要性评分与驱逐规则不变，适配层仅在恢复缓存生成时启用，训练采用冻结全缓存教师的自蒸馏并只更新约 0.4% 参数，无需任务特定调优。</div>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 60 个预算匹配设置中改进 59 个，16 倍压缩下达 86.4 准确率，32K 上下文恢复过程仅增 0.03–0.04 秒与 84MB 峰值显存，消融显示适配层贡献最大。</div>
+        <div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 恢复需按模型与驱逐器离线训练约 2 小时，训练与推理驱逐器需匹配、跨驱逐器迁移有限，增益主要在激进预算下，原始论文编号未保留需回查。</div>
+        <div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 判断：可作为既有驱逐流水线的即插即用增强以降低长上下文缓存的传输与存储成本，应验证其在我方驱逐器与模型上的迁移效果，并测量其在激进预算下的端到端收益。</div>
+        <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org" style="color:#002fa7">arXiv</a></div>
+      </td></tr></table>
+    </td>
+    
+  </tr></table>
+</td></tr>
+
+
+
+<tr><td class="pad-x" style="padding:0 28px 9px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+<td width="50%" valign="top" class="stack-col card-gap" style="padding:0 5px 0 0">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fffdf2;border:1px solid #d9c878"><tr><td id="item-85aff8a0f3bc2c18d2c28e88" style="padding:11px 12px">
+    <div style="font:700 10px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#806900">AI INFRA DYNAMIC · 邻近动态 · 84分</div>
+    <div style="font-size:14px;line-height:1.35;font-weight:700;margin:5px 0"><a href="https://arxiv.org/abs/2607.27704v1" style="color:#222;text-decoration:none">LightRot 轻量旋转量化加专用加速器实现 4 比特推理 27.4 TOPS/W</a></div>
+    <div style="font-size:12px;line-height:1.42;color:#555">LightRot 在已有旋转量化上引入分组局部旋转与离群值方向对齐以降低在线旋转浮点开销，并配套两级层次化快速变换与可转置寄存器堆硬件；其 28nm 加速器 4 比特推理峰值能效达 27.4 TOPS/W。</div>
+    <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2607.27704v1" style="color:#806900">arXiv</a></div>
+  </td></tr></table>
+</td>
+</tr></table></td></tr>
+
+
+
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-cross_region"></a>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-bottom:2px solid #002fa7"><tr>
+    <td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">跨域传输</span></td>
+    <td width="60" align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7">3 ITEMS</td>
+  </tr></table>
+</td></tr>
+
+<tr><td class="pad-x" style="padding:0 28px 10px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+    
+    <td width="50%" valign="top" class="stack-col card-gap" style="padding:0 5px 0 0">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff;border:1px solid #d2d2cc"><tr><td id="item-828679dda7041d29c47f677a" style="padding:12px 13px 11px">
+        <div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-03 · 85分</div>
+        <h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.01651v1" style="color:#151515;text-decoration:none">Bole用闭式树验证加速混合注意力LLM推测解码</a></h2>
+        <p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">混合注意力LLM解码受内存带宽限制，树推测可加速但现有系统面向全注意力KV设计，在混合模型上需逐分支串行遍历循环层致验证时延与瞬时显存恶化。Bole以kernel-runtime协同设计从单一pre-tree状态并行验证所有提案。</p>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 将线性注意力递推转化为树结构闭式并用value-tiling核并行验证，以token级因子无损编码候选状态更新，采样后仅重建被接受状态，并集成进SGLang生产引擎。</div>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 线性注意力树验证加速3.4至7.7倍，瞬时状态显存降低82至99倍，离线解码吞吐达自回归4.72倍与最强树推测基线2.03倍，在线Agent负载TTFT最高降67.6%。</div>
+        <div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 收益依赖硬件相关的有效验证容量且固定每请求预算不可靠，闭式最大支持深度由树深度限定，已读部分未给出长尾时延完整曲线。</div>
+        <div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 判断其并行树验证与因子化状态压缩对MoE与混合模型推理服务有工程价值，应核实生产SLO下的长尾时延与显存上限。</div>
+        <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.01651v1" style="color:#002fa7">arXiv</a></div>
+      </td></tr></table>
+    </td>
+    
+    <td width="50%" valign="top" class="stack-col card-gap" style="padding:0 0 0 5px">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff;border:1px solid #d2d2cc"><tr><td id="item-9327ddbb97b86e132937c084" style="padding:12px 13px 11px">
+        <div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-03 · 80分</div>
+        <h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.01891v1" style="color:#151515;text-decoration:none">AFlex：Attention-FFN 解耦的算子级 DVFS 节能 LLM 服务框架</a></h2>
+        <p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">AFlex 在 SGLang 上把 Attention 与 FFN 解耦并叠加每算子 DVFS，在满足 TTFT 与 TPOT 的前提下相对最强基线把每 token 能耗降低最高 49%，证明算子级而非阶段级是节能关键粒度。</p>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 全局调度器周期求解整数规划，在资源与时延约束下选定四个算子池的频率对与 TP 度，局部控制器按毫秒级 batch 调频并以交错流水线减气泡。</div>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 在两台 8×A800 上跑 Qwen3-32B 与 Mixtral-8×7B 的 Azure trace，相对 DistServe 每 token 能耗最高降 49%，相对 DynamoLLM 降 48%。</div>
+        <div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 硬件为 A800 未在 B200 验证，隐状态传输与频率切换需流水线摊销且依赖离线 profiling，目前仅实现于 SGLang。</div>
+        <div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 判断：算子级频率敏感度与 SLO 感知调度可为服务节能提供量化参考，并与 KVCache 调度专题互补，需先确认迁移成本。</div>
+        <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.01891v1" style="color:#002fa7">arXiv</a></div>
+      </td></tr></table>
+    </td>
+    
+  </tr></table>
+</td></tr>
+
+
+
+<tr><td class="pad-x" style="padding:0 28px 9px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+<td width="50%" valign="top" class="stack-col card-gap" style="padding:0 5px 0 0">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fffdf2;border:1px solid #d9c878"><tr><td id="item-5b126924d057b449f43cd89d" style="padding:11px 12px">
+    <div style="font:700 10px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#806900">AI INFRA DYNAMIC · 邻近动态 · 82分</div>
+    <div style="font-size:14px;line-height:1.35;font-weight:700;margin:5px 0"><a href="https://arxiv.org/abs/2608.00358v1" style="color:#222;text-decoration:none">Meta HCCL用片上集成网络与编译式集合通信卸载计算grid</a></div>
+    <div style="font-size:12px;line-height:1.42;color:#555">传统GPU-NIC架构把集合通信当设备kernel执行占用计算grid，通信随推荐模型规模成为一阶瓶颈。HCCL与Meta首款片上集成后端网络的MTIA 300协同设计，用编译式通信完全卸载计算grid。</div>
+    <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.00358v1" style="color:#806900">arXiv</a></div>
+  </td></tr></table>
+</td>
+</tr></table></td></tr>
+
+
+
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-ai_infra_horizontal"></a>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-bottom:2px solid #002fa7"><tr>
+    <td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">AI Infra横向动态</span></td>
+    <td width="60" align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7">3 ITEMS</td>
+  </tr></table>
+</td></tr>
+
+<tr><td class="pad-x" style="padding:0 28px 10px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+    
+    <td width="50%" valign="top" class="stack-col card-gap" style="padding:0 5px 0 0">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff;border:1px solid #d2d2cc"><tr><td id="item-e7e170bd922c84386b2232cb" style="padding:12px 13px 11px">
+        <div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-02 · 82分</div>
+        <h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.00902v1" style="color:#151515;text-decoration:none">在线KV Cache压缩实证：延迟压缩配TE把峰值KV降至约29%并提吞吐</a></h2>
+        <p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">针对LLM agent长程任务KV cache成为推理瓶颈，该研究将token驱逐与注意力匹配适配到在线轨迹，发现延迟一轮压缩配合token驱逐在保准确率下将峰值KV降至约29%、吞吐提升约3.3倍。</p>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 按turn完成即压缩并冻结，未来生成只读压缩表示；用代理查询诱导的注意力质量选top-m保留原始KV，注意力匹配则额外拟合偏置与重建值以匹配全cache输出。</div>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> Qwen3.5-27B在BROWSECOMP-PLUS上峰值KV从612.9K降至175.2K，吞吐从217升至717 q/h；无压缩准确率52.50%，TE为52.00%，基本无损。</div>
+        <div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 仅覆盖搜索与文档阅读类agent，未涉及代码编辑或GUI控制；大模型吞吐为SGLang/vLLM轨迹重放仿真，非端到端真实服务实测。</div>
+        <div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 判断：延迟压缩优于即时压缩，TE在不完美代理下比AM稳健，但压缩会改变agent行为（轨迹变长、搜索重复增多），须作为agent级干预评估。</div>
+        <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.00902v1" style="color:#002fa7">arXiv</a></div>
+      </td></tr></table>
+    </td>
+    
+    <td width="50%" valign="top" class="stack-col card-gap" style="padding:0 0 0 5px">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff;border:1px solid #d2d2cc"><tr><td id="item-9df5773692104bba73726c90" style="padding:12px 13px 11px">
+        <div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-03 · 76分</div>
+        <h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.01707v1" style="color:#151515;text-decoration:none">解析模型对比Clos与torus训练拓扑的集合通信完成时间</a></h2>
+        <p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">大规模ML训练部署在胖树Clos与环面torus两类拓扑上但缺乏考虑放置、链路失败与交换机增强时的解析级性能比较。论文用alpha-beta模型推导三类集合通信在两种拓扑上的完成时间下界。</p>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 用Hockney模型推导AllReduce、AllGather与AlltoAll在Clos和torus上的完成时间下界，并扩展到链路失败与作业放置，用消息投递模型分析规模、带宽与torus维度的影响。</div>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 默认参数下Clos在多数集合取得更优完成时间，torus仅在AllGather上因额外接入带宽始终更优，以现实带宽比rb等于0.5衡量AllReduce大规模更宜Clos而AllGather始终宜torus。</div>
+        <div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 该结论为alpha-beta解析推导而非生产实测，采用store-and-forward与最优路由等简化假设，未涵盖功耗、布局与重配置，需实测集群验证。</div>
+        <div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 判断其为Clos与torus拓扑选择提供可复核的解析框架与边界条件，应结合自有集群规模与通信模式做实测校准。</div>
+        <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.01707v1" style="color:#002fa7">arXiv</a></div>
+      </td></tr></table>
+    </td>
+    
+  </tr></table>
+</td></tr>
+
+<tr><td class="pad-x" style="padding:0 28px 10px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+    
+    <td width="50%" valign="top" class="stack-col card-gap" style="padding:0 5px 0 0">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fff;border:1px solid #d2d2cc"><tr><td id="item-2c6b4cf8745ac8def5b6e7cb" style="padding:12px 13px 11px">
+        <div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">研究进展 · 2026-08-04 · 74分</div>
+        <h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org" style="color:#151515;text-decoration:none">Celty 双稀疏 spMspV 内核与 SIMT 微架构协同设计加速单用户解码</a></h2>
+        <p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">Celty 面向双稀疏的非结构化权重剪枝加运行时激活稀疏构成的负载，协同设计稀疏格式、GPU 内核与精简指令微架构。其内核比对照基线快至 2.8 倍，加专用微架构后快至 5.3 倍。</p>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 用 4 比特游程压缩保持索引与非零值一一对应以支持向量化加载，每线程束处理固定 tile 并以共享内存累加替代全局原子，专用核心集成流水线解码器消除软件索引重建，并复用本地寄存器做无冲突累积。</div>
+        <div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 13B 模型端到端比基线快至 2.63 倍（60% 双稀疏），困惑度 7.2 对比稠密 FP16 的 4.9，专用微架构硬件面积开销低于 0.01%，稀疏格式在半数稀疏下约六成三压缩效率。</div>
+        <div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 面向单用户解码、不针对批量多用户，专用核心为尚未量产的微架构修改、纯软件无法获得全部增益，且存在困惑度上升的精度代价，原始论文编号未保留需回查。</div>
+        <div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 判断：对端到端与边缘单用户推理延迟有直接价值，但核心增益依赖硬件微架构修改，宜作横向观察并跟踪其硬件落地，并关注其批量场景的适用性。</div>
+        <div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org" style="color:#002fa7">arXiv</a></div>
+      </td></tr></table>
+    </td>
+    
+  </tr></table>
+</td></tr>
+
+
+
+
+<tr><td class="pad-x" style="padding:20px 28px 6px">
+  <div style="border-top:3px solid #111;padding-top:10px">
+    <span style="font-size:19px;font-weight:700">热点雷达</span>
+    <div style="font-size:11px;line-height:1.45;color:#777;margin-top:3px">以下为近7天跨领域热点线索，未经本简报深度核验，不参与本期判断与证据评分。</div>
+  </div>
+</td></tr>
+
+
+<tr><td class="pad-x" style="padding:0 28px 10px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+<td width="50%" valign="top" class="stack-col card-gap" style="padding:0 5px 0 0">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f0f0ed;border-top:3px solid #002fa7"><tr><td style="padding:10px 12px">
+    <div style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;margin-bottom:6px">Agent与开发工具</div>
+    <div style="padding:0">
+      <a href="https://github.blog/engineering/turn-one-giant-ai-generated-pull-request-to-a-reviewable-stack" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">GitHub 如何用堆叠式 Pull Request 拆解 AI 生成的巨型代码</a>
+      <div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">GitHub 介绍用堆叠式 Pull Request（stacked PR）解决 AI 编码智能体生成巨型代码难以审查的问题。</div>
+      <div style="font-size:10px;color:#888;margin-top:3px">2026-08-04 · 阅读原文：<a href="https://github.blog/engineering/turn-one-giant-ai-generated-pull-request-to-a-reviewable-stack" style="color:#002fa7">github.blog</a></div>
+    </div>
+  </td></tr></table>
+</td><td width="50%" valign="top" class="stack-col card-gap" style="padding:0 0 0 5px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f0f0ed;border-top:3px solid #002fa7"><tr><td style="padding:10px 12px">
+    <div style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;margin-bottom:6px">推理与系统</div>
+    <div style="padding:0">
+      <a href="https://github.com/leonickson1/Swiftlet" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Swiftlet：在 Mac 上运行 80B 版 Qwen（内存 4.3 GB），在 iPhone 上运行 35B 版</a>
+      <div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">Swiftlet 是一个 Swift + Metal 运行时，可在普通 Apple 设备上运行 Qwen3-Next 和 Qwen3.5/3.6 MoE 混合模型，仅将小型稠密核心驻留内存，按需从存储流式加载路由专家权重。</div>
+      <div style="font-size:10px;color:#888;margin-top:3px">2026-08-04 · 阅读原文：<a href="https://github.com/leonickson1/Swiftlet" style="color:#002fa7">github.com</a></div>
+    </div><div style="padding:7px 0 0;border-top:1px solid #d2d2cc;margin-top:7px">
+      <a href="https://github.com/sqliteai/waste" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">以 0.50 tok/s 运行 Kimi K3：WASTE 引擎让 2.78T 参数模型在 64GB 内存笔记本上流式推理</a>
+      <div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">WASTE 是一个用 C 编写的可嵌入推理引擎，通过将模型主干驻留内存、按需从磁盘流式读取专家权重，在 64GB MacBook Pro 上以 0.49-0.54 tok/s 运行完整的 2.</div>
+      <div style="font-size:10px;color:#888;margin-top:3px">2026-07-31 · 阅读原文：<a href="https://github.com/sqliteai/waste" style="color:#002fa7">github.com</a></div>
+    </div>
+  </td></tr></table>
+</td>
+</tr></table></td></tr>
+
+<tr><td class="pad-x" style="padding:0 28px 10px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+<td width="50%" valign="top" class="stack-col card-gap" style="padding:0 5px 0 0">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f0f0ed;border-top:3px solid #002fa7"><tr><td style="padding:10px 12px">
+    <div style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;margin-bottom:6px">芯片、内存与网络</div>
+    <div style="padding:0">
+      <a href="https://engineering.fb.com/2026/08/03/ml-applications/training-gem-at-llm-scale-meta-ads-recommendation-foundation-model" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">GEM 训练：Meta 如何将 LLM 规模广告基础模型效率翻倍</a>
+      <div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">Meta 通过内核、精度、并行、网络与内存的协同设计，将广告推荐基础模型 GEM 的端到端训练效率翻倍至 20-25% MFU，并在 12 个月内将训练 FLOPs 扩展 4 倍。</div>
+      <div style="font-size:10px;color:#888;margin-top:3px">2026-08-03 · 阅读原文：<a href="https://engineering.fb.com/2026/08/03/ml-applications/training-gem-at-llm-scale-meta-ads-recommendation-foundation-model" style="color:#002fa7">engineering.fb.com</a></div>
+    </div><div style="padding:7px 0 0;border-top:1px solid #d2d2cc;margin-top:7px">
+      <a href="https://www.marktechpost.com/2026/08/01/accelerating-transformer-training-with-nvidia-transformer-engine-fused-kernels-bf16-fp8-and-gpu-benchmarking" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">NVIDIA Transformer Engine 如何加速 Transformer 训练：融合内核、BF16 与 FP8 实战教程</a>
+      <div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">本教程演示 NVIDIA Transformer Engine 如何通过融合 GPU 内核、BF16 计算与硬件感知的 FP8 执行加速 Transformer 训练。</div>
+      <div style="font-size:10px;color:#888;margin-top:3px">2026-08-01 · 阅读原文：<a href="https://www.marktechpost.com/2026/08/01/accelerating-transformer-training-with-nvidia-transformer-engine-fused-kernels-bf16-fp8-and-gpu-benchmarking" style="color:#002fa7">marktechpost.com</a></div>
+    </div>
+  </td></tr></table>
+</td><td width="50%" valign="top" class="stack-col card-gap" style="padding:0 0 0 5px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f0f0ed;border-top:3px solid #002fa7"><tr><td style="padding:10px 12px">
+    <div style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;margin-bottom:6px">模型与研究前沿</div>
+    <div style="padding:0">
+      <a href="https://www.marktechpost.com/2026/07/30/tencent-open-sources-angelspec-a-unified-training-framework-for-mtp-and-block-parallel-speculative-decoding-on-hy3-models" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">腾讯开源 AngelSpec：面向推测解码草稿模型的统一训练框架</a>
+      <div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">腾讯开源了 AngelSpec，一个面向推测解码草稿模型的 torch-native 训练框架，支持自回归多 token 预测（MTP）与块并行 DFlash 系列。该框架针对工作负载异构性设计，提供 MTP 与块扩散两种互补草稿模型。</div>
+      <div style="font-size:10px;color:#888;margin-top:3px">2026-07-30 · 阅读原文：<a href="https://www.marktechpost.com/2026/07/30/tencent-open-sources-angelspec-a-unified-training-framework-for-mtp-and-block-parallel-speculative-decoding-on-hy3-models" style="color:#002fa7">marktechpost.com</a></div>
+    </div>
+  </td></tr></table>
+</td>
+</tr></table></td></tr>
+
+
+
+<tr><td class="pad-x" style="padding:20px 28px;color:#777;font-size:11px;line-height:1.5;border-top:1px solid #c8c8c2">本简报由自动化信息采集与人工审核共同生成。技术数据请以原始论文、官方文档或项目仓库为准。</td></tr>
+</table></td></tr></table>
+</body></html>

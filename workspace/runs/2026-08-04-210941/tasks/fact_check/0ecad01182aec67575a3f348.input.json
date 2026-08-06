@@ -1,0 +1,87 @@
+{
+  "brief_item": {
+    "title": "阿里云AI网络白皮书：PD分离后KVCache卸载到头节点网络与Extended ALB的Token/KVCache感知调度",
+    "type": "官方文档",
+    "topic_name": "状态感知网络、TPN",
+    "direction_name": "TPN直接进展",
+    "published_at": "2026-08-04",
+    "importance": "值得关注",
+    "core_conclusion": "AI推理的短输入长输出与PD分离使东西向流量占主导，KVCache流量被卸载到头节点网络。白皮书描述了支撑TPN的网络基底：200Gbps可按需启用RDMA的头节点网卡、Tbps级跨域互联，以及具备Token限流与KVCache用量反馈调度的Extended ALB推理网关。",
+    "mechanism": "四平面协同：头节点网卡200Gbps（Jumbo Frame+硬件卸载），TCP/RDMA比例可配，VPC自研拥塞控制；跨域29地域Tbps互联、99.995% SLA、ZooRoute故障收敛<1秒；Extended ALB按请求/响应/总Token数限流，并依据后端队列深度与KVCache用量反馈调度请求；PrivateLink与GA支撑跨域推理分发。",
+    "result": "头节点网卡200Gbps；跨域Tbps级互联、99.995%可用性SLA、故障收敛<1秒；单专线端口达400Gbps、专线故障切换<100ms。数据为厂商白皮书的产品/架构指标，未提供模型级TTFT/TPOT/P95或KVCache传输吞吐的量化基准。",
+    "boundary": "厂商白皮书视角，无独立基准或第三方验证；TPN内部调度算法、拥塞控制与QoS细节未在抓取章节展开；未披露各流量类型的带宽分配、时延分位或KVCache传输吞吐；白皮书发布日期未知，能力可能演进。",
+    "project_relevance": "[判断]TPN推理网络方向的核心架构来源：Extended ALB依据KVCache用量与队列深度反馈调度是网络感知推理阶段与KVCache状态的具体实例，直接命中TPN判定标准。缺口是未给端到端TTFT/TPOT或网络利用率的量化结果。",
+    "keywords": [
+      "TPN",
+      "KVCache感知调度",
+      "Extended ALB",
+      "RDMA",
+      "PD分离"
+    ],
+    "sources": [
+      {
+        "publisher": "Alibaba Cloud",
+        "url": "https://help.aliyun.com/en/cloud-network-well-architected-design/alibaba-cloud-ai-network-white-paper",
+        "source_level": "A",
+        "primary": true
+      }
+    ],
+    "discovered_via": null,
+    "score": 74,
+    "incremental_update": false,
+    "incremental_change": null
+  },
+  "facts": [
+    {
+      "title": "Alibaba Cloud AI Network Whitepaper: PD-separation KV-cache offload, 200Gbps RDMA NICs, Extended ALB token+KV-cache-aware scheduling",
+      "event_hint": "Alibaba Cloud's official AI-network whitepaper documenting the networking mechanisms — head-node RDMA, KV-cache traffic offload, Extended ALB — that underpin the TPN inference-network design",
+      "problem": "AI training and inference have disrupted traditional north-south-dominated IT architectures: east-west traffic now dominates (20%→80%), communication exceeds 30% of LLM training time, and LLM inference's 'short input, long output' pattern creates bursty asymmetric traffic that traditional load balancers and QoS cannot handle. After PD (prefill-decode) separation inside inference clusters, KV-cache traffic is offloaded onto the head-node network, demanding high-throughput RDMA-capable VPCs.",
+      "mechanism": "Compute-network synergy is delivered across four planes. (1) Data-center network: head-node NICs of Lingjun servers support 200 Gbps throughput via Jumbo Frames + hardware offload, with RDMA activatable on-demand and configurable TCP/RDMA ratios; VPC uses a self-developed congestion-control algorithm. (2) Cross-region network: Tbps-level interconnection across 29 regions with 99.995% SLA, differentiated Gold/Silver/Bronze link tiers, transit-router traffic scheduling, and ZooRoute proactive rerouting for <1s fault convergence. (3) Application delivery: Extended ALB acts as an AI inference gateway with token-based rate limiting (by request/response/total tokens over time windows), feedback-based scheduling that reads backend KV-Cache usage and queue depth to route requests, and an MCP gateway for agent tool invocation. (4) Inference distribution: PrivateLink cross-region mounting lets a single-region inference cluster serve global applications; GA provides multi-model multi-region acceleration.",
+      "evidence": [
+        {
+          "claim": "After PD separation in inference clusters, KV-cache traffic is offloaded to the head-node network, making a high-throughput RDMA-capable VPC essential.",
+          "source_locator": "Section 2 intro: \"offloading KV cache traffic to the head node network after separating the prefill and decoding (PD) stages within inference clusters...makes a virtual private cloud (VPC) network that supports high throughput and RDMA technology essential\""
+        },
+        {
+          "claim": "The head-node NIC supports 200 Gbps throughput (via Jumbo Frames + hardware offload) with on-demand RDMA and configurable TCP/RDMA ratios.",
+          "source_locator": "Section 2.1: \"increase the throughput of the network interface controller (NIC) to 200 Gbps\"; \"The NIC supports configurable TCP/RDMA ratios\"",
+          "value": "200 Gbps",
+          "condition": "Lingjun intelligent-computing server head-node NIC"
+        },
+        {
+          "claim": "Extended ALB performs feedback-based traffic scheduling using backend monitoring metrics such as queue depth or KV Cache usage to decide request placement.",
+          "source_locator": "Section 2.4, feedback-based traffic scheduling: \"determines the busyness of backend compute resources based on feedback from monitoring metrics (such as queue depth or KV Cache usage)\"",
+          "condition": "Extended ALB as load-sharing gateway for self-built inference"
+        },
+        {
+          "claim": "Extended ALB supports token-based rate limiting configurable by request tokens, response tokens, or total tokens over different time periods.",
+          "source_locator": "Section 2.4, token-based rate limiting: \"can be configured based on request tokens, response tokens, or total tokens over different time periods\"",
+          "condition": "Extended ALB as inference ingress gateway"
+        },
+        {
+          "claim": "The cross-region network provides Tbps-level interconnection across 29 regions with a 99.995% availability SLA, and ZooRoute reduces fault convergence to under one second.",
+          "source_locator": "Section 2.3: \"Tbps-level interconnection bandwidth between major regions\"; \"99.995% availability commitment\"; \"ZooRoute...reduces typical network fault convergence time to under one second\"",
+          "value": "Tbps-level; 99.995% SLA; <1s convergence",
+          "condition": "Alibaba Cloud inter-region network"
+        }
+      ],
+      "evaluation_context": "Official vendor whitepaper (help.aliyun.com). Describes architecture and product capabilities rather than reporting controlled benchmarks. Scale: 29 regions globally, hundreds of petabytes flowing between regions daily, single leased-line port up to 400 Gbps, leased-line failover <100 ms via VBR failover groups. Supports Lingjun bare-metal, PAI-DLC, ACK LINGJUN, PAI-EAS, Function Compute, and Model Studio (MaaS) deployment modes. No specific model-level TTFT/TPOT/P95 numbers are given in the fetched sections.",
+      "limitations": "Primary source is a vendor whitepaper; capabilities are described from the product/architecture perspective without independent benchmarking or third-party validation. [explicit] The fetched sections (1–4.x) focus on network architecture/planning; the TPN name itself is not expanded in these sections — TPN's internal scheduling algorithm, congestion-control specifics, and QoS enforcement details are not given at engineering depth here. [explicit] Sections 4.x are network-planning/VPC-design guidance (CIDR, route tables) with limited additional TPN-mechanism content; much of the later chunks repeat deployment topologies. [explicit] No per-traffic-type bandwidth-allocation algorithm, no latency percentiles, and no KV-cache-transfer throughput numbers are disclosed. [explicit] published_at is null; whitepaper date is unknown and capabilities may evolve. [explicit]",
+      "project_relevance": "Highly relevant — this is the primary architectural source for the TPN/inference-network briefing interest. It confirms the networking substrate that TPN builds on: KV-cache traffic offloaded to head-node network after PD separation, RDMA-capable 200 Gbps NICs, and (critically) KV-cache-aware and token-aware scheduling inside the Extended ALB. The Extended ALB's feedback-based scheduling using 'KV Cache usage' and 'queue depth' is a concrete instance of the network sensing inference-stage/KV-cache state — a core TPN judgment criterion. Gaps vs. briefing wants: no end-to-end TTFT/TPOT/P95 or network-utilization numbers are reported here, so this whitepaper establishes mechanism but not quantified outcomes.",
+      "primary_source_resolved": true,
+      "quality_score": 82,
+      "source_notes": [
+        "Source: https://help.aliyun.com/en/cloud-network-well-architected-design/alibaba-cloud-ai-network-white-paper (source_level A).",
+        "Official Alibaba Cloud documentation; fetched ~140k chars across 6 chunks covering Sections 1 (background), 2 (network upgrades: DCN/hybrid/cross-region/ADN), 3 (solutions), and 4 (planning/design for data-collection, training [PAI-DLC, ACK LINGJUN], and inference).",
+        "Adjacent (non-TPN) content: Section 4 contains extensive VPC/subnet/route-table planning templates for training and inference deployment — useful for deployment-context but not for TPN mechanism extraction.",
+        "ADN/MCP gateway detail (Section 2.4) also relevant to Agent-acceleration briefing interest: MCP gateway as unified entry point for agent tool calls."
+      ]
+    }
+  ],
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence."
+  ]
+}

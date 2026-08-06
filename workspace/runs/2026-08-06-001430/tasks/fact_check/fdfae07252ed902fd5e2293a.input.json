@@ -1,0 +1,120 @@
+{
+  "_task": {
+    "id": "fdfae07252ed902fd5e2293a",
+    "type": "fact_check",
+    "entity_id": "c45076b95754d3828df7ba63",
+    "input_digest": "54fe3f2d623c0a85a566d3a3dcab0f24"
+  },
+  "brief_item": {
+    "title": "TaskPress用任务指南压缩可复用KV缓存",
+    "type": "论文",
+    "topic_name": "跨域传输",
+    "direction_name": "压缩、增量传输、预取与放置",
+    "published_at": "2026-08-04T07:51:37Z",
+    "importance": "重点关注",
+    "core_conclusion": "TaskPress用任务指南作为meta-query，在prefill阶段一次评分并压缩KV，结果可服务同任务的多个未知查询。LLaMA-3.1-8B在RULER-16K中75%驱逐平均分68.4，高于KVzip的62.2。",
+    "mechanism": "cross-attention按任务指南筛选上下文并驱逐无关token，int4 per-token scale识别Value outlier作为重要性信号。默认int4提供4×压缩，75%驱逐时总压缩可达16×。",
+    "result": "64K上下文单A100上，75%驱逐把TPOT由50.1降至32.8 ms/token，吞吐由19.9升至30.5 tokens/s。200个查询延迟48.06s，KV缓存236.88MB。",
+    "boundary": "收益依赖任务指南，任务偏离或高密度needle会误驱逐；FP16/BF16还需显式计算outlier统计。未测WAN传输、跨域一致性或多租户部署。",
+    "project_relevance": "可用任务级指南构建跨查询复用的Agent Cache，测指南稳定性、复用次数、传输字节与剪枝成本。任务漂移时回退全缓存。",
+    "keywords": [
+      "TaskPress",
+      "任务级KV压缩",
+      "KV eviction",
+      "Agent Cache",
+      "int4"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2608.03276v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-08-04T07:51:37Z"
+      }
+    ],
+    "discovered_via": "arXiv",
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 81.6,
+    "_provenance": {
+      "task_id": "3b38be8d0b6217778f35a7ef",
+      "event_id": "3ba28b07ef5f3563ede98a4a",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.03276v1"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "title": "TaskPress: Query-Agnostic KV Cache Compression via Task-Guided Pruning",
+      "event_hint": "TaskPress task-guided, query-agnostic KV-cache eviction with quantization-outlier scoring",
+      "problem": "查询依赖的KV剪枝需为每个新查询重复计算重要性，难以在同一任务的多个未知查询间复用；完整KV缓存又随上下文线性增长，造成显存与解码吞吐压力。",
+      "mechanism": "TaskPress在prefill阶段用高层任务指南作为meta-query，对上下文做一次任务条件化的cross-attention评分并驱逐无关token，随后可复用同一压缩缓存服务多个查询。它复用int4量化的per-token scale factor识别Value表示的高幅度outlier，作为零额外算子的影响力信号；默认int4提供4×压缩，75%驱逐后总压缩可达16×。",
+      "evidence": [
+        {
+          "claim": "在LLaMA-3.1-8B的RULER-16K评测中，TaskPress平均分为50%驱逐79.0、75%驱逐68.4；75%驱逐时高于SnapKV 42.8、PyramidKV 39.2、ExpectedAttention 44.1和KVzip 62.2。",
+          "value": "Avg 79.0 at 50%; 68.4 at 75%",
+          "baseline": "At 75%: SnapKV 42.8; PyramidKV 39.2; ExpectedAttention 44.1; KVzip 62.2",
+          "condition": "RULER-16K；LLaMA-3.1-8B-Instruct；表4平均分",
+          "source_locator": "PDF p.7, Table 4"
+        },
+        {
+          "claim": "在LLaMA-3.1-8B、64K上下文单A100 80GB上，75%驱逐将TPOT从50.1降至32.8 ms/token（35%↓），吞吐从19.9升至30.5 tokens/s（53%↑）。",
+          "value": "TPOT 32.8 ms/token; throughput 30.5 tokens/s",
+          "baseline": "0% eviction: 50.1 ms/token; 19.9 tokens/s",
+          "condition": "解码阶段；FlashAttention；64K context；75% eviction",
+          "source_locator": "PDF p.7, Table 5"
+        },
+        {
+          "claim": "同一设置下，64-token任务指南在75%驱逐时TTFT仅增加1.2%（9.66→9.78s），峰值显存从38.55降到32.72GB（15.1%↓）。",
+          "value": "TTFT 9.78s; peak memory 32.72GB",
+          "baseline": "0 guide/0 eviction baseline: TTFT 9.66s; 38.55GB",
+          "condition": "LLaMA-3.1-8B；64K context；单A100 80GB；64-token guide",
+          "source_locator": "PDF p.7, Table 6 and Section 4.2.3"
+        },
+        {
+          "claim": "8K上下文、多查询、75%驱逐的端到端测试中，200个查询时TaskPress延迟48.06s，优于查询依赖的延迟优先策略50.24s和内存优先策略115.39s；其KV缓存236.88MB，而延迟优先策略为1,184.4MB。",
+          "value": "48.06s at 200 queries; 236.88MB KV cache",
+          "baseline": "Query-dependent Lat-Opt 50.24s/1,184.4MB; Mem-Opt 115.39s",
+          "condition": "8K context；75% eviction；多查询端到端测试",
+          "source_locator": "PDF p.7, Table 7 and surrounding multi-query analysis"
+        },
+        {
+          "claim": "TaskPress的压缩缓存仍依赖任务范围；问题显著偏离任务指南时可能比全缓存差，并在RULER MK-2/MK-3的高密度needle场景出现注意力稀释导致误驱逐。",
+          "value": null,
+          "baseline": "Full-cache baseline",
+          "condition": "作者Limitations；FP16/BF16还需显式计算outlier统计",
+          "source_locator": "PDF p.9, Section 6 Limitations"
+        }
+      ],
+      "evaluation_context": "实验覆盖LongBench、RULER-16K、NarrativeQA和QMSum，使用LLaMA-3.1-8B-Instruct与Qwen3-32B等模型，对比SnapKV、PyramidKV、StreamingLLM、ExpectedAttention、KVzip和ThinK。效率测试使用单A100 80GB、64K上下文，另有8K上下文多查询测试；默认int4量化，驱逐比例50%或75%。",
+      "limitations": "TaskPress是任务依赖而非完全通用的查询无关压缩：查询超出任务指南语义范围会导致上下文不足。高密度目标会使softmax注意力分数稀释，MK-2/MK-3已出现明显退化；在FP16/BF16中没有现成量化scale，需要显式计算等价统计。论文没有WAN传输、跨地域一致性或真实多租户部署测量，因此压缩比和本地解码收益不能直接等同于跨域传输收益。",
+      "project_relevance": "TaskPress提供了适合Agent Cache跨查询复用的设计：用任务级语义指南而非单个查询决定保留哪些上下文，并把outlier统计作为低成本重要性信号。跨域场景可先测任务指南稳定性、缓存复用次数与传输字节，再比较一次性prefill/剪枝成本和WAN RTT节省；必须为任务漂移与高密度检索设置回退到全缓存的门槛。",
+      "primary_source_resolved": true,
+      "quality_score": 95,
+      "source_notes": [
+        "arXiv PDF已抓取且标题与输入一致。",
+        "准确率、TPOT、吞吐、TTFT、显存和多查询延迟均带实验条件与表格定位。"
+      ],
+      "_provenance": {
+        "task_id": "7a96c38547bbeb8cea34c9b5",
+        "candidate_id": "a65c9110a9d9fbdf0cb89785",
+        "source_title": "TaskPress: Query-Agnostic KV Cache Compression via Task-Guided Pruning",
+        "source_url": "https://arxiv.org/abs/2608.03276v1",
+        "document_id": "228ede7328c70661b329caaf"
+      }
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

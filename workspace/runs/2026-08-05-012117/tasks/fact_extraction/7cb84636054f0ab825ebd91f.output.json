@@ -1,0 +1,39 @@
+{
+  "title": "LLM Agent 在线 KV Cache 压缩实证：延迟压缩配合 TE 降 80% KV 并提升吞吐",
+  "event_hint": "在线KV cache压缩/LLM Agent/TE延迟压缩降KV提吞吐",
+  "problem": "LLM agent 在长程任务中累积推理步骤、工具调用与环境反馈，KV cache 成为推理瓶颈；以往压缩方法假设静态上下文（未来查询已知或可离线近似），而 agent 需要在线压缩——在未知未来相关性时压缩新信息，且压缩过程必须纳入推理路径、时延预算受限，使得依赖额外 rollout 或昂贵优化的离线方法不可用。",
+  "mechanism": "将 token eviction（TE）与 attention matching（AM）两类序列级压缩适配到在线 agent 轨迹：按 turn 完成即压缩并冻结，未来生成只读取压缩表示。研究代理查询（proxy query）来源：current-turn（boundary 查询取结构闭合 token 的 query 向量；repeat-prefill teacher-force 复述已完成 turn）与 future-turn（延迟 k 轮用 agent 自身后续生成的真实 query）。TE 按 proxy 诱导的注意力质量选 top-m 保留原始 KV；AM 在相同选键基础上额外拟合注意力偏置与重建值以匹配全 cache 输出。",
+  "evidence": [
+    {
+      "claim": "延迟压缩 + TE 在大模型上保留准确率同时降 KV 并提吞吐",
+      "value": "Qwen3.5-27B 峰值 KV 612.9K→175.2K tokens；吞吐 217→717 q/h（3.3×）；AM 918 q/h（4.2×）",
+      "baseline": "无压缩准确率 52.50%；TE 52.00%，AM 51.00%",
+      "condition": "BROWSECOMP-PLUS, 压缩比 0.2, 一轮延迟 assistant-generation 查询",
+      "source_locator": "PDF Page 8, Table 2"
+    },
+    {
+      "claim": "Gemma-4-31B 同设置下的 KV 与吞吐",
+      "value": "峰值 KV 272.1K→121.3K（TE）/99.6K（AM）；吞吐 1.5×（TE）/1.7×（AM）",
+      "source_locator": "PDF Page 8, Table 2"
+    },
+    {
+      "claim": "4B 模型压缩比 0.2 的代理源消融",
+      "value": "Qwen3.5-4B BROWSECOMP 上 boundary TE 45.25%（无压缩 46%）显著优于 repeat-prefill 32.75%；一轮延迟 assistant 查询普遍最优",
+      "source_locator": "PDF Page 6, Table 1"
+    },
+    {
+      "claim": "压缩改变 agent 行为：Qwen3.5-4B 轨迹变长、搜索重复增多",
+      "value": "无压缩 20 轮→延迟配置 30-39 轮；TE-boundary 搜索重复率 21.3% vs 无压缩 11.7%",
+      "source_locator": "PDF Page 6-9, Table 1 与 Table 3"
+    }
+  ],
+  "evaluation_context": "BROWSECOMP-PLUS（400 例，本地 FAISS + Qwen3-Embedding-4B 检索）与 WIDESEARCH（200 例，Bing Web Search）；模型 Qwen3.5（4B/27B）与 Gemma-4（E4B/31B）混合注意力，仅压缩全注意力层；评分用 Qwen3.5-397B judge；吞吐用 SGLang（Qwen）/vLLM（Gemma）FP8 重放轨迹仿真。",
+  "limitations": "只覆盖搜索 + 文档阅读类 agent 任务，未涉及代码编辑、GUI 控制、状态变更类 web 任务；刻意仅评估廉价在线 proxy 源，排除额外 rollout、学习型压缩器或梯度优化等更强方法；仅评估固定压缩比与延迟窗口，未做基于内存压力/轮长的自适应策略。",
+  "project_relevance": "直接命中「Agent 语义加速」——KV cache 是 agent 长上下文推理的主要瓶颈。论文给出在线压缩中代理查询选择为核心设计，并量化峰值 KV 与吞吐提升；为自研 agent 系统提供可操作结论：延迟压缩优于即时压缩、TE 在不完美 proxy 下比 AM 更稳健、压缩会改变 agent 行为（轨迹变长与重复搜索）须作为 agent 级干预评估。",
+  "primary_source_resolved": true,
+  "quality_score": 87,
+  "source_notes": [
+    "arXiv:2608.00902v1 全文已抓取（UCSB/LinkedIn），主表与消融数据可定位",
+    "大模型吞吐为 SGLang/vLLM 轨迹重放仿真，非端到端真实服务实测"
+  ]
+}

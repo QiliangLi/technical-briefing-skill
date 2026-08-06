@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "3be99029ca5406e8e6b6afbe",
+    "type": "fact_extraction",
+    "entity_id": "dddeb438764da9cf10738d09",
+    "input_digest": "5eba5d38ec279740663f51868d206b4c"
+  },
+  "title": "Configurable and Hierarchical Allreduce",
+  "event_hint": "CHIARA exposes tunable batch-lane hierarchy and staged semi-composed Allreduce for hierarchical HPC systems",
+  "problem": "MPI_Allreduce remains latency- and synchronization-sensitive for small and medium messages, where intra-domain communication is much cheaper than inter-domain traffic and conventional hierarchical implementations can centralize communication or reorganize data between Reduce-Scatter and Allgather.",
+  "mechanism": "CHIARA groups ranks into tunable batches and lanes, stages the reduction vector so only bounded blocks are active, distributes inter-batch reduction/broadcast across rotating lane roots, and preserves a lane-aligned layout across Reduce-Scatter and Allgather. Independent intra-batch radices for both phases expose hierarchy and communication-depth trade-offs without centralized leaders.",
+  "evidence": [
+    {
+      "claim": "Against vendor MPI_Allreduce, CHIARA reaches up to 1.94x speedup on Polaris, 13.43x on Aurora, and 13.48x on Fugaku.",
+      "value": "1.94x; 13.43x; 13.48x",
+      "baseline": "vendor MPI_Allreduce",
+      "condition": "CPU-resident collectives on Polaris, Aurora, and Fugaku; median runtime ratio",
+      "source_locator": "PDF p.1 Abstract; p.10 Figure 11 and Section V-D"
+    },
+    {
+      "claim": "In the parallel k-means application, CHIARA reduced iteration time from 10.32 s to 4.88 s at 576 ranks and from 11.20 s to 5.04 s at 2,304 ranks on Fugaku.",
+      "value": "2.11x at 576 ranks; 2.22x at 2,304 ranks",
+      "baseline": "vendor MPI_Allreduce implementation",
+      "condition": "Lloyd-style MPI+OpenMP k-means; 10 runs after 2 warmups",
+      "source_locator": "PDF p.10 Section VI; lines reporting Fugaku iteration times"
+    },
+    {
+      "claim": "The algorithm targets the small-to-medium regime of roughly 64 B to 32 KB per rank, where synchronization depth and locality boundaries dominate more than peak bandwidth.",
+      "value": "64 B–32 KB per rank",
+      "baseline": "large-message bandwidth-dominated regime",
+      "condition": "message-size regime studied in experiments",
+      "source_locator": "PDF p.1 Introduction"
+    },
+    {
+      "claim": "Evaluation uses CPU-resident MPI at full node concurrency, with contiguous rank placement mapped to intended locality domains and each runtime reported as the median over 50 iterations.",
+      "value": "50-iteration median; one rank per core",
+      "baseline": null,
+      "condition": "Polaris, Aurora, and Fugaku microbenchmarks",
+      "source_locator": "PDF p.6 Section V Evaluation"
+    },
+    {
+      "claim": "For very large messages, CHIARA speedups approach 1 as bandwidth dominates and vendor baselines approach peak throughput.",
+      "value": "speedup approaches 1x",
+      "baseline": "vendor MPI_Allreduce",
+      "condition": "very large message sizes",
+      "source_locator": "PDF p.10 Section V-D"
+    }
+  ],
+  "evaluation_context": "Microbenchmarks run on Polaris (Cray Slingshot 11, AMD EPYC), Aurora (Cray Slingshot 11, Intel Xeon Max), and Fugaku (A64FX, Tofu-D), with one rank per core and 50-iteration medians. The k-means case uses synthetic repeatable communication volumes and evaluates 256/2,048 ranks on Polaris and 576/2,304 on Fugaku.",
+  "limitations": "The strongest gains are platform- and message-size-dependent; speedups diminish toward bandwidth-dominated large messages. The reported application study is MPI+OpenMP k-means with synthetic inputs, not a production deep-learning workload. Parameter selection is tuned per platform/workload, and the paper does not establish benefits for GPU/NCCL collectives or irregular communication patterns.",
+  "project_relevance": "CHIARA is a useful reference for exposing topology and communication-stage choices as tunable policy rather than hiding them inside a fixed collective. Its batch-lane decomposition and bounded staged working set may inform AI-cluster collective design, but applicability to GPU/NCCL or KV-cache traffic requires separate measurements.",
+  "primary_source_resolved": true,
+  "quality_score": 94,
+  "source_notes": [
+    "The arXiv v1 PDF and all three referenced chunks were fetched; evidence locators refer to PDF pages, sections, and figures.",
+    "Platform-specific and workload-specific conditions are retained for all reported speedups."
+  ]
+}

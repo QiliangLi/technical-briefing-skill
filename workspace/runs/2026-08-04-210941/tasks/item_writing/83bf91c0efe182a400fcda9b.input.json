@@ -1,0 +1,221 @@
+{
+  "event_id": "8d0d0e75d1efffda7e090089",
+  "topic": {
+    "id": "cross_region",
+    "name": "跨域传输",
+    "description": "KVCache、Agent Cache、工具结果和记忆在跨地域或跨集群环境中的传输、放置与一致性。",
+    "max_items_per_issue": 2,
+    "aihot_priority": "high",
+    "aihot_boost_terms": [
+      "cross-region KV cache",
+      "remote prefill",
+      "agent memory",
+      "distributed cache"
+    ],
+    "current_questions": [
+      "KVCache跨域传输在什么场景值得付出WAN成本",
+      "Agent Cache、工具结果和记忆能否跨域复用",
+      "压缩、增量传输和预取如何降低带宽与时延"
+    ],
+    "valuable_evidence": [
+      "WAN RTT",
+      "传输字节数",
+      "缓存命中率",
+      "P95时延",
+      "压缩比",
+      "一致性开销"
+    ],
+    "directions": [
+      {
+        "id": "kv_cross_region",
+        "name": "KVCache跨域迁移与远程访问",
+        "queries": [
+          "\"cross-region KV cache\"",
+          "\"remote KV cache\" WAN",
+          "\"KV cache migration\" distributed inference"
+        ],
+        "aihot_queries": [
+          "cross-region KV cache",
+          "remote KV cache",
+          "KV cache migration"
+        ],
+        "arxiv_query": "(\"cross-region KV cache\" OR \"remote KV cache\" OR \"KV cache migration\")",
+        "include_terms": [
+          "kv cache",
+          "remote",
+          "cross-region",
+          "migration",
+          "wan"
+        ],
+        "exclude_terms": [
+          "cpu cache"
+        ]
+      },
+      {
+        "id": "remote_prefill",
+        "name": "Prefill/Decode跨域解耦",
+        "queries": [
+          "\"remote prefill\" KV cache handoff",
+          "\"prefill decode disaggregation\" WAN",
+          "\"KV cache handoff\" network placement"
+        ],
+        "aihot_queries": [
+          "remote prefill",
+          "KV cache handoff",
+          "disaggregated inference"
+        ],
+        "arxiv_query": "((\"remote prefill\" OR \"KV cache handoff\") AND (network OR WAN OR placement))",
+        "include_terms": [
+          "prefill",
+          "decode",
+          "kv cache",
+          "handoff",
+          "remote"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "agent_cache",
+        "name": "Agent Cache、工具结果与记忆共享",
+        "queries": [
+          "\"distributed agent memory\"",
+          "\"cross-region agent cache\"",
+          "\"tool result sharing\" agent distributed"
+        ],
+        "aihot_queries": [
+          "distributed agent memory",
+          "agent cache",
+          "tool result sharing"
+        ],
+        "arxiv_query": "((agent AND (memory OR cache OR \"tool result\")) AND distributed)",
+        "include_terms": [
+          "agent",
+          "cache",
+          "memory",
+          "tool result",
+          "distributed"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "transfer_placement",
+        "name": "压缩、增量传输、预取与放置",
+        "queries": [
+          "KV cache compression transfer prefetch placement",
+          "distributed cache incremental transfer WAN"
+        ],
+        "aihot_queries": [
+          "KV cache compression",
+          "cache prefetch placement",
+          "incremental transfer"
+        ],
+        "arxiv_query": "((\"KV cache\" OR \"distributed cache\") AND (compression OR prefetch OR placement OR \"incremental transfer\"))",
+        "include_terms": [
+          "cache",
+          "compression",
+          "prefetch",
+          "placement",
+          "transfer"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "consistency_isolation",
+        "name": "跨域一致性、安全与多租户隔离",
+        "queries": [
+          "cross-region cache consistency multi-tenant isolation",
+          "distributed agent memory security consistency"
+        ],
+        "aihot_queries": [
+          "agent memory security",
+          "cross-region cache consistency"
+        ],
+        "arxiv_query": "((\"cross-region cache\" OR \"distributed agent memory\") AND (consistency OR security OR multi-tenant))",
+        "include_terms": [
+          "cross-region",
+          "distributed",
+          "consistency",
+          "security",
+          "multi-tenant"
+        ],
+        "exclude_terms": []
+      }
+    ]
+  },
+  "direction": {
+    "id": "remote_prefill",
+    "name": "Prefill/Decode跨域解耦",
+    "queries": [
+      "\"remote prefill\" KV cache handoff",
+      "\"prefill decode disaggregation\" WAN",
+      "\"KV cache handoff\" network placement"
+    ],
+    "aihot_queries": [
+      "remote prefill",
+      "KV cache handoff",
+      "disaggregated inference"
+    ],
+    "arxiv_query": "((\"remote prefill\" OR \"KV cache handoff\") AND (network OR WAN OR placement))",
+    "include_terms": [
+      "prefill",
+      "decode",
+      "kv cache",
+      "handoff",
+      "remote"
+    ],
+    "exclude_terms": []
+  },
+  "score": 81.6,
+  "facts": [
+    {
+      "title": "NVIDIA Dynamo: Topology-Aware KV Transfer for Disaggregated Prefill/Decode",
+      "event_hint": "decode-worker placement constrained to prefill worker topology domain for KV handoff",
+      "problem": "In disaggregated prefill/decode inference, after a prefill worker is selected the KV cache must be transferred to a decode worker; if the decode worker is in a different topology domain (zone/rack), the cross-domain KV transfer is expensive or slow, and unconstrained routing can place decode workers far from the KV data.",
+      "mechanism": "Each worker publishes topology metadata (topology_domains map, e.g. {zone: us-east-1a, rack: rack-22}) plus a kv_transfer_domain key via ModelRuntimeConfig; each topology entry also becomes a Kubernetes-style worker taint (dynamo.topology/<domain>=<value>). After prefill worker selection, the router derives RoutingConstraints from that worker's transfer-domain topology and merges them into the decode request. In 'required' enforcement the decode worker must carry the matching taint or the request fails closed (no endpoint) before prefill is dispatched; in 'preferred' enforcement all decode workers remain eligible but same-domain workers get a lower routing cost controlled by preferredWeight (0..1). The router reuses the existing RoutingConstraints path (no new topology-specific selector) and merges with any user-supplied constraints. Actual KV bytes move over NIXL (RDMA/EFA/UCX/libfabric). Python backends (vLLM, SGLang, TensorRT-LLM) read topology from files under DYN_TOPOLOGY_MOUNT_PATH at registration; Rust performs validation and canonical taint generation.",
+      "evidence": [
+        {
+          "claim": "Topology-aware KV transfer constrains or biases decode worker selection after a prefill worker has been selected, deriving RoutingConstraints from the prefill worker's published topology.",
+          "source_locator": "section 'Topology-Aware KV Transfer', opening paragraph"
+        },
+        {
+          "claim": "Workers publish topology_domains, kv_transfer_domain, kv_transfer_enforcement, and kv_transfer_preferred_weight through ModelRuntimeConfig.",
+          "source_locator": "Runtime Contract field table"
+        },
+        {
+          "claim": "In required mode, decode workers without the matching topology taint are ineligible and routing returns no endpoint; in preferred mode matching workers receive lower routing cost weighted by preferredWeight in [0,1].",
+          "source_locator": "Enforcement Modes > Required / Preferred"
+        },
+        {
+          "claim": "The prefill router builds the decode constraint before dispatching prefill under required policy, failing the request if it cannot derive authoritative decode constraints.",
+          "source_locator": "Request Flow paragraph"
+        },
+        {
+          "claim": "Supported backends are vLLM, SGLang, and TensorRT-LLM; transport (RDMA/EFA/UCX/libfabric for NIXL) must be configured separately from topology selection.",
+          "source_locator": "Backend Support list; Operational Notes bullet on transport health"
+        }
+      ],
+      "evaluation_context": "Deployment context is Kubernetes-based disaggregated prefill/decode via the NVIDIA Dynamo operator, using the KV router (DYN_ROUTER_MODE=kv). Topology is file-mounted (e.g. /etc/dynamo/topology). No latency, bandwidth, RTT, or hit-rate numbers are provided in this documentation page - it is a configuration/semantics reference, not a benchmark.",
+      "limitations": "Documentation describes routing semantics and configuration only; it provides no quantitative measurements of WAN RTT saved, bytes transferred, P95 latency, or cache hit rate. Performance benefit is asserted conceptually (keep KV transfer same-domain) but not benchmarked here. Behavior under overloaded same-domain decode capacity (required mode can fail requests) is flagged as an operational risk but not quantified. Hardware-specific (RDMA/EFA) tuning is explicitly out of scope.",
+      "project_relevance": "Directly implements KVCache cross-node transfer placement, the central concern of the cross-region/inference-network direction. The topology-domain constraint is the mechanism that decides when cross-zone (WAN-like) KV transfer is avoided versus allowed, which is exactly the 'when is cross-domain KV transfer worth it' question. For DPU/SmartNIC offload and disaggregated-memory contexts, the separation of routing selection (topology) from transport (NIXL/RDMA) is a relevant architectural boundary. The required/preferred modes map onto hard placement vs. latency-preference rollouts.",
+      "primary_source_resolved": true,
+      "quality_score": 78,
+      "source_notes": [
+        "Document is the official NVIDIA Dynamo documentation page for topology-aware KV transfer; primary source for the feature's contract and configuration.",
+        "Quantitative performance claims are absent; this is a semantics/config reference, not an evaluation report."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "title": "Topology-Aware KV Transfer",
+      "url": "https://docs.nvidia.com/dynamo/components/router/topology-aware-kv-transfer",
+      "source_level": "A",
+      "discovery_source": "Agent Web Search",
+      "published_at": null
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  }
+}

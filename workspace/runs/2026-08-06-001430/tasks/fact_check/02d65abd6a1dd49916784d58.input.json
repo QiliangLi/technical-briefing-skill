@@ -1,0 +1,119 @@
+{
+  "_task": {
+    "id": "02d65abd6a1dd49916784d58",
+    "type": "fact_check",
+    "entity_id": "ba12b803833d171518bfc564",
+    "input_digest": "8850e416da7fbf4d9c0dbb8bd3edb5e0"
+  },
+  "brief_item": {
+    "title": "Magnet按跨会话能力累积检测Agent滥用",
+    "type": "论文",
+    "topic_name": "Agent语义加速",
+    "direction_name": "Agent工具执行链优化",
+    "published_at": "2026-08-03T17:15:55Z",
+    "importance": "重点关注",
+    "core_conclusion": "Magnet把每个会话的assistant输出映射为能力向量，再按user ID逐位累积，识别多个会话拼接出的风险。论文实验中其F1为84.0%，高于压缩检测器的81.8%和单会话检测器的61.0%。",
+    "mechanism": "系统用专家编写的能力taxonomy记录各组件证据，并以“已积累所需组件”的比例生成可解释证据包，不把历史压成单一分数。",
+    "result": "在重复消息稀释攻击中，Magnet召回率在1至25倍重复间保持62%至73%，压缩检测器则从59%降至43%。实验覆盖phishing和incendiary-device两类场景。",
+    "boundary": "taxonomy依赖专家预先定义，单一user ID和无持久记忆的假设限制了泛化。论文未测代码Agent的搜索次数、token节省或端到端时延。",
+    "project_relevance": "若Agent Cache跨任务保存工具结果，应把能力或权限来源与实体审计关联，避免按会话压缩丢掉跨任务安全信号。还需评估组织级实体关联带来的存储和检测开销。",
+    "keywords": [
+      "跨会话检测",
+      "能力累积",
+      "Agent安全",
+      "Agent Cache"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2608.02518v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-08-03T17:15:55Z"
+      }
+    ],
+    "discovered_via": null,
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 84.3,
+    "_provenance": {
+      "task_id": "720d600801763d30cabe4e0f",
+      "event_id": "ee38852cb5039fb3b452a0ca",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.02518v1"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "title": "Magnet: Detecting Cross-Session AI Misuse Through Capability Accumulation",
+      "event_hint": "Magnet跨会话Agent能力累积检测",
+      "problem": "现有Agent滥用检测多按单轮或单会话判断；攻击者可把有害目标拆成多个看似无害的子任务，跨独立会话逐步积累可组合artifact，从而让每个会话都不显著而整体目标逃过检测。",
+      "mechanism": "Magnet不追踪陈述意图，而是让LLM把每个会话的assistant输出映射为专家编写能力taxonomy上的二进制向量；按user ID对向量做逐位OR，形成单调增长的能力库存，并以“已积累某攻击所需k/n组件”的可解释证据包判定。它保留各能力轴上的证据，不把跨会话历史压缩成一个标量或只取top-K消息。",
+      "evidence": [
+        {
+          "claim": "在论文检测实验中，Magnet以中等token成本达到84.0% F1，优于Compression Detector的81.8%和Per-Session detector的61.0%；Magnet的召回率75.0%，Compression为72.0%，而Per-Session虽精确率96.2%但召回仅44.6%。",
+          "value": "Magnet F1 84.0%, recall 75.0%; Compression F1 81.8%/recall 72.0%; Per-Session F1 61.0%, precision 96.2%, recall 44.6%",
+          "baseline": "Per-Session and top-20-message Compression Detector",
+          "condition": "same detection model; cross-session capability accumulation evaluation",
+          "source_locator": "PDF pages 8–9, Section 5.4 and Figure 5"
+        },
+        {
+          "claim": "在对单个攻击会话做消息重复注入的对抗稀释实验中，Compression Detector的召回率从基线59%降至25×重复时43%；Magnet在重复因子1×–25×间保持62%–73%。",
+          "value": "Compression 59% -> 43% at 25×; Magnet 62%–73% across factors",
+          "baseline": "Compression Detector top-K=20 message buffer",
+          "condition": "100 malicious attacks; duplicate factors 1×, 5×, 10×, 15×, 20×, 25×",
+          "source_locator": "PDF page 9, Table 1 and duplication attack discussion"
+        },
+        {
+          "claim": "Magnet每个会话只将assistant输出转为能力向量，并通过按user ID逐位OR累积；重复或良性会话不会清除已有能力位，新的能力组件才会扩展库存。",
+          "value": null,
+          "baseline": "single-session inspection or scalar harm score",
+          "condition": "expert-authored capability taxonomy; one user ID correlator",
+          "source_locator": "PDF pages 1 and 8, Magnet detector definition"
+        },
+        {
+          "claim": "论文明确把攻击成功定义为组合artifact获得的能力比例，而不是单个会话二元成功；phishing场景用8项rubric、incendiary-device场景用6项rubric，每项代表一个可独立验证的子能力。",
+          "value": "8-point phishing rubric; 6-point incendiary-device rubric",
+          "baseline": "binary per-session success criterion",
+          "condition": "cross-session goal-decomposition attack evaluation",
+          "source_locator": "PDF pages 6–7, Attack construction and labeling"
+        },
+        {
+          "claim": "实验假设攻击者使用单一user ID且不跨账户自适应，未考虑持久记忆系统；论文指出一旦引入跨会话记忆，独立会话假设失效，但记忆也可能成为聚合风险或审计点。",
+          "value": null,
+          "baseline": "stateless independent sessions",
+          "condition": "stated threat-model assumption and future-work note",
+          "source_locator": "PDF pages 3 and 15, threat-model limitations and Note on Memory"
+        }
+      ],
+      "evaluation_context": "论文用具备五类工具调用的最小多工具Agent生成phishing和incendiary-device两类跨会话攻击，比较single-turn、multi-turn和multi-session交付模式；检测使用同一模型和专家能力taxonomy，对比Per-Session、top-20 Compression Detector与Magnet，并测量良性噪声与恶意重复稀释下的召回/F1。",
+      "limitations": "研究只覆盖两类危害、少量模型/交付模式运行，不能排名模型或代表所有攻击；50%攻击成功阈值和rubric等权是人为约定。Magnet依赖预先由SME编写的能力taxonomy，对新颖攻击结构未必泛化；单一user ID、非自适应攻击者和无记忆系统的假设不适用于所有生产环境。该工作关注安全检测，不提供代码Agent搜索次数、token节省或端到端时延收益。",
+      "project_relevance": "（项目推断）若Agent Cache或跨域记忆保存工具结果，应把能力/权限来源与实体级审计关联，避免按会话压缩丢掉跨任务安全信号；但需将user ID扩展为更难规避的账户、支付或组织实体，并在不泄露敏感内容的情况下评估额外存储和检测开销。",
+      "primary_source_resolved": true,
+      "quality_score": 87,
+      "source_notes": [
+        "Primary arXiv PDF fetched; safety-domain results are kept separate from performance claims.",
+        "No harmful artifact instructions were reproduced; evidence summarizes detector metrics and assumptions only."
+      ],
+      "_provenance": {
+        "task_id": "9c94edf26efb46e369eb0636",
+        "candidate_id": "3f0afeaf523d7c862543ffbb",
+        "source_title": "Magnet: Detecting Cross-Session AI Misuse Through Capability Accumulation",
+        "source_url": "https://arxiv.org/abs/2608.02518v1",
+        "document_id": "8a67947999e2aed0a3f1abdc"
+      }
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

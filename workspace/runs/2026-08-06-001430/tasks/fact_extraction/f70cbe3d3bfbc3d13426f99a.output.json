@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "f70cbe3d3bfbc3d13426f99a",
+    "type": "fact_extraction",
+    "entity_id": "f16e3605d94fabdeb3fc45f4",
+    "input_digest": "9088cb3c9675a6217515e101175e4db3"
+  },
+  "title": "DynaCalKV: Key-Value Cache Compression via Head Grouping and Adaptive Rank Allocation",
+  "event_hint": "DynaCalKV CKA-based dynamic head grouping and adaptive low-rank KV compression",
+  "problem": "低秩KV压缩通常对Key和Value使用相同策略，并固定attention-head分组与均匀rank分配，无法利用不同head的结构相似性；对已采用GQA、Key head较少的模型进一步聚类还可能过压缩长上下文信息。",
+  "mechanism": "DynaCalKV在Key投影上用Centered Kernel Alignment计算head相似度并动态聚类，再在固定参数预算内按低秩能量贪心分配各组rank；Value侧沿用ReCalKV的离线校准低秩分解以降低重构误差。分组和rank只在离线压缩阶段执行，不增加推理计算。",
+  "evidence": [
+    {
+      "claim": "相对ReCalKV，DynaCalKV在三个模型上的Key投影参数更少：Llama-3.2-1B为2,953,920 vs 3,612,672，Qwen1.5-1.8B为25,184,384 vs 29,982,720，SmolLM2-1.7B为11,818,176 vs 33,988,608。",
+      "value": "2.95M vs 3.61M; 25.18M vs 29.98M; 11.82M vs 33.99M",
+      "baseline": "ReCalKV Key projection parameter counts",
+      "condition": "Parameter budget comparison；Table I",
+      "source_locator": "PDF p.6, Table I"
+    },
+    {
+      "claim": "六项zero-shot基准中，DynaCalKV在PIQA和ARC-e分别比ReCalKV提高0.87和2.44个百分点（SmolLM2-1.7B），HellaSwag提高4.72个百分点；其余复杂推理任务通常下降0.28–3.00个百分点。",
+      "value": "+0.87, +2.44, +4.72 pp; -0.28 to -3.00 pp on other tasks",
+      "baseline": "ReCalKV",
+      "condition": "OpenBookQA、HellaSwag、PIQA、ARC-e、ARC-r、Winogrande；三模型",
+      "source_locator": "PDF p.6, Table II and zero-shot analysis"
+    },
+    {
+      "claim": "Qwen1.5-1.8B-Chat的LongBench平均分仅比ReCalKV低1.02，且SAMSum/QMSum分别提高0.71/0.22；Llama-3.2-1B-Instruct平均下降8.03，TriviaQA和TREC分别下降18.96和12.50。",
+      "value": "Qwen -1.02 avg; +0.71/+0.22; Llama -8.03 avg",
+      "baseline": "ReCalKV",
+      "condition": "LongBench八任务；Qwen MHA vs Llama GQA architectures",
+      "source_locator": "PDF p.6, Table III and LongBench analysis"
+    },
+    {
+      "claim": "作者将收益归因于MHA拥有更多独立Key head可聚类冗余，而Llama GQA仅8个Key head，继续聚类会丢失长上下文检索和摘要所需的细粒度位置/上下文特征。",
+      "value": null,
+      "baseline": "GQA with few Key heads",
+      "condition": "Architecture-aware interpretation；MHA/GQA comparison",
+      "source_locator": "PDF p.6, Practical Implications"
+    },
+    {
+      "claim": "实验使用单张NVIDIA T4、WikiText-2校准集和三种小模型；作者未报告SmolLM2在LongBench上的结果，因为Palu、ReCalKV和DynaCalKV都接近零性能。",
+      "value": null,
+      "baseline": null,
+      "condition": "受GPU资源限制；LongBench scope limitation",
+      "source_locator": "PDF p.5, Scope and Limitations"
+    }
+  ],
+  "evaluation_context": "实验在单张NVIDIA T4上进行，模型为Llama-3.2-1B-Instruct（GQA）、Qwen1.5-1.8B-Chat（16-head MHA）和SmolLM2-1.7B-Instruct（32-head MHA）。WikiText-2用于离线校准；评测覆盖六项zero-shot QA与LongBench八项长上下文任务，基线为ReCalKV。",
+  "limitations": "评测模型规模较小且受单张T4限制；SmolLM2 LongBench因三种方法近零而未报告。DynaCalKV对GQA长上下文可能严重退化，说明动态聚类并非通用压缩策略。论文未测跨域传输字节、WAN RTT、GPU服务吞吐或端到端P95，Key参数减少不能直接等同于实际KV传输收益。",
+  "project_relevance": "DynaCalKV提醒跨域KV压缩应按MHA/GQA架构区分Key和Value预算，并用head相似性与校准数据决定rank；对GQA模型需采用保守策略或回退。落地时应把架构、任务长度、校准分布与压缩后的检索准确率、传输字节和重构开销绑定验收。",
+  "primary_source_resolved": true,
+  "quality_score": 92,
+  "source_notes": [
+    "arXiv PDF已抓取且标题与输入一致。",
+    "参数、准确率、LongBench差异和架构边界均带表格/页码定位。"
+  ]
+}

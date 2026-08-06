@@ -1,0 +1,144 @@
+{
+  "_task": {
+    "id": "e618550ef508dafd08a82a6f",
+    "type": "fact_check",
+    "entity_id": "aea2c5f288fa3cb1f1c150fd",
+    "input_digest": "a09dba8d1a1cdb61b9b7d37920c9e8be"
+  },
+  "brief_item": {
+    "title": "闭式线性映射复用跨模型KVCache，减少重复Prefill",
+    "type": "论文",
+    "topic_name": "状态感知网络、TPN",
+    "direction_name": "KVCache传输与通信优化",
+    "published_at": "2026-08-04T16:26:47Z",
+    "importance": "重点关注",
+    "core_conclusion": "研究同一模型家族切换时的KVCache复用，让接收模型使用源模型缓存，跳过重新Prefill。六组模型中，四组保留独立Prefill准确率73%至98%，两组Ministral为42%至44%。",
+    "mechanism": "方法按目标层和注意力头拟合岭回归，从预测性最强的源层取Top-k特征。映射前去除源RoPE，再施加目标RoPE，校准使用500条FineWeb-Edu序列，每条1024个Token。",
+    "result": "Qwen3 14B到32B中，单源层解释目标Key方差56%，多源层升至79%，Value方差由32%升至65%。64到32768个Token序列上，映射比重新Prefill快4到25倍，反向切换快3到7倍。",
+    "boundary": "仅评估Qwen3、Llama 3.1和Ministral 3的六组同家族、匹配KV配置，未测跨家族或KV维度不匹配。CodeAlpaca等领域偏移会降低准确率，且未测跨进程传输成本。",
+    "project_relevance": "同家族模型切换可用方向性映射减少重复Prefill。落地前按模型对保存映射，用领域样本验准确率，再测量跨进程KVCache传输成本。",
+    "keywords": [
+      "KVCache传输",
+      "跨模型复用",
+      "Prefill",
+      "RoPE",
+      "岭回归"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2608.03893v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-08-04T16:26:47Z"
+      }
+    ],
+    "discovered_via": "Agent Web Search",
+    "incremental_update": false,
+    "incremental_change": null,
+    "score": 100.0,
+    "_provenance": {
+      "task_id": "4b6cf59cc6a8bb8195846ddd",
+      "event_id": "bdc85bae216ea8a44eba0694",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.03893v1",
+        "https://arxiv.org/abs/2608.03893"
+      ]
+    }
+  },
+  "facts": [
+    {
+      "title": "Cross-Model KV Cache Transfer in LLM Families: A Closed-Form Linear Mapping for Prefill Reuse",
+      "event_hint": "Within-family cross-model KV-cache transfer using a closed-form per-head ridge mapper",
+      "problem": "Model switching for cost-quality cascading, routing, or mid-conversation handoff forces the receiver to re-prefill accumulated context. The paper studies whether a source model's KV cache can be transformed into the target model's format so decoding can skip re-prefill.",
+      "mechanism": "For matched-KV model pairs, the method fits independent per-target-layer/head ridge regressions from top-k predictive source layers. It strips source RoPE before mapping and re-applies target RoPE, using 500 FineWeb-Edu sequences of 1,024 tokens for calibration; the resulting closed-form mapper is gradient-free and position-independent across supported context lengths.",
+      "evidence": [
+        {
+          "claim": "On Qwen3 14B→32B, one source layer explains 56% of target-key variance and 32% of value variance; multiple source layers raise these to 79% and 65%.",
+          "value": "K: 56%→79%; V: 32%→65%",
+          "baseline": "single-source layer",
+          "condition": "Qwen3 14B→32B; multiple-source result",
+          "source_locator": "PDF p.1 abstract; p.2 linear-structure paragraph"
+        },
+        {
+          "claim": "Across six matched-KV pairs in three model families, the linear mapper retains 73–98% of standalone accuracy on the four highest-retention pairs, while two Ministral pairs fall to 42–44% average retention.",
+          "value": "73–98% for four pairs; 42–44% for two pairs",
+          "baseline": "target model standalone-prefill accuracy",
+          "condition": "five accuracy benchmarks; selected k; within-family dense full-attention models",
+          "source_locator": "PDF p.6 Section 4.2; Table 1"
+        },
+        {
+          "claim": "The mapper runs 4–25x faster small-to-large and 3–7x faster large-to-small than receiver re-prefill across sequence lengths from 64 to 32,768 tokens.",
+          "value": "4–25x S→L; 3–7x L→S",
+          "baseline": "receiver re-prefill latency",
+          "condition": "Qwen3 14B↔32B; sequence lengths 64–32,768",
+          "source_locator": "PDF p.8 Section 4.7; Table 5"
+        },
+        {
+          "claim": "Replacing ridge with an MLP recovers 24.3–36.8 percentage points of HellaSwag retention on the two failure pairs.",
+          "value": "+24.3 to +36.8 pp",
+          "baseline": "per-head ridge mapper",
+          "condition": "Ministral 3B→14B and 8B→14B; HellaSwag",
+          "source_locator": "PDF p.7 Table 3; Section 4.4"
+        },
+        {
+          "claim": "The study evaluates only matched-KV, within-family transfer; mismatched-KV pairs and cross-family transfer remain untested.",
+          "value": "matched KV; within-family scope",
+          "baseline": null,
+          "condition": "six evaluated pairs across Qwen3, Llama 3.1, and Ministral 3",
+          "source_locator": "PDF p.9 Limitations; p.5 Section 4.1"
+        }
+      ],
+      "evaluation_context": "Experiments cover Qwen3, Llama 3.1, and Ministral 3 dense full-attention families with matched KV-head count and per-head dimension. Accuracy uses ARC-Challenge, HellaSwag, WinoGrande, MMLU, and GSM8K; multi-turn handoff uses CoQA. Latency appendix measurements use one 8×H100 NVLink node, bf16, 50 warmups and 30 timed trials per cell.",
+      "limitations": "The method is evaluated only on six matched-KV within-family pairs and does not test mismatched KV dimensions or cross-family transfer. Calibration uses FineWeb-Edu; domain shifts (especially CodeAlpaca) can reduce accuracy. k selection overlaps with some reported benchmarks, and latency measurements use synthetic inputs without measuring end-to-end shipping of the mapped cache to the target process.",
+      "project_relevance": "This provides a concrete path to avoid repeated prefill when an Agent or serving router switches among same-family models, but requires directional mapper storage and a transferability screen. The sharp Ministral failures and matched-KV restriction make per-pair validation essential before cross-domain deployment.",
+      "primary_source_resolved": true,
+      "quality_score": 96,
+      "source_notes": [
+        "The arXiv v1 PDF and all referenced chunks were fetched; evidence locators refer to PDF pages and sections.",
+        "Numbers are copied from the paper with their baselines and conditions; no candidate-summary-only claims were used."
+      ],
+      "_provenance": {
+        "task_id": "b81a5878302d8f977ab24f8f",
+        "candidate_id": "4c5bd060cf42bb89562bf44a",
+        "source_title": "Cross-Model KV Cache Transfer in LLM Families: A Closed-Form Linear Mapping for Prefill Reuse",
+        "source_url": "https://arxiv.org/abs/2608.03893v1",
+        "document_id": "8ad8b116fb9e057cb8475ec5"
+      }
+    },
+    {
+      "title": "Cross-Model KV Cache Transfer in LLM Families: A Closed-Form Linear Mapping for Prefill Reuse",
+      "event_hint": "arXiv paper on cross-model KV-cache transfer using a closed-form linear mapping",
+      "problem": "The fetched arXiv page provides only bibliographic metadata, so the cross-model prefill-reuse problem and its constraints cannot be established from the available text.",
+      "mechanism": "The title indicates a closed-form linear mapping for cross-model KV-cache transfer and prefill reuse, but no mapping construction, layer/head selection, or positional-encoding treatment is described in the fetched document; no further details are asserted.",
+      "evidence": [],
+      "evaluation_context": "The fetched metadata classifies the paper under Machine Learning and provides no model pairs, workloads, hardware, baselines, metrics, or measurements.",
+      "limitations": "Only the arXiv metadata page was available; the abstract and paper body were not present in the referenced chunk. The summary's claims about ridge regression, cross-layer selection, de-RoPE mapping, and 2.7–25x latency gains cannot be independently supported and are omitted.",
+      "project_relevance": "If verified from the full paper, cross-model KV-cache reuse could inform cache portability and prefill-latency reduction; the available document is insufficient to assess accuracy, compatibility boundaries, or network implications.",
+      "primary_source_resolved": true,
+      "quality_score": 18,
+      "source_notes": [
+        "The specific arXiv primary URL was fetched, but the referenced text contains only title and bibliographic metadata.",
+        "No evidence records were emitted because no technical claims or results appear in the available text."
+      ],
+      "_provenance": {
+        "task_id": "13be90e9bf93de0f7da512ee",
+        "candidate_id": "aae8ded9ef1b664368ef73da",
+        "source_title": "Cross-Model KV Cache Transfer in LLM Families: A Closed-Form Linear Mapping for Prefill Reuse",
+        "source_url": "https://arxiv.org/abs/2608.03893",
+        "document_id": "50e7e44c5566d4f07a2e1763"
+      }
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

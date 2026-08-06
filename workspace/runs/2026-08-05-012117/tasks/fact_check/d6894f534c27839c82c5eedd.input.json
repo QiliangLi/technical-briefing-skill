@@ -1,0 +1,92 @@
+{
+  "brief_item": {
+    "title": "Bole用闭式树验证加速混合注意力LLM推测解码",
+    "type": "论文",
+    "topic_name": "跨域传输",
+    "direction_name": "Agent Cache、工具结果与记忆共享",
+    "published_at": "2026-08-03",
+    "importance": "重点关注",
+    "score": 85,
+    "core_conclusion": "混合注意力LLM解码受内存带宽限制，树推测可加速但现有系统面向全注意力KV设计，在混合模型上需逐分支串行遍历循环层致验证时延与瞬时显存恶化。Bole以kernel-runtime协同设计从单一pre-tree状态并行验证所有提案。",
+    "mechanism": "将线性注意力递推转化为树结构闭式并用value-tiling核并行验证，以token级因子无损编码候选状态更新，采样后仅重建被接受状态，并集成进SGLang生产引擎。",
+    "result": "线性注意力树验证加速3.4至7.7倍，瞬时状态显存降低82至99倍，离线解码吞吐达自回归4.72倍与最强树推测基线2.03倍，在线Agent负载TTFT最高降67.6%。",
+    "boundary": "收益依赖硬件相关的有效验证容量且固定每请求预算不可靠，闭式最大支持深度由树深度限定，已读部分未给出长尾时延完整曲线。",
+    "project_relevance": "判断其并行树验证与因子化状态压缩对MoE与混合模型推理服务有工程价值，应核实生产SLO下的长尾时延与显存上限。",
+    "keywords": [
+      "推测解码",
+      "混合注意力",
+      "树验证",
+      "SGLang"
+    ],
+    "sources": [
+      {
+        "publisher": "arXiv",
+        "url": "https://arxiv.org/abs/2608.01651v1",
+        "source_level": "A",
+        "primary": true,
+        "published_at": "2026-08-03"
+      }
+    ],
+    "discovered_via": null,
+    "incremental_update": false,
+    "incremental_change": null
+  },
+  "facts": [
+    {
+      "title": "Bole：面向混合注意力LLM的高效树推测解码",
+      "event_hint": "Bole 混合注意力LLM树推测解码 并行线性注意力树验证 因子化状态降低显存",
+      "problem": "混合注意力LLM（全注意力+循环线性注意力）解码仍受内存带宽限制，树推测解码可加速但现有系统面向全注意力KV缓存设计：在混合模型上需逐分支串行遍历循环层并为每个提案节点物化完整状态，导致验证时延与瞬时显存随树规模和batch恶化（线性注意力在target forward中占比从4%升至27%，T=32时8请求快照占36 GiB）。",
+      "mechanism": "Bole是kernel-runtime协同设计：将线性注意力递推转化为树结构闭式（Theorem 1），用value-tiling GPU核从单一pre-tree状态并行验证所有提案节点；以token级因子无损编码候选状态更新，采样后仅重建并提交被接受状态，丢弃分支无需完整状态或回滚；硬件感知的batch级验证预算按完整混合forward标定并跨请求分配；集成进SGLang生产引擎。",
+      "evidence": [
+        {
+          "claim": "Bole将线性注意力树验证加速3.4-7.7倍，从单一pre-tree状态并行求解所有节点",
+          "value": "3.4-7.7x",
+          "baseline": "逐节点串行递推（SGLang）",
+          "condition": "线性注意力层树验证",
+          "source_locator": "chunk 82f68847c3a5d5253dc442d6-01.md，摘要与贡献列表"
+        },
+        {
+          "claim": "因子化状态将瞬时状态显存降低82-99倍；Qwen3.5-122B-A10B在T=32、B=8时快照占36GiB而Bole因子低于1GiB",
+          "value": "82-99x",
+          "baseline": "逐节点完整状态快照",
+          "condition": "Qwen3.5-122B-A10B，4×A100-80GB",
+          "source_locator": "chunk 82f68847c3a5d5253dc442d6-01.md，Page 3 L2与Table I"
+        },
+        {
+          "claim": "离线解码吞吐达自回归解码的4.72倍，达最强树推测基线的2.03倍",
+          "value": "4.72x",
+          "baseline": "自回归解码；最强树推测基线2.03x",
+          "condition": "四模型、两GPU平台、多数据集离线解码",
+          "source_locator": "chunk 82f68847c3a5d5253dc442d6-01.md，摘要与贡献"
+        },
+        {
+          "claim": "在线Agent负载下相对最强树推测基线，TTFT最高降67.6%、TPOT最高降49.9%",
+          "value": "TTFT-67.6%/TPOT-49.9%",
+          "baseline": "最强树推测基线",
+          "condition": "在线Agent负载",
+          "source_locator": "chunk 82f68847c3a5d5253dc442d6-01.md，摘要与贡献"
+        }
+      ],
+      "evaluation_context": "跨四个模型（Qwen3.5系列等）、两个GPU平台与多数据集评测；报告线性注意力验证加速、瞬时状态显存、离线解码吞吐与在线TTFT/TPOT，并与自回归解码及最强树推测基线对比。",
+      "limitations": "收益依赖硬件相关的有效验证容量（A100约128行、GB10约256行处转入计算受限），固定per-request预算不可靠；闭式求解的最大支持深度由树深度限定；已读部分未给出端到端生产SLO下的长尾时延与显存上限的完整曲线。",
+      "project_relevance": "属于跨域/压缩与放置及推理运行时优化的交叉：通过并行树验证与因子化状态压缩，同时降低混合注意力模型的验证时延与瞬时显存，给出可复核的加速比与显存压缩数据，对MoE/混合模型推理服务具有工程价值。",
+      "primary_source_resolved": true,
+      "quality_score": 87,
+      "source_notes": [
+        "arXiv原文（2608.01651v1）已抓取，证据可在PDF Page 1-3定位。",
+        "强基线为SGLang生产树推测运行时；4.72x与2.03x为声明峰值，依赖模型与平台。"
+      ]
+    }
+  ],
+  "length": {
+    "min_chars": 300,
+    "max_chars": 450
+  },
+  "rules": [
+    "All numbers must be supported by facts.",
+    "Baseline and experimental conditions must not be omitted when material.",
+    "Project inference must be labelled as project judgement, not source fact.",
+    "AI HOT summaries cannot be the sole evidence.",
+    "Every field must be a complete sentence without ellipsis or dangling punctuation."
+  ]
+}

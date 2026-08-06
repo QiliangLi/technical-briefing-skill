@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "1d162e8f60966cbd32c8df61",
+    "type": "fact_extraction",
+    "entity_id": "17486f9b46a2433a0099f199",
+    "input_digest": "5265a55ece3334b7555cb3ed5dc7fe6c"
+  },
+  "title": "Energy-Efficient LLM Serving via Disaggregated Attention--FFN and Flexible Frequency Scaling",
+  "event_hint": "AFlex：面向分离式 Attention/FFN 推理的算子级 DVFS 与能耗优化框架",
+  "problem": "LLM serving 同时受 TTFT、TPOT 等延迟 SLO 约束和能耗约束；把 Attention 与 FFN 视作同一频率域，或只按 prefill/decode 阶段调频，无法利用两类算子在不同阶段、序列长度和 batch 下的频率敏感性差异。Attention/FFN 分离还会引入逐层 hidden-state 通信、TP 重配置和 DVFS 切换开销，需要在不破坏 SLO 的情况下协调资源、频率和流水线。",
+  "mechanism": "AFlex 将 PA、PF、DA、DF 暴露为独立的执行与频率控制域。离线 profiling 记录不同 TP、频率、batch 和序列长度下的算子延迟/能耗，并由全局调度器周期性求解带 GPU、内存、吞吐和 TTFT/TPOT 约束的 ILP，选择 A/F 资源、TP 度和基准频率；本地 DVFS 控制器按运行时 batch、活动请求和 microbatch 窗口选择能耗最低且满足剩余 SLO 预算的 PA/PF 或 DA/DF 频率对，并将切换成本摊销。数据面使用 placement-aware 的双向 hidden-state 传输（跨节点按 NIC-affine token shard 发送、节点内重组），以及 interleaved A/F pipeline；动态选择 microbatch 深度和请求 batch，使 Attention 与 FFN 重叠并减少 pipeline bubble。",
+  "evidence": [
+    {
+      "claim": "在默认 TP=4、batch=64 的 profiling 条件下，把 GPU 频率从 210 MHz 提升到 1410 MHz，decode Attention 延迟降低 33.0%，decode FFN 降低 71.5%；prefill 中对应降低 60.5% 和 83.4%。Attention 在 63.8% 的配置中比 FFN 以更低频率达到能耗最优，平均频率差 429 MHz。",
+      "value": "decode latency reduction: Attention 33.0%, FFN 71.5%; prefill: Attention 60.5%, FFN 83.4%; lower-frequency Attention optimum in 63.8% of configurations; mean gap 429 MHz",
+      "baseline": "同一算子从 210 MHz 到 1410 MHz 的频率变化；A/F 使用共享频率时无法同时匹配两者最优点",
+      "condition": "NVIDIA A800 profiling，TP=4、batch size=64；跨 prefill/decode 阶段",
+      "source_locator": "PDF p.3, §III-B, Fig.2 and Insight #2"
+    },
+    {
+      "claim": "AFlex 在 Azure Conversation/Coding production traces 上，以 GPU 能耗除以输入与输出 token 数作为指标；相较最佳基线，energy/token 最多降低 49%（相较 DistServe）和 48%（相较 DynamoLLM），同时满足 P90 TTFT=400 ms、TPOT=120 ms 的 SLO。Conversation trace 中 AFlex 的 P90 TTFT 始终低于 302 ms、P90 TPOT 低于 97 ms；Coding 中分别低于 265 ms 和 102 ms。",
+      "value": "up to 49% vs DistServe and 48% vs DynamoLLM; P90 TTFT <302 ms/265 ms and TPOT <97 ms/102 ms for Conversation/Coding",
+      "baseline": "DistServe（P/D 分离、无自适应 DVFS）和 DynamoLLM（P/D 共置、阶段级 DVFS）；SLO 基线为 P90 TTFT 400 ms、TPOT 120 ms",
+      "condition": "SGLang 实现，Qwen3-32B；两台各 8×A800-80GB 服务器，RPS=2/4/8/16，Azure Conversation 与 Coding traces",
+      "source_locator": "PDF pp.8–9, §VI-A–B, Figs.10–11"
+    },
+    {
+      "claim": "AFlex 的算子级资源与频率控制在 Coding trace（16 GPU、两节点）中将整体平均 GPU 频率降至 530 MHz；PA、PF、DA、DF 平均频率分别为 656、452、616、580 MHz。对应的端到端 energy/token 相对最佳基线降低 19.6%–46.8%，且所有测试 RPS 均满足延迟 SLO。",
+      "value": "overall average 530 MHz; PA/PF/DA/DF 656/452/616/580 MHz; energy/token reduction 19.6%–46.8%",
+      "baseline": "SGLang/DistServe 固定 1410 MHz；DynamoLLM 共享阶段频率；BiScale 采用阶段级频率（prefill 1357 MHz、decode 966 MHz）",
+      "condition": "Azure Coding trace，16 GPUs across two nodes，RPS=2/4/8/16；P90 TTFT/TPOT SLO 400/120 ms",
+      "source_locator": "PDF p.9, §VI-B, Fig.12 and accompanying text"
+    },
+    {
+      "claim": "动态 microbatch 与自适应请求 batching 可减少 A/F 流水线空泡：低 RPS 下选择 M=1，相比 M=2 将 bubble time 降低 8.5%、每层执行时间降低 37.9%；高 RPS 下选择 M=2，相比 M=1 将 bubble 降低 65.1%、每层时间降低 20.0%；高 RPS 的 equal→adaptive 请求 batching 进一步将 bubble 降低 16.1%、每层时间降低 19.9%。",
+      "value": "low RPS M=1: bubble -8.5%, layer time -37.9%; high RPS M=2: bubble -65.1%, layer time -20.0%; adaptive batching: bubble -16.1%, layer time -19.9%",
+      "baseline": "低 RPS M=2、高 RPS M=1；请求 batch 的 equal partitioning",
+      "condition": "decode 消融；低/高 RPS batch size 分别为 2 和 384（高 RPS equal=192+192、adaptive=128+256）",
+      "source_locator": "PDF p.11, §VI-D, Table I"
+    },
+    {
+      "claim": "分离 A/F 的通信和重配置成本不可忽略：频率切换耗时 4.7–44.1 ms，hidden-state 传输在 prefill 为 8–79 ms、decode 为 3–32 ms，而实测 TTFT 为 126–492 ms、TPOT 为 41 ms；因此 AFlex 以批次/窗口固定频率并让传输与计算重叠来摊销开销。",
+      "value": "frequency switch 4.7–44.1 ms; hidden-state transfer 8–79 ms (prefill), 3–32 ms (decode); TTFT 126–492 ms; TPOT 41 ms",
+      "baseline": "无 A/F 分离或无开销摊销时的逐算子切换/传输路径",
+      "condition": "A800 上跨 1–8 GPU 的切频与 A/F hidden-state transfer 测量；不同 prefill/decode 配置",
+      "source_locator": "PDF p.4, §III-D, Fig.5 and Insight #5"
+    }
+  ],
+  "evaluation_context": "AFlex 基于 SGLang（约 15K Python/1K C++ SLOC），在两台各 8×NVIDIA A800-80GB（400 GB/s NVLink、800 Gbps 节点间网络）服务器上评测，另扩展到四台服务器；模型为 dense Qwen3-32B 和 MoE Mixtral-8×7B。使用 Azure Conversation/Coding production traces、QA(128/64)、RAG(4096/64)、Chatbot(128/1024)、Summary(4096/1024) 四个控制 workload，比较 SGLang、DynamoLLM、DistServe、BiScale；主要指标为 GPU energy/token、P90 TTFT 和 TPOT。",
+  "limitations": "论文的实测范围限于 A800、Qwen3-32B/Mixtral-8×7B、SGLang、两类 Azure traces 和四个合成 workload；未给出其他 GPU、模型架构、推理引擎或网络拓扑上的结果。能耗由 NVML 统计 GPU energy/token，并非整机或数据中心总能耗。A/F TP-layout 重配置仍是秒级成本（TP2→TP4 基线 8.30 s、AFlex 3.97 s；TP4→TP1 基线 12.56 s、AFlex 3.48 s），因此不能任意高频改变 TP 布局；预测器与离线 profile 也依赖目标平台和工作负载。推断：对 KV-cache 位置、网络利用率或跨节点传输量的长期收益，论文未直接以 TPN 指标验证，迁移到其他平台的收益仍需实测。",
+  "project_relevance": "与 TPN 相关的直接证据是 AFlex 将 TTFT/TPOT 作为资源和 DVFS 约束，并实现了跨节点 hidden-state 的 GPUDirect RDMA/NIC-affine 传输；这说明 token 延迟目标可以驱动算子/资源调度。但它的核心优化对象是 GPU A/F provisioning、频率和流水线，而非 KV-cache 感知路由、网络拥塞或 token-aware 网络调度，因此可作为网络侧方案的对照基线，而不能直接证明 TPN 的网络收益。",
+  "primary_source_resolved": true,
+  "quality_score": 96,
+  "source_notes": [
+    "输入 URL 为 arXiv 2608.01891v1，PDF 已抓取并按单一来源读取三个 chunk。",
+    "数值证据均来自论文正文、图表或表格；未使用候选摘要之外的替代来源。"
+  ]
+}

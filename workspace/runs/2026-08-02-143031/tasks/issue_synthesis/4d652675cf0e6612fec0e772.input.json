@@ -1,0 +1,205 @@
+{
+  "issue_id": "278d0a0b2e41afecedf1c625",
+  "items": [
+    {
+      "title": "SmartGen：按KV重要性分阶段传输，缩短PD切换停顿",
+      "type": "论文（预印本）",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-07-30T12:56:05Z",
+      "importance": "重点关注",
+      "core_conclusion": "PD解耦中，完整KVCache传输可能比Prefill计算慢数倍，并阻塞第二个Token。SmartGen按KV重要性分配传输时机，让有限RDMA带宽优先服务当前生成。",
+      "mechanism": "系统用离线画像识别重要KV块，在Prefill期间提前推送；Decode阶段把选择结果拆成本地加载和远端GDR RPC两路并行获取，再利用Attention期间空闲的CPU/NIC后台补齐其余KV。",
+      "result": "GovReport上，TTST相对完整传输最高降低4.3倍；MultiFieldQA、Qwen3-14B、batch=6时降低3.7倍，并比顺序Partial transfer快1.2倍。网络从32降至15Gbps时，改善由2.5倍增至3.3倍。",
+      "boundary": "收益依赖KV选择和画像；15Gbps下首两层KV及元数据仍会占满链路。实验基于L20、LongBench和64-token输出，未覆盖多租户争用。",
+      "project_relevance": "项目判断：可借鉴“必要KV先行、动态补取、后台补全”，并用TTST/TBT评价。下一步验证画像漂移、真实命中率和多租户P95/P99。",
+      "keywords": [
+        "PD解耦",
+        "KVCache传输",
+        "RDMA",
+        "TTST",
+        "带宽调度"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.28150v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-30T12:56:05Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 85.8
+    },
+    {
+      "title": "CodeNib：把仓库检索做成可复用的多视图数据服务",
+      "type": "论文（预印本）",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Read、Grep、Glob和代码搜索加速",
+      "published_at": "2026-07-28T08:25:30Z",
+      "importance": "值得关注",
+      "core_conclusion": "Coding Agent反复Read/Grep的原因之一，是词法、向量和结构导航彼此割裂。CodeNib把它们物化为提交级可复用视图，用统一坐标和预算接口投递仓库上下文。",
+      "mechanism": "系统维护词法、向量和结构图视图，并统一映射到相对路径与源码范围；图视图用Git/LSP增量修复，向量视图按内容寻址复用。查询时只加载所需视图，并记录构建、更新、检索和投递成本。",
+      "result": "在与全量重建输出一致的样本上，图修复和向量复用中位加速为8.67倍、25.44倍；静态导航与实时LSP位置一致时快4.72倍。满足定位质量门槛时，轨迹Token比grep/read少50%至87%。",
+      "boundary": "论文不评估补丁生成。静态导航仅63.2%的请求与实时LSP匹配，图修复严格一致率为45.5%；并发更新、原子发布和端到端时延未验证。",
+      "project_relevance": "项目判断：可建设提交级共享检索服务，但必须保留LSP回退。验证需同时记录重复Read/Grep、更新正确性、上下文Token和任务时延，不能只看召回率。",
+      "keywords": [
+        "Coding Agent",
+        "仓库索引",
+        "代码检索",
+        "增量视图",
+        "上下文投递"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.25431v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-28T08:25:30Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 84.8
+    },
+    {
+      "title": "自推测Agent：边推理边预测下一次只读工具调用",
+      "type": "论文（预印本）",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent工具执行链优化",
+      "published_at": "2026-07-28T15:00:10Z",
+      "importance": "值得关注",
+      "core_conclusion": "Agent等待搜索或API时处于空闲。该工作让同一模型预测下一条完整工具调用，提前执行只读请求，避免额外草稿模型开销。",
+      "mechanism": "模型共享Agent轨迹前缀，以固定后缀切换到Speculator模式并复用前缀KVCache。训练从当前策略rollout构造“部分轨迹—真实下一调用”配对，交替更新两种模式；工具名和完整参数均匹配才复用结果。",
+      "result": "五项评测中，联合RL相对双模式SFT将Qwen3-4B的Hit@1从44.1升至61.2，Qwen3.5-4B从48.9升至66.3，平均任务成功率未下降。50个MuSiQue查询、单张H100上，自推测为8.3秒、8.70GB；0.6B草稿方案为27.4秒、10.71GB。",
+      "boundary": "仅适合Read、Search等无副作用操作；写操作需禁用或事务保护。论文未测真实并行后的端到端节省、误推测I/O成本，且仅测4B模型。",
+      "project_relevance": "项目判断：代码Agent可先对read、grep和索引查询启用推测。应测命中率、隐藏时延、误推测负载、P95和副作用隔离，不能把Hit@1当成加速比。",
+      "keywords": [
+        "工具推测",
+        "并行执行",
+        "Agent Runtime",
+        "KV复用",
+        "只读工具"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.25816v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-28T15:00:10Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 84.2
+    },
+    {
+      "title": "ZCube以确定路径缓解PD解耦推理的结构性拥塞",
+      "type": "论文",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-07-24T01:46:44Z",
+      "importance": "重点关注",
+      "core_conclusion": "ZCube针对PD解耦产生的持续、位置相关KVCache大流，取消Spine与ECMP，以确定路径避免结构性热点。在约千卡GLM-5.1集群迁移中，作者报告吞吐提升15%、P99 TTFT降低40.6%。",
+      "mechanism": "GPU按模位置和连续块接入奇偶两组ToR，完全二部核心为每对GPU指定唯一路径；正交分区把连续热源块分散后再汇聚，故障冗余由双端口、预计算绕路和上层重试承担。",
+      "result": "除性能改善外，交换机与光模块成本降低33%。128 GPU仿真中，25/75 PD连续分块流量的最大/平均链路负载由ROFT+ECMP的4.50降至1.33；AllReduce下为1.14对1.00。",
+      "boundary": "单作者预印本仅覆盖一个模型家族且未公开原始遥测；完整二部核心增加radix和布线复杂度，随机elephant流量下两种拓扑不均衡度都接近9。",
+      "project_relevance": "项目判断：可将ZCube作为TPN的静态网络基线，先判断推理流量是否稳定到可由拓扑保证，再量化KVCache位置与Token SLO感知调度相对固定拓扑的额外收益。",
+      "keywords": [
+        "ZCube",
+        "KVCache",
+        "PD解耦",
+        "TTFT",
+        "确定路径"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.21893v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-24T01:46:44Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 81.3
+    },
+    {
+      "title": "DMG以全局内存视图扩展解耦内存图处理",
+      "type": "论文",
+      "topic_name": "内存语义、DSA卸载",
+      "direction_name": "内存语义与池化",
+      "published_at": "2026-07-23T03:04:09Z",
+      "importance": "重点关注",
+      "core_conclusion": "DMG把索引、属性与边放入多内存节点组成的全局地址空间，计算节点仅缓存负责的属性切片，从而独立扩展计算与内存资源。系统还合并远程细粒度访问、批量搬移更新并动态均衡热点。",
+      "mechanism": "32B自适应索引内嵌低度顶点边，高度顶点保存全局地址和分段长度，再以连续读合并和doorbell batching降低RDMA IOPS。密集迭代批量转发更新到数据侧，稀疏迭代使用RDMA原子操作。",
+      "result": "在4个十亿级图数据集的BFS、CC和PageRank上，相对FAM-Graph等方案最高提速4.9倍、每计算节点缓存最高减少18.9倍；1至4个计算节点带来1.47至3.13倍加速，检索优化贡献2.48至4.74倍提升。",
+      "boundary": "当前仅支持静态图，以100Gbps RDMA模拟解耦内存，未在CXL 3.0实机验证；推拉模式不能逐迭代切换，代码尚未发布，结论不可直接外推。",
+      "project_relevance": "项目判断：可借鉴统一地址空间、显式计算侧缓存及批量搬移后就地执行的接口；下一步验证真实CXL一致性、访问控制、故障语义和DSA搬移成本。",
+      "keywords": [
+        "DMG",
+        "解耦内存",
+        "RDMA",
+        "图处理",
+        "全局地址空间"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.20881v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-23T03:04:09Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 80.4
+    },
+    {
+      "title": "C²KV用可组合压缩表示降低非前缀KVCache搬移",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-07-20T09:09:23Z",
+      "importance": "重点关注",
+      "core_conclusion": "C²KV面向体积大且重排后失效的非前缀文档KVCache，将压缩表示与后续组合联合训练。复用时直接重定位并拼接文档KV，无需重算原文或额外融合。",
+      "mechanism": "冻结基础模型后，每k个文档Token插入一个可学习C²Token，并为其增加逐层QKV投影；结构化注意力聚合局部块、sink块和此前C²Token。系统仅保存压缩KV，复用时按新位置对齐RoPE后连接。",
+      "result": "作者报告最高17倍加速，但未给出最大工作负载的表格项。Llama3.1-8B、128k上下文中，全量KV加载为0.839秒、融合为0.132秒；4倍压缩在MuSiQue与2WikiMQA上为0.3587和0.4477，高于全量重算的0.3198和0.4018。",
+      "boundary": "仅支持离线文档复用，压缩比例固定，每个模型需训练约增加10%参数的Extractor；评测为主存到GPU搬移，未覆盖WAN RTT、跨域放置和P95。",
+      "project_relevance": "项目判断：跨域KV表示需为重排与组合共同设计。应在WAN下对比全量、通用压缩与可组合压缩，测传输字节、命中率、TTFT/P95、提取摊销及质量。",
+      "keywords": [
+        "C²KV",
+        "KVCache压缩",
+        "非前缀复用",
+        "RoPE重定位",
+        "跨域传输"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv / KDD 2026",
+          "url": "https://arxiv.org/abs/2607.17715v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-20T09:09:23Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "score": 80.4
+    }
+  ],
+  "max_judgements": 3,
+  "audience": "公司内部领导和技术同事"
+}

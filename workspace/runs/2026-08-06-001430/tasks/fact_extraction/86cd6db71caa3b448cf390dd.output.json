@@ -1,0 +1,58 @@
+{
+  "_task": {
+    "id": "86cd6db71caa3b448cf390dd",
+    "type": "fact_extraction",
+    "entity_id": "e02542b6bd9b41e75ebc45cf",
+    "input_digest": "f0c42573d881f2db82c2789cc0bbc990"
+  },
+  "title": "Does Accuracy Equal Evidence? Reasoning Faithfulness under KV Cache Compression",
+  "event_hint": "Answer-evidence gap audit for reasoning faithfulness under KV compression",
+  "problem": "KV压缩常只看最终答案准确率，隐含假设答案保留就意味着支撑答案的推理轨迹也保留；但token驱逐可能保留答案线索、同时丢失中间证据和可验证的理由。",
+  "mechanism": "论文先让未压缩模型生成固定reasoning trace，再让十种token-eviction方法和KIVI量化控制在相同trace上回放，分别测最终准确率、answer-chain consistency和perturbation faithfulness。通过在起始/中段/答案前注入错误证据并保持模型、前缀和解码不变，隔离缓存保留对答案支持的影响。",
+  "evidence": [
+    {
+      "claim": "Qwen3-8B在AIME24-26上Full-KV准确率56.7、chain consistency RWAC/correct 4.3、faithfulness 92.8；SnapKV准确率50.0但RWAC/correct升至65.5、faithfulness降至61.6。",
+      "value": "FullKV 56.7/4.3/92.8; SnapKV 50.0/65.5/61.6",
+      "baseline": "Full-KV Qwen3-8B-think",
+      "condition": "AIME24-26；256-token retained cache；3-seed means",
+      "source_locator": "PDF p.5, Table 3"
+    },
+    {
+      "claim": "AIME部署式scope check中Full-KV准确率56.7、faithfulness 91.1；AdaKV 23.3/35.6，HeadKV 26.7/31.1，SnapKV 26.7/30.0，说明最终答案和证据质量可分离。",
+      "value": "FullKV 56.7/91.1; AdaKV 23.3/35.6; HeadKV 26.7/31.1; SnapKV 26.7/30.0",
+      "baseline": "Full-KV",
+      "condition": "End-to-end AIME26；accuracy / faithfulness",
+      "source_locator": "PDF p.4, Table 2"
+    },
+    {
+      "claim": "KIVI-2bit覆盖所有reasoning trace token，AIME准确率67.4、faithfulness 90.7，接近Full-KV；作者据此区分量化降精度与token驱逐丢覆盖的影响。",
+      "value": "67.4 accuracy; 90.7 faithfulness",
+      "baseline": "Full-KV 56.7/91.1; token-eviction methods",
+      "condition": "Qwen3-8B AIME24-26；2-bit KV quantization",
+      "source_locator": "PDF p.5, Table 3 and quantization discussion"
+    },
+    {
+      "claim": "在GPQA-Diamond上Qwen3-8B-think准确率57.7、faithfulness 95.9；SnapKV准确率56.7但faithfulness 82.7、bias rate 10.3，仍存在答案-证据差距。",
+      "value": "57.7/95.9 vs 56.7/82.7/10.3",
+      "baseline": "Full-KV Qwen3-8B-think",
+      "condition": "GPQA-Diamond；3-seed means",
+      "source_locator": "PDF p.5, Table 3"
+    },
+    {
+      "claim": "固定trace replay是组件级诊断而非完整部署模拟；端到端压缩还会改变reasoning trajectory、生成长度和整体能力，answer-chain consistency还依赖LLM judge。",
+      "value": null,
+      "baseline": "Fixed-trace replay",
+      "condition": "作者Limitations",
+      "source_locator": "PDF p.8, Limitations"
+    }
+  ],
+  "evaluation_context": "研究以Qwen3-8B为主，并在DeepSeek-R1-Distill-Llama-8B和Qwen3-30B-A3B上扩展；覆盖AIME数学、GPQA科学问答、MedCalc临床计算和RULER长上下文检索。比较十种token eviction与KIVI-2bit quantization，固定trace、end-to-end和三seed评估并测准确率、链一致性及扰动faithfulness。",
+  "limitations": "固定trace回放不能代表真实压缩生成，因为压缩会改变后续轨迹和输出长度；研究只提供干预级因果证据，不能定位具体KV状态中的答案/证据语义。链一致性由匿名LLM judge评分，RWAC会受judge和prompt影响。论文没有测跨域KV传输、网络延迟或共享缓存一致性。",
+  "project_relevance": "跨域KV缓存验收不能只看最终答案准确率；应增加证据覆盖、链一致性和对错误证据注入的稳健性测试。尤其对Agent长链任务，优先保留中间工具结果与推理依赖的覆盖，量化通常比token驱逐更容易保持可审计性。",
+  "primary_source_resolved": true,
+  "quality_score": 95,
+  "source_notes": [
+    "arXiv PDF已抓取且标题与输入一致。",
+    "准确率、链一致性、faithfulness与量化控制均有表格和条件定位。"
+  ]
+}

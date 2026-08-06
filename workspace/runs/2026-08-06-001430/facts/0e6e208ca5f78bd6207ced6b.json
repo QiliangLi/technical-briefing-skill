@@ -1,0 +1,59 @@
+{
+  "title": "SeDeM: Selective Decompression of Hidden-State Memories for Long-Context Question Answering",
+  "event_hint": "SeDeM按查询选择压缩memory blocks并解压为中间层hidden states，分离存储与decoder条件化",
+  "problem": "长上下文prefill的attention成本随长度平方增长、KV cache随token数增长；软压缩memory slots既要保存信息又要直接条件化decoder，导致压缩质量与推理效率受限。",
+  "mechanism": "SeDeM从选定中间Transformer层提取hidden states，轻量compressor把上下文存成memory blocks；query-conditioned selector按块级证据选择相关块，decompressor只将选中块扩展为兼容decoder中间层的hidden states，使decoder避免全上下文处理和直接从高度压缩slots生成。",
+  "evidence": [
+    {
+      "claim": "在Llama-3.2-1B和3B同backbone设置、四个长上下文QA benchmark上，SeDeM的QA分数高于所有评估压缩基线；3B设置在2WikiMHQA、QASPER和HotpotQA-Distractor超过full-context fine-tuned reference。",
+      "value": null,
+      "baseline": "LongLLMLingua、HMT、ICAE、500xCompressor等及full-context fine-tuning",
+      "condition": "四数据集；1B/3B同backbone。",
+      "source_locator": "PDF p.6 Main results; chunk 01 lines 666-684"
+    },
+    {
+      "claim": "在2WikiMHQA跨模型设置中，1B encoder→3B decoder的SeDeM F1为63.44，高于3B full-context fine-tuned reference的62.50，但低于同模型3B SeDeM的67.25。",
+      "value": "63.44 vs 62.50/67.25",
+      "baseline": "3B full-context FT / same-model SeDeM",
+      "condition": "1B encoder、3B decoder；hidden-state投影与解压。",
+      "source_locator": "PDF p.6 cross-model results; chunk 01 lines 687-698"
+    },
+    {
+      "claim": "相对ICAE，3B平均TTFT由195.76 ms降至79.60 ms（2.46×），平均解码吞吐由41.17升至45.16 tokens/s（1.10×）。",
+      "value": "2.46× TTFT; 1.10× tok/s",
+      "baseline": "ICAE 195.76 ms / 41.17 tok/s",
+      "condition": "Llama-3.2-3B；TTFT包含在线压缩、选择和decoder prefill。",
+      "source_locator": "PDF Table 3; chunk 02 lines 45-79"
+    },
+    {
+      "claim": "3B配置中early-exit query encoding把selection latency约从26 ms降到13 ms；新增推理模块约占冻结1B/3B backbone参数3.82%/3.49%。",
+      "value": "26→13 ms; 3.82%/3.49%",
+      "baseline": null,
+      "condition": "selector与decoder中间层实现。",
+      "source_locator": "PDF Table 3 discussion; chunk 02 lines 70-80"
+    },
+    {
+      "claim": "在4K RULERqa_2上，full-context得分49.4，ICAE 11.2（22.7% retention），SeDeM 31.6（64.0% retention）。",
+      "value": "31.6 / 64.0% retention",
+      "baseline": "ICAE 11.2 / 22.7%; full-context 49.4",
+      "condition": "Llama-3.2-3B；compression factor 4。",
+      "source_locator": "Appendix Table 17; chunk 04 lines 224-249"
+    }
+  ],
+  "evaluation_context": "SeDeM在HotpotQA、2WikiMHQA、MuSiQue和QASPER四个长上下文QA数据集上评估，使用Llama-3.2-1B/3B及1B encoder→3B decoder，压缩段长T=128、压缩因子C=4；同时测量TTFT、解码tokens/s和中间层memory选择/解压。",
+  "limitations": "TTFT包含在线压缩、选择和decoder prefill，收益依赖并行分段、backbone和压缩因子；某些多跳任务full-context仍优于SeDeM。实验没有测WAN传输、跨域一致性、长期缓存复用或真实多租户服务，hidden-state memory的跨设备搬运成本尚未验证。",
+  "project_relevance": "可用于跨域Agent Cache设计：将长上下文存成中间层memory blocks，按查询只传输/解压相关块，减少全量KV搬运；需要把selector命中、块字节数、解压与TTFT联合测量，并验证decoder版本和中间层兼容性。",
+  "primary_source_resolved": true,
+  "quality_score": 94,
+  "source_notes": [
+    "arXiv原始论文2608.00311v1已抓取并读取Table 2/3/17。",
+    "TTFT和吞吐数值保留ICAE基线、backbone与压缩条件。"
+  ],
+  "_provenance": {
+    "task_id": "df1fac8e9438594901d72e0c",
+    "candidate_id": "0e6e208ca5f78bd6207ced6b",
+    "source_title": "SeDeM: Selective Decompression of Hidden-State Memories for Long-Context Question Answering",
+    "source_url": "https://arxiv.org/abs/2608.00311v1",
+    "document_id": "09cf67ec6d466184154bfe34"
+  }
+}

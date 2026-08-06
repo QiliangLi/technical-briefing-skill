@@ -1,0 +1,178 @@
+{
+  "candidate_id": "69dd8a27d1de8f655c784ac9",
+  "title": "Stateless MCP has recaptured my interest (and inspired mcp-explorer and datasette-mcp)",
+  "summary": "<p>Tuesday was <a href=\"https://x.com/ade_oshineye/status/2082129440943866149\">Stateless MCP day</a> - the rollout of MCP 2.0, or <a href=\"https://blog.modelcontextprotocol.io/posts/2026-07-28/\">the 2026-07-28 Model Context Protocol specification</a> to use the more formal but less memorable name. This is the most significant change to the MCP spec since it first launched, and has also served to reignite my personal interest in the protocol.</p>\n<p>For background: MCP is the Model Context Protocol, which describes a standard way to expose new tools to LLM-powered agent frameworks. It was introduced by Anthropic back <a href=\"https://www.anthropic.com/news/model-context-protocol\">in November 2024</a>, had a <em>huge</em> spike of interest through much of 2025, and then became somewhat eclipsed by <a href=\"https://simonwillison.net/2025/Oct/16/claude-skills/\">Skills</a> (another Anthropic invention) when it became apparent that an agent harness with access to a terminal and <code>curl</code> could do most of what MCP did in a more flexible way. I wrote about that <a href=\"https://simonwillison.net/2025/Dec/31/the-year-in-llms/#the-only-year-of-mcp\">in my review of 2025</a>.</p>\n<p>I'm coming back around to MCP now. Giving an agent a shell environment with the ability to access the internet is <a href=\"https://simonwillison.net/2026/Jul/22/openai-cyberattack/\">fraught with risk</a>, and requires a strong model that is capable of effectively driving such an environment. MCP tools are easier to audit and control, and simple enough that smaller models that run on a laptop can still drive them reasonably well.</p>\n<p>The new stateless MCP specification also greatly decreases the complexity of implementing both clients and servers for the protocol. I built three of those this week!</p>\n<h4 id=\"what-s-easier-with-stateless-mcp\">What's easier with stateless MCP</h4>\n<p>The best demonstration of the difference between stateful and stateless MCP is in this <a href=\"https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/\">May 21st blog post</a> that introduced the RC for the new specification. It included a clear before-and-after example.</p>\n<p>The older stateful MCP (I'm going to call it \"legacy MCP\") required two HTTP requests - the first to initialize a session and obtain a <code>Mcp-Session-Id</code>, and the second to actually call the tool:</p>\n<pre><code>POST /mcp HTTP/1.1\nContent-Type: application/json\n\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {\n    \"protocolVersion\": \"2025-11-25\",\n    \"capabilities\": {\n    },\n    \"clientInfo\": {\n      \"name\": \"my-app\",\n      \"version\": \"1.0\"\n    }\n  }\n}\n\nPOST /mcp HTTP/1.1\nMcp-Session-Id: 1868a90c-3a3f-4f5b\nContent-Type: application/json\n\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"search\",\n    \"arguments\": {\n      \"q\": \"otters\"\n    }\n  }\n}\n</code></pre>\n<p>The new stateless way uses a single HTTP request which looks like this:</p>\n<pre><code>POST /mcp HTTP/1.1\nMCP-Protocol-Version: 2026-07-28\nMcp-Method: tools/call\nMcp-Name: search\nContent-Type: application/json\n\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"search\",\n    \"arguments\": {\n      \"q\": \"otters\"\n    },\n    \"_meta\": {\n      \"io.modelcontextprotocol/clientInfo\": {\n        \"name\": \"my-app\",\n        \"version\": \"1.0\"\n      }\n    }\n  }\n}\n</code></pre>\n<p>This is so much cleaner from both a client- and server-side implementation perspective. It's also a better fit for building scalable web applications, since now you don't need to maintain server-side state to keep track of those session IDs, or worry about routing the same session to the same backend machine.</p>\n<h4 id=\"mcp-explorer\">mcp-explorer</h4>\n<p>I couldn't find a great CLI tool for interactively probing an MCP server, so I had Codex help build my own.</p>\n<p><strong><a href=\"https://github.com/simonw/mcp-explorer\">mcp-explorer</a></strong> is the result. It's a stateless Python CLI tool, so you don't even need to install it to try it out - it works with <a href=\"https://docs.astral.sh/uv/guides/tools/#running-tools\">uvx</a> like this:</p>\n<div class=\"highlight highlight-source-shell\"><pre>uvx mcp-explorer list https://agentic-mermaid.dev/mcp</pre></div>\n<p>This queries Ade Oshineye's <a href=\"https://agentic-mermaid.dev/\">agentic-mermaid.dev</a> demo MCP. The above command returns the following list of tools:</p>\n<pre><code>execute(code: string, timeoutMs?: integer) - Execute Mermaid SDK code\n  Run JavaScript in an isolated sandbox; return a value.\n\ndescribe_sdk(family: string, detail?: string) - Describe Mermaid SDK operations\n  Return version-matched mutation operations for one diagram family.\n\nrender_svg(source: string, options?: object) - Render Mermaid as SVG\n  Render a Mermaid source string to themeable SVG. Returns { ok, svg }.\n\nrender_ascii(source: string, useAscii?: boolean, targetWidth?: integer, options?: object) - Render Mermaid as text\n  Render a Mermaid source string to text. Returns { ok, text }.\n\nrender_png(source: string, scale?: number, background?: string, fitTo?: object, options?: object) - Render Mermaid as PNG\n  Rasterize a Mermaid source string to PNG. Returns { ok, png_base64 }.\n...\n</code></pre>\n<p>Then to inspect a tool:</p>\n<div class=\"highlight highlight-source-shell\"><pre>uvx mcp-explorer inspect render_svg</pre></div>\n<p>This outputs a whole bunch of information, including the JSON schema of the inputs and outputs.</p>\n<p>To call that tool and pass arguments to it:</p>\n<div class=\"highlight highlight-source-shell\"><pre>uvx mcp-explorer call \\\n  https://agentic-mermaid.dev/mcp \\\n  render_svg \\\n  -a <span class=\"pl-c1\">source</span> <span class=\"pl-s\"><span class=\"pl-pds\">'</span>graph TD; A--&gt;B<span class=\"pl-pds\">'</span></span> \\\n  -a options <span class=\"pl-s\"><span class=\"pl-pds\">'</span>{\"padding\":24}<span class=\"pl-pds\">'</span></span></pre></div>\n<p>Which returns:</p>\n<pre><code>{\"ok\":true,\"svg\":\"&lt;svg xmlns=\\\"http://www.w3.org/2000/svg\\\" width=...\n</code></pre>\n<p>To get just the raw SVG try adding <code>| jq .svg -r</code> to that command. I got back <a href=\"https://gist.github.com/simonw/b07c62f0ce103be6932477659d5dd1ac\">this image</a>:</p>\n<p><img src=\"https://static.simonwillison.net/static/2026/mermaid-example.svg\" alt=\"SVG of as A box on top of a B box with an arrow from A to B\" style=\"max-width: 100%;\" /></p>\n<p>There are a <a href=\"https://github.com/simonw/mcp-explorer/blob/main/README.md\">few more commands</a> in the README, but you get the general idea. I find building CLI tools like this to be a really productive way to get familiar with a specification, even if an agent writes most of the actual code.</p>\n<h4 id=\"datasette-mcp\">datasette-mcp</h4>\n<p>The second project is <strong><a href=\"https://github.com/datasette/datasette-mcp\">datasette-mcp</a></strong>, a Datasette plugin which adds a <code>/-/mcp</code> endpoint to any Datasette instance.</p>\n<p>This is probably the fourth time I've tried building this plugin, but thanks to the new stateless MCP specification I finally have a version that feels good to release.</p>\n<p>It provides just three tools: <code>list_databases()</code>, <code>get_database_schema(database_name)</code>, and <code>execute_sql(database_name, sql)</code>. They do exactly what you would expect them to do - though <code>execute_sql()</code> is read-only for the moment.</p>\n<p>Wire these into an agent, or a chat tool like ChatGPT or Claude, and they'll gain the ability to run SQL queries against your hosted Datasette instance.</p>\n<p>So far I'm running it on the Datasette mirror of my blog, at <a href=\"datasette.simonwillison.net/-/mcp\">datasette.simonwillison.net/-/mcp</a>. It took a bit of fiddling to figure out how to attach that to ChatGPT and Claude, but I got there in the end. Here's <a href=\"https://til.simonwillison.net/llms/mcp-in-claude-and-chatgpt\">a new TIL</a> showing exactly how to do that.</p>\n<p>Here's <a href=\"https://claude.ai/share/de1ad9bf-f7c2-4fb9-a9a0-2a1ae39995db\">a shared Claude session</a> where I asked it:</p>\n<blockquote>\n<p><code>list tables in simonwillison.net</code></p>\n</blockquote>\n<p>And then:</p>\n<blockquote>\n<p><code>what has Simon said recently about MCP?</code></p>\n</blockquote>\n<p>It ran 7 separate SQL queries to figure out the answer.</p>\n<h4 id=\"llm-mcp-client\">llm-mcp-client</h4>\n<p>My <a href=\"https://llm.datasette.io/\">LLM tool</a> is long overdue for an official MCP integration. The new alpha <a href=\"https://github.com/simonw/llm-mcp-client\">llm-mcp-client</a> plugin is my attempt at exactly that:</p>\n<div class=\"highlight highlight-source-shell\"><pre>llm install llm-mcp-client\nllm -T <span class=\"pl-s\"><span class=\"pl-pds\">'</span>MCP(\"https://datasette.simonwillison.net/-/mcp\")<span class=\"pl-pds\">'</span></span> <span class=\"pl-s\"><span class=\"pl-pds\">'</span>count the notes<span class=\"pl-pds\">'</span></span></pre></div>\n<p>Here's the output (including reasoning trace, I'm using <a href=\"https://simonwillison.net/2026/Jul/30/llm-rc2/\">LLM 0.32rc2</a>):</p>\n<blockquote>\n<p><em><strong>Considering note count</strong></em></p>\n<p><em>I see the question \"count the notes\" is probably asking me to tally up blog notes. It could also mean published notes or drafts, so there's some ambiguity there. I'll need to figure out the total number of notes, likely by querying the count for both published notes and drafts to get a clear answer. Let's execute that count!</em></p>\n<p>There are <strong>151 notes</strong>.</p>\n</blockquote>\n<p>And <a href=\"https://gist.github.com/simonw/4e8f558766150658ce35eab4f0fc3e04\">the output of llm logs</a> for that prompt.</p>\n<p>Once this is fully baked, I'm considering bringing it directly into LLM core. I'm excited to experiment with MCP in <a href=\"https://agent.datasette.io/\">Datasette Agent</a> and <a href=\"https://github.com/simonw/llm-coding-agent\">llm-coding-agent</a> as well.</p>\n<h4 id=\"mcp-is-a-safer-way-to-build-with-agents\">MCP is a safer way to build with agents</h4>\n<p>A few months after MCP was first released, I wrote <a href=\"https://simonwillison.net/2025/Apr/9/mcp-prompt-injection/\">Model Context Protocol has prompt injection security problems</a>, where I noted that the pattern of having end users mix and match tools pushed responsibility for avoiding data exfiltration attacks out to the users themselves. I hadn't coined <a href=\"https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/\">the Lethal Trifecta</a> yet, but that was absolutely what I had in mind.</p>\n<p>Then general agents with arbitrary shell and <code>curl</code> access came along, and that's so much harder to keep secure!</p>\n<p>Something I've come to appreciate about MCP is that it's much easier to reason about agent capabilities and what might go wrong than with arbitrary command execution in an open network environment - the default for most of today's general and coding agent tools.</p>\n<p>I plan to lean into MCP a whole lot more when I'm building sensitive applications on top of LLMs.</p>\n    \n        <p>Tags: <a href=\"https://simonwillison.net/tags/projects\">projects</a>, <a href=\"https://simonwillison.net/tags/ai\">ai</a>, <a href=\"https://simonwillison.net/tags/datasette\">datasette</a>, <a href=\"https://simonwillison.net/tags/mermaid\">mermaid</a>, <a href=\"https://simonwillison.net/tags/generative-ai\">generative-ai</a>, <a href=\"https://simonwillison.net/tags/llms\">llms</a>, <a href=\"https://simonwillison.net/tags/llm\">llm</a>, <a href=\"https://simonwillison.net/tags/anthropic\">anthropic</a>, <a href=\"https://simonwillison.net/tags/model-context-protocol\">model-context-protocol</a></p>",
+  "source": {
+    "discovery_source": "Simon Willison's Weblog",
+    "source_level": "B",
+    "discovery_only": false,
+    "original_url": "https://simonwillison.net/2026/Jul/31/stateless-mcp/#atom-everything",
+    "aihot_url": "",
+    "published_at": "2026-07-31T23:13:22+00:00",
+    "discovered_at": null
+  },
+  "topic": {
+    "id": "agent_acceleration",
+    "name": "Agent语义加速",
+    "description": "减少Agent反复Read、Grep、Glob、代码探索、上下文构建和规划等待， 从而缩短端到端任务完成时间的技术，而非仅指语义缓存。",
+    "max_items_per_issue": 2,
+    "aihot_priority": "highest",
+    "aihot_boost_terms": [
+      "coding agent",
+      "code graph",
+      "repository indexing",
+      "agent runtime",
+      "tool calls",
+      "Claude Code",
+      "Codex"
+    ],
+    "current_questions": [
+      "如何减少代码Agent重复Read、Grep和上下文定位",
+      "代码知识图或仓库索引是否真正降低端到端任务时延",
+      "工具调用并行、预测或复用是否引入正确性风险"
+    ],
+    "valuable_evidence": [
+      "Read次数",
+      "Grep次数",
+      "tool call次数",
+      "token消耗",
+      "任务成功率",
+      "端到端时延"
+    ],
+    "directions": [
+      {
+        "id": "code_graph",
+        "name": "代码知识图与仓库索引",
+        "queries": [
+          "\"code knowledge graph\" coding agent",
+          "\"repository graph\" AI coding",
+          "CodeGraph coding agent",
+          "RepoGraph repository indexing"
+        ],
+        "aihot_queries": [
+          "code graph agent",
+          "repository indexing agent",
+          "CodeGraph",
+          "RepoGraph"
+        ],
+        "arxiv_query": "((\"code knowledge graph\" OR \"repository graph\" OR CodeGraph OR RepoGraph) AND agent)",
+        "include_terms": [
+          "code graph",
+          "repository graph",
+          "indexing",
+          "coding agent"
+        ],
+        "exclude_terms": [
+          "social graph"
+        ]
+      },
+      {
+        "id": "read_grep",
+        "name": "Read、Grep、Glob和代码搜索加速",
+        "queries": [
+          "\"coding agent\" read grep glob acceleration",
+          "\"AI coding agent\" code search tool calls",
+          "agent repository search latency"
+        ],
+        "aihot_queries": [
+          "coding agent grep",
+          "coding agent code search",
+          "agent read tool",
+          "repository search agent"
+        ],
+        "arxiv_query": "((\"coding agent\" OR \"software engineering agent\") AND (\"code search\" OR grep OR repository))",
+        "include_terms": [
+          "coding agent",
+          "read",
+          "grep",
+          "glob",
+          "code search",
+          "repository"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "context_building",
+        "name": "上下文定位、构建与裁剪",
+        "queries": [
+          "\"coding agent\" context retrieval repository indexing",
+          "\"software engineering agent\" repository map",
+          "agent context pruning codebase"
+        ],
+        "aihot_queries": [
+          "agent context retrieval",
+          "repository map agent",
+          "coding agent context",
+          "agent context pruning"
+        ],
+        "arxiv_query": "((\"coding agent\" OR \"software engineering agent\") AND (\"context retrieval\" OR \"repository map\" OR indexing))",
+        "include_terms": [
+          "agent",
+          "context",
+          "repository",
+          "retrieval",
+          "indexing",
+          "pruning"
+        ],
+        "exclude_terms": []
+      },
+      {
+        "id": "tool_chain",
+        "name": "Agent工具执行链优化",
+        "queries": [
+          "\"agent runtime\" parallel tool calls",
+          "\"speculative tool execution\" agent",
+          "\"tool-call reduction\" agent",
+          "agent workflow execution latency"
+        ],
+        "aihot_queries": [
+          "agent runtime",
+          "parallel tool calls",
+          "speculative tool execution",
+          "tool call reduction"
+        ],
+        "arxiv_query": "((agent OR agentic) AND (\"parallel tool calls\" OR \"speculative tool\" OR \"tool-call\"))",
+        "include_terms": [
+          "agent",
+          "tool call",
+          "runtime",
+          "parallel",
+          "speculative",
+          "execution"
+        ],
+        "exclude_terms": []
+      }
+    ]
+  },
+  "direction": {
+    "id": "read_grep",
+    "name": "Read、Grep、Glob和代码搜索加速",
+    "queries": [
+      "\"coding agent\" read grep glob acceleration",
+      "\"AI coding agent\" code search tool calls",
+      "agent repository search latency"
+    ],
+    "aihot_queries": [
+      "coding agent grep",
+      "coding agent code search",
+      "agent read tool",
+      "repository search agent"
+    ],
+    "arxiv_query": "((\"coding agent\" OR \"software engineering agent\") AND (\"code search\" OR grep OR repository))",
+    "include_terms": [
+      "coding agent",
+      "read",
+      "grep",
+      "glob",
+      "code search",
+      "repository"
+    ],
+    "exclude_terms": []
+  },
+  "rule_score": 36.4,
+  "project_context_path": "config/project-context/agent-acceleration.md",
+  "constraints": {
+    "do_not_read_fulltext_yet": true,
+    "aihot_is_discovery_only": false
+  }
+}
