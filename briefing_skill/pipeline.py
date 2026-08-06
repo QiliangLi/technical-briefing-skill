@@ -17,7 +17,7 @@ from .freshness import freshness_limits
 from .matching import RuleMatcher
 from .scoring import Scorer
 from .tasks import TaskService, synthesis_item_payload
-from .utils import now_iso, read_json, stable_hash, write_json
+from .utils import now_iso, read_json, source_url_is_resolved, stable_hash, write_json
 from .visuals import VisualAssetService
 
 LOGGER = logging.getLogger(__name__)
@@ -389,6 +389,24 @@ class Pipeline:
             facts = [read_json(self.root / member["json_path"]) for member in members]
             candidates = [self.db.fetchone("SELECT * FROM candidates WHERE id=?", (member["candidate_id"],)) for member in members]
             raws = [self.db.fetchone("SELECT r.* FROM raw_items r JOIN candidates c ON c.raw_item_id=r.id WHERE c.id=?", (member["candidate_id"],)) for member in members]
+            # Item writing is only safe once at least one member is backed by a
+            # concrete A-level source whose fact extraction resolved the primary
+            # source.  B/C and discovery-only events remain available for later
+            # observation/radar handling, but must not be promoted into a core
+            # item task that can never pass semantic validation.
+            has_resolved_primary = any(
+                raw
+                and raw.get("source_level") == "A"
+                and source_url_is_resolved(raw.get("original_url") or raw.get("aihot_url"))
+                and bool(fact.get("primary_source_resolved"))
+                for fact, raw in zip(facts, raws)
+            )
+            if not has_resolved_primary:
+                LOGGER.info(
+                    "Skipping item_writing for event %s without a resolved primary A-level source",
+                    cluster["event_id"],
+                )
+                continue
             score = self.scorer.event_score(facts, candidates, raws)
             self.db.execute("UPDATE events SET score=? WHERE id=?", (score, cluster["event_id"]))
             input_data = {
