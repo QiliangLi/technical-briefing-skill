@@ -90,3 +90,15 @@ Run the old and new selectors against the same collected data for two or three i
 - topic coverage is not narrower;
 - manual edits do not increase;
 - Agent task count drops by at least 60%.
+
+## Production verification still required
+
+The PR validates code behavior and deterministic task reduction. It cannot measure the user's real Codex subscription consumption from GitHub Actions. After merge, run one production issue with the same source window and record:
+
+- tasks by type;
+- wall-clock duration;
+- mandatory-event recall;
+- manual factual and prose edits;
+- Codex usage-panel change.
+
+Those measurements decide whether the configured thresholds and budgets should be widened or tightened.
