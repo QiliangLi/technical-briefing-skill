@@ -1,9 +1,12 @@
 from briefing_skill.efficiency import (
-    direction_is_covered,
     estimate_task_reduction,
     plan_relevance_rows,
     radar_category,
     select_deep_budget,
+)
+from briefing_skill.quality_guard import (
+    primary_direction_is_covered,
+    relevance_batch_validation_errors,
 )
 
 
@@ -62,11 +65,33 @@ def test_deep_budget_preserves_topic_diversity():
     assert [item["id"] for item in deferred] == ["c3"]
 
 
-def test_direction_coverage_uses_hints_or_multiple_terms():
+def test_direction_coverage_requires_resolved_primary_source():
     direction = {"id": "kv_transfer", "include_terms": ["kv cache", "network", "transfer"]}
-    assert direction_is_covered([{"topic_hint": "tpn", "direction_hint": "kv_transfer"}], "tpn", direction)
-    assert direction_is_covered([{"title": "KV cache transfer over network", "summary": ""}], "tpn", direction)
-    assert not direction_is_covered([{"title": "CPU cache tutorial", "summary": ""}], "tpn", direction)
+    base = {
+        "title": "KV cache transfer over network",
+        "summary": "",
+        "topic_hint": "tpn",
+        "direction_hint": "kv_transfer",
+        "original_url": "https://example.com/paper/kv-transfer",
+    }
+    assert not primary_direction_is_covered([{**base, "source_level": "B", "discovery_only": True}], "tpn", direction)
+    assert not primary_direction_is_covered([{**base, "source_level": "A", "discovery_only": False, "original_url": "https://example.com"}], "tpn", direction)
+    assert primary_direction_is_covered([{**base, "source_level": "A", "discovery_only": False}], "tpn", direction)
+
+
+def test_relevance_batch_requires_exact_candidate_set():
+    input_data = {"candidates": [{"candidate_id": "a"}, {"candidate_id": "b"}]}
+    assert relevance_batch_validation_errors(
+        {"results": [{"candidate_id": "a"}, {"candidate_id": "b"}]},
+        input_data,
+    ) == []
+    errors = relevance_batch_validation_errors(
+        {"results": [{"candidate_id": "a"}, {"candidate_id": "a"}, {"candidate_id": "x"}]},
+        input_data,
+    )
+    assert any("duplicate" in error for error in errors)
+    assert any("unknown" in error for error in errors)
+    assert any("omits" in error for error in errors)
 
 
 def test_radar_categories_cover_requested_horizontal_scope():
@@ -77,17 +102,18 @@ def test_radar_categories_cover_requested_horizontal_scope():
     assert radar_category("New foundation model benchmark", "") == "其他"
 
 
-def test_representative_workload_reduces_agent_tasks_over_70_percent():
+def test_representative_workload_reduces_agent_tasks_over_75_percent():
     estimate = estimate_task_reduction(
         candidates=100,
         ambiguous_candidates=36,
         batch_size=12,
         fact_candidates_before=17,
-        fact_budget=12,
+        fact_budget=10,
         item_candidates_before=17,
         item_budget=10,
         search_before=18,
         search_after=4,
     )
     assert estimate["relevance_tasks_after"] == 3
-    assert estimate["task_reduction_ratio"] >= 0.70
+    assert estimate["tasks_after"] == 37
+    assert estimate["task_reduction_ratio"] >= 0.75
