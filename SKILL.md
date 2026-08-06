@@ -142,6 +142,19 @@ AI HOT候选
 
 不得把AI HOT的AI摘要直接当作技术证据。
 
+### Follow Builders与YeeKal AI Daily
+
+Follow Builders用于发现Builder观点、工程实践、访谈和官方博客线索；YeeKal AI Daily用于发现日报中的外部技术文章、项目和社区讨论。两者均保持B级、`discovery_only`，必须回到A级原始论文、官方文档、官方博客或项目仓库后才能进入重点信息。YeeKal日报日期只表示发现时间，不得冒充外部原始发布日期。
+
+处理`item_writing`和`issue_synthesis`任务时，先根据结构化事实写初稿，再调用`$human-writing`调整自然中文，最后调用`$humanizer`审查机械AI句式。两个Skill都不得增加事实、数字、因果关系或来源。`rebuild-existing`重选条目后必须重新完成`issue_synthesis`，不得自动拼接条目摘要。
+
+本地未安装润色Skills时执行：
+
+```bash
+npx skills add https://github.com/KKKKhazix/human-writing --global --agent codex
+npx skills add https://github.com/blader/humanizer --global --agent codex
+```
+
 ### 来源等级
 
 - A：原始论文、官方文档、官方博客、原项目仓库、正式会议页。

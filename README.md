@@ -5,7 +5,7 @@
 ## 主要能力
 
 - 六个技术专题及窄检索方向；
-- AI HOT、arXiv、RSS、GitHub Release和当前Agent开放搜索；
+- AI HOT、arXiv、RSS、GitHub Release、Follow Builders、YeeKal AI Daily和当前Agent开放搜索；
 - AI/Agent/KVCache相关查询提高AI HOT采集优先级；
 - 一手来源核验，AI HOT只作为发现源；
 - URL、标题、正文与事件级去重；
@@ -71,6 +71,19 @@ python briefing.py send --confirm-send
 5. 运行`python briefing.py advance`。
 
 因此同一仓库可以在Claude Code、Codex、Hermes等不同Agent中运行。
+
+`item_writing` 和 `issue_synthesis` 任务会要求当前Agent先按结构化事实写初稿，再依次调用本地 `$human-writing` 与 `$humanizer`。这两个Skill只负责自然中文润色和AI句式审查，不是Python运行时依赖，也不会被vendor到本仓库。
+
+未安装时可在本机执行：
+
+```bash
+npx skills add https://github.com/KKKKhazix/human-writing --global --agent codex
+npx skills add https://github.com/blader/humanizer --global --agent codex
+```
+
+Follow Builders只补充Builder观点、工程实践和访谈线索；YeeKal AI Daily只解析日报里的外部原始链接。两者均为B级发现源，不能独立支撑重点技术结论，YeeKal日报日期也不能替代外部原始发布日期。
+
+对旧期次执行 `rebuild-existing --confirm-rebuild` 后，流程会停在 `AWAITING_ISSUE_SYNTHESIS`。必须完成新的结构化综合判断并执行 `advance`，才能重新渲染、验证和审核邮件。
 
 ## AI HOT优先策略
 

@@ -40,9 +40,27 @@ class FulltextService:
         status, media_type, error = "FETCHED", "text/plain", None
         payload = __import__("json").loads(raw.get("payload_json") or "{}")
         try:
-            if payload.get("fixture"):
-                raise RuntimeError("offline fixture: use embedded summary")
-            text, media_type = self._fetch(url, raw)
+            if payload.get("local_fulltext_path"):
+                source_path = Path(str(payload["local_fulltext_path"]))
+                root = self.run_dir.parents[2].resolve()
+                candidates = [source_path] if source_path.is_absolute() else [self.run_dir / source_path, root / source_path]
+                resolved = next(
+                    (
+                        path.resolve()
+                        for path in candidates
+                        if path.resolve().is_relative_to(root) and path.is_file()
+                    ),
+                    None,
+                )
+                if not resolved:
+                    raise FileNotFoundError(f"Local fulltext not found: {source_path}")
+                text = resolved.read_text(encoding="utf-8")
+                status, media_type = "LOCAL_SOURCE", "text/markdown"
+            elif payload.get("fixture"):
+                text = self._fallback_text(raw)
+                media_type = "text/plain"
+            else:
+                text, media_type = self._fetch(url, raw)
         except Exception as exc:
             LOGGER.warning("Fulltext failed %s: %s", url, exc)
             text = self._fallback_text(raw)

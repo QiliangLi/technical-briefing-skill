@@ -18,5 +18,10 @@ Structure:
 - `project_relevance`: what it means for the current project and what should be verified next. Clearly present this as project judgement.
 - 3-5 keywords.
 - Primary sources first; discovery sources may appear only as `discovered_via`.
+- Preserve `topic_name`, `direction_name`, `score`, publication date, and source URLs exactly from the task input. Never invent, replace, or generalise a source URL to a site homepage.
 
 Do not use hype language. Do not claim that a preprint is proven production technology. Do not copy long source text. Return JSON only.
+
+First write a factually correct draft from the supplied facts. Then call `$human-writing` and revise only the title and five natural-language fields. Call `$humanizer` last to audit mechanical AI phrasing. Neither skill may add facts, numbers, causal claims, sources, or conditions.
+
+Preserve technical names, project names, abbreviations, numbers, baselines, and experimental conditions exactly or translate them accurately. Give each sentence one main judgement. Explain who did what and why it matters before stacking abbreviations. Use normal Chinese sentences instead of field labels, colon chains, or parenthetical noun piles.

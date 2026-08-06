@@ -41,6 +41,27 @@ def test_email_v2_groups_topics_and_links_specific_judgements(tmp_path: Path) ->
     assert [ref["anchor_id"] for ref in refs[0]["refs"]] == ["item-a1", "item-a2"]
 
 
+def test_email_v2_uses_structured_evidence_ids_without_guessing(tmp_path: Path) -> None:
+    service = EmailService(tmp_path, _config(), Database(tmp_path / "briefing.sqlite"))
+    core = [
+        {"brief_item_id": "a1", "title": "标题完全不出现在判断里", "item_role": "core"},
+        {"brief_item_id": "a2", "title": "另一个条目", "item_role": "core"},
+    ]
+    data = {
+        "core_items": core,
+        "items": core,
+        "synthesis": {
+            "judgements": [
+                {"title": "执行链变化", "body": "判断正文无需重复项目名。", "evidence_item_ids": ["a2"]}
+            ]
+        },
+    }
+
+    refs = service._judgement_refs(data)
+
+    assert refs == [{"title": "执行链变化", "text": "判断正文无需重复项目名。", "refs": [{"anchor_id": "item-a2", "title": "另一个条目"}]}]
+
+
 def test_aihot_radar_uses_only_local_seven_day_window_and_deduplicates(tmp_path: Path) -> None:
     db = Database(tmp_path / "briefing.sqlite")
     db.init()
@@ -62,7 +83,7 @@ def test_aihot_radar_uses_only_local_seven_day_window_and_deduplicates(tmp_path:
     assert groups[0]["items"][0]["source_name"] == "example.com"
 
 
-def test_expanded_rebuild_is_current_run_only_resets_approval_and_is_idempotent(tmp_path: Path, monkeypatch) -> None:
+def test_expanded_rebuild_requeues_synthesis_and_blocks_email_build(tmp_path: Path) -> None:
     db = Database(tmp_path / "workspace" / "briefing.sqlite")
     db.init()
     db.create_run("run-1", "AWAITING_APPROVAL")
@@ -75,7 +96,7 @@ def test_expanded_rebuild_is_current_run_only_resets_approval_and_is_idempotent(
     for event_id, run_id, item_id, score in (("event-core", "run-1", "core", 82), ("event-obs", "run-1", "obs", 65), ("event-other", "run-2", "other", 90)):
         db.execute("INSERT INTO events(id,topic_id,direction_id,canonical_title,fingerprint,score,first_seen_at,last_updated_at,payload_json) VALUES (?,?,?,?,?,?,?,?,?)", (event_id, "tpn", "d", event_id, event_id, score, now, now, "{}"))
         item_path = tmp_path / "workspace" / "runs" / run_id / "items" / f"{item_id}.json"
-        write_json(item_path, {"title": item_id, "score": score, "published_at": "2026-08-01T00:00:00Z", "topic_name": "状态感知网络、TPN", "sources": [{"source_level": "A", "url": "https://example.com"}]})
+        write_json(item_path, {"title": item_id, "score": score, "published_at": "2026-08-01T00:00:00Z", "topic_name": "状态感知网络、TPN", "sources": [{"source_level": "A", "url": f"https://example.com/{item_id}"}]})
         db.execute("INSERT INTO brief_items(id,run_id,event_id,json_path,score,fact_check_status,approved,created_at) VALUES (?,?,?,?,?,?,?,?)", (item_id, run_id, event_id, str(item_path.relative_to(tmp_path)), score, "PASS", 1, now))
     db.execute("INSERT INTO issue_items(issue_id,brief_item_id,position,item_role) VALUES (?,?,?,?)", ("issue-1", "core", 1, "core"))
 
@@ -83,32 +104,20 @@ def test_expanded_rebuild_is_current_run_only_resets_approval_and_is_idempotent(
     assert dry["counts"] == {"core": 1, "observations": 1, "total": 2, "topics": {"tpn": 2}}
     assert db.fetchone("SELECT COUNT(*) n FROM issue_items WHERE issue_id='issue-1'")["n"] == 1
 
-    original_issue = (issue_dir / "issue.json").read_text(encoding="utf-8")
-    real_replace = expanded_module.os.replace
-    monkeypatch.setattr(
-        expanded_module.os,
-        "replace",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("injected replace failure")),
-    )
-    with pytest.raises(OSError, match="injected replace failure"):
-        rebuild_expanded_issue(tmp_path, _config(), db, "run-1", confirm=True)
-    monkeypatch.setattr(expanded_module.os, "replace", real_replace)
-    assert (issue_dir / "issue.json").read_text(encoding="utf-8") == original_issue
-    assert db.fetchone("SELECT COUNT(*) n FROM issue_items WHERE issue_id='issue-1'")["n"] == 1
-
     rebuilt = rebuild_expanded_issue(tmp_path, _config(), db, "run-1", confirm=True)
-    rebuilt_again = rebuild_expanded_issue(tmp_path, _config(), db, "run-1", confirm=True)
-    assert rebuilt["status"] == rebuilt_again["status"] == "AWAITING_APPROVAL"
+    assert rebuilt["status"] == "AWAITING_ISSUE_SYNTHESIS"
     assert db.fetchone("SELECT COUNT(*) n FROM issue_items WHERE issue_id='issue-1'")["n"] == 2
     assert db.fetchone("SELECT SUM(approved) n FROM brief_items WHERE run_id='run-1'")["n"] == 0
-    issue = json.loads((issue_dir / "issue.json").read_text(encoding="utf-8"))
-    assert [item["brief_item_id"] for item in issue["items"]] == ["core", "obs"]
-    assert all(item["brief_item_id"] != "other" for item in issue["items"])
-    assert len(list((issue_dir / "history").glob("issue-before-expanded-v2-*.json"))) == 3
-
-    db.execute("UPDATE runs SET status='COMPLETED' WHERE id='run-1'")
-    with pytest.raises(RuntimeError, match="sent or completed"):
-        rebuild_expanded_issue(tmp_path, _config(), db, "run-1", confirm=False)
+    assert db.fetchone("SELECT stage FROM runs WHERE id='run-1'")["stage"] == "AWAITING_ISSUE_SYNTHESIS"
+    issue = db.fetchone("SELECT synthesis_path,issue_json_path,email_path FROM issues WHERE id='issue-1'")
+    assert issue == {"synthesis_path": None, "issue_json_path": None, "email_path": None}
+    task = db.fetchone("SELECT status,input_path FROM tasks WHERE run_id='run-1' AND task_type='issue_synthesis'")
+    assert task["status"] == "PENDING"
+    task_input = json.loads((tmp_path / task["input_path"]).read_text(encoding="utf-8"))
+    assert [item["brief_item_id"] for item in task_input["items"]] == ["core"]
+    assert len(list((issue_dir / "history").glob("issue-before-expanded-v2-*.json"))) == 1
+    with pytest.raises(RuntimeError, match="Issue not ready"):
+        EmailService(tmp_path, _config(), db).build("run-1")
 
 
 def test_email_template_contains_no_item_images() -> None:
@@ -118,6 +127,8 @@ def test_email_template_contains_no_item_images() -> None:
     assert ">热点雷达<" in template
     assert "阅读原文：" in template
     assert "stack-col" in template
+    assert "对应：" not in template
+    assert "相关解读：" in template
 
 
 def test_expanded_email_validator_checks_the_deliverable_not_unused_cards(tmp_path: Path) -> None:
@@ -141,7 +152,7 @@ def test_expanded_email_validator_checks_the_deliverable_not_unused_cards(tmp_pa
     assert "Expanded email judgements expose concrete item references" in report["passes"]
 
 
-def test_expanded_selection_demotes_high_score_without_a_level_source(tmp_path: Path) -> None:
+def test_expanded_selection_excludes_items_without_resolved_a_level_source(tmp_path: Path) -> None:
     db = Database(tmp_path / "workspace" / "briefing.sqlite")
     db.init()
     db.create_run("run-expanded", "ACTIVE")
@@ -160,7 +171,7 @@ def test_expanded_selection_demotes_high_score_without_a_level_source(tmp_path: 
         item_path = tmp_path / "workspace" / "runs" / "run-expanded" / "items" / f"{item_id}.json"
         write_json(
             item_path,
-            {"title": item_id, "score": score, "published_at": now, "sources": [{"source_level": source_level, "url": "https://example.com"}]},
+            {"title": item_id, "score": score, "published_at": now, "sources": [{"source_level": source_level, "url": f"https://example.com/{item_id}"}]},
         )
         db.execute(
             "INSERT INTO brief_items(id,run_id,event_id,json_path,score,fact_check_status,created_at) VALUES (?,?,?,?,?,?,?)",
@@ -173,11 +184,7 @@ def test_expanded_selection_demotes_high_score_without_a_level_source(tmp_path: 
         "SELECT ii.brief_item_id, ii.item_role FROM issue_items ii JOIN issues i ON i.id=ii.issue_id WHERE i.run_id=? ORDER BY ii.position",
         ("run-expanded",),
     )
-    assert [(row["brief_item_id"], row["item_role"]) for row in rows] == [
-        ("core", "core"),
-        ("high-without-a", "observation"),
-        ("observation", "observation"),
-    ]
+    assert [(row["brief_item_id"], row["item_role"]) for row in rows] == [("core", "core")]
     synthesis = db.fetchone("SELECT input_path FROM tasks WHERE run_id=? AND task_type='issue_synthesis'", ("run-expanded",))
     synthesis_input = json.loads((tmp_path / synthesis["input_path"]).read_text(encoding="utf-8"))
     assert [item["title"] for item in synthesis_input["items"]] == ["core"]

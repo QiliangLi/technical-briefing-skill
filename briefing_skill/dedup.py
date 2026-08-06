@@ -23,13 +23,17 @@ class EventClusterer:
         rows = self.db.fetchall(
             """
             SELECT f.candidate_id, f.json_path, f.quality_score, f.event_hint,
-                   c.topic_id, c.direction_id, r.title, r.canonical_url,
+                   c.topic_id, c.direction_id, c.relevance_score, c.rule_score,
+                   r.title, r.canonical_url,
                    r.identity_key, r.published_at
             FROM facts f
             JOIN candidates c ON c.id=f.candidate_id
             JOIN raw_items r ON r.id=c.raw_item_id
             WHERE f.run_id=?
-            ORDER BY f.quality_score DESC
+            ORDER BY f.quality_score DESC,
+                     COALESCE(c.relevance_score, 0) DESC,
+                     c.rule_score DESC,
+                     c.id
             """,
             (run_id,),
         )
@@ -37,8 +41,6 @@ class EventClusterer:
         for row in rows:
             placed = False
             for cluster in groups:
-                if cluster.topic_id != row["topic_id"]:
-                    continue
                 if self._same_event(row, cluster.members[0]):
                     cluster.members.append(row)
                     placed = True
@@ -88,8 +90,14 @@ class EventClusterer:
                                        score, first_seen_at, last_updated_at, last_pushed_at, payload_json)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
-                        topic_id=excluded.topic_id,
-                        direction_id=excluded.direction_id,
+                        topic_id=CASE
+                            WHEN events.last_pushed_at IS NOT NULL THEN events.topic_id
+                            ELSE excluded.topic_id
+                        END,
+                        direction_id=CASE
+                            WHEN events.last_pushed_at IS NOT NULL THEN events.direction_id
+                            ELSE excluded.direction_id
+                        END,
                         last_updated_at=excluded.last_updated_at,
                         event_key=excluded.event_key,
                         payload_json=excluded.payload_json,
@@ -114,5 +122,13 @@ class EventClusterer:
                         "INSERT OR IGNORE INTO event_members(event_id, candidate_id, run_id) VALUES (?, ?, ?)",
                         (event_id, member["candidate_id"], run_id),
                     )
-            result.append({"event_id": event_id, "topic_id": cluster.topic_id, "direction_id": cluster.direction_id, "members": cluster.members})
+            persisted = self.db.fetchone("SELECT topic_id, direction_id FROM events WHERE id=?", (event_id,))
+            result.append(
+                {
+                    "event_id": event_id,
+                    "topic_id": persisted["topic_id"],
+                    "direction_id": persisted["direction_id"],
+                    "members": cluster.members,
+                }
+            )
         return result

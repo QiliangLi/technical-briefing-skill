@@ -9,8 +9,10 @@ from .adapters.aihot import AIHotCollector
 from .adapters.arxiv import ArxivCollector
 from .adapters.base import CollectedItem
 from .adapters.fixtures import offline_fixture_items
+from .adapters.follow_builders import FollowBuildersCollector
 from .adapters.github import GitHubReleaseCollector
 from .adapters.rss import RSSCollector
+from .adapters.yeekal import YeeKalDailyCollector
 from .config import ConfigBundle
 from .db import Database
 from .http import HttpClient
@@ -42,6 +44,8 @@ class CollectionService:
                 ArxivCollector(self.config, self.http),
                 RSSCollector(self.config, self.http),
                 GitHubReleaseCollector(self.config, self.http),
+                FollowBuildersCollector(self.config, self.db, self.http, self.run_dir),
+                YeeKalDailyCollector(self.config, self.db, self.http),
             ]
             for collector in collectors:
                 try:

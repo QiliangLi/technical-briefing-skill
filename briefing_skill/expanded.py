@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
-import os
 import shutil
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,8 +8,8 @@ from typing import Any
 from .config import ConfigBundle
 from .db import Database
 from .freshness import freshness_limits, item_age_days
-from .tasks import brief_item_validation_errors
-from .utils import complete_sentence_excerpt, now_iso, read_json
+from .tasks import TaskService, brief_item_validation_errors, synthesis_item_payload
+from .utils import complete_sentence_excerpt, now_iso, read_json, source_url_is_resolved
 
 
 LEGACY_FIELD_BUDGETS = {
@@ -24,7 +21,7 @@ LEGACY_FIELD_BUDGETS = {
 }
 
 
-def _normalise_legacy_item(item: dict[str, Any], config: ConfigBundle) -> dict[str, Any]:
+def normalise_legacy_item(item: dict[str, Any], config: ConfigBundle) -> dict[str, Any]:
     min_chars = int(config.settings.get("brief_item_min_chars", 300))
     max_chars = int(config.settings.get("brief_item_max_chars", 450))
     if not brief_item_validation_errors(item, min_chars=min_chars, max_chars=max_chars):
@@ -33,24 +30,6 @@ def _normalise_legacy_item(item: dict[str, Any], config: ConfigBundle) -> dict[s
     for field, limit in LEGACY_FIELD_BUDGETS.items():
         rebuilt[field] = complete_sentence_excerpt(str(item.get(field) or ""), limit)
     return rebuilt
-
-
-def _rebuild_synthesis(core_items: list[dict[str, Any]]) -> dict[str, Any]:
-    judgements = []
-    for item in core_items[:3]:
-        conclusion = complete_sentence_excerpt(item.get("core_conclusion"), 105)
-        judgements.append(f"{item.get('title')}：{conclusion}")
-    topic_names = []
-    for item in core_items:
-        name = item.get("topic_name") or item.get("topic_id")
-        if name and name not in topic_names:
-            topic_names.append(name)
-    return {
-        "headline": f"本期筛选出{len(core_items)}条满足新鲜度、去重和证据门槛的技术进展。",
-        "judgements": judgements,
-        "topic_names": topic_names,
-        "watch_next": ["继续扩大AI Infra近期一手来源覆盖，但不使用旧信息凑数。"],
-    }
 
 
 def _limits(config: ConfigBundle) -> dict[str, int]:
@@ -99,13 +78,16 @@ def select_expanded_rows(
         if row.get("last_pushed_at") and not item.get("incremental_update"):
             excluded.append({"id": row["id"], "score": score, "reason": "previously pushed without incremental update"})
             continue
-        source_levels = {str(source.get("source_level", "")) for source in item.get("sources", [])}
-        if age <= age_limits["core"] and score >= limits["core_score"] and "A" in source_levels:
+        has_resolved_a = any(
+            source.get("source_level") == "A" and source_url_is_resolved(source.get("url"))
+            for source in item.get("sources", [])
+        )
+        if age <= age_limits["core"] and score >= limits["core_score"] and has_resolved_a:
             role = "core"
-        elif age <= age_limits["adjacent"] and score >= limits["observation_score"]:
+        elif age <= age_limits["adjacent"] and score >= limits["observation_score"] and has_resolved_a:
             role = "observation"
         else:
-            reason = "high score but no A-level source" if score >= limits["core_score"] else "below expanded-v2 evidence threshold"
+            reason = "no resolved A-level source" if not has_resolved_a else "below expanded-v2 evidence threshold"
             excluded.append({"id": row["id"], "score": score, "reason": reason})
             continue
         eligible.append({**row, "item": item, "item_role": role, "age_days": age})
@@ -179,12 +161,11 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
         reference_date=issue.get("date_to") or issue.get("date_from"),
     )
 
-    previous = read_json(root / issue["issue_json_path"])
     core_items = []
     observations = []
     for position, row in enumerate(selected, 1):
         item = {
-            **_normalise_legacy_item(row["item"], config),
+            **normalise_legacy_item(row["item"], config),
             "brief_item_id": row["id"],
             "topic_id": row["topic_id"],
             "direction_id": row["direction_id"],
@@ -194,14 +175,13 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
         }
         (core_items if row["item_role"] == "core" else observations).append(item)
 
-    rebuilt_synthesis = _rebuild_synthesis(core_items)
     rebuilt = {
         "id": issue["id"],
         "run_id": run_id,
         "date_from": issue.get("date_from"),
         "date_to": issue.get("date_to"),
         "layout_mode": "expanded_v2",
-        "synthesis": rebuilt_synthesis,
+        "synthesis": None,
         "core_items": core_items,
         "observations": observations,
         "items": core_items + observations,
@@ -237,37 +217,54 @@ def rebuild_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_i
     backup = history / f"issue-before-expanded-v2-{stamp}.json"
     shutil.copy2(issue_path, backup)
 
-    fd, temp_name = tempfile.mkstemp(prefix=".issue-expanded-v2-", suffix=".json", dir=issue_dir)
-    temp_path = Path(temp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(plan["rebuilt"], handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        # Confirm the complete temporary document is readable before touching state.
-        json.loads(temp_path.read_text(encoding="utf-8"))
-        replaced = False
-        try:
-            with db.transaction() as conn:
-                conn.execute("DELETE FROM issue_items WHERE issue_id=?", (issue["id"],))
-                conn.execute("DELETE FROM issue_radar_items WHERE issue_id=?", (issue["id"],))
-                for position, row in enumerate(plan["selected"], 1):
-                    conn.execute(
-                        "INSERT INTO issue_items(issue_id, brief_item_id, position, item_role, visual_plan_path) VALUES (?, ?, ?, ?, ?)",
-                        (issue["id"], row["id"], position, row["item_role"], row.get("visual_plan_path")),
-                    )
-                conn.execute("UPDATE brief_items SET approved=0 WHERE run_id=?", (run_id,))
-                conn.execute("UPDATE issues SET status='AWAITING_APPROVAL', updated_at=? WHERE id=?", (now_iso(), issue["id"]))
-                conn.execute("UPDATE runs SET stage='AWAITING_APPROVAL', status='ACTIVE', updated_at=? WHERE id=?", (now_iso(), run_id))
-                os.replace(temp_path, issue_path)
-                replaced = True
-        except Exception:
-            if replaced:
-                restore = issue_dir / f".restore-{stamp}.json"
-                shutil.copy2(backup, restore)
-                os.replace(restore, issue_path)
-            raise
-    finally:
-        temp_path.unlink(missing_ok=True)
-    return {"dry_run": False, "counts": counts, "backup": str(backup), "issue_path": str(issue_path), "status": "AWAITING_APPROVAL"}
+    with db.transaction() as conn:
+        conn.execute("DELETE FROM issue_items WHERE issue_id=?", (issue["id"],))
+        conn.execute("DELETE FROM issue_radar_items WHERE issue_id=?", (issue["id"],))
+        for position, row in enumerate(plan["selected"], 1):
+            conn.execute(
+                "INSERT INTO issue_items(issue_id, brief_item_id, position, item_role, visual_plan_path) VALUES (?, ?, ?, ?, ?)",
+                (issue["id"], row["id"], position, row["item_role"], row.get("visual_plan_path")),
+            )
+        conn.execute("UPDATE brief_items SET approved=0 WHERE run_id=?", (run_id,))
+        conn.execute(
+            "UPDATE issues SET status='DRAFT', synthesis_path=NULL, issue_json_path=NULL, email_path=NULL, updated_at=? WHERE id=?",
+            (now_iso(), issue["id"]),
+        )
+        conn.execute(
+            "UPDATE runs SET stage='AWAITING_ISSUE_SYNTHESIS', status='ACTIVE', updated_at=? WHERE id=?",
+            (now_iso(), run_id),
+        )
+
+    synthesis_items = [
+        synthesis_item_payload(row, row["item"])
+        for row in plan["selected"]
+        if row["item_role"] == "core"
+    ]
+    tasks = TaskService(db, root, root / "workspace" / "runs" / run_id)
+    task = tasks.create(
+        run_id,
+        "issue_synthesis",
+        issue["id"],
+        {
+            "issue_id": issue["id"],
+            "items": synthesis_items,
+            "max_judgements": 3,
+            "audience": "公司内部领导和技术同事",
+        },
+        prompt="issue-synthesis.md",
+        schema="issue-synthesis.schema.json",
+        priority=100,
+        metadata={
+            "required_skills": ["human-writing", "humanizer"],
+            "skill_mode": "chinese_technical_rewrite_then_ai_pattern_audit",
+        },
+        replace_existing=True,
+    )
+    return {
+        "dry_run": False,
+        "counts": counts,
+        "backup": str(backup),
+        "status": "AWAITING_ISSUE_SYNTHESIS",
+        "stage": "AWAITING_ISSUE_SYNTHESIS",
+        "next_task": tasks.instructions(task),
+    }

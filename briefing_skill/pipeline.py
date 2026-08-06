@@ -12,12 +12,12 @@ from .adapters.base import CollectedItem
 from .db import Database
 from .dedup import EventClusterer
 from .fulltext import FulltextService
-from .expanded import select_expanded_rows
+from .expanded import normalise_legacy_item, select_expanded_rows
 from .freshness import freshness_limits
 from .matching import RuleMatcher
 from .scoring import Scorer
-from .tasks import TaskService
-from .utils import now_iso, read_json, stable_hash, write_json
+from .tasks import TaskService, synthesis_item_payload
+from .utils import now_iso, read_json, source_url_is_resolved, stable_hash, write_json
 from .visuals import VisualAssetService
 
 LOGGER = logging.getLogger(__name__)
@@ -176,7 +176,7 @@ class Pipeline:
         }
 
     def _apply_task(self, task: dict[str, Any]) -> None:
-        output = read_json(self.root / task["output_path"])
+        output = self.tasks.read_result(task)
         task_type = task["task_type"]
         if task_type == "agent_web_search":
             metadata = read_json(self.root / task["input_path"])
@@ -219,7 +219,22 @@ class Pipeline:
         elif task_type == "fact_extraction":
             candidate_id = task["entity_id"]
             facts_path = self.run_dir / "facts" / f"{candidate_id}.json"
-            write_json(facts_path, output)
+            task_input = read_json(self.root / task["input_path"], {})
+            source = task_input.get("source") or {}
+            document = task_input.get("document") or {}
+            write_json(
+                facts_path,
+                {
+                    **output,
+                    "_provenance": {
+                        "task_id": task["id"],
+                        "candidate_id": candidate_id,
+                        "source_title": source.get("title"),
+                        "source_url": source.get("url"),
+                        "document_id": document.get("document_id"),
+                    },
+                },
+            )
             self.db.execute(
                 """
                 INSERT OR REPLACE INTO facts(id, run_id, candidate_id, json_path, quality_score, event_hint, created_at)
@@ -239,7 +254,18 @@ class Pipeline:
         elif task_type == "item_writing":
             event_id = task["entity_id"]
             item_path = self.run_dir / "items" / f"{event_id}.json"
-            write_json(item_path, output)
+            task_input = read_json(self.root / task["input_path"], {})
+            write_json(
+                item_path,
+                {
+                    **output,
+                    "_provenance": {
+                        "task_id": task["id"],
+                        "event_id": event_id,
+                        "source_urls": [source.get("url") for source in task_input.get("sources", [])],
+                    },
+                },
+            )
             self.db.execute(
                 """
                 INSERT OR REPLACE INTO brief_items(id, run_id, event_id, json_path, score, fact_check_status, approved, created_at)
@@ -261,7 +287,11 @@ class Pipeline:
             if not item:
                 raise KeyError(task["entity_id"])
             if output.get("corrected_item"):
-                write_json(self.root / item["json_path"], output["corrected_item"])
+                current_item = read_json(self.root / item["json_path"], {})
+                corrected = dict(output["corrected_item"])
+                if current_item.get("_provenance"):
+                    corrected["_provenance"] = current_item["_provenance"]
+                write_json(self.root / item["json_path"], corrected)
             self.db.execute(
                 "UPDATE brief_items SET fact_check_status=? WHERE id=?",
                 ("PASS" if output["pass"] else "FAIL", item["id"]),
@@ -359,6 +389,24 @@ class Pipeline:
             facts = [read_json(self.root / member["json_path"]) for member in members]
             candidates = [self.db.fetchone("SELECT * FROM candidates WHERE id=?", (member["candidate_id"],)) for member in members]
             raws = [self.db.fetchone("SELECT r.* FROM raw_items r JOIN candidates c ON c.raw_item_id=r.id WHERE c.id=?", (member["candidate_id"],)) for member in members]
+            # Item writing is only safe once at least one member is backed by a
+            # concrete A-level source whose fact extraction resolved the primary
+            # source.  B/C and discovery-only events remain available for later
+            # observation/radar handling, but must not be promoted into a core
+            # item task that can never pass semantic validation.
+            has_resolved_primary = any(
+                raw
+                and raw.get("source_level") == "A"
+                and source_url_is_resolved(raw.get("original_url") or raw.get("aihot_url"))
+                and bool(fact.get("primary_source_resolved"))
+                for fact, raw in zip(facts, raws)
+            )
+            if not has_resolved_primary:
+                LOGGER.info(
+                    "Skipping item_writing for event %s without a resolved primary A-level source",
+                    cluster["event_id"],
+                )
+                continue
             score = self.scorer.event_score(facts, candidates, raws)
             self.db.execute("UPDATE events SET score=? WHERE id=?", (score, cluster["event_id"]))
             input_data = {
@@ -390,6 +438,10 @@ class Pipeline:
                 prompt="item-writing.md",
                 schema="brief-item.schema.json",
                 priority=score,
+                metadata={
+                    "required_skills": ["human-writing", "humanizer"],
+                    "skill_mode": "chinese_technical_rewrite_then_ai_pattern_audit",
+                },
             )
         self.db.update_run(self.run_id, stage="AWAITING_ITEMS")
 
@@ -506,7 +558,11 @@ class Pipeline:
                 )
         self.db.update_run(self.run_id, stage="AWAITING_ISSUE_SYNTHESIS", issue_id=issue_id)
         items = [read_json(self.root / row["json_path"]) for row in selected]
-        synthesis_items = [item for row, item in zip(selected, items) if row.get("item_role", "core") == "core"]
+        synthesis_items = [
+            synthesis_item_payload(row, item)
+            for row, item in zip(selected, items)
+            if row.get("item_role", "core") == "core"
+        ]
         self.tasks.create(
             self.run_id,
             "issue_synthesis",
@@ -515,6 +571,10 @@ class Pipeline:
             prompt="issue-synthesis.md",
             schema="issue-synthesis.schema.json",
             priority=100,
+            metadata={
+                "required_skills": ["human-writing", "humanizer"],
+                "skill_mode": "chinese_technical_rewrite_then_ai_pattern_audit",
+            },
         )
         if mode == "expanded_v2":
             return
@@ -621,6 +681,8 @@ class Pipeline:
         }
         for row in item_rows:
             item = read_json(self.root / row["json_path"])
+            if self.config.settings.get("issue_mode", "compact") == "expanded_v2":
+                item = normalise_legacy_item(item, self.config)
             plan = read_json(self.root / row["visual_plan_path"], {}) if row.get("visual_plan_path") else {"visual_mode": "text_only"}
             illustration = read_json(self.run_dir / "visuals" / "illustrations" / f"{row['id']}.json", {})
             item_role = row.get("item_role") or "core"

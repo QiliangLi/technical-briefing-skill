@@ -12,9 +12,9 @@ from urllib.parse import urlparse
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from .config import ConfigBundle
+from .config import ConfigBundle, ConfigError
 from .db import Database
-from .utils import read_json, write_json
+from .utils import read_json, source_url_is_resolved, write_json
 
 
 class Renderer:
@@ -227,7 +227,12 @@ const { pathToFileURL } = require('url');
 
     def _closing_section(self, issue: dict[str, Any]) -> str:
         judgements = issue.get("synthesis", {}).get("judgements") or []
-        rows = "".join(f"<div class='ledger-row'><b>{idx:02d}</b><p>{html.escape(str(judgement))}</p></div>" for idx, judgement in enumerate(judgements, 1))
+        rows = "".join(
+            f"<div class='ledger-row'><b>{idx:02d}</b><p><strong>{html.escape(str(judgement.get('title') or ''))}</strong><br>{html.escape(str(judgement.get('body') or ''))}</p></div>"
+            if isinstance(judgement, dict)
+            else f"<div class='ledger-row'><b>{idx:02d}</b><p>{html.escape(str(judgement))}</p></div>"
+            for idx, judgement in enumerate(judgements, 1)
+        )
         return f"""
 <section class="poster xhs brief-closing" id="issue-closing" data-accent="ikb">
   <div class="content stack gap-7">
@@ -326,6 +331,21 @@ const fs = require('fs');
                     report["warnings"].append(f"Item may be too short: {item.get('title')}")
                 if not item.get("sources"):
                     report["failures"].append(f"Missing sources: {item.get('title')}")
+                elif not any(
+                    source.get("source_level") == "A" and source_url_is_resolved(source.get("url"))
+                    for source in item.get("sources", [])
+                ):
+                    report["failures"].append(f"Missing resolved A-level source: {item.get('title')}")
+                topic_id = item.get("topic_id")
+                try:
+                    expected_topic_name = self.config.topic(str(topic_id))["name"]
+                except (ConfigError, KeyError, ValueError):
+                    report["failures"].append(f"Unknown topic id {topic_id}: {item.get('title')}")
+                else:
+                    if item.get("topic_name") != expected_topic_name:
+                        report["failures"].append(
+                            f"Topic id/name mismatch: {item.get('title')} ({topic_id} != {item.get('topic_name')})"
+                        )
                 from .tasks import brief_item_validation_errors
                 completeness_errors = brief_item_validation_errors(
                     item,
@@ -410,6 +430,10 @@ const fs = require('fs');
             report["failures"].append("Expanded email judgements lack concrete item references")
         else:
             report["passes"].append("Expanded email judgements expose concrete item references")
+        if "对应：" in visible_text:
+            report["failures"].append("Expanded email uses the deprecated judgement reference label")
+        else:
+            report["passes"].append("Expanded email uses natural judgement reference labels")
         if "热点雷达" not in visible_text or "未经本简报深度核验" not in visible_text:
             report["failures"].append("Expanded email hotspot radar or disclaimer is missing")
         else:
