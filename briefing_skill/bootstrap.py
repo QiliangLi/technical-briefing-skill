@@ -4,12 +4,14 @@ from typing import Sequence
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Install low-token planning and quality guards, then enter the stable CLI."""
+    """Install low-token planning, Radar taxonomy, and quality guards."""
 
     from .efficiency import install_pipeline_optimizations
     from .quality_guard import install_quality_guards
+    from .radar_taxonomy import install_radar_taxonomy
 
     install_pipeline_optimizations()
+    install_radar_taxonomy()
     install_quality_guards()
     from .cli import main as cli_main
 
