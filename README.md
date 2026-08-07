@@ -11,8 +11,12 @@
 - 60天滚动深度专题池，已推送内容跨期去重，未覆盖内容后续继续参与排序；
 - 每专题最多4条完整深度解读，Top4之外的相关A级内容进入1～2句“专题补充”；
 - 同项目、同方向多样性约束，避免单一项目的连续release占满专题；
+- 同一GitHub项目在“专题补充”中的多条低优先级release自动聚合为一个Release Family，同时保留每个原文链接；
 - 相关性候选按专题批量做价值判断，关键词规则仅用于召回和路由；
 - 缺口驱动的开放搜索；TPN单一项目不视为充分覆盖；
+- 深度事实抽取默认只向Agent暴露约18k字符的Evidence Pack，而不是完整140k字符全文；
+- 相同来源指纹与抽取版本可跨期复用facts，缓存命中时不创建需要Agent执行的事实抽取任务；
+- `stats`命令记录任务数、尝试次数、缓存命中和文本字符量等确定性成本代理；
 - 180～260字的紧凑深度条目；
 - 横向Radar继续覆盖AI Infra、Agent、KVCache、存储与介质等近7天信号；
 - 独立事实校验和人工审核；
@@ -62,8 +66,16 @@ python briefing.py send --confirm-send
 最近60天未推送A级候选
 → 批量价值判断
 → 多样性选择
-   ├─ 每专题Top4：全文事实抽取 → 写作 → fact check → 深度解读
-   └─ 其余相关A级：1～2句专题补充 + 原文链接
+   ├─ 每专题Top4
+   │    → 原始全文本地留存
+   │    → Evidence Pack（默认≤18k字符）
+   │    → facts cache查询
+   │       ├─ 命中：直接生成FACTS_READY，不进入Agent任务队列
+   │       └─ 未命中：事实抽取 → 写入跨期facts cache
+   │    → 写作 → fact check → 深度解读
+   └─ 其余相关A级
+        → 1～2句专题补充 + 原文链接
+        → 同一GitHub项目多条低优先级更新合并为Release Family
 
 B/C级、discovery-only与横向信号
 → 近7天热点Radar
@@ -71,17 +83,41 @@ B/C级、discovery-only与横向信号
 
 规则匹配分只负责“找得到”，不直接代表“值得深读”。A级候选由批量任务按项目相关性、技术实质、证据、可行动性和新鲜度评分；例行兼容、依赖升级、普通bug fix、文档/CI/build更新通常只进入专题补充。
 
-全文事实抽取仍默认最多16条、单专题最多4条、同专题同项目最多1条；Top4之外的专题补充不再触发全文、单条写作和事实检查，因此能够扩充信息量而不线性放大Token消耗。
+深度事实抽取仍默认最多16条、单专题最多4条、同专题同项目最多1条。原始抓取文本仍可保留到最多140k字符用于审计和必要时人工回看，但正常 `fact_extraction` 只读取确定性选择出的Evidence Pack。默认上限是18k字符，优先保留Architecture/Method/Evaluation/Results/Limitations及专题相关段落，并保留章节或页码定位信息。
+
+事实抽取结果会按“稳定来源指纹 + `fact_extractor_version`”保存到本地跨期缓存。相同arXiv版本、相同release和相同内容指纹再次进入60天滚动池时，可以直接复用已验证facts，不再重新下载全文或启动事实抽取Agent。若事实抽取Prompt、Schema或Evidence Pack策略发生实质变化，应主动修改 `fact_extractor_version` 使旧缓存失效。
+
+Top4之外的专题补充不触发全文、单条写作和事实检查，因此能够扩充信息量而不线性放大Token消耗。同一GitHub项目的多个普通release只在专题补充中聚合；Top4深度条目和不同论文不会被强行合并。
 
 开放Web搜索只补充固定信源没有覆盖的重点方向，默认最多4次。TPN同一方向只有一个项目时仍视为覆盖不足，以主动寻找不同项目或不同机制的原始来源。
 
-相关配置位于 `config/settings.yaml` 的 `efficiency` 段。可通过：
+## 运行成本统计
+
+正式运行或Demo后可执行：
+
+```bash
+python briefing.py stats --run latest
+```
+
+输出包括：
+
+- 每种Agent任务的任务数和已完成数；
+- `tasks next`观察到的尝试次数与INVALID次数；
+- fact cache命中次数；
+- task input / prompt / output字符量；
+- 原始document字符量与Evidence Pack字符量；
+- Evidence Pack压缩比例；
+- `agent_read_chars_proxy`，用于横向比较不同版本的Agent输入规模。
+
+`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API实际Token账单。宿主若未来能够暴露真实usage，应优先记录真实输入/输出Token，并把字符量统计保留为可复现的独立指标。
+
+还可通过：
 
 ```bash
 python scripts/estimate_efficiency.py
 ```
 
-查看代表性Agent任务数量估算。估算值不等同于实际Codex Token账单，正式运行仍应比较关键事件召回率、人工修改量、实际耗时和订阅额度变化。
+查看代表性Agent任务数量估算。该估算同样不等同于实际Codex Token账单，正式运行应结合 `stats`、人工修改量、端到端耗时和订阅额度变化一起评估。
 
 ## 时间窗口
 
@@ -97,9 +133,10 @@ python scripts/estimate_efficiency.py
 
 1. 读取任务指定的Prompt；
 2. 读取输入文件及必要的专题上下文；
-3. 输出符合JSON Schema的结果；
-4. 写到指定输出路径；
-5. 运行`python briefing.py advance`。
+3. 对 `fact_extraction` 只读取任务显式引用的Evidence Pack，不主动打开未引用的原始全文；
+4. 输出符合JSON Schema的结果；
+5. 写到指定输出路径；
+6. 运行`python briefing.py advance`。
 
 相关候选使用 `relevance_batch` 任务，每个任务最多处理12条同专题候选；输出必须对每个输入候选返回且只返回一条结果，缺失、重复或未知ID都会被拒绝。
 
