@@ -25,7 +25,13 @@ class GitHubReleaseCollector:
         token = os.getenv("GITHUB_TOKEN")
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        lookback_days = int(
+            self.source.get(
+                "lookback_days",
+                (self.config.settings.get("efficiency") or {}).get("deep_lookback_days", 60),
+            )
+        )
+        cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, lookback_days))
         result: list[CollectedItem] = []
         for spec in self.source.get("repositories", []):
             if spec.get("enabled", True) is False:
@@ -33,7 +39,7 @@ class GitHubReleaseCollector:
             repo = spec["repo"]
             url = f"https://api.github.com/repos/{repo}/releases"
             try:
-                response = self.http.get(url, headers=headers, params={"per_page": 10})
+                response = self.http.get(url, headers=headers, params={"per_page": 20})
                 if response.status_code == 404:
                     LOGGER.warning("GitHub repo/release endpoint not found: %s", repo)
                     continue
