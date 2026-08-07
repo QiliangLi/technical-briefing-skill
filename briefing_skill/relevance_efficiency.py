@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable
 
 from .cost_schema import ensure_cost_schema
 from .efficiency import DEFAULT_RADAR_TOPICS, RelevancePlan
+from .freshness import published_age_days
 from .paths import Paths
 from .utils import complete_sentence_excerpt, now_iso, read_json, stable_hash
 
@@ -25,6 +27,22 @@ def _policy(settings: dict[str, Any]) -> dict[str, Any]:
 
 def _summary_limit(settings: dict[str, Any]) -> int:
     return max(800, int(_policy(settings).get("relevance_summary_max_chars", 5000)))
+
+
+def _compact_topic(topic: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: topic[key]
+        for key in ("id", "name", "current_questions", "valuable_evidence")
+        if key in topic and topic.get(key) not in (None, [], "")
+    }
+
+
+def _compact_direction(direction: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: direction[key]
+        for key in ("id", "name", "include_terms", "exclude_terms")
+        if key in direction and direction.get(key) not in (None, [], "")
+    }
 
 
 def _row_cost(row: dict[str, Any], settings: dict[str, Any]) -> int:
@@ -99,12 +117,7 @@ def compact_relevance_batch_input(input_data: dict[str, Any], settings: dict[str
     """Remove repeated config payload while preserving every candidate and judging signal."""
 
     summary_limit = _summary_limit(settings)
-    topic = dict(input_data.get("topic") or {})
-    compact_topic = {
-        key: topic[key]
-        for key in ("id", "name", "current_questions", "valuable_evidence")
-        if key in topic and topic.get(key) not in (None, [], "")
-    }
+    topic = _compact_topic(dict(input_data.get("topic") or {}))
 
     directions: dict[str, dict[str, Any]] = {}
     candidates: list[dict[str, Any]] = []
@@ -113,14 +126,7 @@ def compact_relevance_batch_input(input_data: dict[str, Any], settings: dict[str
         direction = dict(candidate.pop("direction", {}) or {})
         direction_id = str(direction.get("id") or candidate.get("direction_id") or "")
         if direction_id:
-            directions.setdefault(
-                direction_id,
-                {
-                    key: direction[key]
-                    for key in ("id", "name", "include_terms", "exclude_terms")
-                    if key in direction and direction.get(key) not in (None, [], "")
-                },
-            )
+            directions.setdefault(direction_id, _compact_direction(direction))
             candidate["direction_id"] = direction_id
 
         summary = str(candidate.get("summary") or "")
@@ -131,7 +137,7 @@ def compact_relevance_batch_input(input_data: dict[str, Any], settings: dict[str
 
     return {
         **input_data,
-        "topic": compact_topic,
+        "topic": topic,
         "directions": list(directions.values()),
         "candidates": candidates,
         "input_policy": {
@@ -181,10 +187,50 @@ def relevance_source_fingerprint(row: dict[str, Any]) -> str:
     )
 
 
-def relevance_evaluator_version(config, root: Path, topic_id: str, direction_id: str) -> str:
-    """Invalidate relevance cache when prompt, schema, topic card or project context changes."""
+def relevance_freshness_bucket(
+    config,
+    published_at: str | None,
+    *,
+    reference: str | date | datetime | None = None,
+) -> str:
+    """Bucket cached relevance by the configured freshness-score boundaries.
 
-    parts: list[str] = ["relevance-evaluator-v1", str(_summary_limit(config.settings))]
+    Relevance review gives freshness up to five points. Reusing a score forever would
+    make an old item stop ageing, so crossing a configured age boundary forces a fresh
+    Agent review while repeated runs inside the same bucket can still reuse judgement.
+    """
+
+    age = published_age_days(published_at, reference=reference)
+    if age is None:
+        return "unknown"
+    configured = config.scoring.get("freshness_days") or {}
+    boundaries: list[int] = []
+    for raw in configured:
+        try:
+            boundaries.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    boundaries = sorted({value for value in boundaries if value >= 0}) or [2, 7, 30, 60]
+    for boundary in boundaries:
+        if age <= boundary:
+            return f"age<={boundary}"
+    return f"age>{boundaries[-1]}"
+
+
+def relevance_evaluator_version(
+    config,
+    root: Path,
+    topic_id: str,
+    direction_id: str,
+    published_at: str | None,
+) -> str:
+    """Invalidate cache when visible judging context, rules, or freshness bucket changes."""
+
+    parts: list[str] = [
+        "relevance-evaluator-v2",
+        str(_summary_limit(config.settings)),
+        relevance_freshness_bucket(config, published_at),
+    ]
     for relative in ("prompts/relevance-batch.md", "schemas/relevance-batch.schema.json"):
         path = root / relative
         if path.is_file():
@@ -192,8 +238,10 @@ def relevance_evaluator_version(config, root: Path, topic_id: str, direction_id:
     try:
         topic = config.topic(topic_id)
         direction = config.direction(topic_id, direction_id)
-        parts.append(json.dumps(topic, ensure_ascii=False, sort_keys=True))
-        parts.append(json.dumps(direction, ensure_ascii=False, sort_keys=True))
+        # Hash the same compact topic/direction cards the Agent actually sees.
+        # Unrelated query/feed edits should not invalidate an otherwise identical review.
+        parts.append(json.dumps(_compact_topic(topic), ensure_ascii=False, sort_keys=True))
+        parts.append(json.dumps(_compact_direction(direction), ensure_ascii=False, sort_keys=True))
         context = config.context_path(Paths(root), topic_id)
         if context.is_file():
             parts.append(context.read_text(encoding="utf-8"))
@@ -220,7 +268,13 @@ def apply_cached_relevance(config, db, root: Path, row: dict[str, Any]) -> bool:
     topic_id = str(row.get("topic_id") or "")
     direction_id = str(row.get("direction_id") or "")
     fingerprint = relevance_source_fingerprint(row)
-    evaluator_version = relevance_evaluator_version(config, root, topic_id, direction_id)
+    evaluator_version = relevance_evaluator_version(
+        config,
+        root,
+        topic_id,
+        direction_id,
+        row.get("published_at"),
+    )
     cache = db.fetchone(
         """
         SELECT * FROM relevance_cache
@@ -265,7 +319,7 @@ def store_relevance_candidate(config, db, root: Path, candidate_id: str) -> bool
     row = db.fetchone(
         """
         SELECT c.*, r.source_id, r.title, r.summary, r.original_url, r.canonical_url,
-               r.identity_key, r.external_id, r.content_hash, r.payload_json
+               r.identity_key, r.external_id, r.content_hash, r.payload_json, r.published_at
         FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
         WHERE c.id=?
         """,
@@ -276,7 +330,13 @@ def store_relevance_candidate(config, db, root: Path, candidate_id: str) -> bool
     topic_id = str(row.get("topic_id") or "")
     direction_id = str(row.get("direction_id") or "")
     fingerprint = relevance_source_fingerprint(row)
-    evaluator_version = relevance_evaluator_version(config, root, topic_id, direction_id)
+    evaluator_version = relevance_evaluator_version(
+        config,
+        root,
+        topic_id,
+        direction_id,
+        row.get("published_at"),
+    )
     key = _cache_key(fingerprint, topic_id, direction_id, evaluator_version)
     now = now_iso()
     db.execute(
@@ -340,7 +400,7 @@ def install_relevance_efficiency() -> None:
             """
             SELECT c.*, r.source_id, r.title, r.summary, r.original_url, r.canonical_url,
                    r.identity_key, r.external_id, r.content_hash, r.payload_json,
-                   r.source_level, r.discovery_only
+                   r.source_level, r.discovery_only, r.published_at
             FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
             WHERE c.run_id=? AND c.status='PENDING_RELEVANCE'
             """,
