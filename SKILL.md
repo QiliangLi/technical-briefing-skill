@@ -13,11 +13,12 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 
 ## 核心架构
 
-- Python负责确定性工作：采集、过滤、去重、状态、预算、滚动专题池、多样性选择、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
-- 当前Agent负责智能工作：批量相关性与价值判断、事实抽取、单条写作、事实校验、综合判断和视觉路由。
+- Python负责确定性工作：采集、过滤、去重、状态、预算、滚动专题池、多样性选择、Evidence Pack、跨期facts cache、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
+- 当前Agent负责智能工作：批量相关性与价值判断、未命中缓存时的事实抽取、单条写作、事实校验、综合判断和视觉路由。
 - 重点专题走深度通道；Top4之外的相关A级内容走专题补充；AI Infra、Agent生态、KVCache生态、存储与介质等广度信息走Radar通道。
+- 同一GitHub项目在专题补充中的多条低价值release可以聚合显示，但不得把不同论文或Top4深度条目强行合并。
 - 不得在Python中绑定某家模型API。
-- 不得依赖聊天上下文记住历史；所有状态写入SQLite和`workspace/runs/`。
+- 不得依赖聊天上下文记住历史；所有状态写入SQLite和`workspace/runs/`，跨期facts写入本地`workspace/cache/facts/`。
 - Skill本身不产生定时触发；由Cron或宿主Agent任务系统调用CLI。
 
 ## 首次使用
@@ -72,9 +73,11 @@ python briefing.py tasks next --run latest
 
 1. 读取指定Prompt；
 2. 读取指定输入JSON；
-3. 只读取输入中引用的专题判断卡和单篇文档/分块；
+3. 只读取输入中明确引用的专题判断卡和文档。对于`fact_extraction`，正常路径只能读取任务引用的Evidence Pack，不得为了“更完整”主动打开未引用的原始全文；
 4. 输出符合指定Schema的JSON；
 5. 写入指定输出路径，然后执行`python briefing.py advance --run latest`。
+
+facts cache命中时，Python会在`advance`中直接复用已验证facts并把候选推进到`FACTS_READY`，该事实抽取不得再出现在`tasks next`中，也不得启动一个无意义的Agent任务。
 
 重复直到运行阶段为`READY_FOR_RENDER`。
 
@@ -108,20 +111,31 @@ python briefing.py send --confirm-send
 3. A级深度候选按专题批量做价值判断，每批最多12条；不得仅因关键词、topic hint或direction hint自动进入全文分析。
 4. 只有已解析、非`discovery_only`的A级原始来源才能竞争深度Top4；B/C级和聚合线索进入Radar并继续用于发现原始来源。
 5. 开放Web搜索只补充A级覆盖缺口，默认每期最多4次。TPN同一方向只有一个项目时仍视为覆盖不足，避免单一项目阻止多样化搜索。
-6. 全文事实抽取默认每期最多16条、单专题最多4条、同专题同项目最多1条、同方向优先最多2条。其余相关A级候选进入专题补充，不做全文写作和事实检查。
-7. 专题补充默认每专题最多8条、同项目最多2条；每条仅1～2句总结和原文链接，不参与本期综合判断。
-8. 全文分析每次只处理一篇来源，长论文按章节或输入中已生成的chunk处理。
-9. 完成事实抽取后，后续任务只读取结构化facts，不再读取全文。
-10. 最终综合判断只读取核心深度解读，不读取专题补充和热点Radar。
-11. 不要为了“记住上次推送”使用对话记忆；查询SQLite、事件历史和推送历史。
+6. 深度事实抽取默认每期最多16条、单专题最多4条、同专题同项目最多1条、同方向优先最多2条。其余相关A级候选进入专题补充，不做全文写作和事实检查。
+7. 原始全文可以在本地保留到`max_fulltext_chars`用于审计，但正常`fact_extraction`默认只读取`evidence_pack_max_chars`控制的Evidence Pack。Evidence Pack必须优先覆盖架构/方法/实验/结果/边界和专题相关段落，并保留章节或页码定位。
+8. Evidence Pack信息不足时，宁可少写结论并在`limitations`记录缺失验证，也不得自行读取未引用全文或猜测数字。后续若需要“按需补证据”，应通过显式任务实现，而不是隐式扩大上下文。
+9. facts cache只能复用“稳定来源指纹 + `fact_extractor_version`”完全匹配的结果。arXiv新版本、release变化、内容指纹变化或抽取策略版本变化必须失效。事实Prompt、Schema或Evidence Pack策略发生实质改变时必须更新`fact_extractor_version`。
+10. facts cache命中必须走同步fast path，不能再次生成需要Agent处理的事实抽取任务。
+11. 专题补充默认每专题最多8条、同项目最多2条；每条仅1～2句总结和原文链接，不参与本期综合判断。同一GitHub项目多条低优先级release可聚合为Release Family，必须保留每个原始链接。
+12. 完成事实抽取后，后续任务只读取结构化facts，不再读取全文。
+13. 最终综合判断只读取核心深度解读，不读取专题补充和热点Radar。
+14. 不要为了“记住上次推送”使用对话记忆；查询SQLite、事件历史、缓存和推送历史。
 
-成本配置位于`config/settings.yaml`的`efficiency`段。可执行：
+成本配置位于`config/settings.yaml`的`efficiency`段。正式运行后优先执行：
+
+```bash
+python briefing.py stats --run latest
+```
+
+检查每种任务的任务数、尝试次数、INVALID次数、缓存命中、输入/输出字符量、原始document字符量、Evidence Pack字符量和压缩比例。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API真实Token账单；若宿主以后能提供真实usage，必须把真实Token作为首要指标，同时保留字符量用于可复现实验。
+
+还可执行：
 
 ```bash
 python scripts/estimate_efficiency.py
 ```
 
-查看代表性Agent任务数量估算。60天滚动池会增加首次运行的候选数量，但相关性仍按批处理；专题补充不触发全文、写作和事实检查。该结果不等同于实际Token账单，正式运行仍需检查关键事件召回率、人工修改量、端到端耗时和订阅额度。
+查看代表性Agent任务数量估算。60天滚动池会增加首次运行的候选数量，但相关性仍按批处理；专题补充不触发全文、写作和事实检查。任何任务数量估算都不等同于实际Token账单，正式运行仍需结合`stats`、人工修改量、端到端耗时和订阅额度。
 
 ## 时间窗与跨期覆盖
 
@@ -151,7 +165,8 @@ AI HOT对以下方向提高优先级：
 AI HOT候选
 → links.original
 → 原始论文/官方博客/仓库
-→ 事实抽取
+→ Evidence Pack / facts cache
+→ 事实抽取或缓存复用
 ```
 
 不得把AI HOT的AI摘要直接当作技术证据。
@@ -194,7 +209,7 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 每个深度专题采用两层输出：
 
 - **深度Top4**：优先覆盖不同项目和不同技术方向，保留完整机制、证据、边界和项目启发；
-- **专题补充**：Top4之外仍然相关的A级内容，只给1～2句总结与原文链接。兼容性、例行release等内容更适合放在这里，不应抢占深度Top4。
+- **专题补充**：Top4之外仍然相关的A级内容，只给1～2句总结与原文链接。兼容性、例行release等内容更适合放在这里，不应抢占深度Top4。同一GitHub项目的多条普通release可折成一个Release Family，原始链接不能丢。
 
 横向Radar保持以下四类召回：
 
@@ -239,6 +254,7 @@ A级候选进入批量价值判断后，`score`按以下维度形成：
 
 - 事件身份依次使用arXiv基础ID（忽略`vN`）、DOI、GitHub仓库与Release、规范化原始URL；仅在没有稳定标识时使用语义事件名；
 - 同一稳定身份的历史事件共享`last_pushed_at`，标题语言、版本号或摘要变化不得绕过去重；
+- facts cache比事件去重更严格：外部版本号/内容指纹发生变化时不得复用旧facts，即使事件身份仍属于同一论文或项目；
 - 专题补充与Radar共享推送URL历史，已经以短摘要展示的内容后续不得无变化重复出现；
 - Radar独立按原始URL和规范化标题跨期去重；
 - Radar最多8条、每类最多2条，只允许AI系统、Agent、KVCache、芯片、内存、存储介质、网络和开发工具；
@@ -282,6 +298,8 @@ vendor/guizang-material-illustration/SKILL.md
 - 当前Agent不能生图：输出完整prompt并标记`waiting_for_image_generation`。
 - 生图失败：原始图/截图 → 程序化图表 → 纯文字卡。
 - 全文抓取失败：使用摘要做低置信Radar候选，但不得成为无A级来源的重点信息。
+- Evidence Pack缺少验证某项强结论所需的条件：降低结论强度并写入`limitations`，不得偷偷扩大到未引用全文。
+- facts cache文件缺失或版本不匹配：按cache miss处理并重新抽取，不得假装命中。
 - 邮件失败：不写`last_pushed_at`，下次只重试发送。
 - 任何配图失败都不能阻塞简报正文。
 
@@ -290,10 +308,10 @@ vendor/guizang-material-illustration/SKILL.md
 发送前必须满足：
 
 - `expanded_v2`单专题深度解读不超过4条；同专题同项目默认不超过1条深读；
-- Top4之外的专题补充只包含已判定相关的A级内容，每条1～2句并链接原文；
+- Top4之外的专题补充只包含已判定相关的A级内容，每条1～2句并链接原文；Release Family必须保留每个原始release链接；
 - 每条深度解读五个正文域合计180～260字；
 - 每条深度解读至少一个A级来源；
-- 所有数字可追溯；
+- 所有数字可追溯到Evidence Pack中的定位信息或明确的原始来源；
 - 无重复事件或重复推送的专题补充；
 - 旧事件写明增量；
 - 项目判断与来源事实分开；

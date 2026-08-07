@@ -5,6 +5,20 @@ import re
 from typing import Any
 
 
+def _source_links(item: dict[str, Any], fallback_url: str, fallback_source: str) -> str:
+    links = item.get("links") or []
+    rendered = []
+    for index, link in enumerate(links, 1):
+        url = html.escape(str(link.get("url") or ""), quote=True)
+        if not url:
+            continue
+        label = html.escape(str(link.get("label") or f"更新{index}"))
+        rendered.append(f"<a href='{url}' style='color:#002fa7'>{label}</a>")
+    if rendered:
+        return " · ".join(rendered)
+    return f"<a href='{fallback_url}' style='color:#002fa7'>{fallback_source}</a>"
+
+
 def _appendix_row(topic_name: str, items: list[dict[str, Any]]) -> str:
     entries = []
     for item in items:
@@ -14,18 +28,24 @@ def _appendix_row(topic_name: str, items: list[dict[str, Any]]) -> str:
         source = html.escape(str(item.get("source_name") or "原始来源"))
         published = html.escape(str(item.get("published_at") or ""))
         score = float(item.get("score") or 0)
+        source_links = _source_links(item, url, source)
+        family_label = (
+            f" · {int(item.get('family_size') or 0)}项合并"
+            if int(item.get("family_size") or 0) > 1
+            else ""
+        )
         entries.append(
             "<div style='padding:7px 0;border-top:1px solid #deded8'>"
             f"<a href='{url}' style='font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none'>{title}</a>"
             + (f"<div style='font-size:11px;line-height:1.45;color:#666;margin-top:3px'>{html.escape(summary)}</div>" if summary else "")
-            + f"<div style='font-size:10px;color:#888;margin-top:3px'>{published} · {score:.0f}分 · 阅读原文：<a href='{url}' style='color:#002fa7'>{source}</a></div>"
+            + f"<div style='font-size:10px;color:#888;margin-top:3px'>{published} · {score:.0f}分{family_label} · 阅读原文：{source_links}</div>"
             "</div>"
         )
     return (
         "<tr data-topic-appendix='1'><td class='pad-x' style='padding:0 28px 12px'>"
         "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='background:#f3f4f1;border-left:3px solid #8a8a82'><tr><td style='padding:10px 12px'>"
         f"<div style='font:700 11px Microsoft YaHei,Arial,sans-serif;color:#555;margin-bottom:2px'>{html.escape(topic_name)} · 更多相关进展</div>"
-        "<div style='font-size:10px;line-height:1.4;color:#888;margin-bottom:3px'>Top4之外已判定相关的A级原始内容，仅作速览，不参与本期综合判断。</div>"
+        "<div style='font-size:10px;line-height:1.4;color:#888;margin-bottom:3px'>Top4之外已判定相关的A级原始内容，仅作速览，不参与本期综合判断；同一GitHub项目的多条低优先级更新会合并展示。</div>"
         + "".join(entries)
         + "</td></tr></table></td></tr>"
     )
