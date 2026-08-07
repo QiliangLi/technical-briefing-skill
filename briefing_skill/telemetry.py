@@ -74,7 +74,12 @@ def run_stats(db, root: Path, run_id: str) -> dict[str, Any]:
         totals["evidence_reduction_ratio"] = round(
             max(0.0, 1.0 - totals["evidence_chars"] / totals["document_chars"]), 4
         )
-    cache = db.fetchone("SELECT COUNT(*) AS n FROM fact_cache") or {"n": 0}
+    fact_cache = db.fetchone("SELECT COUNT(*) AS n FROM fact_cache") or {"n": 0}
+    relevance_cache = db.fetchone("SELECT COUNT(*) AS n FROM relevance_cache") or {"n": 0}
+    relevance_hits = db.fetchone(
+        "SELECT COUNT(*) AS n FROM relevance_cache_usage WHERE run_id=?",
+        (run_id,),
+    ) or {"n": 0}
     duration_seconds = None
     if run.get("created_at") and run.get("updated_at"):
         try:
@@ -91,10 +96,13 @@ def run_stats(db, root: Path, run_id: str) -> dict[str, Any]:
         "run_wall_seconds": duration_seconds,
         "totals": totals,
         "by_task_type": by_type,
-        "fact_cache_entries": int(cache.get("n") or 0),
+        "fact_cache_entries": int(fact_cache.get("n") or 0),
+        "relevance_cache_entries": int(relevance_cache.get("n") or 0),
+        "relevance_cache_hits": int(relevance_hits.get("n") or 0),
         "notes": [
             "agent_read_chars_proxy is a deterministic character-volume proxy, not an API or Codex token bill.",
             "attempts are observed when tasks are obtained through `tasks next`; direct external execution may not increment them.",
+            "relevance_cache_hits are candidates reused before task creation, so they intentionally do not appear as Agent task cache_hits.",
         ],
     }
 
