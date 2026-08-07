@@ -127,6 +127,20 @@ def _section_score(index: int, title: str, body: str, terms: list[str]) -> float
     return score
 
 
+def _safe_excerpt(text: str, limit: int) -> str:
+    value = text.strip()
+    if len(value) <= limit:
+        return value
+    clipped = value[:limit]
+    sentence_matches = list(re.finditer(r"[。！？.!?](?:[”’\"）)\]]*)", clipped))
+    if sentence_matches and sentence_matches[-1].end() >= max(120, int(limit * 0.55)):
+        return clipped[: sentence_matches[-1].end()].strip()
+    paragraph = clipped.rfind("\n\n")
+    if paragraph >= max(120, int(limit * 0.55)):
+        return clipped[:paragraph].strip()
+    return clipped.rstrip()
+
+
 def build_evidence_pack(
     text: str,
     topic: dict[str, Any],
@@ -134,10 +148,21 @@ def build_evidence_pack(
     *,
     max_chars: int = 18000,
 ) -> str:
-    """Select a compact, locator-preserving subset of a fetched source."""
+    """Select a compact, locator-preserving subset of a fetched source.
+
+    The budget accounts for the pack header and locator labels before selecting
+    section bodies. Per-section caps stop a long background section from consuming
+    the entire pack and starving evaluation or limitation evidence.
+    """
 
     if len(text) <= max_chars:
         return text
+    header = (
+        "# Deterministic Evidence Pack\n\n"
+        "This file is a deterministic subset of the fetched primary source. "
+        "Section/page headings are retained as locators. Prefer claims supported here; "
+        "do not infer that omitted text was checked.\n\n"
+    )
     sections = _sections(text)
     terms = _evidence_terms(topic, direction)
     ranked = sorted(
@@ -145,29 +170,26 @@ def build_evidence_pack(
         key=lambda section: (-_section_score(section[0], section[1], section[2], terms), section[0]),
     )
     selected: list[tuple[int, str, str]] = []
-    used = 0
+    used = len(header)
+    section_cap = max(700, max_chars // 3)
     for section in ranked:
         body = section[2].strip()
         if not body:
             continue
-        allowance = max_chars - used
-        if allowance <= 500:
-            break
-        excerpt = body if len(body) <= allowance else body[:allowance].rstrip()
+        locator = f"## Evidence locator: {section[1]}\n\n"
+        allowance = max_chars - used - len(locator) - 2
+        if allowance <= 220:
+            continue
+        excerpt = _safe_excerpt(body, min(section_cap, allowance))
+        if not excerpt:
+            continue
         selected.append((section[0], section[1], excerpt))
-        used += len(excerpt) + len(section[1]) + 80
+        used += len(locator) + len(excerpt) + 2
     selected.sort(key=lambda section: section[0])
-    header = (
-        "# Deterministic Evidence Pack\n\n"
-        "This file is a deterministic subset of the fetched primary source. "
-        "Section/page headings are retained as locators. Prefer claims supported here; "
-        "do not infer that omitted text was checked.\n\n"
-    )
-    blocks = [header]
+    blocks = [header.rstrip()]
     for _, title, body in selected:
-        blocks.append(f"## Evidence locator: {title}\n\n{body.strip()}\n")
-    pack = "\n".join(blocks).strip()
-    return pack[:max_chars]
+        blocks.append(f"## Evidence locator: {title}\n\n{body.strip()}")
+    return "\n\n".join(blocks).strip()
 
 
 def install_deep_efficiency() -> None:
@@ -186,9 +208,18 @@ def install_deep_efficiency() -> None:
 
     def fetch_candidate(self, run_id: str, candidate: dict) -> dict:
         ensure_cost_schema(self.db)
-        raw = self.db.fetchone("SELECT * FROM raw_items WHERE id=?", (candidate["raw_item_id"],))
+        effective_candidate = dict(candidate)
+        if not effective_candidate.get("topic_id") or not effective_candidate.get("direction_id"):
+            candidate_row = self.db.fetchone(
+                "SELECT topic_id,direction_id FROM candidates WHERE id=?",
+                (effective_candidate["id"],),
+            )
+            if candidate_row:
+                effective_candidate.setdefault("topic_id", candidate_row.get("topic_id"))
+                effective_candidate.setdefault("direction_id", candidate_row.get("direction_id"))
+        raw = self.db.fetchone("SELECT * FROM raw_items WHERE id=?", (effective_candidate["raw_item_id"],))
         if not raw:
-            raise KeyError(candidate["raw_item_id"])
+            raise KeyError(effective_candidate["raw_item_id"])
         fingerprint = _source_fingerprint(raw)
         version = _extractor_version(self.config)
         cache_enabled = bool((self.config.settings.get("efficiency") or {}).get("fact_cache_enabled", True))
@@ -201,7 +232,7 @@ def install_deep_efficiency() -> None:
                 cache_path = self.run_dir.parents[2] / cached["json_path"]
                 if cache_path.is_file():
                     url = raw.get("original_url") or raw.get("canonical_url") or raw.get("aihot_url")
-                    document_id = stable_hash(run_id, candidate["id"], url)
+                    document_id = stable_hash(run_id, effective_candidate["id"], url)
                     stub = self.run_dir / "documents" / f"{document_id}.evidence.md"
                     stub.parent.mkdir(parents=True, exist_ok=True)
                     stub.write_text(
@@ -214,7 +245,7 @@ def install_deep_efficiency() -> None:
                     )
                     return {
                         "document_id": document_id,
-                        "candidate_id": candidate["id"],
+                        "candidate_id": effective_candidate["id"],
                         "url": url,
                         "media_type": "application/x-fact-cache",
                         "fetch_status": "FETCHED",
@@ -230,11 +261,18 @@ def install_deep_efficiency() -> None:
                         "error": None,
                     }
 
-        manifest = original_fetch(self, run_id, candidate)
+        manifest = original_fetch(self, run_id, effective_candidate)
         raw_text_path = Path(manifest["text_path"])
         text = raw_text_path.read_text(encoding="utf-8")
-        topic = self.config.topic(candidate["topic_id"])
-        direction = self.config.direction(candidate["topic_id"], candidate["direction_id"])
+        topic_id = effective_candidate.get("topic_id")
+        direction_id = effective_candidate.get("direction_id")
+        if not topic_id or not direction_id:
+            # FulltextService is also used independently by adapter tests and
+            # diagnostics. Preserve the original fetched manifest if there is no
+            # topic context rather than failing a generic fulltext fetch.
+            return manifest
+        topic = self.config.topic(topic_id)
+        direction = self.config.direction(topic_id, direction_id)
         policy = dict(self.config.settings.get("efficiency") or {})
         max_chars = max(4000, int(policy.get("evidence_pack_max_chars", 18000)))
         pack = build_evidence_pack(text, topic, direction, max_chars=max_chars)
