@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - agent/dual-channel-radar
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install
+        run: python -m pip install -e . pytest
+      - name: Compile
+        run: python -m compileall -q briefing_skill scripts tests
+      - name: Demo smoke with traceback
+        env:
+          BRIEFING_SKIP_DOTENV: '1'
+        run: |
+          python - <<'PY'
+          from types import SimpleNamespace
+          from briefing_skill.efficiency import install_pipeline_optimizations
+          from briefing_skill.quality_guard import install_quality_guards
+          install_pipeline_optimizations()
+          install_quality_guards()
+          from briefing_skill.cli import cmd_demo
+          raise SystemExit(cmd_demo(SimpleNamespace(root=None, run="ci-demo-direct", render=False)))
+          PY
+      - name: Test
+        run: python -m pytest -q
+      - name: Estimate task reduction
+        run: python scripts/estimate_efficiency.py

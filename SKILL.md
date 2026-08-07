@@ -13,8 +13,9 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 
 ## 核心架构
 
-- Python负责确定性工作：采集、过滤、去重、状态、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
-- 当前Agent负责智能工作：相关性、事实抽取、单条写作、事实校验、综合判断和视觉路由。
+- Python负责确定性工作：采集、过滤、去重、状态、预算、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
+- 当前Agent负责智能工作：批量相关性、事实抽取、单条写作、事实校验、综合判断和视觉路由。
+- 重点专题走深度通道；AI Infra、Agent生态、KVCache生态、存储与介质等广度信息走Radar通道，默认不读取全文。
 - 不得在Python中绑定某家模型API。
 - 不得依赖聊天上下文记住历史；所有状态写入SQLite和`workspace/runs/`。
 - Skill本身不产生定时触发；由Cron或宿主Agent任务系统调用CLI。
@@ -100,16 +101,26 @@ python briefing.py send --confirm-send
 
 如果需要使用SMTP备用后端，先设置`EMAIL_BACKEND=smtp`，再按同一人工审核和`--confirm-send`门禁发送。
 
-## 上下文硬规则
+## 上下文与成本硬规则
 
 1. 禁止一次加载全部搜索结果。
 2. 规则过滤前，Agent不读取全文。
-3. 轻量相关性判断每次最多处理5条元数据候选。
-4. 全文分析每次只处理一篇来源。
-5. 长论文按章节或输入中已生成的chunk处理。
-6. 完成事实抽取后，后续任务只读取结构化facts，不再读取全文。
-7. 最终综合判断只读取核心解读，不读取观察池和AI HOT热点雷达。
-8. 不要为了“记住上次推送”使用对话记忆；查询SQLite和事件历史。
+3. 模糊相关性候选按专题批量处理，每批最多12条；输出必须对每个输入候选返回且只返回一条结果。
+4. 只有已解析、非`discovery_only`的A级原始来源才能进入深度通道；B/C级和聚合线索进入Radar并继续用于发现原始来源。
+5. 开放Web搜索只补充没有A级原始来源覆盖的重点方向，默认每期最多4次。
+6. 全文事实抽取默认每期最多10条、单专题最多3条；超出预算的候选保留为`DEFERRED_BUDGET`，不得删除。
+7. 全文分析每次只处理一篇来源，长论文按章节或输入中已生成的chunk处理。
+8. 完成事实抽取后，后续任务只读取结构化facts，不再读取全文。
+9. 最终综合判断只读取核心解读，不读取观察池和热点Radar。
+10. 不要为了“记住上次推送”使用对话记忆；查询SQLite和事件历史。
+
+成本配置位于`config/settings.yaml`的`efficiency`段。可执行：
+
+```bash
+python scripts/estimate_efficiency.py
+```
+
+查看代表性Agent任务数量估算。该结果不等同于实际Token账单，正式运行仍需检查关键事件召回率、人工修改量、端到端耗时和订阅额度。
 
 ## 新鲜度硬门槛
 
@@ -161,9 +172,11 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 - B：高质量聚合、专家分析、作者访谈、独立实践博客。
 - C：媒体、自媒体、社区和社交平台线索。
 
-重点信息至少需要一个A级来源。
+重点信息至少需要一个已解析A级来源。
 
-## 专题与AI Infra扩展
+## 专题与横向Radar
+
+深度专题包括：
 
 1. 状态感知网络、阿里云Token Performance Network；
 2. 内存语义、CXL、Intel DSA/IAA卸载；
@@ -172,9 +185,14 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 5. KVCache、Agent Cache和记忆的跨域传输；
 6. AI/GPU集群光交换网络。
 
-搜索召回还覆盖LLM Serving、推理引擎、GPU集群与集合通信、编译器和Kernel、分布式训练、可观测性、故障恢复、HBM/CXL/存储、RDMA/CPO与AI Fabric。优先归入上述六个专题；无法准确归类但对AI基础设施确有技术价值时，放入`AI Infra横向动态`，不得强行归类。
+横向Radar保持以下四类召回：
 
-具体方向和查询不得在Prompt中重新发明，读取`config/topics.yaml`。
+- AI Infra：LLM Serving、推理引擎、GPU集群、集合通信、编译器、Kernel、分布式训练、可观测性和故障恢复；
+- Agent生态：MCP、Computer Use、Browser Agent、Agent Memory、多Agent和开发工具；
+- KVCache生态：Prefix Cache、量化、分层、路由、持久化以及LMCache、vLLM、SGLang等项目动态；
+- 存储与介质：HBM、CXL内存、Persistent Memory、NVMe SSD、NAND、QLC/TLC、ZNS、HDD和Computational Storage。
+
+横向强信号只有在拥有A级原始来源、具体机制、量化证据或部署信息并与项目直接相关时，才允许晋升深度通道。具体方向和查询不得在Prompt中重新发明，读取`config/topics.yaml`。
 
 ## 单条信息规则
 
@@ -192,14 +210,14 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 
 禁止：营销语言、无条件放大预印本结论、遗漏关键基线、把项目推断写成原文事实、以省略号或悬空标点结束字段。五个正文域合计必须为300～450字，渲染器不得截断事实检查后的正文。
 
-## 跨期去重与热点雷达
+## 跨期去重与热点Radar
 
 - 事件身份依次使用arXiv基础ID（忽略`vN`）、DOI、GitHub仓库与Release、规范化原始URL；仅在没有稳定标识时使用语义事件名；
 - 同一稳定身份的历史事件共享`last_pushed_at`，标题语言、版本号或摘要变化不得绕过去重；
-- 热点雷达独立记录推送历史，按原始URL和规范化标题跨期去重；
-- 热点雷达最多6条、每个技术领域最多2条，只允许AI系统、Agent、推理、芯片、内存、网络和开发工具；
+- Radar独立记录推送历史，按原始URL和规范化标题跨期去重；
+- Radar最多8条、每类最多2条，只允许AI系统、Agent、KVCache、芯片、内存、存储介质、网络和开发工具；
 - 排除融资财报、股价、高管言论、政治政策、版权诉讼、游戏娱乐和消费应用；
-- 热点只链接原始来源，内部发现源不得出现在邮件文字或链接中。
+- Radar只链接原始来源，内部发现源不得出现在邮件文字或链接中。
 
 ## 视觉规则
 
@@ -237,7 +255,7 @@ vendor/guizang-material-illustration/SKILL.md
 
 - 当前Agent不能生图：输出完整prompt并标记`waiting_for_image_generation`。
 - 生图失败：原始图/截图 → 程序化图表 → 纯文字卡。
-- 全文抓取失败：使用摘要做低置信候选，但不得成为无A级来源的重点信息。
+- 全文抓取失败：使用摘要做低置信Radar候选，但不得成为无A级来源的重点信息。
 - 邮件失败：不写`last_pushed_at`，下次只重试发送。
 - 任何配图失败都不能阻塞简报正文。
 
