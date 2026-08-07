@@ -5,20 +5,19 @@
 ## 主要能力
 
 - 七个深度技术专题及窄检索方向，并保留AI Infra横向动态；
-- 新增AI芯片与加速器专题，覆盖GPU/NPU/TPU/ASIC、Chiplet、先进封装、内存接口与软硬件协同；
+- AI芯片与加速器专题覆盖GPU/NPU/TPU/ASIC、Chiplet、先进封装、内存接口与软硬件协同；
 - AI HOT、arXiv、RSS、GitHub Release、Follow Builders、YeeKal AI Daily和当前Agent开放搜索；
-- AI/Agent/KVCache相关查询提高AI HOT采集优先级；
 - 一手来源核验，AI HOT、Follow Builders和YeeKal只作为发现源；
-- URL、标题、正文与事件级去重；
-- 深度解读与横向Radar双通道，避免所有线索都进入全文分析；
-- 模糊相关性候选按专题批量处理；
-- 缺口驱动的开放搜索和按专题设置的深读预算；
-- 180～260字的紧凑单条技术信息；
-- `expanded_v2`最多16条核心解读、4条邻近动态，单专题最多4条；
+- 60天滚动深度专题池，已推送内容跨期去重，未覆盖内容后续继续参与排序；
+- 每专题最多4条完整深度解读，Top4之外的相关A级内容进入1～2句“专题补充”；
+- 同项目、同方向多样性约束，避免单一项目的连续release占满专题；
+- 相关性候选按专题批量做价值判断，关键词规则仅用于召回和路由；
+- 缺口驱动的开放搜索；TPN单一项目不视为充分覆盖；
+- 180～260字的紧凑深度条目；
+- 横向Radar继续覆盖AI Infra、Agent、KVCache、存储与介质等近7天信号；
 - 独立事实校验和人工审核；
 - Guizang Material Illustration中心配图；
 - Guizang Social Card卡片排版；
-- 个人“技术侦察员”视觉IP；
 - agently-cli邮件发送、SMTP备用发送、归档和断点恢复。
 
 ## 快速开始
@@ -40,12 +39,6 @@ python briefing.py doctor
 python briefing.py demo
 ```
 
-样例输出位于：
-
-```text
-workspace/runs/demo-*/
-```
-
 真实运行：
 
 ```bash
@@ -57,38 +50,46 @@ python briefing.py advance
 python briefing.py render --execute
 python briefing.py validate
 python briefing.py review --serve
-# 在审核页保存即完成批准；无浏览器环境可用：
 python briefing.py approve --all
 python briefing.py send --confirm-send
 ```
 
-默认使用本机已授权的 `agently-cli` 发送 HTML 邮件。第一次执行会向 Agently Mail 请求发送确认令牌并停止；用户确认后，再次执行同一命令才会真正发送。若需要使用旧的 SMTP 后端，设置 `EMAIL_BACKEND=smtp`。
+默认使用本机已授权的 `agently-cli` 发送 HTML 邮件。第一次执行会请求发送确认令牌并停止；用户确认后，再次执行同一命令才会真正发送。若需要使用SMTP后端，设置 `EMAIL_BACKEND=smtp`。
 
-## 低Token双通道
-
-默认执行策略将候选分为两条路径：
+## 三层输出与成本控制
 
 ```text
-A级原始来源、高相关候选
-→ 批量相关性判断或规则高置信通过
-→ 每期最多16条进入全文事实抽取，单专题最多4条
-→ 写作、事实检查和综合判断
+最近60天未推送A级候选
+→ 批量价值判断
+→ 多样性选择
+   ├─ 每专题Top4：全文事实抽取 → 写作 → fact check → 深度解读
+   └─ 其余相关A级：1～2句专题补充 + 原文链接
 
-AI Infra、Agent生态、KVCache生态、存储与介质线索
-以及B/C级或discovery-only来源
-→ 横向Radar
-→ 默认不读取全文、不逐条写作和事实检查
+B/C级、discovery-only与横向信号
+→ 近7天热点Radar
 ```
 
-开放Web搜索只补充固定信源没有覆盖的重点方向，默认最多4次。只有已解析、非discovery-only的A级原始来源才算“已覆盖”；二手线索不会阻止系统继续寻找原始材料。
+规则匹配分只负责“找得到”，不直接代表“值得深读”。A级候选由批量任务按项目相关性、技术实质、证据、可行动性和新鲜度评分；例行兼容、依赖升级、普通bug fix、文档/CI/build更新通常只进入专题补充。
 
-相关配置位于 `config/settings.yaml` 的 `efficiency` 段。可通过下面的命令估算任务数量变化：
+全文事实抽取仍默认最多16条、单专题最多4条、同专题同项目最多1条；Top4之外的专题补充不再触发全文、单条写作和事实检查，因此能够扩充信息量而不线性放大Token消耗。
+
+开放Web搜索只补充固定信源没有覆盖的重点方向，默认最多4次。TPN同一方向只有一个项目时仍视为覆盖不足，以主动寻找不同项目或不同机制的原始来源。
+
+相关配置位于 `config/settings.yaml` 的 `efficiency` 段。可通过：
 
 ```bash
 python scripts/estimate_efficiency.py
 ```
 
-提高深读预算会增加事实抽取、写作和事实检查任务，但相关性批处理与缺口搜索仍保留大部分节省。估算值表示计划生成的Agent任务数量，不等同于实际Codex Token账单。正式启用后仍应比较关键事件召回率、人工修改量、实际耗时和订阅额度变化。
+查看代表性Agent任务数量估算。估算值不等同于实际Codex Token账单，正式运行仍应比较关键事件召回率、人工修改量、实际耗时和订阅额度变化。
+
+## 时间窗口
+
+- 深度专题：最近60天滚动窗口；
+- 横向热点Radar：最近7天；
+- SQLite中60天内尚未推送的A级来源会在后续运行中继续参与候选排序；
+- 已作为深度解读、专题补充或Radar发送的内容不会无变化重复出现；
+- 新鲜度只占价值分的小部分，因此高价值的30～60天内容可以高于当天的低价值release。
 
 ## Agent如何处理任务
 
@@ -100,9 +101,9 @@ python scripts/estimate_efficiency.py
 4. 写到指定输出路径；
 5. 运行`python briefing.py advance`。
 
-模糊候选使用 `relevance_batch` 任务，每个任务最多处理12条同专题候选；输出必须对每个输入候选返回且只返回一条结果，缺失、重复或未知ID都会被拒绝。
+相关候选使用 `relevance_batch` 任务，每个任务最多处理12条同专题候选；输出必须对每个输入候选返回且只返回一条结果，缺失、重复或未知ID都会被拒绝。
 
-`item_writing` 和 `issue_synthesis` 任务会要求当前Agent先按结构化事实写初稿，再依次调用本地 `$human-writing` 与 `$humanizer`。这两个Skill只负责自然中文润色和AI句式审查，不是Python运行时依赖，也不会被vendor到本仓库。
+`item_writing` 和 `issue_synthesis` 会要求当前Agent先按结构化事实写初稿，再依次调用本地 `$human-writing` 与 `$humanizer`。这两个Skill只负责自然中文润色和AI句式审查，不得增加事实。
 
 未安装时可在本机执行：
 
@@ -111,19 +112,13 @@ npx skills add https://github.com/KKKKhazix/human-writing --global --agent codex
 npx skills add https://github.com/blader/humanizer --global --agent codex
 ```
 
-Follow Builders只补充Builder观点、工程实践和访谈线索；YeeKal AI Daily只解析日报里的外部原始链接。两者均为B级发现源，不能独立支撑重点技术结论，YeeKal日报日期也不能替代外部原始发布日期。
-
-对旧期次执行 `rebuild-existing --confirm-rebuild` 后，流程会停在 `AWAITING_ISSUE_SYNTHESIS`。必须完成新的结构化综合判断并执行`advance`，才能重新渲染、验证和审核邮件。历史长条目会按照当前180～260字预算重新压缩，不会原样带入新版邮件。
-
 ## 专题配置
 
-基础专题保存在 `config/topics.yaml`，AI芯片与加速器专题保存在 `config/topics-chip.yaml`，加载时会合并成七个深度专题和一个AI Infra横向专题。每个专题的项目判断卡位于 `config/project-context/`。
+基础专题保存在 `config/topics.yaml`，AI芯片与加速器专题保存在 `config/topics-chip.yaml`，加载时合并成七个深度专题和一个AI Infra横向专题。每个专题的项目判断卡位于 `config/project-context/`。
 
-`aihot_priority`只控制发现和候选排序，不改变最终证据等级。AI HOT条目必须回到`links.original`指向的一手来源后才能成为重点条目。
+`aihot_priority`只控制发现和候选排序，不改变最终证据等级。AI HOT条目必须回到`links.original`的一手来源后才能成为重点条目。
 
 ## 配图策略
-
-视觉路由顺序：
 
 ```text
 论文/官方原图
@@ -135,7 +130,7 @@ Follow Builders只补充Builder观点、工程实践和访谈线索；YeeKal AI 
 → 纯文字卡
 ```
 
-精确数字不得交给图像模型绘制。个人角色只用于判断、检查和栏目识别，不遮挡技术证据。
+精确数字不得交给图像模型绘制。
 
 ## 定时运行
 
