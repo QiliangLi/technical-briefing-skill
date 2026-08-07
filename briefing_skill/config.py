@@ -36,7 +36,11 @@ def _load_topics(paths: Paths) -> dict[str, Any]:
         if not isinstance(extension, dict) or not extension.get("id"):
             raise ConfigError(f"Topic extension must contain a topic mapping with id: {chip_path}")
         if extension["id"] not in known_ids:
-            topic_list.append(extension)
+            horizontal_index = next(
+                (index for index, topic in enumerate(topic_list) if topic.get("id") == "ai_infra_horizontal"),
+                len(topic_list),
+            )
+            topic_list.insert(horizontal_index, extension)
             known_ids.add(str(extension["id"]))
 
     for topic in topic_list:
