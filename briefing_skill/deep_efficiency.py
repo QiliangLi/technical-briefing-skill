@@ -46,12 +46,16 @@ HEADING_WEIGHTS = {
 }
 
 
-def _source_fingerprint(raw: dict[str, Any]) -> str:
-    payload = {}
+def _payload(raw: dict[str, Any]) -> dict[str, Any]:
     try:
-        payload = json.loads(raw.get("payload_json") or "{}")
+        value = json.loads(raw.get("payload_json") or "{}")
+        return value if isinstance(value, dict) else {}
     except (TypeError, json.JSONDecodeError):
-        pass
+        return {}
+
+
+def _source_fingerprint(raw: dict[str, Any]) -> str:
+    payload = _payload(raw)
     return stable_hash(
         "facts-source-v1",
         raw.get("identity_key"),
@@ -64,9 +68,39 @@ def _source_fingerprint(raw: dict[str, Any]) -> str:
     )
 
 
+def _cache_eligible(raw: dict[str, Any]) -> bool:
+    """Allow zero-fetch reuse only for sources with a strong immutable version identity."""
+
+    payload = _payload(raw)
+    external_id = str(raw.get("external_id") or "")
+    identity = str(raw.get("identity_key") or "").lower()
+    source_id = str(raw.get("source_id") or "").lower()
+    if source_id == "arxiv" and re.search(r"v\d+$", external_id, flags=re.IGNORECASE):
+        return True
+    if payload.get("repo") and (payload.get("tag") or external_id):
+        return True
+    if identity.startswith("doi:"):
+        return True
+    return False
+
+
 def _extractor_version(config) -> str:
     policy = dict(config.settings.get("efficiency") or {})
     return str(policy.get("fact_extractor_version") or "evidence-pack-v1")
+
+
+def _runtime_extractor_version(config, root: Path) -> str:
+    """Automatically invalidate caches when the facts prompt/schema changes."""
+
+    configured = _extractor_version(config)
+    parts = [configured]
+    for relative in ("prompts/fact-extraction.md", "schemas/facts.schema.json"):
+        path = root / relative
+        if path.is_file():
+            parts.append(path.read_text(encoding="utf-8"))
+    if len(parts) == 1:
+        return configured
+    return f"{configured}:{stable_hash(*parts, length=12)}"
 
 
 def _evidence_terms(topic: dict[str, Any], direction: dict[str, Any]) -> list[str]:
@@ -220,16 +254,17 @@ def install_deep_efficiency() -> None:
         raw = self.db.fetchone("SELECT * FROM raw_items WHERE id=?", (effective_candidate["raw_item_id"],))
         if not raw:
             raise KeyError(effective_candidate["raw_item_id"])
+        root = self.run_dir.parents[2]
         fingerprint = _source_fingerprint(raw)
-        version = _extractor_version(self.config)
-        cache_enabled = bool((self.config.settings.get("efficiency") or {}).get("fact_cache_enabled", True))
+        version = _runtime_extractor_version(self.config, root)
+        cache_enabled = bool((self.config.settings.get("efficiency") or {}).get("fact_cache_enabled", True)) and _cache_eligible(raw)
         if cache_enabled:
             cached = self.db.fetchone(
                 "SELECT * FROM fact_cache WHERE source_fingerprint=? AND extractor_version=?",
                 (fingerprint, version),
             )
             if cached:
-                cache_path = self.run_dir.parents[2] / cached["json_path"]
+                cache_path = root / cached["json_path"]
                 if cache_path.is_file():
                     url = raw.get("original_url") or raw.get("canonical_url") or raw.get("aihot_url")
                     document_id = stable_hash(run_id, effective_candidate["id"], url)
@@ -267,12 +302,15 @@ def install_deep_efficiency() -> None:
         topic_id = effective_candidate.get("topic_id")
         direction_id = effective_candidate.get("direction_id")
         if not topic_id or not direction_id:
-            # FulltextService is also used independently by adapter tests and
-            # diagnostics. Preserve the original fetched manifest if there is no
-            # topic context rather than failing a generic fulltext fetch.
             return manifest
-        topic = self.config.topic(topic_id)
-        direction = self.config.direction(topic_id, direction_id)
+        try:
+            topic = self.config.topic(topic_id)
+            direction = self.config.direction(topic_id, direction_id)
+        except Exception:
+            # FulltextService is also used independently by adapter tests and
+            # diagnostics with intentionally minimal configs. Preserve the raw
+            # fetch rather than making generic fulltext access depend on topics.
+            return manifest
         policy = dict(self.config.settings.get("efficiency") or {})
         max_chars = max(4000, int(policy.get("evidence_pack_max_chars", 18000)))
         pack = build_evidence_pack(text, topic, direction, max_chars=max_chars)
@@ -289,6 +327,7 @@ def install_deep_efficiency() -> None:
             "fact_cache_hit": False,
             "source_fingerprint": fingerprint,
             "extractor_version": version,
+            "fact_cache_eligible": cache_enabled,
         }
         write_json(self.run_dir / "documents" / f"{manifest['document_id']}.json", enriched)
         return enriched
@@ -323,7 +362,7 @@ def install_deep_efficiency() -> None:
         ensure_cost_schema(self.db)
         task_input = read_json(self.root / task["input_path"], {})
         document = task_input.get("document") or {}
-        if document.get("fact_cache_hit"):
+        if document.get("fact_cache_hit") or not document.get("fact_cache_eligible"):
             return
         fingerprint = str(document.get("source_fingerprint") or "")
         version = str(document.get("extractor_version") or "")
@@ -339,7 +378,7 @@ def install_deep_efficiency() -> None:
         source = task_input.get("source") or {}
         candidate = self.db.fetchone("SELECT raw_item_id FROM candidates WHERE id=?", (task["entity_id"],))
         raw = self.db.fetchone("SELECT * FROM raw_items WHERE id=?", (candidate["raw_item_id"],)) if candidate else None
-        if not raw:
+        if not raw or not _cache_eligible(raw):
             return
         cache_key = stable_hash("fact-cache", fingerprint, version, length=32)
         cache_path = self.root / "workspace" / "cache" / "facts" / f"{cache_key}.json"
