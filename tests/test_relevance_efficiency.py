@@ -236,6 +236,29 @@ def test_compact_batch_deduplicates_direction_config_and_bounds_long_summary():
     assert len(compact["candidates"][0]["summary"]) <= 1200
 
 
+def test_compact_batch_hard_caps_unpunctuated_release_notes():
+    input_data = {
+        "batch_id": "tpn-hard-cap",
+        "topic": {"id": "tpn", "name": "TPN"},
+        "candidates": [
+            {
+                "candidate_id": "a",
+                "title": "Long release",
+                "summary": "token " * 5000,
+                "direction": {"id": "kv_transfer", "name": "KV transfer"},
+            }
+        ],
+    }
+    compact = compact_relevance_batch_input(
+        input_data,
+        {"efficiency": {"relevance_summary_max_chars": 1200}},
+    )
+    summary = compact["candidates"][0]["summary"]
+    assert compact["candidates"][0]["summary_excerpted"] is True
+    assert len(summary) <= 1200
+    assert summary.endswith("。")
+
+
 def test_relevance_plan_uses_larger_count_bound_without_changing_candidate_set():
     settings = {
         "max_relevance_batch": 24,
