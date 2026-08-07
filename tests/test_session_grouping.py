@@ -6,7 +6,7 @@ from briefing_skill.session_grouping import (
     fact_session_instructions,
     plan_fact_session_groups,
 )
-from briefing_skill.utils import write_json
+from briefing_skill.utils import read_json, write_json
 
 
 def _task(
@@ -94,15 +94,24 @@ def test_fact_session_grouping_never_drops_evidence_to_make_a_pair_fit(tmp_path)
     # The planner changes only session assignment; both standalone task inputs
     # still point at their original full Evidence Packs.
     for task in tasks:
-        data = __import__("briefing_skill.utils", fromlist=["read_json"]).read_json(tmp_path / task["input_path"], {})
+        data = read_json(tmp_path / task["input_path"], {})
         assert data["document"]["evidence_char_count"] == 22000
+
+
+def test_fact_session_grouping_unknown_evidence_size_fails_closed_to_singletons(tmp_path):
+    unknown = _task(tmp_path, task_id="t1", evidence_chars=0, priority=90)
+    known = _task(tmp_path, task_id="t2", evidence_chars=18000, priority=80)
+
+    groups = plan_fact_session_groups(tmp_path, [unknown, known], max_size=2, max_evidence_chars=40000)
+
+    assert [[task["id"] for task in group] for group in groups] == [["t1"], ["t2"]]
 
 
 def test_fact_session_grouping_skips_validated_cache_hits(tmp_path):
     cached = _task(tmp_path, task_id="t1", priority=90)
     live = _task(tmp_path, task_id="t2", priority=80)
     cached_path = tmp_path / cached["input_path"]
-    data = __import__("briefing_skill.utils", fromlist=["read_json"]).read_json(cached_path, {})
+    data = read_json(cached_path, {})
     data["document"]["fact_cache_hit"] = True
     write_json(cached_path, data)
 
