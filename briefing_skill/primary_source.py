@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from .adapters.base import CollectedItem
 from .utils import canonicalize_url, source_identity_key
@@ -44,12 +45,39 @@ def primary_source_kind(url: str | None) -> str | None:
     return None
 
 
+def primary_pdf_url(url: str | None, kind: str | None = None) -> str | None:
+    """Derive a paper PDF URL only when the mapping is deterministic."""
+
+    canonical = canonicalize_url(url)
+    if not canonical:
+        return None
+    kind = kind or primary_source_kind(canonical)
+    parts = urlsplit(canonical)
+    path = (parts.path or "").strip("/")
+
+    if kind == "arxiv":
+        match = re.search(r"(?:abs|pdf)/([^/?#]+)", f"/{path}", flags=re.I)
+        if not match:
+            return None
+        paper_id = re.sub(r"\.pdf$", "", match.group(1), flags=re.I)
+        return f"https://arxiv.org/pdf/{paper_id}.pdf"
+
+    if kind == "openreview":
+        query = parse_qs(parts.query)
+        paper_ids = query.get("id") or []
+        if paper_ids:
+            return f"https://openreview.net/pdf?id={quote(str(paper_ids[0]))}"
+
+    return None
+
+
 def promote_discovery_primary(item: CollectedItem) -> CollectedItem:
     """Promote discovery records when their original URL is itself a known primary source.
 
     The discovery provenance is preserved in payload. Only credibility/routing changes;
     title and summary are left untouched until the normal full-text stage fetches the
-    actual primary artifact.
+    actual primary artifact. For arXiv/OpenReview, a deterministic PDF URL is attached
+    so the deep stage reads the paper rather than only the abstract/forum page.
     """
 
     if str(item.source_level or "").upper() == "A" and not item.discovery_only:
@@ -68,6 +96,9 @@ def promote_discovery_primary(item: CollectedItem) -> CollectedItem:
         "kind": kind,
         "url": canonicalize_url(item.original_url),
     }
+    pdf_url = primary_pdf_url(item.original_url, kind)
+    if pdf_url:
+        payload["pdf_url"] = pdf_url
     return replace(
         item,
         source_level="A",
