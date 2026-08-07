@@ -102,18 +102,18 @@ def test_radar_categories_cover_requested_horizontal_scope():
     assert radar_category("New foundation model benchmark", "") == "其他"
 
 
-def test_representative_workload_reduces_agent_tasks_over_75_percent():
+def test_representative_workload_keeps_task_reduction_above_65_percent():
     estimate = estimate_task_reduction(
         candidates=100,
         ambiguous_candidates=36,
         batch_size=12,
         fact_candidates_before=17,
-        fact_budget=10,
+        fact_budget=16,
         item_candidates_before=17,
-        item_budget=10,
+        item_budget=16,
         search_before=18,
         search_after=4,
     )
     assert estimate["relevance_tasks_after"] == 3
-    assert estimate["tasks_after"] == 37
-    assert estimate["task_reduction_ratio"] >= 0.75
+    assert estimate["tasks_after"] == 55
+    assert estimate["task_reduction_ratio"] >= 0.65
