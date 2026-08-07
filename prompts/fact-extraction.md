@@ -20,5 +20,8 @@ Required output:
 - `project_relevance`: a project-oriented inference, clearly separate from source claims.
 - `primary_source_resolved`: true only when the input URL identifies a specific primary source and `document.fetch_status` is `FETCHED`; a cache hit may reuse a previously validated result for the same source fingerprint and extractor version.
 - `quality_score`: 0-100 based on completeness, evidence, and source quality. Reduce the score when the evidence pack lacks evaluation conditions or important boundaries.
+- `evidence_gaps`: normally `[]`. Add at most 3 entries only when a **material** fact needed for correct interpretation is missing from the evidence pack but is plausibly present elsewhere in this same source. Each entry must state a concrete `question` and 1-8 source-native `terms` suitable for deterministic section retrieval. Good gaps include the exact benchmark baseline, workload/hardware condition, deployment constraint, or explicit limitation needed to avoid a misleading claim. Do not request more text merely for completeness, background, or curiosity.
+
+When creating `evidence_gaps`, use terms that are likely to appear literally in the source, such as a system name, baseline name, hardware model, metric, table/figure label, workload, or distinctive mechanism term. Do not use vague requests such as `more details`, `evaluation`, or `performance` alone.
 
 Do not invent missing numbers. Do not use AI HOT's generated summary as sole evidence. Return JSON only.
