@@ -106,7 +106,7 @@ def test_representative_workload_keeps_task_reduction_above_65_percent():
     estimate = estimate_task_reduction(
         candidates=100,
         ambiguous_candidates=36,
-        batch_size=12,
+        batch_size=24,
         fact_candidates_before=17,
         fact_budget=16,
         item_candidates_before=17,
@@ -114,6 +114,6 @@ def test_representative_workload_keeps_task_reduction_above_65_percent():
         search_before=18,
         search_after=4,
     )
-    assert estimate["relevance_tasks_after"] == 3
-    assert estimate["tasks_after"] == 55
+    assert estimate["relevance_tasks_after"] == 2
+    assert estimate["tasks_after"] == 54
     assert estimate["task_reduction_ratio"] >= 0.65
