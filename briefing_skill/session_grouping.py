@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -89,15 +88,22 @@ def plan_fact_session_groups(
     open_group_by_key: dict[tuple[str, ...], int] = {}
     for task in ordered:
         data = _task_input(root, task)
+        document = data.get("document") or {}
         key = _fact_group_key(task, data)
         if key is None:
             # Cache hits are synchronously applied before Agent dispatch. Any
             # malformed/legacy task that cannot prove compatibility remains alone.
-            if not (data.get("document") or {}).get("fact_cache_hit"):
+            if not document.get("fact_cache_hit"):
                 groups.append({"key": None, "tasks": [task], "evidence_chars": _evidence_chars(data)})
             continue
 
         evidence = _evidence_chars(data)
+        if evidence <= 0:
+            # Quality-first fail-closed rule: if the actual Evidence Pack size is
+            # unknown, do not assume it is cheap enough to share a context window.
+            groups.append({"key": None, "tasks": [task], "evidence_chars": 0})
+            continue
+
         group_index = open_group_by_key.get(key)
         group = groups[group_index] if group_index is not None else None
         if (
@@ -319,7 +325,18 @@ def install_session_grouping() -> None:
 
     def run_stats(db, root: Path, run_id: str, settings: dict[str, Any] | None = None):
         result = original_run_stats(db, root, run_id)
-        policy = dict((settings or {}).get("efficiency") or {})
+        actual_settings = settings
+        if actual_settings is None:
+            try:
+                from .config import ConfigBundle
+                from .paths import Paths
+
+                actual_settings = ConfigBundle.load(Paths(root)).settings
+            except Exception:
+                # Stats must remain usable for isolated tests/diagnostics without a
+                # complete repository config. Runtime dispatch still uses config.
+                actual_settings = {}
+        policy = dict((actual_settings or {}).get("efficiency") or {})
         max_size = max(1, int(policy.get("fact_session_group_size", DEFAULT_FACT_SESSION_GROUP_SIZE)))
         max_chars = max(4000, int(policy.get("fact_session_group_max_evidence_chars", DEFAULT_FACT_SESSION_MAX_EVIDENCE_CHARS)))
         tasks = db.fetchall(
