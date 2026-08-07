@@ -17,12 +17,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .quality_guard import install_quality_guards
     from .radar_taxonomy import install_radar_taxonomy
     from .release_family import install_release_family_aggregation
+    from .relevance_efficiency import install_relevance_efficiency
     from .telemetry import install_task_telemetry
     from .topic_appendix_render import install_topic_appendix_rendering
     from .value_scoring import install_value_scoring
 
     install_cost_schema()
     install_pipeline_optimizations()
+    # Install before coverage_policy so its prepare_relevance wrapper first
+    # materialises the rolling backlog and only then enters the cache fast path.
+    install_relevance_efficiency()
     install_radar_taxonomy()
     install_quality_guards()
     install_coverage_policy()
