@@ -17,10 +17,11 @@
 - 同一GitHub项目在“专题补充”中的多条低优先级release自动聚合为一个Release Family，同时保留每个原文链接；
 - 缺口驱动的开放搜索；TPN单一项目不视为充分覆盖；
 - 深度事实抽取默认只向Agent暴露约18k字符的Evidence Pack，而不是完整140k字符全文；
+- 未命中facts cache的兼容事实任务可复用同一Agent会话，默认最多2篇；任务、Evidence Pack、输出、Schema、cache、repair和fact check仍逐篇独立，Evidence绝不为分组而缩短；
 - Evidence Pack缺少会改变结论解释的关键条件时，仅允许一轮最多9k字符的定向补证据，不重新打开完整全文；
 - 相同来源指纹与抽取版本可跨期复用facts，缓存命中时不创建需要Agent执行的事实抽取任务；
 - 深度条目写作和事实校验默认4条一批，同时保留逐条Schema、事实边界、PASS/FAIL和provenance；
-- `stats`命令记录任务数、尝试次数、facts/relevance缓存命中和文本字符量等确定性成本代理；
+- `stats`命令记录任务数、尝试次数、facts/relevance缓存命中、事实Agent会话计划和文本字符量等确定性成本代理；
 - 180～260字的紧凑深度条目；
 - 横向Radar继续覆盖AI Infra、Agent、KVCache、存储与介质等近7天信号；
 - 独立事实校验和人工审核；
@@ -62,7 +63,7 @@ python briefing.py backfill --max-requests 64
 ```bash
 python briefing.py run
 python briefing.py tasks next
-# 当前Agent按提示完成JSON任务
+# 当前Agent严格按返回的单任务或事实抽取会话组说明完成独立JSON输出
 python briefing.py advance
 # 重复 tasks next / advance，直到 READY_FOR_RENDER
 python briefing.py render --execute
@@ -71,6 +72,8 @@ python briefing.py review --serve
 python briefing.py approve --all
 python briefing.py send --confirm-send
 ```
+
+`tasks next`只在能证明同topic、同direction、同项目判断卡、同Prompt/Schema且Evidence总量不超预算时，把最多2个**独立**`fact_extraction`任务放到同一Agent会话连续处理。需要显式单任务执行时使用 `python briefing.py tasks next-single`。会话复用失败或不确定时应回退到单任务，而不是减少Evidence或放宽校验。
 
 默认使用本机已授权的 `agently-cli` 发送 HTML 邮件。第一次执行会请求发送确认令牌并停止；用户确认后，再次执行同一命令才会真正发送。若需要使用SMTP后端，设置 `EMAIL_BACKEND=smtp`。
 
@@ -90,7 +93,8 @@ python briefing.py send --confirm-send
    │    → Evidence Pack（默认≤18k字符）
    │    → facts cache查询
    │       ├─ 命中：直接生成FACTS_READY，不进入Agent任务队列
-   │       └─ 未命中：事实抽取
+   │       └─ 未命中：每篇保留独立fact_extraction任务
+   │            → 兼容任务可两篇复用一个Agent会话，但Evidence/输出/校验仍逐篇独立
    │            ├─ 证据足够：写入跨期facts cache
    │            └─ 存在材料性缺口：按明确术语从未曝光章节提取一次补充包（≤9k）
    │                 → facts修复 → 必要时写入跨期facts cache
@@ -114,6 +118,8 @@ B/C级、discovery-only与横向信号
 relevance cache只用于“同一个不可变版本在滚动60天池中被反复看到”的场景，不是永久冻结评分。缓存只面向明确版本arXiv、GitHub Release/Tag和DOI等强版本来源；普通可变网页仍每期重新判断。来源指纹包含版本、内容hash、标题和摘要；Evaluator版本包含当前Prompt、Schema、实际暴露给Agent的topic/direction判断卡以及项目上下文。由于价值评分还有5分新鲜度，缓存再按 `freshness_days` 的2/7/30/60天边界分桶，跨越年龄边界必须重新评审。
 
 深度事实抽取仍默认最多16条、单专题最多4条、同专题同项目最多1条。原始抓取文本仍可保留到最多140k字符用于审计和必要时人工回看，但正常 `fact_extraction` 只读取确定性选择出的Evidence Pack。默认上限是18k字符，优先保留Architecture/Method/Evaluation/Results/Limitations及专题相关段落，并保留章节或页码定位信息。
+
+事实抽取会话复用只优化宿主Agent的启动次数，不改变上面的16条深读预算和18k Evidence Pack上限。默认只有同topic+direction的兼容任务可两篇一组，并且组内Evidence合计最多40k字符；任何一篇Evidence长度未知、总量超限、项目判断卡不同或其他兼容条件无法证明时直接单独运行。组内每篇仍使用原来的独立 `_task`、输入、输出和 `facts.schema.json`；前一篇证据对后一篇不可采信。即使一篇INVALID，也只重试该篇，而不是把另一篇一起重做。
 
 如果首轮事实抽取明确发现一个会影响正确解释的关键缺口，例如具体baseline、硬件/工作负载条件、部署限制或原文明确的limitation，可以通过 `evidence_gaps` 请求一次定向补证据。Python只在首轮Evidence Pack未包含的章节中检索Agent给出的原文术语，生成默认最多9k字符的supplement；Agent修复facts时只读取结构化旧facts和这份supplement，不重读原18k Evidence Pack，也不打开140k原始全文。找不到明确术语时直接保持保守结论，不退化为通用全文搜索，也不会进行第二轮补读。
 
@@ -139,12 +145,13 @@ python briefing.py stats --run latest
 - `tasks next`观察到的尝试次数与INVALID次数；
 - facts cache条目与任务级命中；
 - relevance cache全局条目数与本期命中候选数；
+- `fact_session_plan`：仍需Agent处理的独立facts任务数、预计Agent会话数和减少的Agent启动数；
 - task input / prompt / output字符量；
 - 原始document字符量与Agent实际看到的Evidence字符量；
 - Evidence压缩比例；
 - `agent_read_chars_proxy`，用于横向比较不同版本的Agent输入规模。
 
-`relevance_cache_hits`统计的是在Agent任务创建前直接复用的候选，所以不会重复记入task级`cache_hits`。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API实际Token账单。宿主若未来能够暴露真实usage，应优先记录真实输入/输出Token，并把字符量统计保留为可复现的独立指标。
+`fact_session_plan`是执行调度统计，不改变task count或Evidence volume；判断输出质量时仍应看独立facts任务、Evidence量、INVALID/repair/fact-check结果。`relevance_cache_hits`统计的是在Agent任务创建前直接复用的候选，所以不会重复记入task级`cache_hits`。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API实际Token账单。宿主若未来能够暴露真实usage，应优先记录真实输入/输出Token和实际Agent会话数，并把字符量统计保留为可复现的独立指标。
 
 历史覆盖单独查看：
 
@@ -175,7 +182,9 @@ python scripts/estimate_efficiency.py
 
 ## Agent如何处理任务
 
-该Skill不调用固定模型API。Python脚本会生成任务文件，当前Agent负责：
+该Skill不调用固定模型API。Python脚本会生成任务文件，当前Agent负责严格执行 `tasks next` 返回的说明。普通任务仍按单任务处理；兼容的`fact_extraction`可能被安排到一个会话组，默认最多2个**独立任务**。
+
+单任务规则：
 
 1. 读取任务指定的Prompt；
 2. 读取指定输入JSON及必要的专题上下文；
@@ -185,6 +194,8 @@ python scripts/estimate_efficiency.py
 6. 输出符合JSON Schema的结果；
 7. 写到指定输出路径；
 8. 运行`python briefing.py advance`。
+
+事实会话组规则：共享Prompt、Facts Schema和项目判断卡只读取一次，随后严格逐任务读取各自input和完整Evidence Pack，分别生成各自JSON。禁止跨任务移动或补充事实，禁止合并输出；组内全部输出写完后只运行一次 `advance`。对隔离有任何疑问时使用 `tasks next-single` 回退。
 
 历史回填不属于Agent任务：arXiv/GitHub分页、时间截断、游标、去重和持久化全部由Python确定性完成。
 

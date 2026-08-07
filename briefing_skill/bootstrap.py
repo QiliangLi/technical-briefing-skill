@@ -18,6 +18,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .radar_taxonomy import install_radar_taxonomy
     from .release_family import install_release_family_aggregation
     from .relevance_efficiency import install_relevance_efficiency
+    from .session_grouping import install_session_grouping
     from .telemetry import install_task_telemetry
     from .topic_appendix_render import install_topic_appendix_rendering
     from .value_scoring import install_value_scoring
@@ -41,6 +42,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Install after the existing CLI extensions so the backfill parser preserves
     # commands such as `stats`, while the wrapped `run` gets a small auto budget.
     install_historical_backfill()
+    # Session grouping is intentionally last: it changes only task-dispatch
+    # instructions and stats, after all quality/cache/repair wrappers are fixed.
+    install_session_grouping()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
