@@ -82,6 +82,19 @@ def test_fact_session_grouping_only_shares_same_topic_and_direction(tmp_path):
     assert sorted(task_id for group in ids for task_id in group) == ["t1", "t2", "t3", "t4"]
 
 
+def test_fact_session_grouping_requires_exact_embedded_direction_context(tmp_path):
+    first = _task(tmp_path, task_id="t1", priority=90)
+    changed = _task(tmp_path, task_id="t2", priority=80)
+    changed_path = tmp_path / changed["input_path"]
+    data = read_json(changed_path, {})
+    data["direction"]["include_terms"] = ["new-rule-added-after-old-task-was-created"]
+    write_json(changed_path, data)
+
+    groups = plan_fact_session_groups(tmp_path, [first, changed], max_size=2, max_evidence_chars=40000)
+
+    assert [[task["id"] for task in group] for group in groups] == [["t1"], ["t2"]]
+
+
 def test_fact_session_grouping_never_drops_evidence_to_make_a_pair_fit(tmp_path):
     tasks = [
         _task(tmp_path, task_id="t1", evidence_chars=22000, priority=90),
