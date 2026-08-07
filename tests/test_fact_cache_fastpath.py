@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,7 +7,6 @@ from briefing_skill.cache_fastpath import install_fact_cache_fastpath
 from briefing_skill.cost_schema import ensure_cost_schema
 from briefing_skill.db import Database
 from briefing_skill.deep_efficiency import _source_fingerprint, install_deep_efficiency
-from briefing_skill.efficiency import install_pipeline_optimizations
 from briefing_skill.pipeline import Pipeline
 from briefing_skill.telemetry import install_task_telemetry
 from briefing_skill.utils import now_iso, write_json
@@ -90,12 +88,16 @@ def test_fact_cache_fastpath_materializes_facts_without_pending_agent_task(tmp_p
                 "max_fact_candidates_per_topic": 4,
             }
         },
+        scoring={"weights": {}},
         topic=lambda topic_id: {"id": topic_id, "name": "TPN", "current_questions": [], "valuable_evidence": []},
         direction=lambda topic_id, direction_id: {"id": direction_id, "name": "KV transfer"},
         context_path=lambda paths, topic_id: root / "context.md",
     )
 
-    install_pipeline_optimizations()
+    # This unit test intentionally uses the base pipeline so it does not leak the
+    # global efficiency EmailService patch into unrelated Radar tests. Production
+    # bootstrap installs efficiency first; the cache fastpath is agnostic to which
+    # _maybe_prepare_facts implementation it wraps.
     install_deep_efficiency()
     install_task_telemetry()
     install_fact_cache_fastpath()
