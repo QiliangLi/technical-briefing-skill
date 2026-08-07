@@ -8,6 +8,14 @@ from .db import Database
 from .utils import normalize_text, stable_hash, title_similarity
 
 
+STRONG_EVENT_IDENTITY_PREFIXES = (
+    "arxiv:",
+    "doi:",
+    "github-release:",
+    "github-commit:",
+)
+
+
 @dataclass
 class Cluster:
     topic_id: str
@@ -50,9 +58,29 @@ class EventClusterer:
         return groups
 
     @staticmethod
-    def _same_event(a: dict[str, Any], b: dict[str, Any]) -> bool:
-        if a.get("identity_key") and a.get("identity_key") == b.get("identity_key"):
+    def _is_strong_identity(value: str | None) -> bool:
+        identity = str(value or "").lower()
+        return identity.startswith(STRONG_EVENT_IDENTITY_PREFIXES)
+
+    @classmethod
+    def _same_event(cls, a: dict[str, Any], b: dict[str, Any]) -> bool:
+        # Facts are extracted under topic/direction-specific project context. Never
+        # collapse two interpretations across those boundaries merely because titles
+        # resemble one another.
+        if str(a.get("topic_id") or "") != str(b.get("topic_id") or ""):
+            return False
+        if str(a.get("direction_id") or "") != str(b.get("direction_id") or ""):
+            return False
+
+        identity_a = str(a.get("identity_key") or "")
+        identity_b = str(b.get("identity_key") or "")
+        if identity_a and identity_a == identity_b:
             return True
+        # Two distinct immutable paper/release identities are different events even
+        # when titles share a system name or version-like suffix.
+        if cls._is_strong_identity(identity_a) and cls._is_strong_identity(identity_b):
+            return False
+
         if a.get("event_hint") and b.get("event_hint"):
             if title_similarity(a["event_hint"], b["event_hint"]) >= 0.72:
                 return True
