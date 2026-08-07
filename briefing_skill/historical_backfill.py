@@ -42,7 +42,7 @@ def _policy(config) -> dict[str, Any]:
     configured = dict(efficiency.get("historical_backfill") or {})
     configured.setdefault("enabled", True)
     configured.setdefault("lookback_days", int(efficiency.get("deep_lookback_days", 60)))
-    configured.setdefault("auto_requests_per_run", 4)
+    configured.setdefault("auto_requests_per_collect", 4)
     configured.setdefault("manual_max_requests", 32)
     configured.setdefault("arxiv_page_size", 50)
     configured.setdefault("github_page_size", 50)
@@ -142,7 +142,6 @@ class HistoricalBackfillService:
 
     @staticmethod
     def describe_lanes(config) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        policy = _policy(config)
         deep_topics = set((config.settings.get("efficiency") or {}).get("deep_topics") or [])
         sources = list(config.source_list())
         arxiv = next((source for source in sources if source.get("id") == "arxiv" and source.get("enabled")), None)
@@ -618,14 +617,14 @@ def execute_historical_backfill(
 
 
 def install_historical_backfill() -> None:
-    """Add explicit/backgound-budgeted backfill commands without changing core CLI."""
+    """Add explicit and background-budgeted backfill without changing core CLI files."""
 
     from . import cli
 
     if getattr(cli, "_historical_backfill_installed", False):
         return
     original_build_parser = cli.build_parser
-    original_cmd_run = cli.cmd_run
+    original_cmd_collect = cli.cmd_collect
 
     def cmd_backfill(args) -> int:
         root, paths, config, db = cli._context(args)
@@ -648,11 +647,11 @@ def install_historical_backfill() -> None:
         print(json.dumps(historical_backfill_status(config, db), ensure_ascii=False, indent=2))
         return 0
 
-    def cmd_run(args) -> int:
+    def cmd_collect(args) -> int:
         if not getattr(args, "offline_fixture", False):
             root, paths, config, db = cli._context(args)
             policy = _policy(config)
-            budget = int(policy.get("auto_requests_per_run", 4))
+            budget = int(policy.get("auto_requests_per_collect", 4))
             if bool(policy.get("enabled", True)) and budget > 0:
                 report = execute_historical_backfill(
                     root,
@@ -661,7 +660,7 @@ def install_historical_backfill() -> None:
                     db,
                     days=int(policy.get("lookback_days", 60)),
                     max_requests=budget,
-                    reason="auto-run",
+                    reason="auto-collect",
                 )
                 LOGGER.info(
                     "Historical backfill %s: requests=%d new=%d complete=%d/%d",
@@ -671,7 +670,7 @@ def install_historical_backfill() -> None:
                     report.get("complete_lanes", 0),
                     report.get("supported_lanes", 0),
                 )
-        return original_cmd_run(args)
+        return original_cmd_collect(args)
 
     def build_parser():
         parser = original_build_parser()
@@ -687,6 +686,9 @@ def install_historical_backfill() -> None:
         p.set_defaults(func=cmd_backfill_status)
         return parser
 
-    cli.cmd_run = cmd_run
+    # Existing production cron calls `collect` directly. `cmd_run` also resolves
+    # `cmd_collect` from the CLI module at runtime, so patching collection covers
+    # both paths exactly once instead of double-spending the request budget.
+    cli.cmd_collect = cmd_collect
     cli.build_parser = build_parser
     cli._historical_backfill_installed = True
