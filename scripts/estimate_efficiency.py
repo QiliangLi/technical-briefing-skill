@@ -20,7 +20,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Estimate Agent-task reduction after the efficiency refactor")
     parser.add_argument("--candidates", type=int, default=100)
     parser.add_argument("--ambiguous", type=int, default=36)
-    parser.add_argument("--batch-size", type=int, default=12)
+    parser.add_argument("--batch-size", type=int, default=24)
     parser.add_argument("--facts-before", type=int, default=17)
     parser.add_argument("--fact-budget", type=int, default=16)
     parser.add_argument("--items-before", type=int, default=17)

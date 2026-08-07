@@ -25,6 +25,37 @@ CREATE TABLE IF NOT EXISTS fact_cache (
 CREATE INDEX IF NOT EXISTS idx_fact_cache_source
 ON fact_cache(source_fingerprint, extractor_version);
 
+CREATE TABLE IF NOT EXISTS relevance_cache (
+    cache_key TEXT PRIMARY KEY,
+    source_fingerprint TEXT NOT NULL,
+    topic_id TEXT NOT NULL,
+    direction_id TEXT NOT NULL,
+    evaluator_version TEXT NOT NULL,
+    source_url TEXT,
+    source_identity TEXT,
+    relevant INTEGER NOT NULL,
+    relevance_score REAL,
+    relevance_reason TEXT,
+    fulltext_required INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT NOT NULL,
+    UNIQUE(source_fingerprint, topic_id, direction_id, evaluator_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_relevance_cache_source
+ON relevance_cache(source_fingerprint, topic_id, direction_id, evaluator_version);
+
+CREATE TABLE IF NOT EXISTS relevance_cache_usage (
+    run_id TEXT NOT NULL,
+    candidate_id TEXT NOT NULL,
+    cache_key TEXT NOT NULL,
+    used_at TEXT NOT NULL,
+    PRIMARY KEY(run_id, candidate_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_relevance_cache_usage_run
+ON relevance_cache_usage(run_id);
+
 CREATE TABLE IF NOT EXISTS task_metrics (
     task_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL,

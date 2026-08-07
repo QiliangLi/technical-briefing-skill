@@ -2,6 +2,8 @@
 
 Screen a batch of candidates for one internal technical topic. Read only the task input and the referenced short project-context file. Do not fetch or read full articles.
 
+The input intentionally deduplicates repeated configuration: `topic` contains the compact topic card, `directions` contains the direction cards once per batch, and each candidate points to its direction through `direction_id`. A candidate summary may be a deterministic excerpt when the original release note is very long; do not infer that omitted text was reviewed.
+
 For every input candidate, return exactly one result with the same `candidate_id`.
 
 The numeric `rule_score` in the input is only a lexical-routing score. Do not treat it as evidence that the item is important.

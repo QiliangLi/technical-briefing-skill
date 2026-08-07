@@ -13,12 +13,12 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 
 ## 核心架构
 
-- Python负责确定性工作：当前采集、可恢复外部历史回填、过滤、去重、状态、预算、滚动专题池、多样性选择、Evidence Pack、定向Evidence Repair、跨期facts cache、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
-- 当前Agent负责智能工作：批量相关性与价值判断、未命中缓存时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和视觉路由。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
+- Python负责确定性工作：当前采集、可恢复外部历史回填、过滤、去重、状态、预算、滚动专题池、保守的跨期relevance cache、多样性选择、Evidence Pack、定向Evidence Repair、跨期facts cache、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
+- 当前Agent负责智能工作：未命中relevance cache时的批量相关性与价值判断、未命中facts cache时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和视觉路由。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
 - 重点专题走深度通道；Top4之外的相关A级内容走专题补充；AI Infra、Agent生态、KVCache生态、存储与介质等广度信息走Radar通道。
 - 同一GitHub项目在专题补充中的多条低价值release可以聚合显示，但不得把不同论文或Top4深度条目强行合并。
 - 不得在Python中绑定某家模型API。
-- 不得依赖聊天上下文记住历史；常规状态写入SQLite和`workspace/runs/`，外部历史回填游标写入SQLite `source_state`，回填报告写入被忽略的`workspace/backfill/`，跨期facts写入本地`workspace/cache/facts/`。
+- 不得依赖聊天上下文记住历史；常规状态、relevance cache与使用记录写入SQLite，外部历史回填游标写入SQLite `source_state`，回填报告写入被忽略的`workspace/backfill/`，跨期facts写入本地`workspace/cache/facts/`。
 - Skill本身不产生定时触发；由Cron或宿主Agent任务系统调用CLI。
 
 ## 首次使用
@@ -84,11 +84,11 @@ python briefing.py tasks next --run latest
 
 1. 读取指定Prompt；
 2. 读取指定输入JSON；
-3. 只读取输入中明确引用的专题判断卡和文档。对于`fact_extraction`，正常路径只能读取任务引用的Evidence Pack；对于`fact_evidence_repair`，只能读取结构化旧facts和任务引用的targeted supplement。两者都不得为了“更完整”主动打开未引用的原始全文；
+3. 只读取输入中明确引用的专题判断卡和文档。对于`relevance_batch`，只读取紧凑topic卡、批次级direction卡、候选元数据/摘要和项目判断卡，不主动打开全文；对于`fact_extraction`，正常路径只能读取任务引用的Evidence Pack；对于`fact_evidence_repair`，只能读取结构化旧facts和任务引用的targeted supplement。不得为了“更完整”主动打开未引用的原始全文；
 4. 输出符合指定Schema的JSON；
 5. 写入指定输出路径，然后执行`python briefing.py advance --run latest`。
 
-facts cache命中时，Python会在`advance`中直接复用已验证facts并把候选推进到`FACTS_READY`，该事实抽取不得再出现在`tasks next`中，也不得启动一个无意义的Agent任务。
+relevance cache命中时，Python会在任务创建前直接恢复`relevant / score / reason / fulltext_required`，因此该候选不再出现在Agent relevance任务中。facts cache命中时，Python会直接复用已验证facts并把候选推进到`FACTS_READY`，不得再启动无意义的事实抽取Agent任务。
 
 重复直到运行阶段为`READY_FOR_RENDER`。
 
@@ -119,7 +119,7 @@ python briefing.py send --confirm-send
 
 1. 禁止一次加载全部搜索结果。
 2. 规则匹配只负责“找得到”，不能直接代表“值得深读”；Agent在规则过滤前不读取全文。
-3. A级深度候选按专题批量做价值判断，每批最多12条；不得仅因关键词、topic hint或direction hint自动进入全文分析。
+3. A级深度候选按专题批量做价值判断；`max_relevance_batch`默认最多24条，同时受`relevance_batch_max_input_chars`默认48k字符预算约束。topic信息只在批次级出现一次，direction配置必须去重后由候选通过`direction_id`引用；超长摘要默认最多暴露5k字符的完整句摘录。输出仍必须逐候选返回且不得缺失、重复或出现未知ID。只有明确版本arXiv、GitHub Release/Tag、DOI等强版本来源才允许跨期复用relevance；缓存键必须同时匹配来源指纹、topic、direction、Prompt/Schema/项目判断卡形成的evaluator版本和新鲜度区间。普通可变网页不得零评审复用；跨越配置的2/7/30/60天新鲜度边界必须重新评审。不得仅因关键词、topic hint或direction hint自动进入全文分析。
 4. 只有已解析、非`discovery_only`的A级原始来源才能竞争深度Top4；B/C级和聚合线索进入Radar并继续用于发现原始来源。
 5. 开放Web搜索只补充A级覆盖缺口，默认每期最多4次。TPN同一方向只有一个项目时仍视为覆盖不足，避免单一项目阻止多样化搜索。
 6. 深度事实抽取默认每期最多16条、单专题最多4条、同专题同项目最多1条、同方向优先最多2条。其余相关A级候选进入专题补充，不做全文写作和事实检查。
@@ -145,7 +145,7 @@ python briefing.py stats --run latest
 python briefing.py backfill-status
 ```
 
-`stats`检查每种Agent任务的任务数、尝试次数、INVALID次数、缓存命中、输入/输出字符量、原始document字符量、Evidence字符量和压缩比例。`backfill-status`检查历史lane的游标、请求次数、已抓取数量、最老已看到时间、错误、支持/不支持来源。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API真实Token账单；若宿主以后能提供真实usage，必须把真实Token作为首要指标，同时保留字符量用于可复现实验。
+`stats`检查每种Agent任务的任务数、尝试次数、INVALID次数、facts cache命中、relevance cache条目/本期命中、输入/输出字符量、原始document字符量、Evidence字符量和压缩比例。`backfill-status`检查历史lane的游标、请求次数、已抓取数量、最老已看到时间、错误、支持/不支持来源。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API真实Token账单；若宿主以后能提供真实usage，必须把真实Token作为首要指标，同时保留字符量用于可复现实验。
 
 还可执行：
 
@@ -153,7 +153,7 @@ python briefing.py backfill-status
 python scripts/estimate_efficiency.py
 ```
 
-查看代表性Agent任务数量估算。60天滚动池会增加首次运行的候选数量，但相关性仍按批处理；专题补充不触发全文、写作和事实检查。任何任务数量估算都不等同于实际Token账单，正式运行仍需结合`stats`、人工修改量、端到端耗时和订阅额度。
+查看代表性Agent任务数量估算。60天滚动池会增加首次运行的候选数量，但相关性仍按受字符预算约束的批处理；稳定版本来源在评分上下文和新鲜度区间未变化时可跨期复用relevance。专题补充不触发全文、写作和事实检查。任何任务数量估算都不等同于实际Token账单，正式运行仍需结合`stats`、人工修改量、端到端耗时和订阅额度。
 
 ## 时间窗与跨期覆盖
 
@@ -162,6 +162,7 @@ python scripts/estimate_efficiency.py
 - 外部历史记录先进入独立历史池；每次正常运行再把SQLite中最近60天、尚未推送的A级原始来源按预算带入当前候选池；
 - `COMPLETE`只表示所有“支持确定性历史分页”的lane已经越过时间边界或耗尽，不得推断`unsupported_sources`也具有完整60天历史；
 - 已经作为深度条目、专题补充或Radar发送过的稳定身份不得重复出现；
+- relevance cache不得阻止内容变老：跨越新鲜度评分边界后必须重新评审；
 - 新鲜度仅占价值判断的小权重，强相关的30～60天内容可以高于当天的弱更新；
 - 横向热点Radar仍保持最近7天，维持其“快速发现”的定位；
 - 搜索发现时间和抓取时间不得代替原始发布日期；
@@ -185,6 +186,7 @@ AI HOT对以下方向提高优先级：
 AI HOT候选
 → links.original
 → 原始论文/官方博客/仓库
+→ relevance判断/可验证缓存复用
 → Evidence Pack / facts cache
 → 事实抽取 / 必要时一次Evidence Repair / 缓存复用
 ```
@@ -254,6 +256,8 @@ A级候选进入批量价值判断后，`score`按以下维度形成：
 
 例行兼容、依赖升级、普通bug fix、文档、CI/build和版本号更新可以判为“相关”，但没有实质能力、性能、架构或部署变化时通常不得进入全文Top4，应进入专题补充。最终深读选择还要执行同项目和同方向多样性约束。
 
+relevance复用的目标是避免60天滚动池中同一个不可变版本反复支付Agent判断成本，而不是永久冻结评分。只有强版本来源才能缓存；来源版本/内容指纹、Prompt、Schema、当前专题或方向判断上下文、项目判断卡发生变化都会自动miss。由于价值分包含5分新鲜度，缓存还按`freshness_days`边界分桶，跨桶必须重新判断。
+
 ## 单条信息规则
 
 输出应让读者无需打开原文就能理解基本技术方案。内容包括：
@@ -275,7 +279,7 @@ A级候选进入批量价值判断后，`score`按以下维度形成：
 - 事件身份依次使用arXiv基础ID（忽略`vN`）、DOI、GitHub仓库与Release、规范化原始URL；仅在没有稳定标识时使用语义事件名；
 - 外部历史回填与普通采集使用同一稳定来源身份去重，重置游标或与普通采集重叠不得故意产生第二份同源记录；
 - 同一稳定身份的历史事件共享`last_pushed_at`，标题语言、版本号或摘要变化不得绕过去重；
-- facts cache比事件去重更严格：外部版本号/内容指纹发生变化时不得复用旧facts，即使事件身份仍属于同一论文或项目；
+- relevance cache和facts cache都比事件去重更严格：外部版本号/内容指纹或对应评审/抽取版本发生变化时不得复用旧结果，即使事件身份仍属于同一论文或项目；
 - 专题补充与Radar共享推送URL历史，已经以短摘要展示的内容后续不得无变化重复出现；
 - Radar独立按原始URL和规范化标题跨期去重；
 - Radar最多8条、每类最多2条，只允许AI系统、Agent、KVCache、芯片、内存、存储介质、网络和开发工具；
@@ -319,6 +323,7 @@ vendor/guizang-material-illustration/SKILL.md
 - 当前Agent不能生图：输出完整prompt并标记`waiting_for_image_generation`。
 - 生图失败：原始图/截图 → 程序化图表 → 纯文字卡。
 - 全文抓取失败：使用摘要做低置信Radar候选，但不得成为无A级来源的重点信息。
+- relevance cache来源指纹、版本、评分上下文或新鲜度桶不匹配：按cache miss重新进入批量价值判断，不得为了省Token强行复用；普通可变网页始终按miss处理。
 - Evidence Pack缺少材料性条件且明确gap terms在未曝光章节中有命中：最多生成一次targeted supplement；没有命中或repair后仍不足时降低结论强度并写入`limitations`，不得偷偷扩大到未引用全文。
 - facts cache文件缺失、版本不匹配、来源版本变化或facts仍有`evidence_gaps`：按cache miss/不缓存处理，不得假装命中。
 - 历史回填单次网络错误：保留lane游标并标为`ERROR`，后续采集再重试，不得从第一页重新扫；明确的GitHub 404等配置/来源问题标为`FAILED_PERMANENT`并在`backfill-status`暴露，修复配置后再reset。

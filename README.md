@@ -10,16 +10,17 @@
 - 一手来源核验，AI HOT、Follow Builders和YeeKal只作为发现源；
 - 60天滚动深度专题池，已推送内容跨期去重，未覆盖内容后续继续参与排序；
 - arXiv与配置的GitHub Release支持可恢复的60天外部历史回填；回填本身不创建Agent任务，并以小请求预算随日常采集逐步完成；
+- 相关性候选按专题批量做价值判断：默认最多24条且同时受48k字符预算限制，topic/direction配置按批次去重，避免重复上下文开销；
+- 明确版本arXiv、GitHub Release/Tag和DOI等强版本来源支持保守的跨期relevance cache；来源内容、评审规则、项目判断卡或新鲜度区间变化会自动重新评审；
 - 每专题最多4条完整深度解读，Top4之外的相关A级内容进入1～2句“专题补充”；
 - 同项目、同方向多样性约束，避免单一项目的连续release占满专题；
 - 同一GitHub项目在“专题补充”中的多条低优先级release自动聚合为一个Release Family，同时保留每个原文链接；
-- 相关性候选按专题批量做价值判断，关键词规则仅用于召回和路由；
 - 缺口驱动的开放搜索；TPN单一项目不视为充分覆盖；
 - 深度事实抽取默认只向Agent暴露约18k字符的Evidence Pack，而不是完整140k字符全文；
 - Evidence Pack缺少会改变结论解释的关键条件时，仅允许一轮最多9k字符的定向补证据，不重新打开完整全文；
 - 相同来源指纹与抽取版本可跨期复用facts，缓存命中时不创建需要Agent执行的事实抽取任务；
 - 深度条目写作和事实校验默认4条一批，同时保留逐条Schema、事实边界、PASS/FAIL和provenance；
-- `stats`命令记录任务数、尝试次数、缓存命中和文本字符量等确定性成本代理；
+- `stats`命令记录任务数、尝试次数、facts/relevance缓存命中和文本字符量等确定性成本代理；
 - 180～260字的紧凑深度条目；
 - 横向Radar继续覆盖AI Infra、Agent、KVCache、存储与介质等近7天信号；
 - 独立事实校验和人工审核；
@@ -81,7 +82,8 @@ python briefing.py send --confirm-send
 → 每个正常run最多搬入120条未推送A级历史候选
 
 最近60天未推送A级候选
-→ 批量价值判断
+→ relevance cache快速复用（仅强版本来源，必须精确匹配）
+→ 未命中候选按专题做受字符预算约束的批量价值判断
 → 多样性选择
    ├─ 每专题Top4
    │    → 原始全文本地留存
@@ -107,6 +109,10 @@ B/C级、discovery-only与横向信号
 
 规则匹配分只负责“找得到”，不直接代表“值得深读”。A级候选由批量任务按项目相关性、技术实质、证据、可行动性和新鲜度评分；例行兼容、依赖升级、普通bug fix、文档/CI/build更新通常只进入专题补充。
 
+相关性判断默认最多24条同专题候选一批，但同时受到 `relevance_batch_max_input_chars: 48000` 的估算字符预算约束，因此不会为了减少任务数量把超长release强塞进一个巨型任务。topic判断信息只在批次级出现一次；direction配置去重后由候选通过 `direction_id` 引用。超长候选摘要默认只暴露最多5k字符的完整句摘录，relevance阶段仍禁止主动打开全文。输出Schema与语义校验仍要求每个输入candidate恰好返回一条结果，缺失、重复或未知ID都会失败。
+
+relevance cache只用于“同一个不可变版本在滚动60天池中被反复看到”的场景，不是永久冻结评分。缓存只面向明确版本arXiv、GitHub Release/Tag和DOI等强版本来源；普通可变网页仍每期重新判断。来源指纹包含版本、内容hash、标题和摘要；Evaluator版本包含当前Prompt、Schema、实际暴露给Agent的topic/direction判断卡以及项目上下文。由于价值评分还有5分新鲜度，缓存再按 `freshness_days` 的2/7/30/60天边界分桶，跨越年龄边界必须重新评审。
+
 深度事实抽取仍默认最多16条、单专题最多4条、同专题同项目最多1条。原始抓取文本仍可保留到最多140k字符用于审计和必要时人工回看，但正常 `fact_extraction` 只读取确定性选择出的Evidence Pack。默认上限是18k字符，优先保留Architecture/Method/Evaluation/Results/Limitations及专题相关段落，并保留章节或页码定位信息。
 
 如果首轮事实抽取明确发现一个会影响正确解释的关键缺口，例如具体baseline、硬件/工作负载条件、部署限制或原文明确的limitation，可以通过 `evidence_gaps` 请求一次定向补证据。Python只在首轮Evidence Pack未包含的章节中检索Agent给出的原文术语，生成默认最多9k字符的supplement；Agent修复facts时只读取结构化旧facts和这份supplement，不重读原18k Evidence Pack，也不打开140k原始全文。找不到明确术语时直接保持保守结论，不退化为通用全文搜索，也不会进行第二轮补读。
@@ -131,13 +137,14 @@ python briefing.py stats --run latest
 
 - 每种Agent任务的任务数和已完成数；
 - `tasks next`观察到的尝试次数与INVALID次数；
-- fact cache命中次数；
+- facts cache条目与任务级命中；
+- relevance cache全局条目数与本期命中候选数；
 - task input / prompt / output字符量；
 - 原始document字符量与Agent实际看到的Evidence字符量；
 - Evidence压缩比例；
 - `agent_read_chars_proxy`，用于横向比较不同版本的Agent输入规模。
 
-`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API实际Token账单。宿主若未来能够暴露真实usage，应优先记录真实输入/输出Token，并把字符量统计保留为可复现的独立指标。
+`relevance_cache_hits`统计的是在Agent任务创建前直接复用的候选，所以不会重复记入task级`cache_hits`。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API实际Token账单。宿主若未来能够暴露真实usage，应优先记录真实输入/输出Token，并把字符量统计保留为可复现的独立指标。
 
 历史覆盖单独查看：
 
@@ -161,6 +168,7 @@ python scripts/estimate_efficiency.py
 - 横向热点Radar：最近7天；
 - arXiv与已配置GitHub Release会通过可恢复分页主动补齐本安装此前未见的60天历史；
 - SQLite中60天内尚未推送的A级来源会在后续运行中继续参与候选排序；
+- 强版本来源可以在评审上下文和新鲜度区间未变化时复用relevance，但跨越2/7/30/60天新鲜度边界会重新评审；
 - 其他不具备确定性历史分页能力的来源不会冒充“60天已完整覆盖”，其状态通过 `unsupported_sources` 暴露；
 - 已作为深度解读、专题补充或Radar发送的内容不会无变化重复出现；
 - 新鲜度只占价值分的小部分，因此高价值的30～60天内容可以高于当天的低价值release。
@@ -171,15 +179,16 @@ python scripts/estimate_efficiency.py
 
 1. 读取任务指定的Prompt；
 2. 读取指定输入JSON及必要的专题上下文；
-3. 对 `fact_extraction` 只读取任务显式引用的Evidence Pack，不主动打开未引用的原始全文；
-4. 对 `fact_evidence_repair` 只读取结构化旧facts和任务显式引用的targeted supplement，不重读Evidence Pack或原始全文；
-5. 输出符合JSON Schema的结果；
-6. 写到指定输出路径；
-7. 运行`python briefing.py advance`。
+3. 对 `relevance_batch` 只读取批次中显式提供的紧凑topic/direction卡、候选元数据/摘要和项目上下文，不主动打开全文；
+4. 对 `fact_extraction` 只读取任务显式引用的Evidence Pack，不主动打开未引用的原始全文；
+5. 对 `fact_evidence_repair` 只读取结构化旧facts和任务显式引用的targeted supplement，不重读Evidence Pack或原始全文；
+6. 输出符合JSON Schema的结果；
+7. 写到指定输出路径；
+8. 运行`python briefing.py advance`。
 
 历史回填不属于Agent任务：arXiv/GitHub分页、时间截断、游标、去重和持久化全部由Python确定性完成。
 
-相关候选使用 `relevance_batch` 任务，每个任务最多处理12条同专题候选；输出必须对每个输入候选返回且只返回一条结果，缺失、重复或未知ID都会被拒绝。
+相关候选使用 `relevance_batch` 任务：每批最多24条同专题候选，同时受默认48k字符预算约束；topic与direction信息只在批次级出现一次，候选用 `direction_id` 引用。输出必须对每个输入候选返回且只返回一条结果，缺失、重复或未知ID都会被拒绝。强版本来源命中有效relevance cache时不会创建该候选对应的Agent判断；普通可变网页仍必须重新判断。
 
 新运行的深度条目使用 `item_writing_batch`，默认最多4条一批。Agent先逐条依据各自结构化facts形成初稿，再对整批只调用一次 `$human-writing` 和一次 `$humanizer`；两个Skill只允许调整自然中文，不得跨条目移动或增加事实、数字、因果、来源和ID。`fact_check_batch` 同样按条目独立校验，批处理不改变逐条证据边界。`issue_synthesis` 仍只读取通过事实检查的核心条目，并按原规则进行综合判断和语言审查。
 
