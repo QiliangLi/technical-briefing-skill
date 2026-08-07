@@ -21,7 +21,7 @@ class FakeConfig:
                     "enabled": True,
                     "lookback_days": 60,
                     "arxiv_page_size": 5,
-                    "github_page_size": 2,
+                    "github_page_size": 5,
                 },
             }
         }
@@ -147,6 +147,17 @@ def test_arxiv_backfill_stops_at_cutoff_and_does_not_rescan(tmp_path):
     assert len(http.calls) == 1
 
 
+def _release(number: int, tag: str, published: str):
+    return {
+        "id": number,
+        "name": tag,
+        "tag_name": tag,
+        "html_url": f"https://github.com/org/repo-a/releases/tag/{tag}",
+        "published_at": published,
+        "author": {"login": "alice"},
+    }
+
+
 def test_github_backfill_resumes_pagination_across_invocations(tmp_path):
     config = FakeConfig(arxiv=False, github=True)
 
@@ -156,39 +167,20 @@ def test_github_backfill_resumes_pagination_across_invocations(tmp_path):
         if repo == "org/repo-b":
             return response(url, json_data=[])
         if page == 1:
+            # A full five-item page proves that another page may exist.
             return response(
                 url,
                 json_data=[
-                    {
-                        "id": 1,
-                        "name": "v2",
-                        "tag_name": "v2",
-                        "html_url": "https://github.com/org/repo-a/releases/tag/v2",
-                        "published_at": "2026-08-01T00:00:00Z",
-                        "author": {"login": "alice"},
-                    },
-                    {
-                        "id": 2,
-                        "name": "v1.5",
-                        "tag_name": "v1.5",
-                        "html_url": "https://github.com/org/repo-a/releases/tag/v1.5",
-                        "published_at": "2026-07-01T00:00:00Z",
-                        "author": {"login": "alice"},
-                    },
+                    _release(1, "v2", "2026-08-01T00:00:00Z"),
+                    _release(2, "v1.9", "2026-07-25T00:00:00Z"),
+                    _release(3, "v1.8", "2026-07-18T00:00:00Z"),
+                    _release(4, "v1.7", "2026-07-10T00:00:00Z"),
+                    _release(5, "v1.6", "2026-07-01T00:00:00Z"),
                 ],
             )
         return response(
             url,
-            json_data=[
-                {
-                    "id": 3,
-                    "name": "old",
-                    "tag_name": "old",
-                    "html_url": "https://github.com/org/repo-a/releases/tag/old",
-                    "published_at": "2026-06-01T00:00:00Z",
-                    "author": {"login": "alice"},
-                }
-            ],
+            json_data=[_release(6, "old", "2026-06-01T00:00:00Z")],
         )
 
     http = FakeHTTP(handler)
@@ -196,10 +188,11 @@ def test_github_backfill_resumes_pagination_across_invocations(tmp_path):
     service = HistoricalBackfillService(config, db, http, now_fn=lambda: FIXED_NOW)
 
     first = service.run(days=60, max_requests=1)
-    assert len(first.items) == 2
+    assert len(first.items) == 5
     assert first.report["status"] == "IN_PROGRESS"
     assert http.calls[0]["params"]["page"] == 1
 
+    # Rotation resumes at repo-b, then comes back to repo-a page 2 within budget.
     second = service.run(days=60, max_requests=2)
     assert second.report["complete_lanes"] == 2
     repo_a_calls = [call for call in http.calls if "repo-a" in call["url"]]
