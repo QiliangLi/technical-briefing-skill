@@ -6,6 +6,7 @@ from typing import Sequence
 def main(argv: Sequence[str] | None = None) -> int:
     """Install briefing quality, coverage, and cost-control policies."""
 
+    from .cache_fastpath import install_fact_cache_fastpath
     from .cost_schema import install_cost_schema
     from .coverage_policy import install_coverage_policy
     from .deep_efficiency import install_deep_efficiency
@@ -27,6 +28,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_value_scoring()
     install_deep_efficiency()
     install_task_telemetry()
+    install_fact_cache_fastpath()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
