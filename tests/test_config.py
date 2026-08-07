@@ -8,10 +8,13 @@ def test_topics_and_aihot_priority():
     root = Path(__file__).resolve().parents[1]
     config = ConfigBundle.load(Paths(root))
     topics = {topic["id"]: topic for topic in config.topic_list()}
-    assert len(topics) == 7
+    assert len(topics) == 8
     assert topics["agent_acceleration"]["aihot_priority"] == "highest"
     assert topics["tpn"]["aihot_priority"] == "high"
+    assert topics["ai_chip_accelerator"]["aihot_priority"] == "high"
+    assert topics["ai_chip_accelerator"]["max_items_per_issue"] == 4
     assert "code_graph" in {d["id"] for d in topics["agent_acceleration"]["directions"]}
+    assert "chiplet_packaging" in {d["id"] for d in topics["ai_chip_accelerator"]["directions"]}
     assert topics["ai_infra_horizontal"]["aihot_priority"] == "highest"
     assert config.settings["timezone"] == "Asia/Shanghai"
     arxiv = next(source for source in config.source_list() if source["id"] == "arxiv")

@@ -7,7 +7,7 @@ Reduce end-to-end Agent time and subscription usage without lowering four qualit
 1. important-event recall;
 2. factual accuracy and primary-source provenance;
 3. Chinese readability;
-4. coverage of deep topics plus AI Infra, Agent, KVCache, and storage-media signals.
+4. coverage of seven deep topics plus AI Infra, Agent, KVCache, and storage-media signals.
 
 ## Implemented architecture
 
@@ -28,6 +28,8 @@ Fixed feeds and aggregators
               cross-source and cross-issue deduplication
 ```
 
+The seven deep topics are TPN, memory/DSA, DPU in-path offload, Agent acceleration, cross-region transfer, optical networking, and AI chips/accelerators. The chip topic covers GPU/NPU/TPU/ASIC architecture, Chiplet and advanced packaging, package-level interconnect, HBM/HBF interfaces, and hardware-software co-design.
+
 ## Implemented changes
 
 ### Gap-driven open search
@@ -45,18 +47,20 @@ Candidates are separated conservatively:
 
 The batch prompt still judges every candidate independently and requires `fulltext_required=true` before a candidate can enter the deep channel. Semantic validation rejects missing, duplicate, or unknown candidate IDs, so batching cannot silently drop an item.
 
-### Deep-analysis budget
+### Deep-analysis and issue-density budget
 
-Before full-text extraction, candidates are ranked by relevance score, rule score, source priority, and topic diversity. At most ten candidates and three per topic are processed deeply. Deferred candidates remain in SQLite with `DEFERRED_BUDGET`; they are not deleted and can be reconsidered after configuration changes.
+Before full-text extraction, candidates are ranked by relevance score, rule score, source priority, and topic diversity. The current high-density policy allows at most 16 candidates and four per topic to be processed deeply. Deferred candidates remain in SQLite with `DEFERRED_BUDGET`; they are not deleted and can be reconsidered after configuration changes.
+
+Each final item is shortened from 300-450 to 180-260 Chinese characters. `expanded_v2` therefore allows up to 16 core items and four observations, with at most four items per topic. At the upper bound, 16 compact core items contain fewer characters than 14 old-format items at their former maximum, so breadth increases without increasing the maximum core reading load.
 
 ### Broad Radar
 
-The existing email Radar now reads all current-run raw sources instead of only AI HOT. It classifies technical signals into:
+The existing email Radar reads all current-run raw sources instead of only AI HOT. It classifies technical signals into:
 
 - AI Infra;
 - Agent ecosystem;
 - KVCache ecosystem;
-- storage and media.
+- storage and media, including HBM and HBF.
 
 Generic model and business news is excluded. Radar items reuse the existing cross-issue history and issue-level deduplication and do not create full-text, writing, or fact-check tasks.
 
@@ -74,12 +78,14 @@ Automated tests cover:
 - resolved A-level coverage detection before web search;
 - exact input/output integrity for relevance batches;
 - all four requested Radar categories;
+- chip-topic loading, search directions, HBF coverage, and project context;
+- compact item lengths and expanded issue capacity;
 - representative task-count reduction;
 - the existing full offline Demo and renderer validation.
 
-The representative estimator uses the shape of the previous run: 18 open searches, 100 relevance candidates, 17 fact extractions, 17 item drafts, and 17 fact checks. With 36 ambiguous candidates, batch size 12, a ten-item fact budget, and four gap searches, planned Agent tasks fall from 169 to 37, a 78.1% reduction.
+The representative estimator uses the shape of the previous run: 18 open searches, 100 relevance candidates, 17 fact extractions, 17 item drafts, and 17 fact checks. With 36 ambiguous candidates, batch size 12, a 16-item fact and writing budget, and four gap searches, planned Agent tasks fall from 169 to 55, a 67.5% reduction. This is intentionally less aggressive than the prior ten-item policy because the user requested more items per topic.
 
-This is a deterministic task-count estimate, not a measured Codex token bill. The final GitHub Actions run installed the package, compiled the Python tree, completed the full Demo with no renderer validation failures, and passed 66 tests.
+This is a deterministic task-count estimate, not a measured Codex token bill. Actual subscription and wall-clock savings still require a production run.
 
 ## Rollout guardrails
 

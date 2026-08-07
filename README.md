@@ -1,10 +1,11 @@
 # Technical Briefing Skill
 
-面向公司内部领导和技术同事的可迁移技术情报Skill。它每天增量采集信息，每2～3天整理4～6条高价值内容，输出可追溯、去重、图文并茂的HTML邮件和Guizang风格视觉卡片。
+面向公司内部领导和技术同事的可迁移技术情报Skill。它每天增量采集信息，每2～3天整理一组高价值内容，输出可追溯、去重、图文并茂的HTML邮件和Guizang风格视觉卡片。
 
 ## 主要能力
 
-- 六个技术专题及窄检索方向，并保留AI Infra横向动态；
+- 七个深度技术专题及窄检索方向，并保留AI Infra横向动态；
+- 新增AI芯片与加速器专题，覆盖GPU/NPU/TPU/ASIC、Chiplet、先进封装、内存接口与软硬件协同；
 - AI HOT、arXiv、RSS、GitHub Release、Follow Builders、YeeKal AI Daily和当前Agent开放搜索；
 - AI/Agent/KVCache相关查询提高AI HOT采集优先级；
 - 一手来源核验，AI HOT、Follow Builders和YeeKal只作为发现源；
@@ -12,7 +13,8 @@
 - 深度解读与横向Radar双通道，避免所有线索都进入全文分析；
 - 模糊相关性候选按专题批量处理；
 - 缺口驱动的开放搜索和按专题设置的深读预算；
-- 300～450字单条技术信息；
+- 180～260字的紧凑单条技术信息；
+- `expanded_v2`最多16条核心解读、4条邻近动态，单专题最多4条；
 - 独立事实校验和人工审核；
 - Guizang Material Illustration中心配图；
 - Guizang Social Card卡片排版；
@@ -69,7 +71,7 @@ python briefing.py send --confirm-send
 ```text
 A级原始来源、高相关候选
 → 批量相关性判断或规则高置信通过
-→ 每期最多10条进入全文事实抽取
+→ 每期最多16条进入全文事实抽取，单专题最多4条
 → 写作、事实检查和综合判断
 
 AI Infra、Agent生态、KVCache生态、存储与介质线索
@@ -86,7 +88,7 @@ AI Infra、Agent生态、KVCache生态、存储与介质线索
 python scripts/estimate_efficiency.py
 ```
 
-估算值表示计划生成的Agent任务数量，不等同于实际Codex Token账单。正式启用后仍应比较关键事件召回率、人工修改量、实际耗时和订阅额度变化。
+提高深读预算会增加事实抽取、写作和事实检查任务，但相关性批处理与缺口搜索仍保留大部分节省。估算值表示计划生成的Agent任务数量，不等同于实际Codex Token账单。正式启用后仍应比较关键事件召回率、人工修改量、实际耗时和订阅额度变化。
 
 ## Agent如何处理任务
 
@@ -111,11 +113,13 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 
 Follow Builders只补充Builder观点、工程实践和访谈线索；YeeKal AI Daily只解析日报里的外部原始链接。两者均为B级发现源，不能独立支撑重点技术结论，YeeKal日报日期也不能替代外部原始发布日期。
 
-对旧期次执行 `rebuild-existing --confirm-rebuild` 后，流程会停在 `AWAITING_ISSUE_SYNTHESIS`。必须完成新的结构化综合判断并执行`advance`，才能重新渲染、验证和审核邮件。
+对旧期次执行 `rebuild-existing --confirm-rebuild` 后，流程会停在 `AWAITING_ISSUE_SYNTHESIS`。必须完成新的结构化综合判断并执行`advance`，才能重新渲染、验证和审核邮件。历史长条目会按照当前180～260字预算重新压缩，不会原样带入新版邮件。
 
-## AI HOT优先策略
+## 专题配置
 
-`config/topics.yaml`为每个专题设置`aihot_priority`。高优先级会增加AI HOT候选排序权重，但不会提高最终证据等级。AI HOT条目必须回到`links.original`指向的一手来源后才能成为重点条目。
+基础专题保存在 `config/topics.yaml`，AI芯片与加速器专题保存在 `config/topics-chip.yaml`，加载时会合并成七个深度专题和一个AI Infra横向专题。每个专题的项目判断卡位于 `config/project-context/`。
+
+`aihot_priority`只控制发现和候选排序，不改变最终证据等级。AI HOT条目必须回到`links.original`指向的一手来源后才能成为重点条目。
 
 ## 配图策略
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
-from .utils import source_url_is_resolved
+from .utils import read_json, source_url_is_resolved, write_json
 
 
 def primary_direction_is_covered(
@@ -61,12 +61,50 @@ def relevance_batch_validation_errors(
     return errors
 
 
+def _install_renderer_length_guard() -> None:
+    """Make the legacy short-item warning follow the configured item budget."""
+
+    from .rendering import Renderer
+
+    if getattr(Renderer, "_configured_length_guard_installed", False):
+        return
+    original_validate = Renderer.validate
+
+    def validate(self, run_id: str) -> dict[str, Any]:
+        report = original_validate(self, run_id)
+        minimum = int(self.config.settings.get("brief_item_min_chars", 300))
+        prefix = "Item may be too short: "
+        warnings = list(report.get("warnings") or [])
+        if any(str(warning).startswith(prefix) for warning in warnings):
+            issue = self.db.fetchone("SELECT issue_json_path FROM issues WHERE run_id=?", (run_id,))
+            data = read_json(self.root / issue["issue_json_path"], {}) if issue and issue.get("issue_json_path") else {}
+            fields = ("core_conclusion", "mechanism", "result", "boundary", "project_relevance")
+            lengths = {
+                str(item.get("title") or ""): len("".join(str(item.get(field) or "") for field in fields))
+                for item in data.get("items") or []
+            }
+            report["warnings"] = [
+                warning
+                for warning in warnings
+                if not (
+                    str(warning).startswith(prefix)
+                    and lengths.get(str(warning)[len(prefix):], 0) >= minimum
+                )
+            ]
+            write_json(self.root / "workspace" / "runs" / run_id / "validation.json", report)
+        return report
+
+    Renderer.validate = validate
+    Renderer._configured_length_guard_installed = True
+
+
 def install_quality_guards() -> None:
-    """Tighten gap search and batch validation after the efficiency policy loads."""
+    """Tighten gap search, batch validation, and configured length handling."""
 
     from . import pipeline as pipeline_module
-    from .paths import Paths
     from .tasks import TaskService
+
+    _install_renderer_length_guard()
 
     Pipeline = pipeline_module.Pipeline
     if getattr(Pipeline, "_quality_guards_installed", False):
@@ -91,6 +129,7 @@ def install_quality_guards() -> None:
                 "agent_acceleration",
                 "cross_region",
                 "optical_network",
+                "ai_chip_accelerator",
             )
         )
         raw_rows = self.db.fetchall(
@@ -140,6 +179,15 @@ def install_quality_guards() -> None:
                     "dl.acm.org",
                     "arxiv.org",
                     "research.google",
+                ]
+            elif topic["id"] == "ai_chip_accelerator":
+                domains = [
+                    "arxiv.org",
+                    "dl.acm.org",
+                    "ieeexplore.ieee.org",
+                    "nvidia.com",
+                    "amd.com",
+                    "cloud.google.com",
                 ]
             self.tasks.create(
                 self.run_id,

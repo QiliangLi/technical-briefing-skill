@@ -1,6 +1,6 @@
 ---
 name: technical-briefing-skill
-description: Collect, verify, deduplicate, analyse, illustrate, format, review, and email recurring internal technical briefings. Use for 技术情报简报、技术信息收集、论文与博客筛选、Agent/AI/KVCache/DPU/DSA/TPN/跨域传输/光交换信息追踪、Guizang图文卡片、定期邮件简报、去重和断点恢复。
+description: Collect, verify, deduplicate, analyse, illustrate, format, review, and email recurring internal technical briefings. Use for 技术情报简报、技术信息收集、论文与博客筛选、Agent/AI/KVCache/DPU/DSA/TPN/AI芯片与加速器/跨域传输/光交换信息追踪、Guizang图文卡片、定期邮件简报、去重和断点恢复。
 ---
 
 # Technical Briefing Skill
@@ -9,7 +9,7 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 
 把大量分散、重复、深浅不一的公开技术信息压缩为少量可信、可读、图文并茂，并能直接支持项目判断的内部技术简报。
 
-默认受众是公司内部领导和技术同事。代码保留4～6条的紧凑模式；当前项目启用`expanded_v2`，每期最多展示14条核心解读，并可附最多4条明确标注的邻近动态，总量不超过18条。数量不足时必须少发，不得用旧消息或弱信息凑数。每2～3天发送一次，不强制覆盖全部专题。
+默认受众是公司内部领导和技术同事。代码保留4～6条的紧凑模式；当前项目启用`expanded_v2`，每期最多展示16条核心解读，并可附最多4条明确标注的邻近动态，总量不超过20条，单专题最多4条。数量不足时必须少发，不得用旧消息或弱信息凑数。每2～3天发送一次，不强制覆盖全部专题。
 
 ## 核心架构
 
@@ -108,7 +108,7 @@ python briefing.py send --confirm-send
 3. 模糊相关性候选按专题批量处理，每批最多12条；输出必须对每个输入候选返回且只返回一条结果。
 4. 只有已解析、非`discovery_only`的A级原始来源才能进入深度通道；B/C级和聚合线索进入Radar并继续用于发现原始来源。
 5. 开放Web搜索只补充没有A级原始来源覆盖的重点方向，默认每期最多4次。
-6. 全文事实抽取默认每期最多10条、单专题最多3条；超出预算的候选保留为`DEFERRED_BUDGET`，不得删除。
+6. 全文事实抽取默认每期最多16条、单专题最多4条；超出预算的候选保留为`DEFERRED_BUDGET`，不得删除。
 7. 全文分析每次只处理一篇来源，长论文按章节或输入中已生成的chunk处理。
 8. 完成事实抽取后，后续任务只读取结构化facts，不再读取全文。
 9. 最终综合判断只读取核心解读，不读取观察池和热点Radar。
@@ -120,7 +120,7 @@ python briefing.py send --confirm-send
 python scripts/estimate_efficiency.py
 ```
 
-查看代表性Agent任务数量估算。该结果不等同于实际Token账单，正式运行仍需检查关键事件召回率、人工修改量、端到端耗时和订阅额度。
+查看代表性Agent任务数量估算。提高深读预算会增加事实抽取、写作和事实检查任务，但不会恢复逐候选相关性任务和全方向开放搜索。该结果不等同于实际Token账单，正式运行仍需检查关键事件召回率、人工修改量、端到端耗时和订阅额度。
 
 ## 新鲜度硬门槛
 
@@ -140,6 +140,7 @@ AI HOT对以下方向提高优先级：
 - Agent语义加速；
 - Coding Agent、CodeGraph、仓库索引和工具链；
 - KVCache、Prefill/Decode、LLM Serving和Token性能网络；
+- AI芯片、加速器架构、Chiplet、先进封装和内存接口；
 - 跨域KVCache和Agent Cache。
 
 但AI HOT永远是发现源：
@@ -181,18 +182,21 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 1. 状态感知网络、阿里云Token Performance Network；
 2. 内存语义、CXL、Intel DSA/IAA卸载；
 3. DPU/SmartNIC/IPU随路卸载；
-4. Agent语义加速，包括CodeGraph、Read/Grep/Glob、上下文构建和工具执行链；
-5. KVCache、Agent Cache和记忆的跨域传输；
-6. AI/GPU集群光交换网络。
+4. AI芯片与加速器，包括GPU/NPU/TPU/ASIC、Chiplet、先进封装、内存接口和软硬件协同；
+5. Agent语义加速，包括CodeGraph、Read/Grep/Glob、上下文构建和工具执行链；
+6. KVCache、Agent Cache和记忆的跨域传输；
+7. AI/GPU集群光交换网络。
+
+基础专题定义在`config/topics.yaml`，AI芯片与加速器定义在`config/topics-chip.yaml`，运行时合并成七个深度专题和一个横向专题。
 
 横向Radar保持以下四类召回：
 
 - AI Infra：LLM Serving、推理引擎、GPU集群、集合通信、编译器、Kernel、分布式训练、可观测性和故障恢复；
 - Agent生态：MCP、Computer Use、Browser Agent、Agent Memory、多Agent和开发工具；
 - KVCache生态：Prefix Cache、量化、分层、路由、持久化以及LMCache、vLLM、SGLang等项目动态；
-- 存储与介质：HBM、CXL内存、Persistent Memory、NVMe SSD、NAND、QLC/TLC、ZNS、HDD和Computational Storage。
+- 存储与介质：HBM、HBF、CXL内存、Persistent Memory、NVMe SSD、NAND、QLC/TLC、ZNS、HDD和Computational Storage。
 
-横向强信号只有在拥有A级原始来源、具体机制、量化证据或部署信息并与项目直接相关时，才允许晋升深度通道。具体方向和查询不得在Prompt中重新发明，读取`config/topics.yaml`。
+横向强信号只有在拥有A级原始来源、具体机制、量化证据或部署信息并与项目直接相关时，才允许晋升深度通道。具体方向和查询不得在Prompt中重新发明，读取专题配置和对应的`config/project-context/`判断卡。
 
 ## 单条信息规则
 
@@ -200,15 +204,15 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 
 - 标题；
 - 类型、专题、日期和重要度；
-- 两句话核心结论；
-- 具体机制；
-- 1～3个关键结果及条件；
-- 适用边界；
-- 对当前项目的启发；
+- 一句话核心结论；
+- 最小必要机制；
+- 1～2个关键结果及条件；
+- 最重要的适用边界；
+- 一个项目启发或下一步验证动作；
 - 3～5个关键词；
 - 原始来源。
 
-禁止：营销语言、无条件放大预印本结论、遗漏关键基线、把项目推断写成原文事实、以省略号或悬空标点结束字段。五个正文域合计必须为300～450字，渲染器不得截断事实检查后的正文。
+禁止：营销语言、无条件放大预印本结论、遗漏关键基线、把项目推断写成原文事实、以省略号或悬空标点结束字段。五个正文域合计必须为180～260字；优先删除次要背景，不得依赖冒号串联或括号堆叠强行压缩。渲染器不得截断事实检查后的正文。
 
 ## 跨期去重与热点Radar
 
@@ -263,7 +267,8 @@ vendor/guizang-material-illustration/SKILL.md
 
 发送前必须满足：
 
-- 紧凑模式不超过6条；`expanded_v2`核心不超过14条、邻近动态不超过4条、总计不超过18条，单专题合计不超过3条；
+- 紧凑模式不超过6条；`expanded_v2`核心不超过16条、邻近动态不超过4条、总计不超过20条，单专题合计不超过4条；
+- 每条五个正文域合计180～260字；
 - 每条至少一个A级来源；
 - 所有数字可追溯；
 - 无重复事件；
