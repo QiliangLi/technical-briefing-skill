@@ -26,7 +26,9 @@ class ArxivCollector:
     def collect(self) -> list[CollectedItem]:
         result: list[CollectedItem] = []
         seen_entries: set[str] = set()
-        max_results = int(self.source.get("max_results_per_direction", 20))
+        configured_max = int(self.source.get("max_results_per_direction", 20))
+        rolling_max = int((self.config.settings.get("efficiency") or {}).get("arxiv_results_per_direction", 40))
+        max_results = max(configured_max, rolling_max)
         request_interval = float(self.source.get("request_interval_seconds", 3.0))
         if request_interval < 0:
             raise RuntimeError("arXiv request_interval_seconds must be non-negative")
