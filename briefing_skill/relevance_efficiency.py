@@ -318,6 +318,7 @@ def install_relevance_efficiency() -> None:
     """Install cross-run relevance reuse and compact character-bounded batches."""
 
     from . import efficiency
+    from .config import ConfigBundle
     from .matching import RuleMatcher
     from .pipeline import Pipeline
     from .tasks import TaskService
@@ -361,7 +362,11 @@ def install_relevance_efficiency() -> None:
 
     def create(self, run_id: str, task_type: str, entity_id: str, input_data: dict[str, Any], **kwargs):
         if task_type == "relevance_batch":
-            input_data = compact_relevance_batch_input(input_data, self.config.settings)
+            settings = getattr(self, "_relevance_settings_cache", None)
+            if settings is None:
+                settings = ConfigBundle.load(Paths(self.root)).settings
+                self._relevance_settings_cache = settings
+            input_data = compact_relevance_batch_input(input_data, settings)
         return original_create(self, run_id, task_type, entity_id, input_data, **kwargs)
 
     Pipeline.prepare_relevance = prepare_relevance
