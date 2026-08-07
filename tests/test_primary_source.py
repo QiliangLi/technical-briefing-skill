@@ -5,7 +5,7 @@ import json
 from briefing_skill.adapters.base import CollectedItem
 from briefing_skill.collection import CollectionService
 from briefing_skill.db import Database
-from briefing_skill.primary_source import primary_source_kind, promote_discovery_primary
+from briefing_skill.primary_source import primary_pdf_url, primary_source_kind, promote_discovery_primary
 
 
 def _item(url: str) -> CollectedItem:
@@ -32,6 +32,12 @@ def test_primary_source_kind_is_conservative():
     assert primary_source_kind("https://github.com") is None
 
 
+def test_primary_paper_pdf_urls_are_deterministic():
+    assert primary_pdf_url("https://arxiv.org/abs/2608.12345v2") == "https://arxiv.org/pdf/2608.12345v2.pdf"
+    assert primary_pdf_url("https://openreview.net/forum?id=abc123") == "https://openreview.net/pdf?id=abc123"
+    assert primary_pdf_url("https://doi.org/10.1145/123.456") is None
+
+
 def test_discovery_item_promotes_only_when_original_url_is_known_primary():
     promoted = promote_discovery_primary(_item("https://arxiv.org/abs/2608.12345"))
     assert promoted.source_level == "A"
@@ -39,6 +45,10 @@ def test_discovery_item_promotes_only_when_original_url_is_known_primary():
     assert promoted.discovery_source == "AI HOT"
     assert promoted.payload["discovered_via"] == ["AI HOT"]
     assert promoted.payload["primary_source_resolution"]["kind"] == "arxiv"
+    assert promoted.payload["pdf_url"] == "https://arxiv.org/pdf/2608.12345.pdf"
+
+    openreview = promote_discovery_primary(_item("https://openreview.net/forum?id=abc123"))
+    assert openreview.payload["pdf_url"] == "https://openreview.net/pdf?id=abc123"
 
     untouched = promote_discovery_primary(_item("https://example.com/news/interesting-paper"))
     assert untouched.source_level == "B"
@@ -68,3 +78,4 @@ def test_collection_persists_promoted_primary_with_discovery_provenance(tmp_path
     payload = json.loads(row["payload_json"])
     assert payload["discovered_via"] == ["AI HOT"]
     assert payload["primary_source_resolution"]["method"] == "deterministic-url-v1"
+    assert payload["pdf_url"] == "https://arxiv.org/pdf/2608.12345.pdf"
