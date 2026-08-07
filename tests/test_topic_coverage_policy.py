@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from briefing_skill.config import ConfigBundle
 from briefing_skill.coverage_policy import (
     _project_key,
+    collect_topic_appendix,
     materialize_deep_backlog,
     primary_direction_is_diversely_covered,
     select_diverse_deep_budget,
@@ -115,6 +116,19 @@ def _insert_raw(db: Database, *, row_id: str, run_id: str, days_old: int, identi
     )
 
 
+def _insert_relevant_candidate(db: Database, *, candidate_id: str, run_id: str, raw_id: str, score: float, reason: str):
+    db.execute(
+        """
+        INSERT INTO candidates(
+            id, run_id, raw_item_id, topic_id, direction_id, rule_score,
+            relevant, relevance_score, relevance_reason, fulltext_required,
+            status, created_at
+        ) VALUES (?, ?, ?, 'tpn', 'kv_transfer', ?, 1, ?, ?, 0, 'RADAR', ?)
+        """,
+        (candidate_id, run_id, raw_id, score, score, reason, datetime.now(timezone.utc).isoformat()),
+    )
+
+
 def test_backlog_carries_unpushed_forty_day_item_but_not_stale_or_sent(tmp_path):
     db = Database(tmp_path / "briefing.sqlite")
     db.init()
@@ -132,6 +146,27 @@ def test_backlog_carries_unpushed_forty_day_item_but_not_stale_or_sent(tmp_path)
     assert copied == 1
     rows = db.fetchall("SELECT identity_key FROM raw_items WHERE run_id='new'")
     assert [row["identity_key"] for row in rows] == ["arxiv:40"]
+
+
+def test_topic_appendix_excludes_selected_deep_item_and_keeps_remaining_relevant_a_sources(tmp_path):
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    db.create_run("run")
+    selected_url = "https://arxiv.org/abs/2608.00001"
+    extra_url = "https://arxiv.org/abs/2607.00002"
+    _insert_raw(db, row_id="selected-raw", run_id="run", days_old=1, identity="arxiv:selected", url=selected_url)
+    _insert_raw(db, row_id="extra-raw", run_id="run", days_old=20, identity="arxiv:extra", url=extra_url)
+    _insert_relevant_candidate(db, candidate_id="selected-c", run_id="run", raw_id="selected-raw", score=90, reason="入选深度解读。")
+    _insert_relevant_candidate(db, candidate_id="extra-c", run_id="run", raw_id="extra-raw", score=72, reason="提出一种新的KVCache传输路径，具有明确网络机制，但优先级低于本期Top4。")
+    config = ConfigBundle.load(Paths(ROOT))
+    service = SimpleNamespace(config=config, db=db)
+    appendix = collect_topic_appendix(
+        service,
+        "run",
+        {"items": [{"sources": [{"url": selected_url}]}]},
+    )
+    assert [item["url"] for item in appendix["tpn"]] == [extra_url]
+    assert "新的KVCache传输路径" in appendix["tpn"][0]["summary"]
 
 
 def test_final_issue_ranks_value_before_recency(tmp_path):
