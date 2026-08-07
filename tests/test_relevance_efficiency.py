@@ -10,6 +10,7 @@ from briefing_skill.relevance_efficiency import (
     apply_cached_relevance,
     compact_relevance_batch_input,
     plan_relevance_rows_bounded,
+    relevance_freshness_bucket,
     store_relevance_candidate,
 )
 
@@ -101,7 +102,7 @@ def _candidate_row(db: Database, candidate_id: str):
         """
         SELECT c.*, r.source_id, r.title, r.summary, r.original_url, r.canonical_url,
                r.identity_key, r.external_id, r.content_hash, r.payload_json,
-               r.source_level, r.discovery_only
+               r.source_level, r.discovery_only, r.published_at
         FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
         WHERE c.id=?
         """,
@@ -159,6 +160,30 @@ def test_relevance_cache_misses_when_source_summary_changes(tmp_path):
     _insert_candidate(db, candidate_id="c2", raw_id="r2", run_id="run2")
     assert not apply_cached_relevance(config, db, ROOT, _candidate_row(db, "c2"))
     assert db.fetchone("SELECT status FROM candidates WHERE id='c2'")["status"] == "PENDING_RELEVANCE"
+
+
+def test_relevance_freshness_bucket_forces_recheck_at_configured_boundaries():
+    config = _config()
+    assert relevance_freshness_bucket(
+        config,
+        "2026-08-06T00:00:00Z",
+        reference="2026-08-07T12:00:00Z",
+    ) == "age<=2"
+    assert relevance_freshness_bucket(
+        config,
+        "2026-08-01T00:00:00Z",
+        reference="2026-08-07T12:00:00Z",
+    ) == "age<=7"
+    assert relevance_freshness_bucket(
+        config,
+        "2026-07-20T00:00:00Z",
+        reference="2026-08-07T12:00:00Z",
+    ) == "age<=30"
+    assert relevance_freshness_bucket(
+        config,
+        "2026-06-15T00:00:00Z",
+        reference="2026-08-07T12:00:00Z",
+    ) == "age<=60"
 
 
 def test_compact_batch_deduplicates_direction_config_and_bounds_long_summary():
