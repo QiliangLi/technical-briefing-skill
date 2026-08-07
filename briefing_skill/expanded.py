@@ -54,7 +54,13 @@ def select_expanded_rows(
     *,
     reference_date: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int], dict[str, int]]:
-    """Classify and cap fact-checked rows for both normal runs and rebuilds."""
+    """Classify and cap fact-checked rows for both normal runs and rebuilds.
+
+    Within each role, technical value is the primary ordering signal. Freshness is
+    deliberately only a secondary tie-breaker so a routine release from today
+    cannot outrank a materially stronger paper or architecture result from the
+    rolling topic window merely because it is newer.
+    """
     limits = _limits(config)
     age_limits = freshness_limits(config)
     eligible: list[dict[str, Any]] = []
@@ -95,8 +101,8 @@ def select_expanded_rows(
     eligible.sort(
         key=lambda row: (
             0 if row["item_role"] == "core" else 1,
-            int(row["age_days"]),
             -float(row["score"]),
+            int(row["age_days"]),
             row["id"],
         )
     )
