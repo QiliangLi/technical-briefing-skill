@@ -13,6 +13,7 @@ from briefing_skill.coverage_policy import (
     select_diverse_deep_budget,
 )
 from briefing_skill.db import Database
+from briefing_skill.expanded import select_expanded_rows
 from briefing_skill.paths import Paths
 
 
@@ -131,6 +132,30 @@ def test_backlog_carries_unpushed_forty_day_item_but_not_stale_or_sent(tmp_path)
     assert copied == 1
     rows = db.fetchall("SELECT identity_key FROM raw_items WHERE run_id='new'")
     assert [row["identity_key"] for row in rows] == ["arxiv:40"]
+
+
+def test_final_issue_ranks_value_before_recency(tmp_path):
+    config = ConfigBundle.load(Paths(ROOT))
+    high_value = {
+        "title": "older architecture paper",
+        "published_at": "2026-07-08T00:00:00+00:00",
+        "sources": [{"url": "https://arxiv.org/abs/2607.00001", "source_level": "A"}],
+        "incremental_update": False,
+    }
+    fresh_weak = {
+        "title": "fresh routine release",
+        "published_at": "2026-08-06T00:00:00+00:00",
+        "sources": [{"url": "https://github.com/example/project/releases/tag/v1", "source_level": "A"}],
+        "incremental_update": False,
+    }
+    (tmp_path / "high.json").write_text(json.dumps(high_value), encoding="utf-8")
+    (tmp_path / "fresh.json").write_text(json.dumps(fresh_weak), encoding="utf-8")
+    rows = [
+        {"id": "fresh", "score": 75, "json_path": "fresh.json", "fact_check_status": "PASS", "topic_id": "tpn", "direction_id": "kv_transfer", "source_published_at": fresh_weak["published_at"], "last_pushed_at": None},
+        {"id": "high", "score": 95, "json_path": "high.json", "fact_check_status": "PASS", "topic_id": "tpn", "direction_id": "token_metric_network", "source_published_at": high_value["published_at"], "last_pushed_at": None},
+    ]
+    selected, _, _, _ = select_expanded_rows(tmp_path, config, rows, reference_date="2026-08-07")
+    assert [row["id"] for row in selected[:2]] == ["high", "fresh"]
 
 
 def test_repo_config_uses_sixty_day_deep_window_and_disables_rule_auto_accept():
