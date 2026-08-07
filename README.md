@@ -9,6 +9,7 @@
 - AI HOT、arXiv、RSS、GitHub Release、Follow Builders、YeeKal AI Daily和当前Agent开放搜索；
 - 一手来源核验，AI HOT、Follow Builders和YeeKal只作为发现源；
 - 60天滚动深度专题池，已推送内容跨期去重，未覆盖内容后续继续参与排序；
+- arXiv与配置的GitHub Release支持可恢复的60天外部历史回填；回填本身不创建Agent任务，并以小请求预算随日常采集逐步完成；
 - 每专题最多4条完整深度解读，Top4之外的相关A级内容进入1～2句“专题补充”；
 - 同项目、同方向多样性约束，避免单一项目的连续release占满专题；
 - 同一GitHub项目在“专题补充”中的多条低优先级release自动聚合为一个Release Family，同时保留每个原文链接；
@@ -45,6 +46,16 @@ python briefing.py doctor
 python briefing.py demo
 ```
 
+首次安装、历史断档或希望主动补齐历史时，可以查看或加速外部回填：
+
+```bash
+python briefing.py backfill-status
+python briefing.py backfill
+python briefing.py backfill --max-requests 64
+```
+
+正常 `collect` 会在普通增量采集前，最多额外消耗4个外部历史请求推进未完成游标；`run` 内部本来就调用 `collect`，因此两种运行方式都只推进一次。回填的完整语义见 `docs/historical-backfill.md`。
+
 真实运行：
 
 ```bash
@@ -65,6 +76,10 @@ python briefing.py send --confirm-send
 ## 三层输出与成本控制
 
 ```text
+外部60天历史回填（arXiv / GitHub Release，可恢复、零Agent任务）
+→ 独立历史池
+→ 每个正常run最多搬入120条未推送A级历史候选
+
 最近60天未推送A级候选
 → 批量价值判断
 → 多样性选择
@@ -85,6 +100,10 @@ python briefing.py send --confirm-send
 B/C级、discovery-only与横向信号
 → 近7天热点Radar
 ```
+
+历史回填和正常简报run刻意解耦：一次手工回填即使找到1000条历史记录，也只是先进入独立历史池；后续正常run仍受 `backlog_materialize_per_run: 120` 控制，再经过批量相关性判断和16条深读预算。因此“扩大历史覆盖”不会直接等价为“线性增加Agent任务”。
+
+目前只有能确定性分页并判断时间边界的固定A级源被计入可验证历史覆盖：arXiv按专题方向向后翻页，GitHub Releases按仓库向后翻页。RSS Feed无法通用证明自己保留了完整60天，所以不会被标成“已完整回填”；其他暂不支持确定性历史分页的A级源会在 `backfill-status` 的 `unsupported_sources` 中明确列出。
 
 规则匹配分只负责“找得到”，不直接代表“值得深读”。A级候选由批量任务按项目相关性、技术实质、证据、可行动性和新鲜度评分；例行兼容、依赖升级、普通bug fix、文档/CI/build更新通常只进入专题补充。
 
@@ -120,6 +139,14 @@ python briefing.py stats --run latest
 
 `agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API实际Token账单。宿主若未来能够暴露真实usage，应优先记录真实输入/输出Token，并把字符量统计保留为可复现的独立指标。
 
+历史覆盖单独查看：
+
+```bash
+python briefing.py backfill-status
+```
+
+它会按lane显示游标、请求次数、已抓取数量、最老已看到时间、错误和 `NOT_STARTED / IN_PROGRESS / COMPLETE / ERROR / FAILED_PERMANENT` 状态，并列出尚不支持确定性历史分页的A级来源。
+
 还可通过：
 
 ```bash
@@ -132,8 +159,9 @@ python scripts/estimate_efficiency.py
 
 - 深度专题：最近60天滚动窗口；
 - 横向热点Radar：最近7天；
+- arXiv与已配置GitHub Release会通过可恢复分页主动补齐本安装此前未见的60天历史；
 - SQLite中60天内尚未推送的A级来源会在后续运行中继续参与候选排序；
-- 当前60天backlog只覆盖SQLite中已经采集过的历史来源，不等价于对所有外部固定信源执行完整60天历史回填；
+- 其他不具备确定性历史分页能力的来源不会冒充“60天已完整覆盖”，其状态通过 `unsupported_sources` 暴露；
 - 已作为深度解读、专题补充或Radar发送的内容不会无变化重复出现；
 - 新鲜度只占价值分的小部分，因此高价值的30～60天内容可以高于当天的低价值release。
 
@@ -142,12 +170,14 @@ python scripts/estimate_efficiency.py
 该Skill不调用固定模型API。Python脚本会生成任务文件，当前Agent负责：
 
 1. 读取任务指定的Prompt；
-2. 读取输入文件及必要的专题上下文；
+2. 读取指定输入JSON及必要的专题上下文；
 3. 对 `fact_extraction` 只读取任务显式引用的Evidence Pack，不主动打开未引用的原始全文；
 4. 对 `fact_evidence_repair` 只读取结构化旧facts和任务显式引用的targeted supplement，不重读Evidence Pack或原始全文；
 5. 输出符合JSON Schema的结果；
 6. 写到指定输出路径；
 7. 运行`python briefing.py advance`。
+
+历史回填不属于Agent任务：arXiv/GitHub分页、时间截断、游标、去重和持久化全部由Python确定性完成。
 
 相关候选使用 `relevance_batch` 任务，每个任务最多处理12条同专题候选；输出必须对每个输入候选返回且只返回一条结果，缺失、重复或未知ID都会被拒绝。
 
@@ -188,7 +218,7 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 0 9 * * 1,3,5 cd /path/to/technical-briefing-skill && .venv/bin/python briefing.py prepare
 ```
 
-定时任务只能触发确定性脚本。需要Agent推理的任务应由支持Skills/Automations的宿主继续执行，或在人工进入Agent后运行`resume`。
+`collect` 在历史回填未完成时会顺带消耗一个很小的历史请求预算，因此上面的既有cron无需增加专门的backfill任务。定时任务仍只触发确定性脚本；需要Agent推理的任务应由支持Skills/Automations的宿主继续执行，或在人工进入Agent后运行`resume`。
 
 ## 许可
 
