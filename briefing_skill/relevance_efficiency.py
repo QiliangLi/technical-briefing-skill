@@ -29,6 +29,22 @@ def _summary_limit(settings: dict[str, Any]) -> int:
     return max(800, int(_policy(settings).get("relevance_summary_max_chars", 5000)))
 
 
+def _bounded_summary_excerpt(value: str, limit: int) -> str:
+    """Prefer complete sentences but never let a pathological summary bypass the hard cap."""
+
+    excerpt = complete_sentence_excerpt(value, limit)
+    if len(excerpt) <= limit:
+        return excerpt
+    # Some release notes are one enormous unpunctuated line. In that case the
+    # generic sentence helper intentionally returns the whole unit, which is not
+    # appropriate for a relevance-task budget. Fall back to a word/line boundary.
+    clipped = value[: max(1, limit - 1)].rstrip()
+    boundary = max(clipped.rfind("\n"), clipped.rfind(" "), clipped.rfind("\t"))
+    if boundary >= limit // 2:
+        clipped = clipped[:boundary].rstrip()
+    return clipped.rstrip("，,:：;；、 ") + "。"
+
+
 def _compact_topic(topic: dict[str, Any]) -> dict[str, Any]:
     return {
         key: topic[key]
@@ -131,7 +147,7 @@ def compact_relevance_batch_input(input_data: dict[str, Any], settings: dict[str
 
         summary = str(candidate.get("summary") or "")
         if len(summary) > summary_limit:
-            candidate["summary"] = complete_sentence_excerpt(summary, summary_limit)
+            candidate["summary"] = _bounded_summary_excerpt(summary, summary_limit)
             candidate["summary_excerpted"] = True
         candidates.append(candidate)
 
