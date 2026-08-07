@@ -31,13 +31,15 @@ Default policy:
 historical_backfill:
   enabled: true
   lookback_days: 60
-  auto_requests_per_run: 4
+  auto_requests_per_collect: 4
   manual_max_requests: 32
   arxiv_page_size: 50
   github_page_size: 50
 ```
 
-A normal `briefing.py run` spends at most `auto_requests_per_run` external requests on unfinished historical lanes before normal collection. Lanes are rotated and GitHub/arXiv are interleaved so a small budget does not permanently starve later directions.
+Every normal `briefing.py collect` spends at most `auto_requests_per_collect` external requests on unfinished historical lanes before the ordinary current-data collection. `briefing.py run` already calls `collect`, so it receives the same backfill behavior exactly once. This also means the repository's documented `collect -> prepare` cron advances historical coverage without requiring a new scheduler command.
+
+Lanes are rotated and GitHub/arXiv are interleaved so a small budget does not permanently starve later directions.
 
 A manual backfill uses the same persisted cursors:
 
