@@ -15,7 +15,9 @@
 - 相关性候选按专题批量做价值判断，关键词规则仅用于召回和路由；
 - 缺口驱动的开放搜索；TPN单一项目不视为充分覆盖；
 - 深度事实抽取默认只向Agent暴露约18k字符的Evidence Pack，而不是完整140k字符全文；
+- Evidence Pack缺少会改变结论解释的关键条件时，仅允许一轮最多9k字符的定向补证据，不重新打开完整全文；
 - 相同来源指纹与抽取版本可跨期复用facts，缓存命中时不创建需要Agent执行的事实抽取任务；
+- 深度条目写作和事实校验默认4条一批，同时保留逐条Schema、事实边界、PASS/FAIL和provenance；
 - `stats`命令记录任务数、尝试次数、缓存命中和文本字符量等确定性成本代理；
 - 180～260字的紧凑深度条目；
 - 横向Radar继续覆盖AI Infra、Agent、KVCache、存储与介质等近7天信号；
@@ -71,8 +73,11 @@ python briefing.py send --confirm-send
    │    → Evidence Pack（默认≤18k字符）
    │    → facts cache查询
    │       ├─ 命中：直接生成FACTS_READY，不进入Agent任务队列
-   │       └─ 未命中：事实抽取 → 写入跨期facts cache
-   │    → 写作 → fact check → 深度解读
+   │       └─ 未命中：事实抽取
+   │            ├─ 证据足够：写入跨期facts cache
+   │            └─ 存在材料性缺口：按明确术语从未曝光章节提取一次补充包（≤9k）
+   │                 → facts修复 → 必要时写入跨期facts cache
+   │    → 4条一批写作 → 4条一批fact check → 深度解读
    └─ 其余相关A级
         → 1～2句专题补充 + 原文链接
         → 同一GitHub项目多条低优先级更新合并为Release Family
@@ -85,9 +90,13 @@ B/C级、discovery-only与横向信号
 
 深度事实抽取仍默认最多16条、单专题最多4条、同专题同项目最多1条。原始抓取文本仍可保留到最多140k字符用于审计和必要时人工回看，但正常 `fact_extraction` 只读取确定性选择出的Evidence Pack。默认上限是18k字符，优先保留Architecture/Method/Evaluation/Results/Limitations及专题相关段落，并保留章节或页码定位信息。
 
-事实抽取结果会按“稳定来源指纹 + `fact_extractor_version`”保存到本地跨期缓存。相同arXiv版本、相同release和相同内容指纹再次进入60天滚动池时，可以直接复用已验证facts，不再重新下载全文或启动事实抽取Agent。若事实抽取Prompt、Schema或Evidence Pack策略发生实质变化，应主动修改 `fact_extractor_version` 使旧缓存失效。
+如果首轮事实抽取明确发现一个会影响正确解释的关键缺口，例如具体baseline、硬件/工作负载条件、部署限制或原文明确的limitation，可以通过 `evidence_gaps` 请求一次定向补证据。Python只在首轮Evidence Pack未包含的章节中检索Agent给出的原文术语，生成默认最多9k字符的supplement；Agent修复facts时只读取结构化旧facts和这份supplement，不重读原18k Evidence Pack，也不打开140k原始全文。找不到明确术语时直接保持保守结论，不退化为通用全文搜索，也不会进行第二轮补读。
 
-Top4之外的专题补充不触发全文、单条写作和事实检查，因此能够扩充信息量而不线性放大Token消耗。同一GitHub项目的多个普通release只在专题补充中聚合；Top4深度条目和不同论文不会被强行合并。
+事实抽取结果会按稳定来源指纹与运行时抽取版本保存到本地跨期缓存。零抓取复用只面向具有强版本身份的来源，例如明确版本的arXiv、GitHub Release/Tag和DOI类稳定身份；普通可变网页不会为了省Token直接跳过重新验证。Prompt、Schema和Evidence Repair Prompt会参与运行时版本，因此相关规则变化会自动使旧缓存失效；Evidence Pack算法发生实质变化时仍应主动修改 `fact_extractor_version`。
+
+深度条目的写作与事实检查不再默认“一条内容启动一次Agent任务”。新运行按最多4条且总输入字符受限的小批次生成 `item_writing_batch` 与 `fact_check_batch`。每个批次只摊薄Agent启动、Prompt加载以及 `$human-writing` / `$humanizer` 的固定成本；每条内容仍有独立event/item ID、来源、Schema和语义校验，fact check仍逐条给出PASS/FAIL。升级前已经生成旧式单条任务的未完成run继续按旧任务恢复，不会破坏断点状态。
+
+Top4之外的专题补充不触发全文、写作和事实检查，因此能够扩充信息量而不线性放大Token消耗。同一GitHub项目的多个普通release只在专题补充中聚合；Top4深度条目和不同论文不会被强行合并。
 
 开放Web搜索只补充固定信源没有覆盖的重点方向，默认最多4次。TPN同一方向只有一个项目时仍视为覆盖不足，以主动寻找不同项目或不同机制的原始来源。
 
@@ -105,8 +114,8 @@ python briefing.py stats --run latest
 - `tasks next`观察到的尝试次数与INVALID次数；
 - fact cache命中次数；
 - task input / prompt / output字符量；
-- 原始document字符量与Evidence Pack字符量；
-- Evidence Pack压缩比例；
+- 原始document字符量与Agent实际看到的Evidence字符量；
+- Evidence压缩比例；
 - `agent_read_chars_proxy`，用于横向比较不同版本的Agent输入规模。
 
 `agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API实际Token账单。宿主若未来能够暴露真实usage，应优先记录真实输入/输出Token，并把字符量统计保留为可复现的独立指标。
@@ -124,6 +133,7 @@ python scripts/estimate_efficiency.py
 - 深度专题：最近60天滚动窗口；
 - 横向热点Radar：最近7天；
 - SQLite中60天内尚未推送的A级来源会在后续运行中继续参与候选排序；
+- 当前60天backlog只覆盖SQLite中已经采集过的历史来源，不等价于对所有外部固定信源执行完整60天历史回填；
 - 已作为深度解读、专题补充或Radar发送的内容不会无变化重复出现；
 - 新鲜度只占价值分的小部分，因此高价值的30～60天内容可以高于当天的低价值release。
 
@@ -134,13 +144,14 @@ python scripts/estimate_efficiency.py
 1. 读取任务指定的Prompt；
 2. 读取输入文件及必要的专题上下文；
 3. 对 `fact_extraction` 只读取任务显式引用的Evidence Pack，不主动打开未引用的原始全文；
-4. 输出符合JSON Schema的结果；
-5. 写到指定输出路径；
-6. 运行`python briefing.py advance`。
+4. 对 `fact_evidence_repair` 只读取结构化旧facts和任务显式引用的targeted supplement，不重读Evidence Pack或原始全文；
+5. 输出符合JSON Schema的结果；
+6. 写到指定输出路径；
+7. 运行`python briefing.py advance`。
 
 相关候选使用 `relevance_batch` 任务，每个任务最多处理12条同专题候选；输出必须对每个输入候选返回且只返回一条结果，缺失、重复或未知ID都会被拒绝。
 
-`item_writing` 和 `issue_synthesis` 会要求当前Agent先按结构化事实写初稿，再依次调用本地 `$human-writing` 与 `$humanizer`。这两个Skill只负责自然中文润色和AI句式审查，不得增加事实。
+新运行的深度条目使用 `item_writing_batch`，默认最多4条一批。Agent先逐条依据各自结构化facts形成初稿，再对整批只调用一次 `$human-writing` 和一次 `$humanizer`；两个Skill只允许调整自然中文，不得跨条目移动或增加事实、数字、因果、来源和ID。`fact_check_batch` 同样按条目独立校验，批处理不改变逐条证据边界。`issue_synthesis` 仍只读取通过事实检查的核心条目，并按原规则进行综合判断和语言审查。
 
 未安装时可在本机执行：
 
