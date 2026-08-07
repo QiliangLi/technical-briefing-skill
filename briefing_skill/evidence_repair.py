@@ -293,7 +293,6 @@ def install_evidence_repair() -> None:
                         "text_path": str(supplement_path.relative_to(self.root)),
                         "chunks": [str(supplement_path.relative_to(self.root))],
                         "fetch_status": "FETCHED",
-                        "char_count": len(supplement),
                         "evidence_char_count": len(supplement),
                         "source_raw_char_count": int(document.get("raw_char_count") or 0),
                         "source_evidence_char_count": int(document.get("evidence_char_count") or 0),
