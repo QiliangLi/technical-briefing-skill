@@ -61,11 +61,14 @@ def build_supplement_pack(
     """Retrieve only unread source sections that directly match explicit gaps."""
 
     literal_terms, expanded_terms = _gap_terms(gaps)
-    if not literal_terms or len(raw_text) <= len(existing_evidence) + 300:
+    if not literal_terms:
         return ""
 
     remaining = _unread_suffix(raw_text, existing_evidence)
-    if len(remaining.strip()) < 300:
+    # A short unread tail can still contain the exact missing baseline or hardware
+    # condition. Reject only near-empty tails; never require hundreds of filler chars
+    # before allowing a deterministic gap match.
+    if len(remaining.strip()) < 40:
         return ""
     existing = _existing_locators(existing_evidence)
     candidates: list[tuple[float, int, str, str]] = []
@@ -92,7 +95,7 @@ def build_supplement_pack(
     for _, index, title, body in sorted(candidates, key=lambda row: (-row[0], row[1])):
         locator = f"## Supplemental locator: {title}\n\n"
         allowance = max_chars - used - len(locator) - 2
-        if allowance <= 260:
+        if allowance <= 80:
             continue
         excerpt = _safe_excerpt(body, min(section_cap, allowance))
         if not excerpt:
