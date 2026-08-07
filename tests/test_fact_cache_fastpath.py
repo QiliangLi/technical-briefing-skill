@@ -6,7 +6,7 @@ from briefing_skill import cli
 from briefing_skill.cache_fastpath import install_fact_cache_fastpath
 from briefing_skill.cost_schema import ensure_cost_schema
 from briefing_skill.db import Database
-from briefing_skill.deep_efficiency import _source_fingerprint, install_deep_efficiency
+from briefing_skill.deep_efficiency import _runtime_extractor_version, _source_fingerprint, install_deep_efficiency
 from briefing_skill.fulltext import FulltextService
 from briefing_skill.pipeline import Pipeline
 from briefing_skill.tasks import TaskService
@@ -56,8 +56,28 @@ def test_fact_cache_fastpath_materializes_facts_without_pending_agent_task(tmp_p
         """,
         (candidate_id, run_id, raw_id, "tpn", "kv_transfer", 90, 1, 90, "valuable", 1, "RELEVANT", created),
     )
+    (root / "context.md").write_text("topic context", encoding="utf-8")
+    config = SimpleNamespace(
+        settings={
+            "efficiency": {
+                "fact_cache_enabled": True,
+                "fact_extractor_version": "front-evidence-v2",
+                "evidence_pack_max_chars": 18000,
+                "evidence_repair_enabled": True,
+                "evidence_repair_max_chars": 9000,
+                "max_fact_candidates_total": 4,
+                "max_fact_candidates_per_topic": 4,
+            }
+        },
+        scoring={"weights": {}},
+        topic=lambda topic_id: {"id": topic_id, "name": "TPN", "current_questions": [], "valuable_evidence": []},
+        direction=lambda topic_id, direction_id: {"id": direction_id, "name": "KV transfer"},
+        context_path=lambda paths, topic_id: root / "context.md",
+    )
+
     raw = db.fetchone("SELECT * FROM raw_items WHERE id=?", (raw_id,))
     fingerprint = _source_fingerprint(raw)
+    version = _runtime_extractor_version(config, root, "tpn", "kv_transfer")
     cache_key = "fast-cache-key"
     cached = {
         "title": "Cached fastpath paper",
@@ -70,6 +90,7 @@ def test_fact_cache_fastpath_materializes_facts_without_pending_agent_task(tmp_p
         "project_relevance": "relevance",
         "primary_source_resolved": True,
         "quality_score": 91,
+        "evidence_gaps": [],
     }
     cache_path = root / "workspace" / "cache" / "facts" / f"{cache_key}.json"
     write_json(cache_path, cached)
@@ -82,25 +103,10 @@ def test_fact_cache_fastpath_materializes_facts_without_pending_agent_task(tmp_p
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
-            cache_key, fingerprint, "evidence-pack-v1", url, raw["identity_key"], raw["external_id"],
+            cache_key, fingerprint, version, url, raw["identity_key"], raw["external_id"],
             raw["content_hash"], str(cache_path.relative_to(root)), 91, "fastpath-event",
             120000, 18000, created, created,
         ),
-    )
-    (root / "context.md").write_text("topic context", encoding="utf-8")
-    config = SimpleNamespace(
-        settings={
-            "efficiency": {
-                "fact_cache_enabled": True,
-                "fact_extractor_version": "evidence-pack-v1",
-                "max_fact_candidates_total": 4,
-                "max_fact_candidates_per_topic": 4,
-            }
-        },
-        scoring={"weights": {}},
-        topic=lambda topic_id: {"id": topic_id, "name": "TPN", "current_questions": [], "valuable_evidence": []},
-        direction=lambda topic_id, direction_id: {"id": direction_id, "name": "KV transfer"},
-        context_path=lambda paths, topic_id: root / "context.md",
     )
 
     snapshots = {
@@ -120,8 +126,6 @@ def test_fact_cache_fastpath_materializes_facts_without_pending_agent_task(tmp_p
         "cli_stats_flag": (getattr(cli, "_stats_command_installed", None), hasattr(cli, "_stats_command_installed")),
     }
     try:
-        # Production bootstrap installs the optimized pipeline first; this test
-        # exercises the cache mechanism itself without changing EmailService.
         install_deep_efficiency()
         install_task_telemetry()
         install_fact_cache_fastpath()

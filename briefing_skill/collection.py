@@ -16,6 +16,7 @@ from .adapters.yeekal import YeeKalDailyCollector
 from .config import ConfigBundle
 from .db import Database
 from .http import HttpClient
+from .primary_source import promote_discovery_primary
 from .utils import canonicalize_url, content_hash, now_iso, source_identity_key, stable_hash, write_json
 
 LOGGER = logging.getLogger(__name__)
@@ -60,7 +61,11 @@ class CollectionService:
 
     def persist(self, run_id: str, items: Iterable[CollectedItem]) -> list[dict]:
         rows: list[dict] = []
-        for item in items:
+        for raw_item in items:
+            # Discovery feeds often already expose a concrete original URL. Promote
+            # only deterministic primary identities (arXiv/DOI/GitHub/OpenReview)
+            # before candidate matching; generic blogs/news remain discovery-only.
+            item = promote_discovery_primary(raw_item)
             canonical = canonicalize_url(item.original_url or item.aihot_url)
             item_id = stable_hash(run_id, item.source_id, item.external_id, canonical, item.title)
             row = {

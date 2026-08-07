@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .cost_schema import ensure_cost_schema
-from .utils import now_iso
+from .utils import now_iso, read_json
 
 
 def _file_chars(path: Path) -> int:
@@ -14,6 +14,81 @@ def _file_chars(path: Path) -> int:
         return len(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError):
         return 0
+
+
+def _ratio(numerator: int, denominator: int) -> float | None:
+    if denominator <= 0:
+        return None
+    return round(numerator / denominator, 4)
+
+
+def _quality_metrics(db, root: Path, run_id: str) -> dict[str, Any]:
+    """Expose deterministic quality signals alongside cost telemetry.
+
+    These are not a subjective quality score. They make regressions visible: whether
+    primary sources resolved, whether numeric evidence retained its conditions, whether
+    repairs were required, and whether final editorial checks passed.
+    """
+
+    raw_rows = db.fetchall("SELECT payload_json FROM raw_items WHERE run_id=?", (run_id,))
+    promoted = 0
+    for row in raw_rows:
+        try:
+            payload = json.loads(row.get("payload_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+        if isinstance(payload, dict) and payload.get("primary_source_resolution"):
+            promoted += 1
+
+    fact_rows = db.fetchall("SELECT json_path FROM facts WHERE run_id=?", (run_id,))
+    resolved = 0
+    final_gaps = 0
+    evidence_records = 0
+    numeric_evidence = 0
+    conditioned_numeric = 0
+    repaired_facts = 0
+    for row in fact_rows:
+        facts = read_json(root / row["json_path"], {})
+        resolved += int(bool(facts.get("primary_source_resolved")))
+        final_gaps += int(bool(facts.get("evidence_gaps")))
+        provenance = facts.get("_provenance") or {}
+        repaired_facts += int(bool(provenance.get("repair_of_task_id")))
+        for entry in facts.get("evidence") or []:
+            if not isinstance(entry, dict):
+                continue
+            evidence_records += 1
+            if entry.get("value") not in (None, ""):
+                numeric_evidence += 1
+                if entry.get("baseline") or entry.get("condition"):
+                    conditioned_numeric += 1
+
+    repair_tasks = db.fetchone(
+        "SELECT COUNT(*) AS n FROM tasks WHERE run_id=? AND task_type='fact_evidence_repair'",
+        (run_id,),
+    ) or {"n": 0}
+    brief_rows = db.fetchall("SELECT fact_check_status FROM brief_items WHERE run_id=?", (run_id,))
+    checks = len(brief_rows)
+    passed = sum(1 for row in brief_rows if row.get("fact_check_status") == "PASS")
+    failed = sum(1 for row in brief_rows if row.get("fact_check_status") == "FAIL")
+
+    return {
+        "discovery_primary_promotions": promoted,
+        "facts": len(fact_rows),
+        "resolved_primary_facts": resolved,
+        "primary_resolve_rate": _ratio(resolved, len(fact_rows)),
+        "facts_with_final_evidence_gaps": final_gaps,
+        "final_evidence_gap_rate": _ratio(final_gaps, len(fact_rows)),
+        "evidence_records": evidence_records,
+        "numeric_evidence_records": numeric_evidence,
+        "numeric_evidence_with_baseline_or_condition": conditioned_numeric,
+        "numeric_condition_coverage": _ratio(conditioned_numeric, numeric_evidence),
+        "evidence_repair_tasks": int(repair_tasks.get("n") or 0),
+        "repaired_facts": repaired_facts,
+        "fact_checked_items": checks,
+        "fact_check_passed": passed,
+        "fact_check_failed": failed,
+        "fact_check_pass_rate": _ratio(passed, checks),
+    }
 
 
 def run_stats(db, root: Path, run_id: str) -> dict[str, Any]:
@@ -96,11 +171,13 @@ def run_stats(db, root: Path, run_id: str) -> dict[str, Any]:
         "run_wall_seconds": duration_seconds,
         "totals": totals,
         "by_task_type": by_type,
+        "quality": _quality_metrics(db, root, run_id),
         "fact_cache_entries": int(fact_cache.get("n") or 0),
         "relevance_cache_entries": int(relevance_cache.get("n") or 0),
         "relevance_cache_hits": int(relevance_hits.get("n") or 0),
         "notes": [
             "agent_read_chars_proxy is a deterministic character-volume proxy, not an API or Codex token bill.",
+            "quality metrics are deterministic regression signals, not a subjective overall quality score.",
             "attempts are observed when tasks are obtained through `tasks next`; direct external execution may not increment them.",
             "relevance_cache_hits are candidates reused before task creation, so they intentionally do not appear as Agent task cache_hits.",
         ],
@@ -215,7 +292,6 @@ def install_task_telemetry() -> None:
     TaskService.reopen_invalid = reopen_invalid
     TaskService._telemetry_installed = True
 
-    # Patch the CLI lazily so the core cli.py stays free of metrics-specific code.
     from . import cli
 
     if getattr(cli, "_stats_command_installed", False):

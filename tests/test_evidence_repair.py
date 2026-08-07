@@ -43,6 +43,35 @@ Baseline-X is slower in the reported workload.
     assert len(supplement) <= 2200
 
 
+def test_front_evidence_repair_never_re_reads_matching_terms_from_prefix():
+    prefix = """# Abstract
+Baseline-X is mentioned here, but the exact setup is intentionally absent.
+
+# Introduction
+The system transfers KV cache blocks across workers.
+
+""" + ("front context without experiment details.\n" * 80)
+    suffix = """
+# Evaluation Setup
+The later experiment uses 8 NVIDIA A100 GPUs, batch size 16, and Baseline-X.
+
+# Results
+P99 latency is 31% lower than Baseline-X under that setup.
+"""
+    raw = prefix + suffix
+    existing = prefix.strip()
+    gaps = [
+        {
+            "question": "What exact hardware and batch size support the Baseline-X comparison?",
+            "terms": ["A100", "batch size", "Baseline-X"],
+        }
+    ]
+    supplement = build_supplement_pack(raw, existing, gaps, max_chars=2200)
+    assert "8 NVIDIA A100 GPUs" in supplement
+    assert "batch size 16" in supplement
+    assert "Baseline-X is mentioned here" not in supplement
+
+
 def test_supplement_does_not_fall_back_to_generic_fulltext_when_terms_miss():
     raw = """# Abstract
 A storage system.

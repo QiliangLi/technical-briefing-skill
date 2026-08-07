@@ -5,35 +5,34 @@ from types import SimpleNamespace
 
 from briefing_skill.cost_schema import ensure_cost_schema
 from briefing_skill.db import Database
-from briefing_skill.deep_efficiency import build_evidence_pack, install_deep_efficiency
+from briefing_skill.deep_efficiency import (
+    _runtime_extractor_version,
+    build_evidence_pack,
+    install_deep_efficiency,
+)
 from briefing_skill.fulltext import FulltextService
 from briefing_skill.pipeline import Pipeline
 from briefing_skill.tasks import TASK_BINDING_KEY, TaskService
 from briefing_skill.utils import now_iso, read_json, write_json
 
 
-def test_evidence_pack_keeps_method_evaluation_and_limitations_with_large_reduction():
-    filler = "generic background sentence " * 250
+def test_evidence_pack_is_front_excerpt_for_initial_paper_understanding():
+    filler = "Introduction explains the problem and mechanism in context. " * 160
     text = (
-        "# Abstract\nA network-aware KV cache system.\n\n"
-        f"# Related Work\n{filler}\n\n"
-        "# Architecture\nThe design places cache blocks by network cost and coalesces remote transfers.\n\n"
-        "# Evaluation\nOn 8 GPUs, P99 latency falls by 31% versus baseline A at the same workload. "
-        "Throughput reaches 420 GB/s.\n\n"
-        "# Limitations\nThe evaluation covers one cluster and does not validate cross-region failures.\n"
+        "# Abstract\nA network-aware KV cache system reduces remote transfer overhead.\n\n"
+        "# Introduction\nThe paper motivates cache placement by network cost and describes its core idea.\n\n"
+        f"{filler}\n\n"
+        "# Evaluation\nOn 8 GPUs, P99 latency falls by 31% versus baseline A at the same workload.\n\n"
+        "# Limitations\nThe evaluation covers one cluster only.\n"
     )
-    topic = {
-        "current_questions": ["KVCache跨域传输如何减少带宽和P99时延？"],
-        "valuable_evidence": ["端到端P99、吞吐、网络开销"],
-    }
-    direction = {"include_terms": ["kv cache", "network", "transfer", "p99"]}
-    pack = build_evidence_pack(text, topic, direction, max_chars=2200)
+    pack = build_evidence_pack(text, {}, {}, max_chars=2200)
     assert len(pack) <= 2200
-    assert len(pack) < len(text) * 0.35
-    assert "Architecture" in pack
-    assert "P99 latency falls by 31%" in pack
-    assert "Limitations" in pack
-    assert "cross-region failures" in pack
+    assert text.strip().startswith(pack)
+    assert "# Abstract" in pack
+    assert "# Introduction" in pack
+    assert "network cost" in pack
+    assert "P99 latency falls by 31%" not in pack
+    assert "# Limitations" not in pack
 
 
 def _insert_raw_and_candidate(db: Database, run_id: str) -> dict:
@@ -74,6 +73,47 @@ def _restore_attr(obj, name: str, value, existed: bool) -> None:
         delattr(obj, name)
 
 
+def _test_config(root: Path):
+    context_path = root / "config" / "project-context" / "tpn.md"
+    context_path.parent.mkdir(parents=True, exist_ok=True)
+    context_path.write_text("Focus on KV transfer cost and network placement.", encoding="utf-8")
+    directions = {
+        "kv_transfer": {"id": "kv_transfer", "name": "KV transfer", "include_terms": ["kv cache", "transfer"]},
+        "pd_disaggregation": {"id": "pd_disaggregation", "name": "PD", "include_terms": ["prefill", "decode"]},
+    }
+    return SimpleNamespace(
+        settings={
+            "efficiency": {
+                "fact_cache_enabled": True,
+                "fact_extractor_version": "front-evidence-v2",
+                "evidence_pack_max_chars": 18000,
+                "evidence_repair_enabled": True,
+                "evidence_repair_max_chars": 9000,
+            }
+        },
+        topic=lambda topic_id: {
+            "id": topic_id,
+            "name": "TPN",
+            "current_questions": ["How does network placement help?"],
+            "valuable_evidence": ["P99", "bandwidth"],
+        },
+        direction=lambda topic_id, direction_id: directions[direction_id],
+        context_path=lambda paths, topic_id: context_path,
+    )
+
+
+def test_fact_cache_version_changes_with_direction_and_project_context(tmp_path):
+    config = _test_config(tmp_path)
+    first = _runtime_extractor_version(config, tmp_path, "tpn", "kv_transfer")
+    other_direction = _runtime_extractor_version(config, tmp_path, "tpn", "pd_disaggregation")
+    assert first != other_direction
+
+    context = config.context_path(None, "tpn")
+    context.write_text("Now focus on cross-region WAN constraints.", encoding="utf-8")
+    changed_context = _runtime_extractor_version(config, tmp_path, "tpn", "kv_transfer")
+    assert changed_context != first
+
+
 def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
     root = tmp_path
     run_id = "run-new"
@@ -84,16 +124,12 @@ def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
     ensure_cost_schema(db)
     db.create_run(run_id)
     candidate = _insert_raw_and_candidate(db, run_id)
-
-    config = SimpleNamespace(
-        settings={"efficiency": {"fact_cache_enabled": True, "fact_extractor_version": "evidence-pack-v1"}},
-        topic=lambda topic_id: {"id": topic_id},
-        direction=lambda topic_id, direction_id: {"id": direction_id},
-    )
+    config = _test_config(root)
 
     from briefing_skill.deep_efficiency import _source_fingerprint
     raw = db.fetchone("SELECT * FROM raw_items WHERE id=?", (candidate["raw_item_id"],))
     fingerprint = _source_fingerprint(raw)
+    version = _runtime_extractor_version(config, root, "tpn", "kv_transfer")
     cache_key = "cache-key"
     cached_result = {
         "title": "Cached paper",
@@ -106,6 +142,7 @@ def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
         "project_relevance": "relevance",
         "primary_source_resolved": True,
         "quality_score": 88,
+        "evidence_gaps": [],
     }
     cache_path = root / "workspace" / "cache" / "facts" / f"{cache_key}.json"
     write_json(cache_path, cached_result)
@@ -118,7 +155,7 @@ def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
-            cache_key, fingerprint, "evidence-pack-v1", raw["original_url"], raw["identity_key"],
+            cache_key, fingerprint, version, raw["original_url"], raw["identity_key"],
             raw["external_id"], raw["content_hash"], str(cache_path.relative_to(root)), 88, "cached-event",
             90000, 17000, now_iso(), now_iso(),
         ),
@@ -140,6 +177,7 @@ def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
         assert manifest["fact_cache_hit"] is True
         assert manifest["raw_char_count"] == 90000
         assert manifest["evidence_char_count"] == 17000
+        assert manifest["evidence_strategy"] == "front-evidence-v2"
 
         tasks = TaskService(db, root, run_dir)
         task = tasks.create(

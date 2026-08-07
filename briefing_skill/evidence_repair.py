@@ -36,6 +36,21 @@ def _existing_locators(evidence_text: str) -> set[str]:
     }
 
 
+def _unread_suffix(raw_text: str, existing_evidence: str) -> str:
+    """Return only source text that follows the initial front-evidence prefix.
+
+    Old runs may contain the previous section-selected Evidence Pack, so fail back to
+    the full raw source for those runs and rely on locator exclusion rather than
+    incorrectly assuming prefix alignment.
+    """
+
+    raw = raw_text.strip()
+    evidence = existing_evidence.strip()
+    if evidence and raw.startswith(evidence):
+        return raw[len(evidence) :].lstrip()
+    return raw_text
+
+
 def build_supplement_pack(
     raw_text: str,
     existing_evidence: str,
@@ -43,15 +58,21 @@ def build_supplement_pack(
     *,
     max_chars: int = 9000,
 ) -> str:
-    """Retrieve only omitted sections that directly match explicit evidence gaps."""
+    """Retrieve only unread source sections that directly match explicit gaps."""
 
     literal_terms, expanded_terms = _gap_terms(gaps)
-    if not literal_terms or len(raw_text) <= len(existing_evidence) + 300:
+    if not literal_terms:
         return ""
 
+    remaining = _unread_suffix(raw_text, existing_evidence)
+    # A short unread tail can still contain the exact missing baseline or hardware
+    # condition. Reject only near-empty tails; never require hundreds of filler chars
+    # before allowing a deterministic gap match.
+    if len(remaining.strip()) < 40:
+        return ""
     existing = _existing_locators(existing_evidence)
     candidates: list[tuple[float, int, str, str]] = []
-    for index, title, body in _sections(raw_text):
+    for index, title, body in _sections(remaining):
         if title.strip().lower() in existing:
             continue
         lower = body.lower()
@@ -65,7 +86,7 @@ def build_supplement_pack(
 
     header = (
         "# Targeted Evidence Supplement\n\n"
-        "This supplement contains only previously omitted source sections that match "
+        "This supplement contains only previously unread source sections that match "
         "explicit material evidence-gap terms. It is not the full source.\n\n"
     )
     used = len(header)
@@ -74,7 +95,7 @@ def build_supplement_pack(
     for _, index, title, body in sorted(candidates, key=lambda row: (-row[0], row[1])):
         locator = f"## Supplemental locator: {title}\n\n"
         allowance = max_chars - used - len(locator) - 2
-        if allowance <= 260:
+        if allowance <= 80:
             continue
         excerpt = _safe_excerpt(body, min(section_cap, allowance))
         if not excerpt:
@@ -207,13 +228,15 @@ def install_evidence_repair() -> None:
     if getattr(Pipeline, "_evidence_repair_installed", False):
         return
 
-    # Repaired facts depend on this prompt as well as the base fact prompt/schema.
-    # deep_efficiency's fetch wrapper resolves this module global at call time, so
-    # extending the runtime version here safely invalidates older fact caches.
     original_runtime_version = deep_efficiency._runtime_extractor_version
 
-    def runtime_extractor_version(config, root: Path) -> str:
-        base = original_runtime_version(config, root)
+    def runtime_extractor_version(
+        config,
+        root: Path,
+        topic_id: str | None = None,
+        direction_id: str | None = None,
+    ) -> str:
+        base = original_runtime_version(config, root, topic_id, direction_id)
         prompt = root / "prompts" / "fact-evidence-repair.md"
         if not prompt.is_file():
             return base

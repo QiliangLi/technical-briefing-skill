@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .cost_schema import ensure_cost_schema
+from .paths import Paths
 from .utils import now_iso, read_json, stable_hash, write_json
 
 
@@ -86,21 +87,66 @@ def _cache_eligible(raw: dict[str, Any]) -> bool:
 
 def _extractor_version(config) -> str:
     policy = dict(config.settings.get("efficiency") or {})
-    return str(policy.get("fact_extractor_version") or "evidence-pack-v1")
+    return str(policy.get("fact_extractor_version") or "front-evidence-v2")
 
 
-def _runtime_extractor_version(config, root: Path) -> str:
-    """Automatically invalidate caches when the facts prompt/schema changes."""
+def _compact_topic(topic: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: topic[key]
+        for key in ("id", "name", "current_questions", "valuable_evidence")
+        if key in topic and topic.get(key) not in (None, [], "")
+    }
 
-    configured = _extractor_version(config)
-    parts = [configured]
+
+def _compact_direction(direction: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: direction[key]
+        for key in ("id", "name", "include_terms", "exclude_terms")
+        if key in direction and direction.get(key) not in (None, [], "")
+    }
+
+
+def _runtime_extractor_version(
+    config,
+    root: Path,
+    topic_id: str | None = None,
+    direction_id: str | None = None,
+) -> str:
+    """Invalidate facts when source interpretation context or extraction policy changes.
+
+    Facts include project-specific interpretation, so a cache produced for one topic or
+    direction must never be reused under another. The version also captures the exact
+    project context card and front-evidence policy in addition to prompt/schema changes.
+    """
+
+    policy = dict(config.settings.get("efficiency") or {})
+    parts = [
+        _extractor_version(config),
+        "front-evidence-v2",
+        str(policy.get("evidence_pack_max_chars", 18000)),
+        str(bool(policy.get("evidence_repair_enabled", True))),
+        str(policy.get("evidence_repair_max_chars", 9000)),
+    ]
     for relative in ("prompts/fact-extraction.md", "schemas/facts.schema.json"):
         path = root / relative
         if path.is_file():
             parts.append(path.read_text(encoding="utf-8"))
-    if len(parts) == 1:
-        return configured
-    return f"{configured}:{stable_hash(*parts, length=12)}"
+
+    if topic_id and direction_id:
+        try:
+            topic = config.topic(topic_id)
+            direction = config.direction(topic_id, direction_id)
+            parts.append(json.dumps(_compact_topic(topic), ensure_ascii=False, sort_keys=True))
+            parts.append(json.dumps(_compact_direction(direction), ensure_ascii=False, sort_keys=True))
+            context = config.context_path(Paths(root), topic_id)
+            if context.is_file():
+                parts.append(context.read_text(encoding="utf-8"))
+        except Exception:
+            # Fail closed for cache reuse: even a minimal/diagnostic config gets a
+            # context-specific version instead of accidentally sharing generic facts.
+            parts.extend([str(topic_id), str(direction_id)])
+
+    return f"{parts[0]}:{stable_hash(*parts, length=16)}"
 
 
 def _evidence_terms(topic: dict[str, Any], direction: dict[str, Any]) -> list[str]:
@@ -182,52 +228,21 @@ def build_evidence_pack(
     *,
     max_chars: int = 18000,
 ) -> str:
-    """Select a compact, locator-preserving subset of a fetched source.
+    """Return the beginning of the primary source, bounded at a clean sentence/paragraph.
 
-    The budget accounts for the pack header and locator labels before selecting
-    section bodies. Per-section caps stop a long background section from consuming
-    the entire pack and starving evaluation or limitation evidence.
+    Abstract + introduction normally establish problem, mechanism and claimed
+    contribution. Evaluation details that are material to the final briefing are
+    retrieved later through the existing one-shot targeted Evidence Repair path.
+    Topic/direction arguments remain in the signature for compatibility and for the
+    context-aware cache version, but they no longer reorder source text.
     """
 
-    if len(text) <= max_chars:
-        return text
-    header = (
-        "# Deterministic Evidence Pack\n\n"
-        "This file is a deterministic subset of the fetched primary source. "
-        "Section/page headings are retained as locators. Prefer claims supported here; "
-        "do not infer that omitted text was checked.\n\n"
-    )
-    sections = _sections(text)
-    terms = _evidence_terms(topic, direction)
-    ranked = sorted(
-        sections,
-        key=lambda section: (-_section_score(section[0], section[1], section[2], terms), section[0]),
-    )
-    selected: list[tuple[int, str, str]] = []
-    used = len(header)
-    section_cap = max(700, max_chars // 3)
-    for section in ranked:
-        body = section[2].strip()
-        if not body:
-            continue
-        locator = f"## Evidence locator: {section[1]}\n\n"
-        allowance = max_chars - used - len(locator) - 2
-        if allowance <= 220:
-            continue
-        excerpt = _safe_excerpt(body, min(section_cap, allowance))
-        if not excerpt:
-            continue
-        selected.append((section[0], section[1], excerpt))
-        used += len(locator) + len(excerpt) + 2
-    selected.sort(key=lambda section: section[0])
-    blocks = [header.rstrip()]
-    for _, title, body in selected:
-        blocks.append(f"## Evidence locator: {title}\n\n{body.strip()}")
-    return "\n\n".join(blocks).strip()
+    del topic, direction
+    return _safe_excerpt(text, max_chars)
 
 
 def install_deep_efficiency() -> None:
-    """Install evidence packs and conservative cross-run fact reuse."""
+    """Install front evidence and conservative, context-aware cross-run fact reuse."""
 
     from .fulltext import FulltextService
     from .pipeline import Pipeline
@@ -255,8 +270,10 @@ def install_deep_efficiency() -> None:
         if not raw:
             raise KeyError(effective_candidate["raw_item_id"])
         root = self.run_dir.parents[2]
+        topic_id = effective_candidate.get("topic_id")
+        direction_id = effective_candidate.get("direction_id")
         fingerprint = _source_fingerprint(raw)
-        version = _runtime_extractor_version(self.config, root)
+        version = _runtime_extractor_version(self.config, root, topic_id, direction_id)
         cache_enabled = bool((self.config.settings.get("efficiency") or {}).get("fact_cache_enabled", True)) and _cache_eligible(raw)
         if cache_enabled:
             cached = self.db.fetchone(
@@ -271,7 +288,7 @@ def install_deep_efficiency() -> None:
                     stub = self.run_dir / "documents" / f"{document_id}.evidence.md"
                     stub.parent.mkdir(parents=True, exist_ok=True)
                     stub.write_text(
-                        "# Fact cache hit\n\nThe fact extraction result for this exact source fingerprint is reused.\n",
+                        "# Fact cache hit\n\nThe fact extraction result for this exact source and judging context is reused.\n",
                         encoding="utf-8",
                     )
                     self.db.execute(
@@ -293,23 +310,19 @@ def install_deep_efficiency() -> None:
                         "fact_cache_key": cached["cache_key"],
                         "source_fingerprint": fingerprint,
                         "extractor_version": version,
+                        "evidence_strategy": "front-evidence-v2",
                         "error": None,
                     }
 
         manifest = original_fetch(self, run_id, effective_candidate)
         raw_text_path = Path(manifest["text_path"])
         text = raw_text_path.read_text(encoding="utf-8")
-        topic_id = effective_candidate.get("topic_id")
-        direction_id = effective_candidate.get("direction_id")
         if not topic_id or not direction_id:
             return manifest
         try:
             topic = self.config.topic(topic_id)
             direction = self.config.direction(topic_id, direction_id)
         except Exception:
-            # FulltextService is also used independently by adapter tests and
-            # diagnostics with intentionally minimal configs. Preserve the raw
-            # fetch rather than making generic fulltext access depend on topics.
             return manifest
         policy = dict(self.config.settings.get("efficiency") or {})
         max_chars = max(4000, int(policy.get("evidence_pack_max_chars", 18000)))
@@ -324,6 +337,7 @@ def install_deep_efficiency() -> None:
             "raw_char_count": len(text),
             "evidence_char_count": len(pack),
             "evidence_reduction_ratio": round(max(0.0, 1.0 - len(pack) / max(1, len(text))), 4),
+            "evidence_strategy": "front-evidence-v2",
             "fact_cache_hit": False,
             "source_fingerprint": fingerprint,
             "extractor_version": version,
