@@ -22,6 +22,31 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
+def _load_topics(paths: Paths) -> dict[str, Any]:
+    """Load the base topic list and optional focused-topic extensions."""
+
+    topics = _load_yaml(paths.config / "topics.yaml")
+    topic_list = topics.setdefault("topics", [])
+    known_ids = {str(topic.get("id") or "") for topic in topic_list}
+
+    chip_path = paths.config / "topics-chip.yaml"
+    if chip_path.exists():
+        chip_data = _load_yaml(chip_path)
+        extension = chip_data.get("topic")
+        if not isinstance(extension, dict) or not extension.get("id"):
+            raise ConfigError(f"Topic extension must contain a topic mapping with id: {chip_path}")
+        if extension["id"] not in known_ids:
+            topic_list.append(extension)
+            known_ids.add(str(extension["id"]))
+
+    for topic in topic_list:
+        if topic.get("id") == "ai_infra_horizontal":
+            description = str(topic.get("description") or "")
+            topic["description"] = description.replace("前六个专题", "七个深度专题")
+            break
+    return topics
+
+
 @dataclass
 class ConfigBundle:
     topics: dict[str, Any]
@@ -33,7 +58,7 @@ class ConfigBundle:
     @classmethod
     def load(cls, paths: Paths) -> "ConfigBundle":
         return cls(
-            topics=_load_yaml(paths.config / "topics.yaml"),
+            topics=_load_topics(paths),
             sources=_load_yaml(paths.config / "sources.yaml"),
             scoring=_load_yaml(paths.config / "scoring.yaml"),
             settings=_load_yaml(paths.config / "settings.yaml"),
@@ -66,9 +91,13 @@ class ConfigBundle:
             "agent_acceleration": "agent-acceleration.md",
             "cross_region": "cross-region.md",
             "optical_network": "optical-network.md",
+            "ai_chip_accelerator": "ai-chip-accelerator.md",
             "ai_infra_horizontal": "ai-infra-horizontal.md",
         }
-        return paths.config / "project-context" / mapping[topic_id]
+        try:
+            return paths.config / "project-context" / mapping[topic_id]
+        except KeyError as exc:
+            raise ConfigError(f"Unknown project context: {topic_id}") from exc
 
     def iter_directions(self) -> Iterable[tuple[dict[str, Any], dict[str, Any]]]:
         for topic in self.topic_list():
