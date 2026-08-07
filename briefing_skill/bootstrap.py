@@ -12,6 +12,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .deep_efficiency import install_deep_efficiency
     from .editorial_batch import install_editorial_batching
     from .efficiency import install_pipeline_optimizations
+    from .evidence_repair import install_evidence_repair
     from .quality_guard import install_quality_guards
     from .radar_taxonomy import install_radar_taxonomy
     from .release_family import install_release_family_aggregation
@@ -30,6 +31,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_deep_efficiency()
     install_task_telemetry()
     install_fact_cache_fastpath()
+    install_evidence_repair()
     install_editorial_batching()
     from .cli import main as cli_main
 
