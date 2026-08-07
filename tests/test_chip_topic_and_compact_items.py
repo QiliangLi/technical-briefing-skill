@@ -15,8 +15,7 @@ def test_config_loads_seven_deep_topics_plus_horizontal_topic():
     config = ConfigBundle.load(Paths(ROOT))
     topic_ids = [topic["id"] for topic in config.topic_list()]
     assert len(topic_ids) == 8
-    assert topic_ids[-1] == "ai_chip_accelerator"
-    assert "ai_infra_horizontal" in topic_ids
+    assert topic_ids[-2:] == ["ai_chip_accelerator", "ai_infra_horizontal"]
     assert len(config.settings["efficiency"]["deep_topics"]) == 7
 
 
@@ -31,6 +30,8 @@ def test_chip_topic_has_focused_directions_and_context():
     }
     assert "HBF" in topic["directions"][2]["arxiv_query"]
     assert config.context_path(Paths(ROOT), topic["id"]).is_file()
+    horizontal = config.topic("ai_infra_horizontal")
+    assert "七个深度专题" in horizontal["description"]
 
 
 def test_compact_item_character_budget_accepts_180_to_260_chars():
