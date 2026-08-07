@@ -1,6 +1,8 @@
 # Task: Evidence-First Fact Extraction
 
-Read the source metadata, the short topic context, and the document/chunk files referenced in the input. Process one source only. Do not compare it with unrelated candidates.
+Read the source metadata, the short topic context, and **only the evidence-pack file(s) referenced by `document.text_path` / `document.chunks` in the task input**. Process one source only. Do not compare it with unrelated candidates, and do not open unreferenced raw full-text files merely to increase completeness.
+
+The evidence pack is a deterministic subset of the fetched primary source. It preserves section/page locators and prioritizes method, architecture, evaluation, quantitative results, limitations, and topic-specific terms. If the evidence pack is insufficient for a claim, omit the claim or record the missing validation in `limitations`; do not compensate by guessing.
 
 The input `_task` object identifies this exact source task. Copy it unchanged into the top level of the output. If the document title or content does not match the input source metadata, stop and return no fabricated facts; never substitute facts from another source.
 
@@ -14,9 +16,9 @@ Required output:
 - `mechanism`: how the system or technique works, with enough detail to distinguish it from generic caching/scheduling/offload.
 - `evidence`: 0-5 evidence records. Every number must include baseline/condition when available and a source locator such as section, page, figure, table, heading, or quoted fragment under 20 words.
 - `evaluation_context`: workload, scale, hardware/software, comparison baseline, or deployment context.
-- `limitations`: explicit limitations plus clearly labelled inferences about missing validation.
+- `limitations`: explicit limitations plus clearly labelled inferences about missing validation. If the evidence pack omits information needed to verify a stronger claim, say so here.
 - `project_relevance`: a project-oriented inference, clearly separate from source claims.
-- `primary_source_resolved`: true only when the input URL identifies a specific primary source and the referenced document was fetched; otherwise false.
-- `quality_score`: 0-100 based on completeness, evidence, and source quality.
+- `primary_source_resolved`: true only when the input URL identifies a specific primary source and `document.fetch_status` is `FETCHED`; a cache hit may reuse a previously validated result for the same source fingerprint and extractor version.
+- `quality_score`: 0-100 based on completeness, evidence, and source quality. Reduce the score when the evidence pack lacks evaluation conditions or important boundaries.
 
 Do not invent missing numbers. Do not use AI HOT's generated summary as sole evidence. Return JSON only.
