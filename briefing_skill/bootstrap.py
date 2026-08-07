@@ -14,10 +14,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .efficiency import install_pipeline_optimizations
     from .evidence_repair import install_evidence_repair
     from .historical_backfill import install_historical_backfill
+    from .invalid_repair import install_invalid_targeted_repair
     from .quality_guard import install_quality_guards
     from .radar_taxonomy import install_radar_taxonomy
     from .release_family import install_release_family_aggregation
     from .relevance_efficiency import install_relevance_efficiency
+    from .safe_efficiency import install_safe_efficiency
     from .session_grouping import install_session_grouping
     from .telemetry import install_task_telemetry
     from .topic_appendix_render import install_topic_appendix_rendering
@@ -34,6 +36,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_release_family_aggregation()
     install_topic_appendix_rendering()
     install_value_scoring()
+    # This layer must precede deep-efficiency so its raw-fulltext cache becomes
+    # the underlying fetch path captured by the context-aware Evidence wrapper.
+    install_safe_efficiency()
     install_deep_efficiency()
     install_task_telemetry()
     install_fact_cache_fastpath()
@@ -42,9 +47,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Install after the existing CLI extensions so the backfill parser preserves
     # commands such as `stats`, while the wrapped `run` gets a small auto budget.
     install_historical_backfill()
-    # Session grouping is intentionally last: it changes only task-dispatch
-    # instructions and stats, after all quality/cache/repair wrappers are fixed.
+    # Session grouping changes task-dispatch instructions and stats only.
     install_session_grouping()
+    # INVALID repair is last so repairable fact tasks are isolated from session
+    # grouping and receive the small sidecar instruction path instead of full input.
+    install_invalid_targeted_repair()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
