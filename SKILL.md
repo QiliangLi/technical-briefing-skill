@@ -13,12 +13,12 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 
 ## 核心架构
 
-- Python负责确定性工作：采集、过滤、去重、状态、预算、滚动专题池、多样性选择、Evidence Pack、定向Evidence Repair、跨期facts cache、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
-- 当前Agent负责智能工作：批量相关性与价值判断、未命中缓存时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和视觉路由。
+- Python负责确定性工作：当前采集、可恢复外部历史回填、过滤、去重、状态、预算、滚动专题池、多样性选择、Evidence Pack、定向Evidence Repair、跨期facts cache、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
+- 当前Agent负责智能工作：批量相关性与价值判断、未命中缓存时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和视觉路由。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
 - 重点专题走深度通道；Top4之外的相关A级内容走专题补充；AI Infra、Agent生态、KVCache生态、存储与介质等广度信息走Radar通道。
 - 同一GitHub项目在专题补充中的多条低价值release可以聚合显示，但不得把不同论文或Top4深度条目强行合并。
 - 不得在Python中绑定某家模型API。
-- 不得依赖聊天上下文记住历史；所有状态写入SQLite和`workspace/runs/`，跨期facts写入本地`workspace/cache/facts/`。
+- 不得依赖聊天上下文记住历史；常规状态写入SQLite和`workspace/runs/`，外部历史回填游标写入SQLite `source_state`，回填报告写入被忽略的`workspace/backfill/`，跨期facts写入本地`workspace/cache/facts/`。
 - Skill本身不产生定时触发；由Cron或宿主Agent任务系统调用CLI。
 
 ## 首次使用
@@ -45,6 +45,15 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
    python briefing.py demo
    ```
 
+4. 新安装或历史断档时可检查并主动推进历史覆盖：
+
+   ```bash
+   python briefing.py backfill-status
+   python briefing.py backfill
+   ```
+
+   正常`collect`会用很小的请求预算自动继续同一批历史游标，不要求一次性把60天全部抓完。
+
 ## 正常运行
 
 ### 第一步：启动或继续
@@ -60,6 +69,8 @@ python briefing.py run
 ```bash
 python briefing.py resume --run latest
 ```
+
+`run`内部调用`collect`。当历史回填尚未完成时，每次正常`collect`只允许使用`historical_backfill.auto_requests_per_collect`规定的小预算推进游标；回填记录先进入独立历史池，不直接创建Agent任务。
 
 ### 第二步：处理Agent任务
 
@@ -123,14 +134,18 @@ python briefing.py send --confirm-send
 15. 完成facts抽取/必要的repair后，后续任务只读取结构化facts，不再读取全文。
 16. 最终综合判断只读取通过事实检查的核心深度解读，不读取专题补充和热点Radar。
 17. 不要为了“记住上次推送”使用对话记忆；查询SQLite、事件历史、缓存和推送历史。
+18. 外部历史回填必须是确定性、可分页、可时间截断的Python工作，禁止为“补60天历史”批量创建Agent搜索任务。当前可验证回填只包括arXiv专题方向和配置的GitHub Releases仓库；其他A级源必须显示为`unsupported_sources`，RSS不得假装是完整历史档案。
+19. 历史回填本身必须产生0个Agent任务。抓取结果写入不属于正常`runs`表的独立历史批次；后续正常run通过`backlog_materialize_per_run`逐步搬入，默认每次最多120条，然后才进入批量价值判断。因此一次回填发现1000条，也不得直接制造1000条Agent任务。
+20. 每次正常`collect`最多消耗`historical_backfill.auto_requests_per_collect`个历史外部请求，默认4个；不同GitHub/arXiv lane必须公平轮转并持久化游标。手工`backfill --max-requests N`只允许加速同一游标状态，不得绕过去重和下游120条入口预算。
 
 成本配置位于`config/settings.yaml`的`efficiency`段。正式运行后优先执行：
 
 ```bash
 python briefing.py stats --run latest
+python briefing.py backfill-status
 ```
 
-检查每种任务的任务数、尝试次数、INVALID次数、缓存命中、输入/输出字符量、原始document字符量、Evidence字符量和压缩比例。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API真实Token账单；若宿主以后能提供真实usage，必须把真实Token作为首要指标，同时保留字符量用于可复现实验。
+`stats`检查每种Agent任务的任务数、尝试次数、INVALID次数、缓存命中、输入/输出字符量、原始document字符量、Evidence字符量和压缩比例。`backfill-status`检查历史lane的游标、请求次数、已抓取数量、最老已看到时间、错误、支持/不支持来源。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API真实Token账单；若宿主以后能提供真实usage，必须把真实Token作为首要指标，同时保留字符量用于可复现实验。
 
 还可执行：
 
@@ -143,8 +158,9 @@ python scripts/estimate_efficiency.py
 ## 时间窗与跨期覆盖
 
 - 深度专题使用最近60天的滚动窗口，而不是3天新闻窗口；
-- 每次运行会把SQLite中最近60天、尚未推送的A级原始来源重新带入当前候选池；
-- 当前60天滚动backlog只覆盖SQLite中曾经采集到的历史来源，不得声称已经自动补齐所有外部固定信源过去60天的完整历史；
+- arXiv各深度方向与配置的GitHub Release仓库通过持久化游标主动向过去翻页，直到越过本次60天campaign cutoff或来源耗尽；
+- 外部历史记录先进入独立历史池；每次正常运行再把SQLite中最近60天、尚未推送的A级原始来源按预算带入当前候选池；
+- `COMPLETE`只表示所有“支持确定性历史分页”的lane已经越过时间边界或耗尽，不得推断`unsupported_sources`也具有完整60天历史；
 - 已经作为深度条目、专题补充或Radar发送过的稳定身份不得重复出现；
 - 新鲜度仅占价值判断的小权重，强相关的30～60天内容可以高于当天的弱更新；
 - 横向热点Radar仍保持最近7天，维持其“快速发现”的定位；
@@ -257,6 +273,7 @@ A级候选进入批量价值判断后，`score`按以下维度形成：
 ## 跨期去重与热点Radar
 
 - 事件身份依次使用arXiv基础ID（忽略`vN`）、DOI、GitHub仓库与Release、规范化原始URL；仅在没有稳定标识时使用语义事件名；
+- 外部历史回填与普通采集使用同一稳定来源身份去重，重置游标或与普通采集重叠不得故意产生第二份同源记录；
 - 同一稳定身份的历史事件共享`last_pushed_at`，标题语言、版本号或摘要变化不得绕过去重；
 - facts cache比事件去重更严格：外部版本号/内容指纹发生变化时不得复用旧facts，即使事件身份仍属于同一论文或项目；
 - 专题补充与Radar共享推送URL历史，已经以短摘要展示的内容后续不得无变化重复出现；
@@ -304,6 +321,7 @@ vendor/guizang-material-illustration/SKILL.md
 - 全文抓取失败：使用摘要做低置信Radar候选，但不得成为无A级来源的重点信息。
 - Evidence Pack缺少材料性条件且明确gap terms在未曝光章节中有命中：最多生成一次targeted supplement；没有命中或repair后仍不足时降低结论强度并写入`limitations`，不得偷偷扩大到未引用全文。
 - facts cache文件缺失、版本不匹配、来源版本变化或facts仍有`evidence_gaps`：按cache miss/不缓存处理，不得假装命中。
+- 历史回填单次网络错误：保留lane游标并标为`ERROR`，后续采集再重试，不得从第一页重新扫；明确的GitHub 404等配置/来源问题标为`FAILED_PERMANENT`并在`backfill-status`暴露，修复配置后再reset。
 - 邮件失败：不写`last_pushed_at`，下次只重试发送。
 - 任何配图失败都不能阻塞简报正文。
 
