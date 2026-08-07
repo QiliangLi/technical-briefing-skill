@@ -45,7 +45,7 @@ def _demo_output(task_type: str, data: dict):
             "limitations": "没有真实实验数据，不应作为正式简报发送。",
             "project_relevance": "可用于验证信息抽取、事件聚类和卡片渲染链路。",
             "primary_source_resolved": True,
-            "quality_score": 76,
+            "quality_score": 85,
             "source_notes": ["DEMO ONLY"]
         }
     if task_type == "item_writing":
@@ -74,10 +74,6 @@ def _demo_output(task_type: str, data: dict):
     if task_type == "fact_check":
         return {"pass": True, "issues": [], "corrected_item": None}
     if task_type == "issue_synthesis":
-        # The production schema intentionally limits one synthesis judgement to at
-        # most four evidence items. A stricter event clusterer can leave many more
-        # independent demo items, so the fixture must not rely on over-merging to
-        # stay schema-valid.
         ids = [item["brief_item_id"] for item in data["items"]][:4]
         return {"headline": "本期离线样例验证了Agent加速与KVCache网络调度可以进入同一条可追溯工作流。", "judgements": [{"title": "状态要进入执行链", "body": "Agent检索状态和KVCache位置只有进入工具选择、网络带宽与队列调度，才可能转化为可验证的系统收益。", "evidence_item_ids": ids}], "topic_names": list(dict.fromkeys(item["topic_name"] for item in data["items"])), "watch_next": ["替换fixture为真实一手来源", "补充真实原文数据与图表"]}
     if task_type == "visual_routing":
