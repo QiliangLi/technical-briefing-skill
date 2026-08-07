@@ -13,17 +13,17 @@ from .utils import complete_sentence_excerpt, now_iso, read_json, source_url_is_
 
 
 LEGACY_FIELD_BUDGETS = {
-    "core_conclusion": 120,
-    "mechanism": 90,
-    "result": 90,
-    "boundary": 65,
-    "project_relevance": 85,
+    "core_conclusion": 70,
+    "mechanism": 50,
+    "result": 50,
+    "boundary": 35,
+    "project_relevance": 45,
 }
 
 
 def normalise_legacy_item(item: dict[str, Any], config: ConfigBundle) -> dict[str, Any]:
-    min_chars = int(config.settings.get("brief_item_min_chars", 300))
-    max_chars = int(config.settings.get("brief_item_max_chars", 450))
+    min_chars = int(config.settings.get("brief_item_min_chars", 180))
+    max_chars = int(config.settings.get("brief_item_max_chars", 260))
     if not brief_item_validation_errors(item, min_chars=min_chars, max_chars=max_chars):
         return item
     rebuilt = dict(item)
@@ -35,11 +35,11 @@ def normalise_legacy_item(item: dict[str, Any], config: ConfigBundle) -> dict[st
 def _limits(config: ConfigBundle) -> dict[str, int]:
     defaults = {
         "core_min": 0,
-        "core_max": 14,
+        "core_max": 16,
         "observation_max": 4,
         "total_min": 0,
-        "total_max": 18,
-        "max_per_topic": 8,
+        "total_max": 20,
+        "max_per_topic": 4,
         "core_score": 70,
         "observation_score": 60,
     }
