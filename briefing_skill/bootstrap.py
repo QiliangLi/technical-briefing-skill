@@ -10,6 +10,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .cost_schema import install_cost_schema
     from .coverage_policy import install_coverage_policy
     from .deep_efficiency import install_deep_efficiency
+    from .editorial_batch import install_editorial_batching
     from .efficiency import install_pipeline_optimizations
     from .quality_guard import install_quality_guards
     from .radar_taxonomy import install_radar_taxonomy
@@ -29,6 +30,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_deep_efficiency()
     install_task_telemetry()
     install_fact_cache_fastpath()
+    install_editorial_batching()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
