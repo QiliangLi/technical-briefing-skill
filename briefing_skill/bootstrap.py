@@ -13,6 +13,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .editorial_batch import install_editorial_batching
     from .efficiency import install_pipeline_optimizations
     from .evidence_repair import install_evidence_repair
+    from .historical_backfill import install_historical_backfill
     from .quality_guard import install_quality_guards
     from .radar_taxonomy import install_radar_taxonomy
     from .release_family import install_release_family_aggregation
@@ -33,6 +34,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_fact_cache_fastpath()
     install_evidence_repair()
     install_editorial_batching()
+    # Install after the existing CLI extensions so the backfill parser preserves
+    # commands such as `stats`, while the wrapped `run` gets a small auto budget.
+    install_historical_backfill()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
