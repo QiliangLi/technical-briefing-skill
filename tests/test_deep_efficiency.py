@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,6 +7,7 @@ from briefing_skill.cost_schema import ensure_cost_schema
 from briefing_skill.db import Database
 from briefing_skill.deep_efficiency import build_evidence_pack, install_deep_efficiency
 from briefing_skill.fulltext import FulltextService
+from briefing_skill.pipeline import Pipeline
 from briefing_skill.tasks import TASK_BINDING_KEY, TaskService
 from briefing_skill.utils import now_iso, read_json, write_json
 
@@ -67,6 +67,13 @@ def _insert_raw_and_candidate(db: Database, run_id: str) -> dict:
     return {"id": candidate_id, "raw_item_id": raw_id, "topic_id": "tpn", "direction_id": "kv_transfer"}
 
 
+def _restore_attr(obj, name: str, value, existed: bool) -> None:
+    if existed:
+        setattr(obj, name, value)
+    elif hasattr(obj, name):
+        delattr(obj, name)
+
+
 def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
     root = tmp_path
     run_id = "run-new"
@@ -84,7 +91,6 @@ def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
         direction=lambda topic_id, direction_id: {"id": direction_id},
     )
 
-    # Compute the exact fingerprint through the public fetch path once the cache is present.
     from briefing_skill.deep_efficiency import _source_fingerprint
     raw = db.fetchone("SELECT * FROM raw_items WHERE id=?", (candidate["raw_item_id"],))
     fingerprint = _source_fingerprint(raw)
@@ -118,29 +124,45 @@ def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
         ),
     )
 
-    install_deep_efficiency()
-    service = FulltextService(config, db, run_dir)
-    manifest = service.fetch_candidate(run_id, candidate)
-    service.close()
-    assert manifest["fact_cache_hit"] is True
-    assert manifest["raw_char_count"] == 90000
-    assert manifest["evidence_char_count"] == 17000
+    snapshots = {
+        "fetch": (FulltextService.fetch_candidate, hasattr(FulltextService, "fetch_candidate")),
+        "create": (TaskService.create, hasattr(TaskService, "create")),
+        "apply": (Pipeline._apply_task, hasattr(Pipeline, "_apply_task")),
+        "fetch_flag": (getattr(FulltextService, "_evidence_pack_installed", None), hasattr(FulltextService, "_evidence_pack_installed")),
+        "task_flag": (getattr(TaskService, "_fact_cache_installed", None), hasattr(TaskService, "_fact_cache_installed")),
+        "pipeline_flag": (getattr(Pipeline, "_fact_cache_installed", None), hasattr(Pipeline, "_fact_cache_installed")),
+    }
+    try:
+        install_deep_efficiency()
+        service = FulltextService(config, db, run_dir)
+        manifest = service.fetch_candidate(run_id, candidate)
+        service.close()
+        assert manifest["fact_cache_hit"] is True
+        assert manifest["raw_char_count"] == 90000
+        assert manifest["evidence_char_count"] == 17000
 
-    tasks = TaskService(db, root, run_dir)
-    task = tasks.create(
-        run_id,
-        "fact_extraction",
-        candidate["id"],
-        {
-            "candidate_id": candidate["id"],
-            "source": {"title": "Cached paper", "url": raw["original_url"]},
-            "document": manifest,
-        },
-        prompt="fact-extraction.md",
-        schema="facts.schema.json",
-    )
-    output = read_json(root / task["output_path"])
-    task_input = read_json(root / task["input_path"])
-    assert output[TASK_BINDING_KEY] == task_input[TASK_BINDING_KEY]
-    assert output["quality_score"] == 88
-    assert output["event_hint"] == "cached-event"
+        tasks = TaskService(db, root, run_dir)
+        task = tasks.create(
+            run_id,
+            "fact_extraction",
+            candidate["id"],
+            {
+                "candidate_id": candidate["id"],
+                "source": {"title": "Cached paper", "url": raw["original_url"]},
+                "document": manifest,
+            },
+            prompt="fact-extraction.md",
+            schema="facts.schema.json",
+        )
+        output = read_json(root / task["output_path"])
+        task_input = read_json(root / task["input_path"])
+        assert output[TASK_BINDING_KEY] == task_input[TASK_BINDING_KEY]
+        assert output["quality_score"] == 88
+        assert output["event_hint"] == "cached-event"
+    finally:
+        _restore_attr(FulltextService, "fetch_candidate", *snapshots["fetch"])
+        _restore_attr(TaskService, "create", *snapshots["create"])
+        _restore_attr(Pipeline, "_apply_task", *snapshots["apply"])
+        _restore_attr(FulltextService, "_evidence_pack_installed", *snapshots["fetch_flag"])
+        _restore_attr(TaskService, "_fact_cache_installed", *snapshots["task_flag"])
+        _restore_attr(Pipeline, "_fact_cache_installed", *snapshots["pipeline_flag"])
