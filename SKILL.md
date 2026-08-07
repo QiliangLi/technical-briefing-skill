@@ -13,8 +13,8 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 
 ## 核心架构
 
-- Python负责确定性工作：采集、过滤、去重、状态、预算、滚动专题池、多样性选择、Evidence Pack、跨期facts cache、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
-- 当前Agent负责智能工作：批量相关性与价值判断、未命中缓存时的事实抽取、单条写作、事实校验、综合判断和视觉路由。
+- Python负责确定性工作：采集、过滤、去重、状态、预算、滚动专题池、多样性选择、Evidence Pack、定向Evidence Repair、跨期facts cache、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
+- 当前Agent负责智能工作：批量相关性与价值判断、未命中缓存时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和视觉路由。
 - 重点专题走深度通道；Top4之外的相关A级内容走专题补充；AI Infra、Agent生态、KVCache生态、存储与介质等广度信息走Radar通道。
 - 同一GitHub项目在专题补充中的多条低价值release可以聚合显示，但不得把不同论文或Top4深度条目强行合并。
 - 不得在Python中绑定某家模型API。
@@ -73,7 +73,7 @@ python briefing.py tasks next --run latest
 
 1. 读取指定Prompt；
 2. 读取指定输入JSON；
-3. 只读取输入中明确引用的专题判断卡和文档。对于`fact_extraction`，正常路径只能读取任务引用的Evidence Pack，不得为了“更完整”主动打开未引用的原始全文；
+3. 只读取输入中明确引用的专题判断卡和文档。对于`fact_extraction`，正常路径只能读取任务引用的Evidence Pack；对于`fact_evidence_repair`，只能读取结构化旧facts和任务引用的targeted supplement。两者都不得为了“更完整”主动打开未引用的原始全文；
 4. 输出符合指定Schema的JSON；
 5. 写入指定输出路径，然后执行`python briefing.py advance --run latest`。
 
@@ -113,13 +113,16 @@ python briefing.py send --confirm-send
 5. 开放Web搜索只补充A级覆盖缺口，默认每期最多4次。TPN同一方向只有一个项目时仍视为覆盖不足，避免单一项目阻止多样化搜索。
 6. 深度事实抽取默认每期最多16条、单专题最多4条、同专题同项目最多1条、同方向优先最多2条。其余相关A级候选进入专题补充，不做全文写作和事实检查。
 7. 原始全文可以在本地保留到`max_fulltext_chars`用于审计，但正常`fact_extraction`默认只读取`evidence_pack_max_chars`控制的Evidence Pack。Evidence Pack必须优先覆盖架构/方法/实验/结果/边界和专题相关段落，并保留章节或页码定位。
-8. Evidence Pack信息不足时，宁可少写结论并在`limitations`记录缺失验证，也不得自行读取未引用全文或猜测数字。后续若需要“按需补证据”，应通过显式任务实现，而不是隐式扩大上下文。
-9. facts cache只能复用“稳定来源指纹 + `fact_extractor_version`”完全匹配的结果。arXiv新版本、release变化、内容指纹变化或抽取策略版本变化必须失效。事实Prompt、Schema或Evidence Pack策略发生实质改变时必须更新`fact_extractor_version`。
-10. facts cache命中必须走同步fast path，不能再次生成需要Agent处理的事实抽取任务。
-11. 专题补充默认每专题最多8条、同项目最多2条；每条仅1～2句总结和原文链接，不参与本期综合判断。同一GitHub项目多条低优先级release可聚合为Release Family，必须保留每个原始链接。
-12. 完成事实抽取后，后续任务只读取结构化facts，不再读取全文。
-13. 最终综合判断只读取核心深度解读，不读取专题补充和热点Radar。
-14. 不要为了“记住上次推送”使用对话记忆；查询SQLite、事件历史、缓存和推送历史。
+8. Evidence Pack信息不足时，宁可少写结论并在`limitations`记录缺失验证，也不得自行读取未引用全文或猜测数字。只有当缺失baseline、工作负载/硬件条件、部署边界或明确limitation会实质改变结论解释时，才允许在`evidence_gaps`中提出最多3个具体缺口，并给出可在原文中直接检索的source-native术语。
+9. 每篇来源最多只允许一轮`fact_evidence_repair`。Python只能在首轮Evidence Pack未曝光的章节中按明确gap terms生成`evidence_repair_max_chars`限制的targeted supplement；repair Agent只读取结构化旧facts和这份supplement。没有明确术语命中时保持保守结论，不得退化为全文搜索；repair后仍缺失的信息保留在`limitations/evidence_gaps`，不得发起第二轮。
+10. facts cache只能复用稳定来源指纹与运行时抽取版本完全匹配的结果。零抓取复用仅用于明确版本arXiv、GitHub Release/Tag和DOI类强版本身份；普通可变网页必须重新验证。事实Prompt、Facts Schema和Evidence Repair Prompt变化会自动影响运行时版本；Evidence Pack算法发生实质改变时仍应更新`fact_extractor_version`。
+11. facts cache命中必须走同步fast path，不能再次生成需要Agent处理的事实抽取任务；存在未解决`evidence_gaps`的facts不得写入跨期cache。
+12. 新运行的深度条目写作与事实校验必须使用小批次任务：默认最多4条`item_writing_batch`和4条`fact_check_batch`，同时受总输入字符预算限制。批处理只能摊薄Agent启动、Prompt和Skill加载成本；每个event/item必须保持独立ID、来源、Schema/语义校验、provenance和PASS/FAIL，禁止跨条目移动事实。旧run已经存在单条`item_writing`或`fact_check`任务时按旧任务继续恢复。
+13. `item_writing_batch`先逐条从各自facts形成初稿，再对整批只调用一次`$human-writing`和一次`$humanizer`；两个Skill不得改变任何事实、数字、条件、ID、score、日期或来源。
+14. 专题补充默认每专题最多8条、同项目最多2条；每条仅1～2句总结和原文链接，不参与本期综合判断。同一GitHub项目多条低优先级release可聚合为Release Family，必须保留每个原始链接。
+15. 完成facts抽取/必要的repair后，后续任务只读取结构化facts，不再读取全文。
+16. 最终综合判断只读取通过事实检查的核心深度解读，不读取专题补充和热点Radar。
+17. 不要为了“记住上次推送”使用对话记忆；查询SQLite、事件历史、缓存和推送历史。
 
 成本配置位于`config/settings.yaml`的`efficiency`段。正式运行后优先执行：
 
@@ -127,7 +130,7 @@ python briefing.py send --confirm-send
 python briefing.py stats --run latest
 ```
 
-检查每种任务的任务数、尝试次数、INVALID次数、缓存命中、输入/输出字符量、原始document字符量、Evidence Pack字符量和压缩比例。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API真实Token账单；若宿主以后能提供真实usage，必须把真实Token作为首要指标，同时保留字符量用于可复现实验。
+检查每种任务的任务数、尝试次数、INVALID次数、缓存命中、输入/输出字符量、原始document字符量、Evidence字符量和压缩比例。`agent_read_chars_proxy`只是确定性的字符量代理，不是Codex或API真实Token账单；若宿主以后能提供真实usage，必须把真实Token作为首要指标，同时保留字符量用于可复现实验。
 
 还可执行：
 
@@ -141,6 +144,7 @@ python scripts/estimate_efficiency.py
 
 - 深度专题使用最近60天的滚动窗口，而不是3天新闻窗口；
 - 每次运行会把SQLite中最近60天、尚未推送的A级原始来源重新带入当前候选池；
+- 当前60天滚动backlog只覆盖SQLite中曾经采集到的历史来源，不得声称已经自动补齐所有外部固定信源过去60天的完整历史；
 - 已经作为深度条目、专题补充或Radar发送过的稳定身份不得重复出现；
 - 新鲜度仅占价值判断的小权重，强相关的30～60天内容可以高于当天的弱更新；
 - 横向热点Radar仍保持最近7天，维持其“快速发现”的定位；
@@ -166,7 +170,7 @@ AI HOT候选
 → links.original
 → 原始论文/官方博客/仓库
 → Evidence Pack / facts cache
-→ 事实抽取或缓存复用
+→ 事实抽取 / 必要时一次Evidence Repair / 缓存复用
 ```
 
 不得把AI HOT的AI摘要直接当作技术证据。
@@ -175,7 +179,7 @@ AI HOT候选
 
 Follow Builders用于发现Builder观点、工程实践、访谈和官方博客线索；YeeKal AI Daily用于发现日报中的外部技术文章、项目和社区讨论。两者均保持B级、`discovery_only`，必须回到A级原始论文、官方文档、官方博客或项目仓库后才能进入重点信息。YeeKal日报日期只表示发现时间，不得冒充外部原始发布日期。
 
-处理`item_writing`和`issue_synthesis`任务时，先根据结构化事实写初稿，再调用`$human-writing`调整自然中文，最后调用`$humanizer`审查机械AI句式。两个Skill都不得增加事实、数字、因果关系或来源。`rebuild-existing`重选条目后必须重新完成`issue_synthesis`，不得自动拼接条目摘要。
+处理`item_writing_batch`和`issue_synthesis`任务时，先根据结构化事实写初稿，再调用`$human-writing`调整自然中文，最后调用`$humanizer`审查机械AI句式。对于`item_writing_batch`，两个Skill整批各调用一次，但必须保持每条事实边界独立；两个Skill都不得增加事实、数字、因果关系或来源。`rebuild-existing`重选条目后必须重新完成`issue_synthesis`，不得自动拼接条目摘要。
 
 本地未安装润色Skills时执行：
 
@@ -298,8 +302,8 @@ vendor/guizang-material-illustration/SKILL.md
 - 当前Agent不能生图：输出完整prompt并标记`waiting_for_image_generation`。
 - 生图失败：原始图/截图 → 程序化图表 → 纯文字卡。
 - 全文抓取失败：使用摘要做低置信Radar候选，但不得成为无A级来源的重点信息。
-- Evidence Pack缺少验证某项强结论所需的条件：降低结论强度并写入`limitations`，不得偷偷扩大到未引用全文。
-- facts cache文件缺失或版本不匹配：按cache miss处理并重新抽取，不得假装命中。
+- Evidence Pack缺少材料性条件且明确gap terms在未曝光章节中有命中：最多生成一次targeted supplement；没有命中或repair后仍不足时降低结论强度并写入`limitations`，不得偷偷扩大到未引用全文。
+- facts cache文件缺失、版本不匹配、来源版本变化或facts仍有`evidence_gaps`：按cache miss/不缓存处理，不得假装命中。
 - 邮件失败：不写`last_pushed_at`，下次只重试发送。
 - 任何配图失败都不能阻塞简报正文。
 
@@ -311,7 +315,7 @@ vendor/guizang-material-illustration/SKILL.md
 - Top4之外的专题补充只包含已判定相关的A级内容，每条1～2句并链接原文；Release Family必须保留每个原始release链接；
 - 每条深度解读五个正文域合计180～260字；
 - 每条深度解读至少一个A级来源；
-- 所有数字可追溯到Evidence Pack中的定位信息或明确的原始来源；
+- 所有数字可追溯到Evidence Pack或targeted supplement中的定位信息，或其他明确的原始来源；
 - 无重复事件或重复推送的专题补充；
 - 旧事件写明增量；
 - 项目判断与来源事实分开；
