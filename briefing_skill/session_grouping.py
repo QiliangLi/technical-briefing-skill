@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Iterable
 
 from .cost_schema import ensure_cost_schema
-from .utils import now_iso, read_json
+from .utils import now_iso, read_json, stable_hash
 
 
 DEFAULT_FACT_SESSION_GROUP_SIZE = 2
@@ -22,12 +23,21 @@ def _task_input(root: Path, task: dict[str, Any]) -> dict[str, Any]:
     return read_json(root / str(task.get("input_path") or ""), {})
 
 
+def _embedded_context_fingerprint(value: Any) -> str:
+    try:
+        encoded = json.dumps(value or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return ""
+    return stable_hash("fact-session-context-v1", encoded, length=20)
+
+
 def _fact_group_key(task: dict[str, Any], data: dict[str, Any]) -> tuple[str, ...] | None:
     """Return a conservative execution-session key without changing task semantics.
 
-    Only fact-extraction tasks with the same topic, direction, project-context card,
-    prompt, and schema may share one Agent session. The tasks themselves remain
-    separate files with separate bindings, validation, cache, and repair paths.
+    Only fact-extraction tasks with the same embedded topic/direction context,
+    project-context card, prompt, and schema may share one Agent session. The tasks
+    themselves remain separate files with separate bindings, validation, cache, and
+    repair paths.
     """
 
     if task.get("task_type") != "fact_extraction":
@@ -40,13 +50,23 @@ def _fact_group_key(task: dict[str, Any], data: dict[str, Any]) -> tuple[str, ..
     topic_id = str(topic.get("id") or "")
     direction_id = str(direction.get("id") or "")
     context_path = str(data.get("project_context_path") or "")
-    if not topic_id or not direction_id or not context_path:
+    topic_fingerprint = _embedded_context_fingerprint(topic)
+    direction_fingerprint = _embedded_context_fingerprint(direction)
+    if (
+        not topic_id
+        or not direction_id
+        or not context_path
+        or not topic_fingerprint
+        or not direction_fingerprint
+    ):
         return None
     return (
         str(task.get("prompt_path") or ""),
         str(task.get("schema_path") or ""),
         topic_id,
         direction_id,
+        topic_fingerprint,
+        direction_fingerprint,
         context_path,
     )
 
@@ -356,7 +376,7 @@ def install_session_grouping() -> None:
             "saved_agent_starts": max(0, requiring_agent - len(groups)),
             "group_size_limit": max_size,
             "group_evidence_char_limit": max_chars,
-            "quality_guard": "same topic+direction; task/input/output/schema/evidence/cache/repair remain independent",
+            "quality_guard": "same exact topic/direction context; task/input/output/schema/evidence/cache/repair remain independent",
         }
         result.setdefault("notes", []).append(
             "fact_session_plan estimates host Agent-session starts when `tasks next` grouping is followed; it does not change the task count or evidence volume."
