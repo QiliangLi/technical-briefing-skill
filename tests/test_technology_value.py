@@ -4,6 +4,7 @@ from briefing_skill.technology_value import (
     normalise_technology_value,
     select_deep_budget_with_technology_value,
     technology_selection_score,
+    technology_value_semantic_errors,
 )
 
 
@@ -56,7 +57,6 @@ def test_technology_value_is_separate_from_relevance_but_can_change_deep_order()
     )
     assert [row["id"] for row in selected] == ["architecture"]
     assert [row["id"] for row in deferred] == ["routine"]
-    # Ranking must not overwrite the original semantic relevance score.
     assert selected[0]["relevance_score"] == 82
 
 
@@ -82,3 +82,17 @@ def test_existing_same_project_diversity_constraint_is_preserved():
 def test_missing_technology_value_never_penalises_existing_relevance_path():
     row = {"relevance_score": 83, "technology_value_score": None}
     assert technology_selection_score(row) == 83
+
+
+def test_new_relevance_task_requires_technology_value():
+    task = {
+        "task_type": "relevance_batch",
+        "metadata_json": json.dumps({"technology_value_required": True}),
+    }
+    errors = technology_value_semantic_errors(task, {"results": [{"candidate_id": "c1"}]})
+    assert errors == ["relevance result 0 requires technology_value"]
+
+
+def test_legacy_relevance_task_without_policy_marker_remains_compatible():
+    task = {"task_type": "relevance_batch", "metadata_json": "{}"}
+    assert technology_value_semantic_errors(task, {"results": [{"candidate_id": "c1"}]}) == []
