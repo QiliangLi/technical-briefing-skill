@@ -249,10 +249,6 @@ def install_safe_efficiency() -> None:
                         "deferred_at": now_iso(),
                     },
                 )
-                self.db.execute(
-                    "UPDATE candidates SET status='DEFERRED_FETCH' WHERE id=?",
-                    (candidate_id,),
-                )
                 return {
                     "id": stable_hash(run_id, "deferred-fetch", candidate_id),
                     "run_id": run_id,
@@ -270,6 +266,15 @@ def install_safe_efficiency() -> None:
                 self.tasks.create = previous_override
             else:
                 del self.tasks.create
+
+        # The underlying planner marks every attempted fact candidate FACT_TASKED
+        # after TaskService.create returns. Re-apply the terminal deferred state here
+        # so a skipped FALLBACK cannot be mistaken for a pending Agent task.
+        for candidate_id in skipped:
+            self.db.execute(
+                "UPDATE candidates SET status='DEFERRED_FETCH' WHERE id=?",
+                (candidate_id,),
+            )
 
         if skipped:
             fact_tasks = self.db.fetchone(
