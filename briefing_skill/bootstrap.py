@@ -16,6 +16,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .historical_backfill import install_historical_backfill
     from .invalid_repair import install_invalid_targeted_repair
     from .primary_fulltext_cache import install_primary_fulltext_cache
+    from .project_insight import install_project_insight_layer
     from .quality_guard import install_quality_guards
     from .radar_taxonomy import install_radar_taxonomy
     from .release_family import install_release_family_aggregation
@@ -59,9 +60,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # isolated from session grouping and receive the small sidecar path.
     install_invalid_targeted_repair()
     # Preserve all quality-neutral efficiency counters first, then append technology
-    # value metrics as the final stats/ranking extension.
+    # value metrics and finally the issue-level project insight layer.
     install_safe_efficiency_stats()
     install_technology_value_assessment()
+    install_project_insight_layer()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
