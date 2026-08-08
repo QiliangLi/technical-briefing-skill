@@ -22,6 +22,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .project_insight import install_project_insight_layer
     from .quality_guard import install_quality_guards
     from .radar_taxonomy import install_radar_taxonomy
+    from .reader_facing_quality import install_reader_facing_quality
     from .release_family import install_release_family_aggregation
     from .relevance_efficiency import install_relevance_efficiency
     from .safe_efficiency import install_safe_efficiency
@@ -74,6 +75,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Rebalance the same 18k first-read budget across context/mechanism/results/bounds.
     # This must run after evidence-repair so cache versions include both policies.
     install_balanced_evidence()
+    # Last reader-facing guard: merge project impact into 本期判断, remove internal
+    # selection metadata from appendices, and expose original source titles.
+    install_reader_facing_quality()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
