@@ -1,0 +1,80 @@
+{
+  "results": {
+    "kv-network-scheduler": {
+      "title": "KV-cache-aware network scheduler",
+      "problem": "Prefill transfer and latency-sensitive decode traffic compete for network service.",
+      "mechanism": "The scheduler tracks KV-cache location and decode urgency, then allocates network bandwidth between prefill and decode traffic.",
+      "evidence": [
+        {
+          "claim": "P99 request latency is reduced under the evaluated load.",
+          "value": "48 ms",
+          "baseline": "64 ms FIFO baseline",
+          "condition": "8 H100 GPUs, 200 GbE, 32 concurrent requests",
+          "source_locator": "evaluation table"
+        }
+      ],
+      "evaluation_context": "Latency-sensitive inference under network contention.",
+      "limitations": "At low load where inference is compute-bound, the scheduler provides little benefit.",
+      "project_relevance": "The result supports exposing KV location and decode urgency to network scheduling rather than treating transfers as opaque flows.",
+      "primary_source_resolved": true,
+      "quality_score": 90
+    },
+    "dpu-inline-compression": {
+      "title": "DPU in-path compression",
+      "problem": "Cross-region links may carry compressible object streams whose wire bytes, rather than codec compute, limit useful throughput.",
+      "mechanism": "A DPU applies LZ4 compression before transmission and decompression on receive, with bypass for unsuitable payloads.",
+      "evidence": [
+        {
+          "claim": "Application-visible goodput increases for the compressible stream.",
+          "value": "1.8x",
+          "baseline": "uncompressed transfer baseline",
+          "condition": "compressible 256 MB object stream over a 400 Gbps path",
+          "source_locator": "results section"
+        }
+      ],
+      "evaluation_context": "Line-rate cross-region object transfer.",
+      "limitations": "Incompressible payloads should use bypass because compression can add latency without reducing wire bytes.",
+      "project_relevance": "DPU compression is attractive only when codec throughput stays above link demand and compression ratio repays processing overhead.",
+      "primary_source_resolved": true,
+      "quality_score": 90
+    },
+    "chip-memory-bottleneck": {
+      "title": "Memory-path co-design for AI inference",
+      "problem": "Decoder inference can be constrained by memory movement even when peak compute is unchanged.",
+      "mechanism": "The design increases effective HBM bandwidth through a revised data-movement pipeline without changing the compute array.",
+      "evidence": [
+        {
+          "claim": "End-to-end token throughput improves.",
+          "value": "1.22x",
+          "baseline": "same compute array with the original memory path",
+          "condition": "batch-1 decoder inference for a 70B model",
+          "source_locator": "end-to-end evaluation"
+        }
+      ],
+      "evaluation_context": "Memory-sensitive large-model decoder inference.",
+      "limitations": "The gain shrinks for compute-bound matrix kernels, so the result should not be generalized to all workloads.",
+      "project_relevance": "Chip evaluation should distinguish memory/data-movement bottlenecks from peak arithmetic capability.",
+      "primary_source_resolved": true,
+      "quality_score": 91
+    },
+    "cross-region-ec-loss": {
+      "title": "6+2 EC-assisted cross-region transport",
+      "problem": "WAN loss can turn isolated missing packets into an RTT-scale retransmission penalty.",
+      "mechanism": "The transport uses a 6+2 erasure code across transfer blocks so isolated loss can be recovered locally instead of waiting for a full retransmission round.",
+      "evidence": [
+        {
+          "claim": "P99 completion time falls under the evaluated WAN loss condition.",
+          "value": "18%",
+          "baseline": "selective retransmission",
+          "condition": "80 ms RTT, 0.1% random loss, 64 MB transfers",
+          "source_locator": "evaluation figure"
+        }
+      ],
+      "evaluation_context": "Lossy long-RTT cross-region transfer.",
+      "limitations": "The 6+2 code adds 33% parity overhead and is unattractive on lossless or severely bandwidth-constrained paths.",
+      "project_relevance": "EC should be justified by retransmission avoidance under concrete RTT/loss conditions rather than by redundancy alone.",
+      "primary_source_resolved": true,
+      "quality_score": 92
+    }
+  }
+}
