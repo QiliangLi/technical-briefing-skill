@@ -28,10 +28,11 @@ def _contains_all(value: Any, terms: list[str]) -> bool:
     return all(str(term).casefold() in haystack for term in terms)
 
 
-def _check_evidence(result: dict[str, Any], rule: dict[str, Any]) -> str | None:
+def _check_evidence(result: dict[str, Any], rule: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
     rows = result.get("evidence") or []
     if not isinstance(rows, list):
-        return "evidence must be a list"
+        return ["evidence must be a list"]
     claim_terms = [str(value) for value in rule.get("claim_contains") or []]
     match = next(
         (
@@ -42,15 +43,17 @@ def _check_evidence(result: dict[str, Any], rule: dict[str, Any]) -> str | None:
         None,
     )
     if match is None:
-        return f"missing evidence claim containing {claim_terms}"
+        return [f"missing evidence claim containing {claim_terms}"]
 
     if "value" in rule and str(match.get("value")) != str(rule.get("value")):
-        return f"evidence value mismatch for {claim_terms}: expected {rule.get('value')!r}, got {match.get('value')!r}"
+        failures.append(
+            f"evidence value mismatch for {claim_terms}: expected {rule.get('value')!r}, got {match.get('value')!r}"
+        )
     for field in ("baseline", "condition", "source_locator"):
         required = [str(value) for value in rule.get(f"{field}_contains") or []]
         if required and not _contains_all(match.get(field), required):
-            return f"evidence {field} missing terms {required} for {claim_terms}"
-    return None
+            failures.append(f"evidence {field} missing terms {required} for {claim_terms}")
+    return failures
 
 
 def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
@@ -79,9 +82,7 @@ def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any
             failures.append(f"forbidden unsupported term present: {term}")
 
     for rule in expected.get("evidence") or []:
-        error = _check_evidence(result, dict(rule))
-        if error:
-            failures.append(error)
+        failures.extend(_check_evidence(result, dict(rule)))
 
     return {
         "id": case.get("id"),
