@@ -228,3 +228,25 @@ def test_unrecorded_sidecar_is_not_counted_as_validated_feedback(tmp_path):
     stats = human_feedback_stats(db, run_id)["current_run"]
     assert stats["reviewed_items"] == 0
     assert stats["approved_fields_changed"] == 0
+
+
+def test_synthetic_runs_stay_observable_but_are_excluded_from_long_term_history(tmp_path):
+    root, db, run_id, _, _ = _seed(tmp_path)
+    prepared = prepare_reviewed_items(root, db, run_id, {})
+    record_human_review(db, run_id, {"item-1", "item-2"}, prepared)
+    now = now_iso()
+    db.execute(
+        """
+        INSERT INTO human_review_items(
+            issue_id,brief_item_id,run_id,topic_id,direction_id,decision,
+            changed_field_count,reviewed_item_path,reviewed_at
+        ) VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        ("ci-issue", "ci-item", "ci-demo-review", "tpn", "d1", "approved", 0, None, now),
+    )
+
+    stats = human_feedback_stats(db, run_id)
+    assert stats["current_run"]["reviewed_items"] == 2
+    assert stats["history"]["reviewed_items"] == 2
+    assert stats["synthetic_reviews_excluded_from_history"] == 1
+    assert "ci-" in stats["synthetic_run_prefixes"]
