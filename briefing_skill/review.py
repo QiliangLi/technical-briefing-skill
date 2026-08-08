@@ -133,6 +133,23 @@ class ReviewServer:
 
     def build_html(self) -> Path:
         data = build_review_payload(self.root, self.db, self.run_id)
+        visual_paths = {
+            str(row["brief_item_id"]): row.get("visual_plan_path")
+            for row in self.db.fetchall(
+                "SELECT brief_item_id, visual_plan_path FROM issue_items WHERE issue_id=?",
+                (data["id"],),
+            )
+        }
+        for item in data.get("items", []):
+            if isinstance(item.get("visual_plan"), dict):
+                continue
+            plan_path = visual_paths.get(str(item.get("brief_item_id") or ""))
+            item["visual_plan"] = (
+                read_json(self.root / plan_path, {})
+                if plan_path
+                else {"visual_mode": "text_only", "visual_purpose": ""}
+            )
+
         env = Environment(loader=FileSystemLoader(self.root / "templates"), autoescape=select_autoescape(["html"]))
         editable_fields = [
             {"name": field, "label": FIELD_LABELS[field]}
