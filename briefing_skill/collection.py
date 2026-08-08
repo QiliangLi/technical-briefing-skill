@@ -98,10 +98,14 @@ class CollectionService:
         self.config = config
         self.db = db
         self.run_dir = run_dir
-        self.http = HttpClient(
-            timeout=float(config.settings.get("http_timeout_seconds", 25)),
-            user_agent=config.settings.get("http_user_agent", "TechnicalBriefingSkill/0.1"),
-        )
+        self._http_timeout = float(config.settings.get("http_timeout_seconds", 25))
+        self._http_user_agent = config.settings.get("http_user_agent", "TechnicalBriefingSkill/0.1")
+        # Keep the original service-level client for compatibility. Concurrent live
+        # collection gives every other lane its own connection pool below.
+        self.http = self._new_http()
+
+    def _new_http(self) -> HttpClient:
+        return HttpClient(timeout=self._http_timeout, user_agent=self._http_user_agent)
 
     def close(self) -> None:
         self.http.close()
@@ -122,18 +126,27 @@ class CollectionService:
                 }
             )
         else:
+            # Use one HTTP client/connection pool per independent collector lane.
+            # This keeps cross-source cookies/connection state isolated and avoids
+            # making the outer concurrency policy depend on a shared-client contract.
+            extra_http = [self._new_http() for _ in range(5)]
+            clients = [self.http, *extra_http]
             collectors = [
-                AIHotCollector(self.config, self.db, self.http),
-                ArxivCollector(self.config, self.http),
-                RSSCollector(self.config, self.http),
-                GitHubReleaseCollector(self.config, self.http),
-                FollowBuildersCollector(self.config, self.db, self.http, self.run_dir),
-                YeeKalDailyCollector(self.config, self.db, self.http),
+                AIHotCollector(self.config, self.db, clients[0]),
+                ArxivCollector(self.config, clients[1]),
+                RSSCollector(self.config, clients[2]),
+                GitHubReleaseCollector(self.config, clients[3]),
+                FollowBuildersCollector(self.config, self.db, clients[4], self.run_dir),
+                YeeKalDailyCollector(self.config, self.db, clients[5]),
             ]
             policy = dict(self.config.settings.get("efficiency") or {})
             requested_workers = int(policy.get("collection_max_workers", 3))
             workers = bounded_collection_workers(requested_workers, len(collectors))
-            runs = run_collectors_bounded(collectors, max_workers=workers)
+            try:
+                runs = run_collectors_bounded(collectors, max_workers=workers)
+            finally:
+                for client in extra_http:
+                    client.close()
             items = []
             for run in runs:
                 items.extend(run.items)
