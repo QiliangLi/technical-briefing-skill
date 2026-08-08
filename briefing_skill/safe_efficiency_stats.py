@@ -13,6 +13,35 @@ def _ratio(saved: int, original: int) -> float | None:
     return round(saved / original, 4)
 
 
+def collection_execution_metrics(root: Path, run_id: str) -> dict[str, Any]:
+    payload = read_json(root / "workspace" / "runs" / run_id / "collection.json", {})
+    execution = payload.get("execution") if isinstance(payload, dict) else None
+    if not isinstance(execution, dict):
+        return {
+            "mode": None,
+            "max_workers": None,
+            "wall_seconds": None,
+            "collector_work_seconds": None,
+            "collector_failures": None,
+            "collector_counts": {},
+        }
+
+    collectors = [row for row in execution.get("collectors") or [] if isinstance(row, dict)]
+    work_seconds = sum(float(row.get("duration_seconds") or 0) for row in collectors)
+    failures = sum(1 for row in collectors if str(row.get("status") or "").upper() == "ERROR")
+    return {
+        "mode": execution.get("mode"),
+        "max_workers": execution.get("max_workers"),
+        "wall_seconds": execution.get("wall_seconds"),
+        "collector_work_seconds": round(work_seconds, 3),
+        "collector_failures": failures,
+        "collector_counts": {
+            str(row.get("collector") or "unknown"): int(row.get("count") or 0)
+            for row in collectors
+        },
+    }
+
+
 def safe_efficiency_metrics(db, root: Path, run_id: str) -> dict[str, Any]:
     duplicate_row = db.fetchone(
         "SELECT COUNT(*) AS n FROM candidates WHERE run_id=? AND status='DUPLICATE_PRIMARY'",
@@ -93,9 +122,13 @@ def install_safe_efficiency_stats() -> None:
     def run_stats(db, root: Path, run_id: str):
         result = original_run_stats(db, root, run_id)
         result["safe_efficiency"] = safe_efficiency_metrics(db, root, run_id)
+        result["collection_execution"] = collection_execution_metrics(root, run_id)
         notes = list(result.get("notes") or [])
         notes.append(
             "safe_efficiency counters describe deterministic work avoided or local cache reuse; they are not measured Codex token billing."
+        )
+        notes.append(
+            "collection_execution reports observed collector/wall-clock telemetry only; compare real runs before tuning collection_max_workers."
         )
         result["notes"] = notes
         return result
