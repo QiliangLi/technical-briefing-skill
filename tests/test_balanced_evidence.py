@@ -1,23 +1,28 @@
+from textwrap import dedent
+
 from briefing_skill.balanced_evidence import build_balanced_evidence_pack
 
 
 def test_balanced_pack_keeps_method_results_and_limitations_within_budget():
-    text = """
-# Abstract
-We introduce a KV-aware scheduler for distributed LLM inference.
+    sectioned = dedent(
+        """
+        # Abstract
+        We introduce a KV-aware scheduler for distributed LLM inference.
 
-# Introduction
-The system targets remote KV movement and tail latency.
+        # Introduction
+        The system targets remote KV movement and tail latency.
 
-# Method
-Requests are routed using session state, KV location, and network load. The scheduler avoids unnecessary transfers.
+        # Method
+        Requests are routed using session state, KV location, and network load. The scheduler avoids unnecessary transfers.
 
-# Evaluation
-On 8 GPUs over 200 GbE, the method reduces P99 latency from 64 ms to 48 ms and lowers transferred KV bytes by 31% against FIFO.
+        # Evaluation
+        On 8 GPUs over 200 GbE, the method reduces P99 latency from 64 ms to 48 ms and lowers transferred KV bytes by 31% against FIFO.
 
-# Limitations
-The gain narrows for compute-bound low-load workloads where network transfer is not on the critical path.
-""" * 20
+        # Limitations
+        The gain narrows for compute-bound low-load workloads where network transfer is not on the critical path.
+        """
+    )
+    text = sectioned * 20
 
     pack = build_balanced_evidence_pack(
         text,

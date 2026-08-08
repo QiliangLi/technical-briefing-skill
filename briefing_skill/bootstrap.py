@@ -21,6 +21,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .primary_fulltext_cache import install_primary_fulltext_cache
     from .project_insight import install_project_insight_layer
     from .quality_guard import install_quality_guards
+    from .radar_signal_synthesis import install_radar_signal_synthesis
     from .radar_taxonomy import install_radar_taxonomy
     from .reader_facing_quality import install_reader_facing_quality
     from .release_family import install_release_family_aggregation
@@ -75,9 +76,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Rebalance the same 18k first-read budget across context/mechanism/results/bounds.
     # This must run after evidence-repair so cache versions include both policies.
     install_balanced_evidence()
-    # Last reader-facing guard: merge project impact into 本期判断, remove internal
-    # selection metadata from appendices, and expose original source titles.
+    # Reader-facing guards merge project impact into 本期判断 and remove internal metadata.
     install_reader_facing_quality()
+    # Reuse the existing issue-synthesis Agent to turn broad Radar candidates into
+    # concrete technical signals. Installed last so it sees all final synthesis enrichers.
+    install_radar_signal_synthesis()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
