@@ -49,12 +49,14 @@ def normalise_technology_value(value: Any) -> dict[str, Any]:
 def technology_selection_score(row: dict[str, Any]) -> float:
     """Blend topic relevance with structural technology value without replacing relevance.
 
-    Relevance remains 80% of the normalized ranking signal. Technology value contributes
-    at most 20 points, enough to prefer a structurally important architecture change over
-    a routine but highly topical update without allowing an off-topic item to win.
+    Relevance remains 80% of the normalized ranking signal when a technology-value
+    assessment exists. Legacy/unfinished tasks without the new signal fall back exactly
+    to the original relevance score so rollout cannot silently penalise them.
     """
 
     relevance = max(0.0, min(100.0, _number(row.get("relevance_score"))))
+    if row.get("technology_value_score") is None:
+        return round(relevance, 3)
     tech = max(0.0, min(20.0, _number(row.get("technology_value_score"))))
     return round(relevance * 0.80 + tech, 3)
 
@@ -222,7 +224,6 @@ def install_technology_value_assessment() -> None:
     if getattr(Pipeline, "_technology_value_installed", False):
         return
 
-    # Schema installation follows the same pre-CLI pattern as the existing cost tables.
     original_db_init = Database.init
 
     def db_init(self) -> None:
@@ -231,7 +232,6 @@ def install_technology_value_assessment() -> None:
 
     Database.init = db_init
 
-    # Cache hits must restore the value signal as well as relevance.
     original_cached_relevance = relevance_efficiency.apply_cached_relevance
 
     def apply_cached_relevance(config, db, root, row: dict[str, Any]) -> bool:
@@ -242,8 +242,6 @@ def install_technology_value_assessment() -> None:
 
     relevance_efficiency.apply_cached_relevance = apply_cached_relevance
 
-    # Persist the structured value assessment after the normal relevance result has
-    # passed its existing schema/semantic validation and been applied.
     original_apply = Pipeline._apply_task
 
     def apply_task(self, task: dict[str, Any]) -> None:
@@ -253,7 +251,10 @@ def install_technology_value_assessment() -> None:
         output = self.tasks.read_result(task)
         for result in output.get("results") or []:
             candidate_id = str(result.get("candidate_id") or "")
-            if not candidate_id:
+            # Backward compatibility: an unfinished pre-PR17 task may validate without
+            # technology_value. Leave its new columns NULL so ranking falls back exactly
+            # to the pre-PR17 relevance path instead of fabricating a zero-value score.
+            if not candidate_id or not isinstance(result.get("technology_value"), dict):
                 continue
             value = normalise_technology_value(result.get("technology_value"))
             self.db.execute(
@@ -268,8 +269,6 @@ def install_technology_value_assessment() -> None:
     # presented to the already-tested diversity selector.
     efficiency.select_deep_budget = select_deep_budget_with_technology_value
 
-    # Final event ranking receives only a small centered adjustment (max +/-6 points),
-    # so evidence quality and relevance remain the dominant decision signals.
     original_event_score = Scorer.event_score
 
     def event_score(self, facts, candidates, raw_items):
@@ -286,8 +285,6 @@ def install_technology_value_assessment() -> None:
 
     Scorer.event_score = event_score
 
-    # Demo fixtures exercise the same structured output shape without changing the
-    # technical content of the fixture itself.
     original_demo = demo_module._demo_output
 
     def demo_output(task_type: str, data: dict[str, Any]):
@@ -307,7 +304,6 @@ def install_technology_value_assessment() -> None:
 
     demo_module._demo_output = demo_output
 
-    # Extend existing stats rather than replacing cost/quality telemetry.
     original_run_stats = telemetry.run_stats
 
     def run_stats(db, root, run_id: str):
