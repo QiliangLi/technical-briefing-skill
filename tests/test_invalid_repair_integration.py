@@ -39,7 +39,9 @@ def test_reopen_invalid_uses_small_targeted_sidecar_for_repairable_output(tmp_pa
                 "topic": {"name": "TPN"},
                 "direction": {"name": "KV transfer"},
                 "score": 88,
-                "facts": [{"mechanism": "very expensive evidence-derived facts"}],
+                # Simulate a real writing input carrying a sizeable structured fact
+                # payload. The targeted retry must not send this context again.
+                "facts": [{"mechanism": "x" * 12000}],
                 "sources": [{"url": "https://arxiv.org/abs/2608.12345"}],
                 "length": {"min_chars": 180, "max_chars": 260},
             },
