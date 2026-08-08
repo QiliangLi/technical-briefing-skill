@@ -1,0 +1,67 @@
+{
+  "_task": {
+    "id": "d2c213363a9bbcf057507331",
+    "type": "fact_evidence_repair",
+    "entity_id": "ed2efd0c8980a2fc805edfee",
+    "input_digest": "1c341bb8e2d8d6b38da0fd424e2e939b"
+  },
+  "title": "CodeGrep: An RL-Trained Retrieval Agent for LLM Coding Agents",
+  "event_hint": "arXiv publication of CodeGrep retrieval agent",
+  "problem": "LLM coding agents (Claude Code, OpenHands) spend most of their token budget finding the file to patch, not patching it. On SWE-Bench Verified, a 30B OpenHands agent averages 23 rounds and 631K tokens per resolved issue, with many calls spent on grep, glob, and view_file during repository exploration.",
+  "mechanism": "CodeGrep is a 14B retrieval agent trained end-to-end with GRPO to issue multi-turn parallel grep/glob/read tool calls and return candidate files to a frozen downstream coding agent. It uses CATM (Code Agent Trajectory Mining) to mine supervision from 67K open-source agent trajectories, and a Git-worktree environment for multi-turn agent RL.",
+  "evidence": [
+    {
+      "claim": "CodeGrep v3 reduces resolved-instance rounds from 23.0 to 19.6 (-15%) and tokens from 631K to 514K (-19%) while improving resolve rate from 25.8% to 27.0% on SWE-Bench Verified",
+      "value": 19,
+      "baseline": "no-retrieval baseline: 23.0 rounds, 631K tokens",
+      "condition": "on resolved SWE-Bench Verified instances, downstream agent: OpenHands with Qwen3-30B-A3B-Instruct-2507, temperature 0, 100-round max",
+      "source_locator": "Table 3, Section 4.3"
+    },
+    {
+      "claim": "Retrieval quality follows a precision threshold: BM25 (precision 0.375) degrades downstream, Jina (0.445) is neutral, CodeGrep v3 (0.677) achieves net efficiency gains",
+      "value": 0.677,
+      "baseline": "BM25: 0.375 precision, Jina: 0.445 precision",
+      "condition": "file-level precision on internal evaluation set, downstream utility threshold",
+      "source_locator": "Table 2, Section 5.1"
+    },
+    {
+      "claim": "CodeGrep v3 achieves Fβ mean 0.576 (median 0.714) with precision 0.677 and recall 0.435, producing high-quality retrievals (Fβ≥0.8) on 43.0% of instances vs 7.0% for BM25/Jina",
+      "value": 0.576,
+      "baseline": "BM25: Fβ mean 0.359, Jina: Fβ mean 0.427",
+      "condition": "internal evaluation set with CATM-mined labels, β=0.5 emphasizing precision over recall",
+      "source_locator": "Table 2, Section 4.2"
+    },
+    {
+      "claim": "Reward design: applying efficiency signal at advantage layer (v2/v3) reduces KL drift to 0.09-0.15 vs 0.31 for reward layer (v1), with v3 stabilizing at 2.1 turns vs v1's 2.6",
+      "value": 0.09,
+      "baseline": "0.31 (v1 reward-layer scaling)",
+      "condition": "GRPO training, KL-to-reference at step 900, mean turns per inference",
+      "source_locator": "Figure 2, Section 5.2"
+    },
+    {
+      "claim": "Training data from 67,074 open-source OpenHands trajectories using CATM pipeline, yielding 31,977 effective training samples (47.7% retention)",
+      "value": 67074,
+      "baseline": null,
+      "condition": "CATM mining pipeline with 3-stage filtering",
+      "source_locator": "Section 3.4"
+    }
+  ],
+  "evaluation_context": "SWE-Bench Verified (500 instances). Downstream agent: OpenHands (Wang et al., 2024) with Qwen3-30B-A3B-Instruct-2507. Temperature 0, 100-round maximum. Training: single 8x B200 node with LoRA, optimizer offload, and vLLM-colocated rollout. Early-stop at step 897 of planned 2000 steps. Internal evaluation set uses held-out SWE-Bench instances with CATM-mined labels audited by senior engineers.",
+  "limitations": "Index construction cost, repository update overhead, and real-world deployment constraints not described in visible evidence. Precision-only evaluation (β=0.5) may mask recall trade-offs; explicit limitations section and comprehensive failure case analysis not visible in supplement. Whether precision threshold transfers to other downstream agents remains open (§7). v1's reward-layer scaling caused 3.4× higher KL drift and required 1.65× more inference turns than v3.",
+  "project_relevance": "Directly relevant to agent acceleration. CodeGrep demonstrates a clean retrieval-based acceleration approach: training a smaller retrieval agent via RL to reduce redundant Read/Grep operations in larger coding agents. Key insights: (1) RL for tool policies works for code retrieval; (2) efficiency signal belongs at advantage layer, not reward layer; (3) retrievers need high precision (~0.68) to be net-positive for downstream agents; (4) Git-worktree environments enable practical multi-turn agent RL; (5) retrieval utility follows a precision threshold, not linear payoff. This validates precision-first retrieval acceleration without heavy indexing infrastructure.",
+  "primary_source_resolved": true,
+  "quality_score": 85,
+  "evidence_gaps": [
+    {
+      "question": "What are the explicit limitations and failure cases discussed in the paper?",
+      "terms": [
+        "limitations",
+        "failure cases",
+        "error analysis",
+        "discussion",
+        "qualitative analysis",
+        "Section 7"
+      ]
+    }
+  ]
+}

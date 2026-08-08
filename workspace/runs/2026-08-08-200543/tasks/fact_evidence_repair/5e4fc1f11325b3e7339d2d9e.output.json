@@ -1,0 +1,73 @@
+{
+  "_task": {
+    "id": "5e4fc1f11325b3e7339d2d9e",
+    "type": "fact_evidence_repair",
+    "entity_id": "5376fb893272e6c73ada9607",
+    "input_digest": "19c177509e86bd5757e2012c1ca0c2a1"
+  },
+  "title": "Accelerating GPU Inference of Large Language Models with Moderately Unstructured Sparse Weight Matrices",
+  "event_hint": "DAC 2026 paper (63rd ACM/IEEE Design Automation Conference)",
+  "problem": "LLM inference cost is high. Pruning can reduce computation, but maintaining model quality limits pruning to moderate unstructured sparsity (~50%). At these sparsity levels, existing GPU sparse matrix multiplication (SpMM) kernels cannot outperform dense cuBLAS due to: (1) tensor core incompatibility with unstructured patterns, (2) high metadata overhead (~50% of storage at moderate sparsity), and (3) high on-chip decoding overhead that cannot be overlapped with HBM memory access.",
+  "mechanism": "Three-layer sparse matrix storage format with co-optimized SpMM kernel: (1) Sparse-TC layer extracts 2:4 structured sparsity patterns compatible with sparse tensor cores using 2-bit position metadata; (2) Slot-Filling layer handles surplus non-zeros (~17.7%) using Parallel Differential Distance (PDD) encoding (4-bit) for low-cost decoding; (3) Residual Layer (<1%) uses CSR format. The kernel jointly utilizes sparse tensor cores (for structured patterns) and CUDA cores (for PDD decoding and residual computation) with pipelined execution overlapping on-chip computation with global memory access.",
+  "evidence": [
+    {
+      "claim": "At 50% unstructured sparsity, LLM perplexity remains near dense levels (Wanda: 7.79 vs 5.47 for Llama-7B; RIA: 6.88 vs 5.47 on WikiText-2)",
+      "value": "7.79 (Wanda), 6.88 (RIA) vs 5.47 (dense)",
+      "baseline": "Dense model perplexity 5.47",
+      "condition": "50% unstructured sparsity, Llama-7B, WikiText-2 dataset",
+      "source_locator": "Table 1, PDF Page 1"
+    },
+    {
+      "claim": "At 70% sparsity, perplexity degrades sharply (Wanda: 214.9, RIA: 68.8 vs 5.47 dense for Llama-7B)",
+      "value": "214.9 (Wanda), 68.8 (RIA)",
+      "baseline": "Dense model perplexity 5.47",
+      "condition": "70% unstructured sparsity, Llama-7B, WikiText-2 dataset",
+      "source_locator": "Table 1, PDF Page 1"
+    },
+    {
+      "claim": "At 50% sparsity, kernel achieves up to 1.64× speedup over SpInfer, 1.81× over FlashLLM, 5.29× over Sputnik",
+      "value": "1.64× (vs SpInfer), 1.81× (vs FlashLLM), 5.29× (vs Sputnik)",
+      "baseline": "Sputnik (CUDA cores), SparTA, FlashLLM, SpInfer (tensor cores)",
+      "condition": "50% sparsity, OPT-30B/66B matrix shapes, batch sizes 16/32, H100 GPU",
+      "source_locator": "Section 5.2, PDF Page 5"
+    },
+    {
+      "claim": "End-to-end inference at 50% sparsity achieves 41.4% higher throughput than FlashLLM and 26.1% higher than SpInfer on OPT-30B with batch size 16",
+      "value": "41.4% (vs FlashLLM), 26.1% (vs SpInfer)",
+      "baseline": "FlashLLM, SpInfer, Dense cuBLAS_TC",
+      "condition": "OPT-30B, 50% sparsity, batch size 16, input/output sequence length 512, H100 SXM5 80GB HBM3",
+      "source_locator": "Section 5.3, Figure 10, PDF Page 6"
+    },
+    {
+      "claim": "Peak memory usage reduced by 21.4% compared to dense baseline at 50% sparsity on OPT-30B with batch size 16",
+      "value": "21.4% reduction vs dense",
+      "baseline": "Dense format, FlashLLM, SpInfer",
+      "condition": "OPT-30B, 50% sparsity, batch size 16, H100 GPU",
+      "source_locator": "Section 5.3, Figure 11, PDF Page 6"
+    }
+  ],
+  "evaluation_context": "Target hardware: NVIDIA H100 SXM5 GPU with 80GB HBM3. Workload: OPT-30B and OPT-66B models pruned with Wanda algorithm. Batch sizes: 8, 16, 32. Sequence lengths: input 512, output 512. Sparsity levels: 50%, 60%, 70%. Baselines: cuBLAS_TC (dense tensor cores), SpInfer (EuroSys'25), FlashLLM (VLDB'24), Sputnik, SparTA. Evaluation covers both kernel-level SpMM and end-to-end LLM inference throughput (tokens/s) and memory usage.",
+  "limitations": "Evidence now covers complete evaluation including experimental setup (H100 SXM5 80GB HBM3), specific models (OPT-30B/66B with Wanda pruning), batch sizes (8/16/32), sequence lengths (512), and detailed throughput and memory results. However, HBM bandwidth utilization measurements, detailed memory traffic breakdown, and power consumption data remain unavailable. The method underperforms FlashLLM at high sparsity and during prefill phase with large N (compute-bound regime). No RIA pruning method evaluation found in supplement.",
+  "project_relevance": "This work is highly relevant to AI chip accelerator evaluation under the 'chip memory interface, data movement and hardware-software co-design' direction. It directly addresses how GPU memory hierarchy (HBM3), sparse tensor cores, and CUDA cores can be co-designed through specialized storage formats and kernel optimization to accelerate LLM inference at moderate sparsity. The focus on overlapping computation with HBM memory access, hierarchical memory strategy (L2 cache for dense matrices, global memory for sparse weights), and reducing metadata overhead aligns with project questions about memory bandwidth bottlenecks and hardware-software co-design. The supplement now provides comprehensive experimental validation with throughput improvements and memory reduction data.",
+  "primary_source_resolved": true,
+  "quality_score": 85,
+  "source_notes": [
+    "Evidence Pack: front-evidence-v2 (Sections 1-4.2) + targeted supplement (PDF Pages 5-6, Sections 5-7)",
+    "Paper ID: DAC '26, DOI: 10.1145/3770743.3804227",
+    "Authors: Tao Lu (NUS), Haoyu Wang (Zhejiang Univ), et al.",
+    "Source code: https://github.com/moui0/cudac",
+    "Published: arXiv:2607.08786v1 [cs.LG] 13 Jun 2026"
+  ],
+  "evidence_gaps": [
+    {
+      "question": "What are the detailed HBM bandwidth utilization, memory traffic breakdown, and power consumption measurements?",
+      "terms": [
+        "HBM bandwidth",
+        "memory traffic",
+        "power consumption",
+        "energy efficiency",
+        "utilization"
+      ]
+    }
+  ]
+}

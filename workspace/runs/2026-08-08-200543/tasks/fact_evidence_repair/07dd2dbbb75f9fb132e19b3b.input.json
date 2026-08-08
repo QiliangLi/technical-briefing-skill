@@ -1,0 +1,195 @@
+{
+  "_task": {
+    "id": "07dd2dbbb75f9fb132e19b3b",
+    "type": "fact_evidence_repair",
+    "entity_id": "416841a70c75dd020415ab6b",
+    "input_digest": "2bf6b6296ae3e09672f5ff1f19c46f50"
+  },
+  "candidate_id": "416841a70c75dd020415ab6b",
+  "source": {
+    "title": "ExpertPlex: A High-Goodput Disaggregated Serving System for MoE LLMs with Adaptive Persistent Kernels",
+    "summary": "LLMs scale Mixture-of-Experts (MoE) parameters for superior intelligence, but massive weights and dynamic computation impede efficient serving. Existing instance-level prefill-decode disaggregation isolates the phases on separate full-model replicas. As MoE weights grow, each instance may span tens to hundreds of GPUs, making resource allocation increasingly coarse. Configured prefill-to-decode ratios thus often mismatch demand, overprovisioning one phase while overloading the other. Prefill-decode colocation avoids this duplication, but existing Green Context solutions partition each GPU by phase and fix phase resources during a kernel. They cannot track resource changes across operations or layerwise variation in routed expert load, causing head-of-line blocking or idle reserved resources. Partitioning every GPU also leaves each phase with fewer local resources, forces wider parallelism and more communication, and lets prefill and decode traffic interfere on the shared network. We present ExpertPlex, which shares massive MoE experts across phases while disaggregating lightweight attention modules. Expert sharing eliminates over 95% of duplicate model weights and multiplexes dynamically sparse computation, while attention disaggregation reduces attention communication cost. ExpertPlex further uses (1) adaptive persistent kernels to schedule dynamic expert computation at tile granularity for efficient, isolated execution; (2) attention-initiated MoE communication to avoid network interference and enable cross-phase communication-computation overlap; and (3) a tile-to-cluster model to optimize these mechanisms for maximum goodput. Experiments serving MiniMax-M2.7 and GLM-5.1-FP8 show that ExpertPlex improves goodput by up to 2.01$\\times$ over instance-level prefill-decode disaggregation and 1.66$\\times$ over prefill-decode colocation.",
+    "url": "https://arxiv.org/abs/2607.18002v2",
+    "published_at": "2026-07-20T14:34:43Z",
+    "discovery_source": "arXiv",
+    "source_level": "A",
+    "discovery_only": false
+  },
+  "topic": {
+    "id": "tpn",
+    "name": "状态感知网络、TPN",
+    "current_questions": [
+      "网络是否能够感知推理阶段、KVCache位置和Token性能目标",
+      "状态感知调度能否降低TTFT、TPOT或跨节点KVCache传输开销",
+      "网络侧优化相对纯GPU内存调度增加了什么价值"
+    ],
+    "valuable_evidence": [
+      "TTFT",
+      "TPOT",
+      "token throughput",
+      "KVCache传输量",
+      "网络利用率",
+      "端到端P95"
+    ]
+  },
+  "direction": {
+    "id": "pd_disaggregation",
+    "name": "Prefill/Decode解耦通信",
+    "queries": [
+      "\"prefill decode disaggregation\" communication",
+      "\"disaggregated LLM serving\" network scheduling",
+      "\"KV cache handoff\" prefill decode"
+    ],
+    "aihot_queries": [
+      "prefill decode disaggregation",
+      "KV cache handoff",
+      "disaggregated inference"
+    ],
+    "arxiv_query": "(\"prefill decode\" AND (disaggregation OR communication OR network))",
+    "include_terms": [
+      "prefill",
+      "decode",
+      "disaggregation",
+      "kv cache",
+      "communication"
+    ],
+    "exclude_terms": []
+  },
+  "project_context_path": "config/project-context/tpn.md",
+  "previous_facts": {
+    "title": "ExpertPlex: A High-Goodput Disaggregated Serving System for MoE LLMs with Adaptive Persistent Kernels",
+    "event_hint": "ExpertPlex: MoE LLM serving system with hybrid disaggregation-colocation architecture",
+    "problem": "MoE LLMs have massive weights (95-98% of parameters) and dynamic computation that impede efficient serving. Existing instance-level prefill-decode disaggregation (PDD) isolates phases on separate full-model replicas, each spanning tens to hundreds of GPUs, making resource allocation increasingly coarse. Configured prefill-to-decode ratios often mismatch demand. Prefill-decode colocation solutions using Green Context partition each GPU by phase and fix phase resources during a kernel, unable to track resource changes across operations or layerwise variation in routed expert load, causing head-of-line blocking or idle reserved resources.",
+    "mechanism": "Hybrid disaggregation-colocation architecture that shares massive MoE experts across phases while disaggregating lightweight attention modules. Expert sharing eliminates over 95% of duplicate model weights and multiplexes dynamically sparse computation, while attention disaggregation reduces attention communication cost. Uses (1) Adaptive Persistent Kernels (APK) to schedule dynamic expert computation at tile granularity for efficient, isolated execution; (2) attention-initiated MoE communication to avoid network interference and enable cross-phase communication-computation overlap; (3) a tile-to-cluster model to optimize these mechanisms for maximum goodput.",
+    "evidence": [
+      {
+        "claim": "Goodput improvement over instance-level prefill-decode disaggregation",
+        "value": "2.01x",
+        "baseline": "Instance-level prefill-decode disaggregation",
+        "condition": "Serving MiniMax-M2.7 and GLM-5.1-FP8 on real-world workloads",
+        "source_locator": "Abstract"
+      },
+      {
+        "claim": "Goodput improvement over prefill-decode colocation",
+        "value": "1.66x",
+        "baseline": "Green Context-based prefill-decode colocation",
+        "condition": "Serving MiniMax-M2.7 and GLM-5.1-FP8 on real-world workloads",
+        "source_locator": "Abstract"
+      },
+      {
+        "claim": "Expert sharing eliminates duplicate model weights",
+        "value": "95%",
+        "baseline": "None specified",
+        "condition": "Hybrid architecture sharing MoE experts across phases",
+        "source_locator": "Abstract, Introduction"
+      },
+      {
+        "claim": "MoE weights contribute to model parameters (DeepSeek-V4-Pro)",
+        "value": "95%",
+        "baseline": "None specified",
+        "condition": "DeepSeek-V4-Pro model",
+        "source_locator": "Introduction §2.1"
+      }
+    ],
+    "evaluation_context": "Evaluated serving two frontier MoE LLMs (MiniMax-M2.7 and GLM-5.1-FP8) on real-world workloads. Compared against instance-level prefill-decode disaggregation and Green Context-based prefill-decode colocation. Uses expert parallelism (EP) to shard experts across GPUs with all-to-all communication for dispatch and combine operations. Attention uses data parallelism (DP) or tensor parallelism (TP).",
+    "limitations": "Evidence pack limited to abstract, introduction, and background sections. Detailed experimental methodology, specific hardware configurations, workload characteristics, baseline implementation details, and comprehensive performance metrics (TTFT, TPOT, latency percentiles) not visible in front evidence. Claims of 2.01x and 1.66x goodput improvements lack supporting experimental conditions and configurations in visible text.",
+    "project_relevance": "Relevant to TPN's focus on network awareness of inference stages and KV cache positioning. ExpertPlex introduces attention-initiated one-sided MoE communication that uses mostly disjoint network paths to transfer activations between attention and MoE-side buffers, reducing cross-phase network interference. The architecture enables cross-phase communication-computation overlap, addressing TPN's concern about network-side optimization value relative to pure GPU memory scheduling. However, evidence pack does not show explicit network-awareness of inference stages or token performance targets, nor does it present TTFT/TPOT/network utilization metrics that TNP prioritizes.",
+    "primary_source_resolved": true,
+    "quality_score": 55,
+    "evidence_gaps": [
+      {
+        "question": "What are the specific hardware configurations (GPU models, cluster size, network topology) used in experiments?",
+        "terms": [
+          "hardware",
+          "GPU",
+          "cluster",
+          "network topology",
+          "experimental setup",
+          "configuration"
+        ]
+      },
+      {
+        "question": "What are the detailed experimental results including TTFT, TPOT, P95 latency, and token throughput metrics?",
+        "terms": [
+          "TTFT",
+          "TPOT",
+          "P95",
+          "latency",
+          "throughput",
+          "token",
+          "performance",
+          "evaluation"
+        ]
+      },
+      {
+        "question": "What are the specific workload characteristics, request patterns, and prefill-to-decode ratios used in evaluation?",
+        "terms": [
+          "workload",
+          "request pattern",
+          "prefill-to-decode ratio",
+          "P:D ratio",
+          "trace",
+          "dataset"
+        ]
+      }
+    ],
+    "source_notes": []
+  },
+  "previous_task_id": "d40b203e37169bd22cea7be5",
+  "evidence_gaps": [
+    {
+      "question": "What are the specific hardware configurations (GPU models, cluster size, network topology) used in experiments?",
+      "terms": [
+        "hardware",
+        "GPU",
+        "cluster",
+        "network topology",
+        "experimental setup",
+        "configuration"
+      ]
+    },
+    {
+      "question": "What are the detailed experimental results including TTFT, TPOT, P95 latency, and token throughput metrics?",
+      "terms": [
+        "TTFT",
+        "TPOT",
+        "P95",
+        "latency",
+        "throughput",
+        "token",
+        "performance",
+        "evaluation"
+      ]
+    },
+    {
+      "question": "What are the specific workload characteristics, request patterns, and prefill-to-decode ratios used in evaluation?",
+      "terms": [
+        "workload",
+        "request pattern",
+        "prefill-to-decode ratio",
+        "P:D ratio",
+        "trace",
+        "dataset"
+      ]
+    }
+  ],
+  "document": {
+    "document_id": "0f74ff0f68107f57c37edc58",
+    "supplement_path": "workspace/runs/2026-08-08-200543/documents/0f74ff0f68107f57c37edc58.supplement.md",
+    "text_path": "workspace/runs/2026-08-08-200543/documents/0f74ff0f68107f57c37edc58.supplement.md",
+    "chunks": [
+      "workspace/runs/2026-08-08-200543/documents/0f74ff0f68107f57c37edc58.supplement.md"
+    ],
+    "fetch_status": "FETCHED",
+    "evidence_char_count": 8974,
+    "source_raw_char_count": 72402,
+    "source_evidence_char_count": 17923,
+    "source_fingerprint": "f10d1f44100e5b610097ce1570a7e878",
+    "extractor_version": "front-evidence-v2:263578e1cf5cd39b:repair-776ccd47c8",
+    "fact_cache_eligible": true
+  },
+  "constraints": {
+    "single_supplement_round": true,
+    "do_not_open_original_evidence_or_raw_fulltext": true
+  }
+}

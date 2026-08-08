@@ -1,0 +1,75 @@
+{
+  "_task": {
+    "id": "9359f94098c1b6f8a0d3ce62",
+    "type": "fact_extraction",
+    "entity_id": "5376fb893272e6c73ada9607",
+    "input_digest": "02b89bc3c1c9eef5a6b4c430b77e1269"
+  },
+  "title": "Accelerating GPU Inference of Large Language Models with Moderately Unstructured Sparse Weight Matrices",
+  "event_hint": "DAC 2026 paper (63rd ACM/IEEE Design Automation Conference)",
+  "problem": "LLM inference cost is high. Pruning can reduce computation, but maintaining model quality limits pruning to moderate unstructured sparsity (~50%). At these sparsity levels, existing GPU sparse matrix multiplication (SpMM) kernels cannot outperform dense cuBLAS due to: (1) tensor core incompatibility with unstructured patterns, (2) high metadata overhead (~50% of storage at moderate sparsity), and (3) high on-chip decoding overhead that cannot be overlapped with HBM memory access.",
+  "mechanism": "Three-layer sparse matrix storage format with co-optimized SpMM kernel: (1) Sparse-TC layer extracts 2:4 structured sparsity patterns compatible with sparse tensor cores using 2-bit position metadata; (2) Slot-Filling layer handles surplus non-zeros (~17.7%) using Parallel Differential Distance (PDD) encoding (4-bit) for low-cost decoding; (3) Residual Layer (<1%) uses CSR format. The kernel jointly utilizes sparse tensor cores (for structured patterns) and CUDA cores (for PDD decoding and residual computation) with pipelined execution overlapping on-chip computation with global memory access.",
+  "evidence": [
+    {
+      "claim": "At 50% unstructured sparsity, LLM perplexity remains near dense levels (Wanda: 7.79 vs 5.47 for Llama-7B; RIA: 6.88 vs 5.47 on WikiText-2)",
+      "value": "7.79 (Wanda), 6.88 (RIA) vs 5.47 (dense)",
+      "baseline": "Dense model perplexity 5.47",
+      "condition": "50% unstructured sparsity, Llama-7B, WikiText-2 dataset",
+      "source_locator": "Table 1, PDF Page 1"
+    },
+    {
+      "claim": "At 70% sparsity, perplexity degrades sharply (Wanda: 214.9, RIA: 68.8 vs 5.47 dense for Llama-7B)",
+      "value": "214.9 (Wanda), 68.8 (RIA)",
+      "baseline": "Dense model perplexity 5.47",
+      "condition": "70% unstructured sparsity, Llama-7B, WikiText-2 dataset",
+      "source_locator": "Table 1, PDF Page 1"
+    },
+    {
+      "claim": "Execution time on H100 with HBM shows SpMM kernel latency vs cuBLAS_TC baseline",
+      "value": "Graphical comparison (execution time vs sparsity curve)",
+      "baseline": "cuBLAS_TC (dense tensor cores)",
+      "condition": "M/K/N = 66K/16K/32 (typical LLM inference dimensions), NVIDIA H100 GPU with HBM",
+      "source_locator": "Figure 1, PDF Page 2"
+    },
+    {
+      "claim": "At 50% sparsity, storage overhead comparison shows our format reduces metadata and total storage vs FlashLLM and SpInfer",
+      "value": "Storage breakdown (value/metadata/total)",
+      "baseline": "Dense, CSR, SparTA, FlashLLM, SpInfer formats",
+      "condition": "50% sparsity level",
+      "source_locator": "Figure 3, PDF Page 2"
+    },
+    {
+      "claim": "Kernel achieves up to 1.64× speedup over SpInfer (EuroSys'25 Best Paper) and up to 1.41× end-to-end speedup over FlashLLM (VLDB'24)",
+      "value": "1.64× (kernel-level), 1.41× (end-to-end)",
+      "baseline": "SpInfer (kernel), FlashLLM (end-to-end)",
+      "condition": "Modern GPUs with HBM, moderate unstructured sparsity",
+      "source_locator": "Abstract, PDF Page 1"
+    }
+  ],
+  "evaluation_context": "Target hardware: NVIDIA H100 GPU with HBM (High Bandwidth Memory). Workload: LLM inference with matrix dimensions M/K/N = 66K/16K/32 (typical in LLM inference). Baseline: cuBLAS_TC (dense tensor cores), SpInfer (EuroSys'25), FlashLLM (VLDB'24), Sputnik, SparTA. Sparsity level: moderate unstructured ~50% (where model quality is preserved). The paper evaluates both kernel-level SpMM and end-to-end LLM inference performance.",
+  "limitations": "Visible evidence covers abstract, introduction, and design through Section 4.2. Full evaluation section with detailed experimental results, specific model architectures tested (beyond Llama family mentioned in Table 1), complete hardware configuration details, workload batch sizes, and detailed performance analysis is not present in the Evidence Pack. The 1.64×/1.41× speedup claims lack specific experimental conditions (model, batch size, sequence length) in visible text. Evidence shows design rationale but not comprehensive validation data.",
+  "project_relevance": "This work is highly relevant to AI chip accelerator evaluation under the 'chip memory interface, data movement and hardware-software co-design' direction. It directly addresses how GPU memory hierarchy (HBM), sparse tensor cores, and CUDA cores can be co-designed through specialized storage formats and kernel optimization to accelerate LLM inference at moderate sparsity. The focus on overlapping computation with HBM memory access and reducing metadata overhead aligns with project questions about memory bandwidth bottlenecks and hardware-software co-design. However, the Evidence Pack lacks complete experimental validation data (full throughput/latency numbers, power consumption, detailed hardware conditions) needed for full assessment.",
+  "primary_source_resolved": true,
+  "quality_score": 65,
+  "source_notes": [
+    "Evidence Pack is front-evidence-v2 format containing abstract, introduction, background, and design sections (Sections 1-4.2) of the DAC 2026 paper",
+    "Paper ID: DAC '26, DOI: 10.1145/3770743.3804227",
+    "Authors: Tao Lu (NUS), Haoyu Wang (Zhejiang Univ), et al.",
+    "Source code: https://github.com/moui0/cudac",
+    "Published: arXiv:2607.08786v1 [cs.LG] 13 Jun 2026"
+  ],
+  "evidence_gaps": [
+    {
+      "question": "What are the specific model architectures, batch sizes, and sequence lengths used in the end-to-end evaluation that achieved 1.41× speedup over FlashLLM?",
+      "terms": ["end-to-end", "batch size", "sequence length", "FlashLLM", "1.41×", "evaluation", "experimental setup"]
+    },
+    {
+      "question": "What are the detailed HBM bandwidth utilization, memory traffic breakdown, and power consumption measurements?",
+      "terms": ["HBM bandwidth", "memory traffic", "power consumption", "energy efficiency", "utilization", "throughput"]
+    },
+    {
+      "question": "What specific sparsity patterns, pruning methods (Wanda, RIA), and model sizes beyond Llama-7B/13B were evaluated in the full experiments?",
+      "terms": ["sparsity pattern", "Wanda", "RIA", "Llama", "Opt", "model size", "perplexity", "WikiText"]
+    }
+  ]
+}

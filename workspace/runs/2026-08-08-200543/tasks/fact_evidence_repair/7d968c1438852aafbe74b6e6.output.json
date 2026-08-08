@@ -1,0 +1,77 @@
+{
+  "_task": {
+    "id": "7d968c1438852aafbe74b6e6",
+    "type": "fact_evidence_repair",
+    "entity_id": "780c3527ebf35897de513ddd",
+    "input_digest": "3bb2b9353eb3d03b6cec1d503234f604"
+  },
+  "title": "SAC: Disaggregated KV Cache System for Sparse Attention LLMs with CXL",
+  "event_hint": "SAC system release: CXL-based disaggregated KV cache for sparse attention LLMs",
+  "problem": "RDMA-based disaggregated KV cache systems perform full prefix cache fetching before decoding, causing transmission bottlenecks and local memory waste for sparse attention models where only a small fraction of KV entries are active",
+  "mechanism": "CXL-based disaggregated memory with cache-line granularity load/store semantics enables on-demand fetching of only required top-k KV entries during inference",
+  "evidence": [
+    {
+      "claim": "SAC achieves 2.1x higher throughput compared to RDMA-based baselines",
+      "value": 2.1,
+      "baseline": "RDMA-based disaggregated memory pool",
+      "condition": "DeepSeek-V3.2 model, SGLang framework, context lengths 16K-128K tokens, Round-2 decoding with 64 concurrency",
+      "source_locator": "Abstract, Introduction, Section 5.1 (PDF Pages 1-2, 7)"
+    },
+    {
+      "claim": "SAC achieves 9.7x lower TTFT (Time to First Token) compared to RDMA-based baselines",
+      "value": 9.7,
+      "baseline": "RDMA-based disaggregated memory pool",
+      "condition": "DeepSeek-V3.2 model, SGLang framework, context lengths 16K-128K tokens, Round-2 decoding with 64 concurrency",
+      "source_locator": "Abstract, Introduction, Section 5.1 (PDF Pages 1-2, 7)"
+    },
+    {
+      "claim": "SAC achieves 1.8x lower TBT (Time Between Token) compared to RDMA-based baselines",
+      "value": 1.8,
+      "baseline": "RDMA-based disaggregated memory pool",
+      "condition": "DeepSeek-V3.2 model, SGLang framework, context lengths 16K-128K tokens, Round-2 decoding with 64 concurrency",
+      "source_locator": "Abstract, Introduction, Section 5.1 (PDF Pages 1-2, 7)"
+    },
+    {
+      "claim": "SAC achieves throughput within 91% of local DRAM upper bound baseline",
+      "value": 91,
+      "baseline": "Local host DRAM",
+      "condition": "DeepSeek-V3.2 model, 8-H20 GPU server, 2TB CXL memory pool, SGLang and HiSparse framework, context lengths 16K-128K tokens",
+      "source_locator": "Section 5.1 (PDF Page 7)"
+    },
+    {
+      "claim": "CXL-based disaggregated memory achieves 1.04-1.64x of local DRAM latency for sparse KV retrieval",
+      "value": "1.04-1.64",
+      "baseline": "Local DRAM",
+      "condition": "Sparse KV indices sampled from 128K-token context, DeepSeek-V3.2 MLA KV entry (512-dim latent + 64-dim RoPE, bfloat16)",
+      "source_locator": "Section 3.2, Figure 5"
+    }
+  ],
+  "evaluation_context": "DeepSeek-V3.2 sparse attention model (AWQ 4-bit quantization) evaluated on 8-H20 GPU server with 2TB CXL memory pool using SGLang and HiSparse framework; two-round experimental design: Round-1 (Cache Populate) with concurrency 8 for prefill stage, Round-2 (Cache Hit) with concurrency 64 for decode stage; context lengths swept from 16K to 128K tokens with output lengths of 1K, 4K, and 8K tokens; workload from ShareGPT dataset (512 requests); comparisons against RDMA-based disaggregated memory pool and local host DRAM upper bound; Section 3.1 shows only 21% of KV cache utilized in 128K-context scenarios; device interleaving analysis shows throughput gains from multiple CXL devices; HiSparse buffer size tuning (4K vs 6K) shows 10.4% throughput improvement with larger buffer",
+  "limitations": "Evidence limited to abstract/introduction/motivation/evaluation sections; detailed experimental methodology in Appendix A not reviewed; specific CXL hardware generation (2.0/3.0) not specified; RDMA network hardware details (RNIC speed, fabric configuration) not provided in supplement; MoonCache and LMCache baseline configurations not mentioned in supplement; scalability beyond 128K context not addressed; detailed memory usage breakdown not provided",
+  "project_relevance": "Directly addresses memory semantics question by demonstrating how CXL's cache-line granularity load/store semantics enable fundamentally different disaggregated memory access patterns compared to RDMA's message-based send/recv model; shows 1.04-1.64x DRAM-equivalent latency for sparse access and 91% of DRAM throughput; validates CXL memory semantics for fine-grained, sparse KV access; DSA/IAA relevance indirect - work focuses on CXL fabric not CPU offload; end-to-end evidence from SGLang integration with 2.1x throughput, 9.7x TTFT, 1.8x TBT improvements on 8-H20 GPU server with 2TB CXL memory pool",
+  "primary_source_resolved": true,
+  "quality_score": 75,
+  "evidence_gaps": [
+    {
+      "question": "What are the exact hardware configurations for CXL memory, GPU instances, and RDMA network used in end-to-end evaluation?",
+      "terms": [
+        "CXL memory",
+        "GPU",
+        "RDMA",
+        "hardware configuration",
+        "experimental setup",
+        "100 Gbps RNIC"
+      ]
+    },
+    {
+      "question": "What are the detailed baseline configurations for RDMA-based disaggregated systems being compared?",
+      "terms": [
+        "RDMA baseline",
+        "MoonCake",
+        "LMCache",
+        "disaggregated memory",
+        "prefetch"
+      ]
+    }
+  ]
+}

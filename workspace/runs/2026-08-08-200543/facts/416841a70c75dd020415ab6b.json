@@ -1,0 +1,57 @@
+{
+  "title": "ExpertPlex: A High-Goodput Disaggregated Serving System for MoE LLMs with Adaptive Persistent Kernels",
+  "event_hint": "ExpertPlex: MoE LLM serving system with hybrid disaggregation-colocation architecture",
+  "problem": "MoE LLMs have massive weights (95-98% of parameters) and dynamic computation that impede efficient serving. Existing instance-level prefill-decode disaggregation (PDD) isolates phases on separate full-model replicas, each spanning tens to hundreds of GPUs, making resource allocation increasingly coarse. Configured prefill-to-decode ratios often mismatch demand. Prefill-decode colocation solutions using Green Context partition each GPU by phase and fix phase resources during a kernel, unable to track resource changes across operations or layerwise variation in routed expert load, causing head-of-line blocking or idle reserved resources.",
+  "mechanism": "Hybrid disaggregation-colocation architecture that shares massive MoE experts across phases while disaggregating lightweight attention modules. Expert sharing eliminates over 95% of duplicate model weights and multiplexes dynamically sparse computation, while attention disaggregation reduces attention communication cost. Uses (1) Adaptive Persistent Kernels (APK) to schedule dynamic expert computation at tile granularity for efficient, isolated execution; (2) attention-initiated MoE communication to avoid network interference and enable cross-phase communication-computation overlap; (3) a tile-to-cluster model to optimize these mechanisms for maximum goodput.",
+  "evidence": [
+    {
+      "claim": "Goodput improvement over instance-level prefill-decode disaggregation",
+      "value": "2.01x",
+      "baseline": "SGLang-PDD (instance-level prefill-decode disaggregation)",
+      "condition": "Serving MiniMax-M2.7 on ShareGPT workload with TTFT SLO 1s and TPOT SLO 50ms",
+      "source_locator": "Abstract, PDF Page 10"
+    },
+    {
+      "claim": "Goodput improvement over prefill-decode colocation",
+      "value": "1.41x",
+      "baseline": "SGLang-PDMux (Green Context-based prefill-decode colocation)",
+      "condition": "Serving MiniMax-M2.7 on ShareGPT workload with TTFT SLO 1s and TPOT SLO 50ms",
+      "source_locator": "Abstract, PDF Page 10"
+    },
+    {
+      "claim": "ExpertPlex goodput on MiniMax-M2.7 ShareGPT",
+      "value": "11.3 requests per second per node",
+      "baseline": "None specified",
+      "condition": "Joint SLO (TTFT 1s, TPOT 50ms) on H800 cluster",
+      "source_locator": "PDF Page 10"
+    },
+    {
+      "claim": "Expert sharing eliminates duplicate model weights",
+      "value": "95%",
+      "baseline": "None specified",
+      "condition": "Hybrid architecture sharing MoE experts across phases",
+      "source_locator": "Abstract, Introduction"
+    },
+    {
+      "claim": "Hardware configuration for experiments",
+      "value": "NVIDIA H800 GPUs with NVLink and 200 Gbps InfiniBand",
+      "baseline": "None specified",
+      "condition": "Single-node: 8 H800 GPUs with NVLink; Multi-node: up to 3 machines, each with 8 H800 GPUs connected by eight 200 Gbps InfiniBand NICs",
+      "source_locator": "PDF Page 10"
+    }
+  ],
+  "evaluation_context": "Evaluated serving two frontier MoE LLMs (MiniMax-M2.7 and GLM-5.1-FP8) on NVIDIA H800 cluster. Compared against SGLang-ChunkedPrefill, SGLang-Colocated, SGLang-PDD (instance-level prefill-decode disaggregation), and SGLang-PDMux (Green Context-based colocation). Workloads sampled from ShareGPT and LooGLE representing short and long requests with Poisson arrival process. Main metric: P90 goodput where 90% of requests meet both TTFT and TPOT SLOs. SLOs: MiniMax-M2.7 ShareGPT (TTFT 1s, TPOT 50ms), MiniMax-M2.7 LooGLE (TTFT 10s, TPOT 100ms), GLM-5.1-FP8 ShareGPT (TTFT 2s, TPOT 100ms), GLM-5.1-FP8 LooGLE (TTFT 20s, TPOT 100ms).",
+  "limitations": "Supplement provides hardware configuration, baseline systems, and workload SLOs. However, detailed latency distributions, network utilization metrics, and complete experimental traces across all model-workload combinations remain partially visible. PDD baseline for GLM-5.1-FP8 not reported due to 24-GPU memory constraints. Tile-to-cluster model methodology described but full validation results not shown.",
+  "project_relevance": "Relevant to TPN's focus on network awareness of inference stages and KV cache positioning. ExpertPlex introduces attention-initiated one-sided MoE communication that uses mostly disjoint network paths to transfer activations between attention and MoE-side buffers, reducing cross-phase network interference. The architecture enables cross-phase communication-computation overlap. Explicit SLOs for TTFT (1-20s) and TPOT (50-100ms) are defined across workloads. Supplement shows H800 cluster with 200 Gbps InfiniBand network, but explicit network-awareness of inference stages or network utilization metrics remain unclear.",
+  "primary_source_resolved": true,
+  "quality_score": 80,
+  "evidence_gaps": [],
+  "_provenance": {
+    "task_id": "07dd2dbbb75f9fb132e19b3b",
+    "candidate_id": "416841a70c75dd020415ab6b",
+    "source_title": "ExpertPlex: A High-Goodput Disaggregated Serving System for MoE LLMs with Adaptive Persistent Kernels",
+    "source_url": "https://arxiv.org/abs/2607.18002v2",
+    "document_id": "0f74ff0f68107f57c37edc58",
+    "repair_of_task_id": "d40b203e37169bd22cea7be5"
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "title": "ReMP: Low-Downtime Runtime Model-Parallelism Reconfiguration for LLM Serving",
+  "event_hint": "arXiv paper on runtime reconfiguration of TP/PP topology for LLM serving",
+  "problem": "Existing LLM inference systems treat model parallelism topology (Tensor Parallelism TP and Pipeline Parallelism PP) as static configuration. This rigid design cannot adapt to dynamically changing inference workloads. State-of-the-art systems lack online reconfiguration capabilities and can only switch configurations by restarting the service, resulting in several minutes of service interruption, KV cache loss, and prohibitive recomputation overhead.",
+  "mechanism": "ReMP decouples model parallelism topology from runtime state through three key techniques: (1) Decoupling topology from state—persisting full model state in CPU shared memory, avoiding full service reconstruction; (2) Two-dimensional KV cache migration—jointly remapping cache blocks across pipeline layer dimension and tensor-parallel KV-head dimension to preserve reusable states; (3) End-to-end online reconfiguration integrated into vLLM v1 executor, worker management, KV cache manager, and communication pipeline. ReMP overlaps model-shard reloading with KV cache construction/migration during state-transformation since these operations work on different runtime states and data paths.",
+  "evidence": [
+    {
+      "claim": "ReMP topology switches complete within 1-7 seconds for models from 7B to 70B parameters, achieving speedups of tens to over 100× compared to restart-based reconfiguration",
+      "value": "1-7 seconds, tens to 100× speedup",
+      "baseline": "restart-based reconfiguration",
+      "condition": "Four LLMs evaluated: Llama2-7B, Qwen3-30B-A3B, DeepSeek-R1-Distill-Qwen-32B, Llama2-70B on H100 and RTX 5090 platforms (Llama2-70B excluded from RTX 5090 due to GPU memory limitations); exact baseline restart times not visible",
+      "source_locator": "Abstract, Section 1 (Introduction), Section 4.1 (Experimental Setup)"
+    },
+    {
+      "claim": "ReMP's overlap technique saves 13-32% of state-transformation time by executing model-shard reloading concurrently with KV cache construction or migration",
+      "value": "13-32% time saved",
+      "baseline": "sequential execution of model loading and KV transfer",
+      "condition": "Overlap reduces optimized time toward max(T_model, T_KV) rather than sequential sum; savings measured across four models on both H100 and RTX 5090 platforms",
+      "source_locator": "Section 4.2, Figure 6"
+    },
+    {
+      "claim": "ReMP dynamically selects TP/PP configurations under varying request pressure using a weighted score combining output throughput (higher-is-better), mean TPOT (lower-is-better), and mean TTFT (lower-is-better)",
+      "value": "dynamic topology selection with weighted score",
+      "baseline": "fixed TP1PP8 and TP2PP4 configurations",
+      "condition": "Evaluated across request rates 1-5 on four models using BurstGPT-derived request traces; selection metric balances capacity and user-visible latency",
+      "source_locator": "Section 4.3.1 (Methodology), Section 4.3.2-4.3.4, Figures 7-8"
+    },
+    {
+      "claim": "ReMP consistently achieves lower TTFT and TPOT while delivering higher output throughput compared to fixed TP1PP8 and TP2PP4 baselines under medium and high request pressure",
+      "value": "lower TTFT/TPOT, higher throughput",
+      "baseline": "TP1PP8 (pipeline-heavy) and TP2PP4 (balanced) fixed configurations",
+      "condition": "Results consistent across H100 and RTX 5090 platforms; improvement most pronounced at higher request rates; exact numerical improvements not specified",
+      "source_locator": "Section 4.3.2-4.3.4, Figures 7-8"
+    },
+    {
+      "claim": "ReMP decouples four runtime states from launch-time topology: model weights, KV cache, communication groups, and workers",
+      "value": "four decoupled states",
+      "baseline": null,
+      "condition": "Model weights reloaded via CPU memory, KV cache via 2D layer/head migration, comm groups via prebuilt snapshots, workers via standby/wakeup reuse",
+      "source_locator": "Section 3 (System Design), Table 1"
+    }
+  ],
+  "evaluation_context": "ReMP is integrated into vLLM v1 core modules. Experiments conducted on two 8-GPU platforms: NVIDIA H100 (AMD EPYC 7R13 CPU, 2TB memory) and NVIDIA RTX 5090 (Intel Xeon Gold 6530 CPU, 960GB memory) with four models ranging from 7B to 70B parameters (Llama2-7B, Qwen3-30B-A3B, DeepSeek-R1-Distill-Qwen-32B, Llama2-70B). Llama2-70B not evaluated on RTX 5090 due to GPU memory limitations. Serving performance evaluated using BurstGPT-derived request traces across request rates 1-5, comparing ReMP dynamic selection against fixed TP1PP8 and TP2PP4 baselines.",
+  "limitations": "Supplement covers Sections 4.1-4.3 including experimental setup details and serving performance under dynamic workload. Key gaps remain: exact baseline restart times for the 10-100× speedup claims are not specified; detailed workload parameters (input/output lengths, batch sizes) are not provided; communication overheads and data transfer volumes for KV cache migration are not quantified; exact numerical TTFT/TPOT/throughput improvements are shown qualitatively in figures but not specified in text. WAN/network transmission considerations are not addressed; paper focuses on intra-cluster GPU communication for TP/PP.",
+  "project_relevance": "ReMP's KV cache migration mechanism demonstrates state preservation across topology changes, which is relevant for cross-region KV cache migration. The two-dimensional remapping (layer + head) provides a design pattern for state redistribution. Overlap technique (13-32% time savings) shows concurrent state transformation potential. Dynamic topology selection methodology using weighted score (throughput, TPOT, TTFT) offers a framework for cross-region configuration decisions. However, ReMP operates in intra-cluster GPU context, not WAN. For cross-region scenarios, the WAN RTT/bandwidth costs must be weighed against migration benefits. ReMP's decoupling approach (separating logical state from physical placement) is applicable to remote cache design.",
+  "primary_source_resolved": true,
+  "quality_score": 75,
+  "source_notes": [
+    "Evidence pack is front-evidence-v2 strategy containing ~27% of full document",
+    "Supplement adds experimental setup (Section 4.1), switching time overlap analysis (Section 4.2, Figure 6), and dynamic workload serving performance (Section 4.3, Figures 7-8)",
+    "Four models now specified: Llama2-7B, Qwen3-30B-A3B, DeepSeek-R1-Distill-Qwen-32B, Llama2-70B",
+    "BurstGPT-derived request traces used for workload simulation",
+    "Hardware specifications now include CPU and host memory details"
+  ],
+  "evidence_gaps": [
+    {
+      "question": "What are the exact workload conditions, input lengths, output lengths, batch sizes, and baseline restart times for the reported 1-7 second reconfiguration and 10-100× speedup claims?",
+      "terms": [
+        "workload",
+        "restart time",
+        "baseline",
+        "batch size",
+        "speedup",
+        "TPOT",
+        "TTFT",
+        "Llama2-70B"
+      ]
+    },
+    {
+      "question": "What are the communication overheads and data transfer volumes for KV cache migration during TP/PP topology switches?",
+      "terms": [
+        "KV cache migration",
+        "transfer",
+        "communication overhead",
+        "data volume",
+        "P2P",
+        "layer",
+        "head"
+      ]
+    },
+    {
+      "question": "What are the detailed TTFT, TPOT, and output throughput improvements under dynamic workload simulation compared to fixed TP1PP8 and TP2PP4 baselines?",
+      "terms": [
+        "TTFT",
+        "TPOT",
+        "throughput",
+        "dynamic workload",
+        "TP1PP8",
+        "TP2PP4",
+        "fixed configuration"
+      ]
+    }
+  ],
+  "_provenance": {
+    "task_id": "6ab71e609745afaf2d342633",
+    "candidate_id": "0b58a2af55026cc9db99830f",
+    "source_title": "ReMP: Low-Downtime Runtime Model-Parallelism Reconfiguration for LLM Serving",
+    "source_url": "https://arxiv.org/abs/2606.18741v1",
+    "document_id": "15ca88e347e8f940b4310fcc",
+    "repair_of_task_id": "635d5d9d4a1bdefeda8bafb8"
+  }
+}
