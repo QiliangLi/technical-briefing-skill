@@ -32,6 +32,7 @@ FIELD_LIMITS = {
     "boundary": 2400,
     "project_relevance": 2400,
 }
+SYNTHETIC_RUN_PREFIXES = ("demo-", "ci-", "test-", "pytest-")
 
 
 def ensure_human_feedback_schema(db) -> None:
@@ -394,6 +395,16 @@ def _summarize_feedback(rows: list[dict[str, Any]], edits: list[dict[str, Any]])
     }
 
 
+def _production_feedback_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep synthetic Demo/CI/test decisions observable but out of learning history."""
+
+    return [
+        row
+        for row in rows
+        if not str(row.get("run_id") or "").lower().startswith(SYNTHETIC_RUN_PREFIXES)
+    ]
+
+
 def human_feedback_stats(db, run_id: str) -> dict[str, Any]:
     ensure_human_feedback_schema(db)
     current_rows = db.fetchall(
@@ -406,12 +417,24 @@ def human_feedback_stats(db, run_id: str) -> dict[str, Any]:
     )
     all_rows = db.fetchall("SELECT * FROM human_review_items ORDER BY reviewed_at, brief_item_id")
     all_edits = db.fetchall("SELECT * FROM human_review_edits ORDER BY reviewed_at, brief_item_id, field_name")
+    history_rows = _production_feedback_rows(all_rows)
+    history_keys = {
+        (str(row["issue_id"]), str(row["brief_item_id"])) for row in history_rows
+    }
+    history_edits = [
+        edit
+        for edit in all_edits
+        if (str(edit["issue_id"]), str(edit["brief_item_id"])) in history_keys
+    ]
+    synthetic_rows = len(all_rows) - len(history_rows)
     return {
         "current_run": _summarize_feedback(current_rows, current_edits),
-        "history": _summarize_feedback(all_rows, all_edits),
+        "history": _summarize_feedback(history_rows, history_edits),
+        "synthetic_reviews_excluded_from_history": synthetic_rows,
+        "synthetic_run_prefixes": list(SYNTHETIC_RUN_PREFIXES),
         "note": (
             "Human edit telemetry records only validated review decisions and final field-level diffs. "
-            "It is observational and is not automatically injected into generation prompts."
+            "Long-term history excludes synthetic Demo/CI/test runs and is not automatically injected into generation prompts."
         ),
     }
 
