@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from .utils import now_iso, read_json, stable_hash, write_json
 
@@ -131,6 +132,58 @@ def _defer_fallback_fact_input(input_data: dict[str, Any]) -> bool:
         str(document.get("fetch_status") or "").upper() == "FALLBACK"
         and not bool(document.get("fact_cache_hit"))
     )
+
+
+def pick_deep_refill_rows(
+    deferred_rows: Iterable[dict[str, Any]],
+    *,
+    existing_total: int,
+    existing_topic_counts: dict[str, int],
+    settings: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Fill only deep-budget slots vacated by fetch failures.
+
+    This mirrors the existing total/per-topic budget and ranking. It never expands
+    the configured deep budget; it only prevents an unfetchable source from silently
+    reducing information volume when another already-relevant A-level candidate is
+    waiting in DEFERRED_BUDGET.
+    """
+
+    policy = dict(settings.get("efficiency") or {})
+    total_max = max(1, int(policy.get("max_fact_candidates_total", 10)))
+    per_topic_max = max(1, int(policy.get("max_fact_candidates_per_topic", 3)))
+    slots = max(0, total_max - max(0, int(existing_total)))
+    if not slots:
+        return []
+
+    counts: dict[str, int] = defaultdict(int)
+    counts.update({str(key): max(0, int(value)) for key, value in existing_topic_counts.items()})
+
+    def number(value: Any) -> float:
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    ordered = sorted(
+        [dict(row) for row in deferred_rows],
+        key=lambda row: (
+            -number(row.get("relevance_score")),
+            -number(row.get("rule_score")),
+            -number(row.get("priority")),
+            str(row.get("id") or ""),
+        ),
+    )
+    selected: list[dict[str, Any]] = []
+    for row in ordered:
+        if len(selected) >= slots:
+            break
+        topic_id = str(row.get("topic_id") or "unknown")
+        if counts[topic_id] >= per_topic_max:
+            continue
+        selected.append(row)
+        counts[topic_id] += 1
+    return selected
 
 
 def _annotate_event(db, event_id: str, **updates: Any) -> None:
@@ -261,15 +314,65 @@ def install_safe_efficiency() -> None:
         self.tasks.create = create
         try:
             original_prepare_facts(self)
+            refill_rounds = 0
+            while refill_rounds < 4:
+                # The underlying planner marks every attempted fact candidate
+                # FACT_TASKED after create() returns. Restore failed candidates to
+                # the terminal deferred state before counting occupied budget slots.
+                for candidate_id in skipped:
+                    self.db.execute(
+                        "UPDATE candidates SET status='DEFERRED_FETCH' WHERE id=?",
+                        (candidate_id,),
+                    )
+
+                occupied = self.db.fetchall(
+                    """
+                    SELECT c.topic_id, COUNT(*) AS n
+                    FROM tasks t JOIN candidates c ON c.id=t.entity_id
+                    WHERE t.run_id=? AND t.task_type='fact_extraction'
+                    GROUP BY c.topic_id
+                    """,
+                    (self.run_id,),
+                )
+                topic_counts = {str(row["topic_id"]): int(row["n"]) for row in occupied}
+                existing_total = sum(topic_counts.values())
+                deferred = self.db.fetchall(
+                    """
+                    SELECT c.*, r.priority
+                    FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
+                    WHERE c.run_id=? AND c.status='DEFERRED_BUDGET'
+                      AND c.fulltext_required=1
+                      AND r.source_level='A' AND r.discovery_only=0
+                    ORDER BY c.relevance_score DESC, c.rule_score DESC, r.priority DESC, c.id
+                    """,
+                    (self.run_id,),
+                )
+                fillers = pick_deep_refill_rows(
+                    deferred,
+                    existing_total=existing_total,
+                    existing_topic_counts=topic_counts,
+                    settings=self.config.settings,
+                )
+                if not fillers:
+                    break
+                for row in fillers:
+                    self.db.execute("UPDATE candidates SET status='RELEVANT' WHERE id=?", (row["id"],))
+                before_tasks = existing_total
+                before_skipped = len(skipped)
+                original_prepare_facts(self)
+                refill_rounds += 1
+                after_tasks = self.db.fetchone(
+                    "SELECT COUNT(*) AS n FROM tasks WHERE run_id=? AND task_type='fact_extraction'",
+                    (self.run_id,),
+                )["n"]
+                if after_tasks <= before_tasks and len(skipped) <= before_skipped:
+                    break
         finally:
             if had_override:
                 self.tasks.create = previous_override
             else:
                 del self.tasks.create
 
-        # The underlying planner marks every attempted fact candidate FACT_TASKED
-        # after TaskService.create returns. Re-apply the terminal deferred state here
-        # so a skipped FALLBACK cannot be mistaken for a pending Agent task.
         for candidate_id in skipped:
             self.db.execute(
                 "UPDATE candidates SET status='DEFERRED_FETCH' WHERE id=?",
