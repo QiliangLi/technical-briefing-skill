@@ -76,7 +76,7 @@ If a field is reset to the Agent text, its diff row disappears on the next valid
 
 ## Telemetry
 
-`python briefing.py stats --run <run>` gains `human_edit_feedback` with both the selected run and cumulative history:
+`python briefing.py stats --run <run>` gains `human_edit_feedback` with both the selected run and long-term production history:
 
 - reviewed / approved / rejected items
 - approval rate
@@ -87,7 +87,7 @@ If a field is reset to the Agent text, its diff row disappears on the next valid
 - per-field shorten / lengthen count and net character delta
 - per-topic review / approval / rejection / edited-approved counts
 
-The cumulative block is deliberately based on the latest validated state of each issue/item rather than every save click.
+The history block is deliberately based on the latest validated state of each issue/item rather than every save click. Runs whose IDs start with `demo-`, `ci-`, `test-`, or `pytest-` remain visible through `current_run` when inspected directly, but are excluded from long-term history so synthetic approval tests cannot become preference data. Stats also reports how many synthetic review rows were excluded.
 
 ## Quality boundary
 
