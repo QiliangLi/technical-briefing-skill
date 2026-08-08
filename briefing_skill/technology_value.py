@@ -47,12 +47,7 @@ def normalise_technology_value(value: Any) -> dict[str, Any]:
 
 
 def technology_selection_score(row: dict[str, Any]) -> float:
-    """Blend topic relevance with structural technology value without replacing relevance.
-
-    Relevance remains 80% of the normalized ranking signal when a technology-value
-    assessment exists. Legacy/unfinished tasks without the new signal fall back exactly
-    to the original relevance score so rollout cannot silently penalise them.
-    """
+    """Blend topical relevance and technical importance without replacing relevance."""
 
     relevance = max(0.0, min(100.0, _number(row.get("relevance_score"))))
     if row.get("technology_value_score") is None:
@@ -180,6 +175,32 @@ def select_deep_budget_with_technology_value(
     return selected, deferred
 
 
+def technology_value_semantic_errors(task: dict[str, Any], data: dict[str, Any]) -> list[str]:
+    """Require the new signal only for tasks explicitly created under PR17 policy."""
+
+    if task.get("task_type") != "relevance_batch":
+        return []
+    try:
+        metadata = json.loads(task.get("metadata_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        metadata = {}
+    if not metadata.get("technology_value_required"):
+        return []
+
+    errors: list[str] = []
+    for index, result in enumerate(data.get("results") or []):
+        value = result.get("technology_value")
+        if not isinstance(value, dict):
+            errors.append(f"relevance result {index} requires technology_value")
+            continue
+        missing = [name for name in DIMENSIONS if not isinstance(value.get(name), dict)]
+        if missing:
+            errors.append(
+                f"relevance result {index} technology_value missing dimensions: {', '.join(missing)}"
+            )
+    return errors
+
+
 def _technology_stats(db, run_id: str) -> dict[str, Any]:
     ensure_technology_value_schema(db)
     rows = db.fetchall(
@@ -220,6 +241,7 @@ def install_technology_value_assessment() -> None:
     from .db import Database
     from .pipeline import Pipeline
     from .scoring import Scorer
+    from .tasks import TaskService
 
     if getattr(Pipeline, "_technology_value_installed", False):
         return
@@ -242,6 +264,29 @@ def install_technology_value_assessment() -> None:
 
     relevance_efficiency.apply_cached_relevance = apply_cached_relevance
 
+    # New relevance tasks are strict about the new assessment. Existing unfinished
+    # tasks were created without this metadata and remain schema-compatible.
+    original_create = TaskService.create
+
+    def create(self, *args, **kwargs):
+        task_type = args[1] if len(args) > 1 else kwargs.get("task_type")
+        if task_type == "relevance_batch":
+            metadata = dict(kwargs.get("metadata") or {})
+            metadata["technology_value_required"] = True
+            kwargs["metadata"] = metadata
+        return original_create(self, *args, **kwargs)
+
+    TaskService.create = create
+
+    original_semantic_errors = TaskService._semantic_errors
+
+    def semantic_errors(self, task, input_data, data):
+        errors = list(original_semantic_errors(self, task, input_data, data))
+        errors.extend(technology_value_semantic_errors(task, data))
+        return errors
+
+    TaskService._semantic_errors = semantic_errors
+
     original_apply = Pipeline._apply_task
 
     def apply_task(self, task: dict[str, Any]) -> None:
@@ -251,9 +296,6 @@ def install_technology_value_assessment() -> None:
         output = self.tasks.read_result(task)
         for result in output.get("results") or []:
             candidate_id = str(result.get("candidate_id") or "")
-            # Backward compatibility: an unfinished pre-PR17 task may validate without
-            # technology_value. Leave its new columns NULL so ranking falls back exactly
-            # to the pre-PR17 relevance path instead of fabricating a zero-value score.
             if not candidate_id or not isinstance(result.get("technology_value"), dict):
                 continue
             value = normalise_technology_value(result.get("technology_value"))
@@ -265,8 +307,6 @@ def install_technology_value_assessment() -> None:
 
     Pipeline._apply_task = apply_task
 
-    # Keep every existing topic/project/direction constraint; only change the ordering
-    # presented to the already-tested diversity selector.
     efficiency.select_deep_budget = select_deep_budget_with_technology_value
 
     original_event_score = Scorer.event_score
