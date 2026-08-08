@@ -10,8 +10,9 @@ from .utils import canonicalize_url, read_json
 
 
 RADAR_CATEGORIES = ("AI Infra", "Agent生态", "KVCache生态", "存储与介质", "其他技术前沿")
-MAX_CANDIDATES_PER_CATEGORY = 10
-MAX_RADAR_CANDIDATES = 40
+MAX_CANDIDATES_PER_CATEGORY = 6
+MAX_RADAR_CANDIDATES = 30
+RADAR_SUMMARY_MAX_CHARS = 420
 FORBIDDEN_SIGNAL_TEXT = (
     "high-confidence",
     "a-level rule match",
@@ -24,6 +25,10 @@ FORBIDDEN_SIGNAL_TEXT = (
 def _clean(value: Any, limit: int | None = None) -> str:
     text = " ".join(str(value or "").split())
     return text if limit is None or len(text) <= limit else text[:limit].rstrip()
+
+
+def _normalise_title(value: Any) -> str:
+    return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
 
 
 def _category(title: str, summary: str) -> str:
@@ -40,6 +45,18 @@ def build_radar_candidates(task_service, run_id: str, issue_input: dict[str, Any
         for source in item.get("sources") or []
         if source.get("url")
     }
+    history = task_service.db.fetchall("SELECT canonical_url,normalized_title FROM radar_history")
+    history_urls = {
+        canonicalize_url(row.get("canonical_url"))
+        for row in history
+        if row.get("canonical_url")
+    }
+    history_titles = {
+        str(row.get("normalized_title") or "").lower()
+        for row in history
+        if row.get("normalized_title")
+    }
+
     rows = task_service.db.fetchall(
         """
         SELECT id,title,summary,original_url,canonical_url,published_at,priority,
@@ -55,26 +72,29 @@ def build_radar_candidates(task_service, run_id: str, issue_input: dict[str, Any
         key=lambda row: (
             level_rank.get(str(row.get("source_level") or "C").upper(), 3),
             -float(row.get("priority") or 0),
-            str(row.get("published_at") or ""),
+            published_age_days(row.get("published_at"))
+            if published_age_days(row.get("published_at")) is not None
+            else 9999,
+            str(row.get("title") or ""),
         )
     )
 
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    seen_urls: set[str] = set()
-    seen_titles: set[str] = set()
+    seen_urls: set[str] = set(history_urls)
+    seen_titles: set[str] = set(history_titles)
     for row in rows:
         age = published_age_days(row.get("published_at"))
-        if age is None or age < 0 or age > 7:
+        if age is None or age > 7:
             continue
         url = str(row.get("original_url") or row.get("canonical_url") or "").strip()
         canonical = canonicalize_url(url)
         if not canonical or canonical in core_urls or canonical in seen_urls:
             continue
-        summary = _clean(row.get("summary"), 700)
+        summary = _clean(row.get("summary"), RADAR_SUMMARY_MAX_CHARS)
         title = _clean(row.get("title"), 180)
         if not title or len(summary) < 20:
             continue
-        title_key = "".join(ch.lower() for ch in title if ch.isalnum())
+        title_key = _normalise_title(title)
         if title_key in seen_titles:
             continue
         category = _category(title, summary)
@@ -87,7 +107,9 @@ def build_radar_candidates(task_service, run_id: str, issue_input: dict[str, Any
                 "title": title,
                 "summary": summary,
                 "url": url,
-                "source_name": _clean(row.get("discovery_source") or row.get("source_id") or "source", 80),
+                "source_name": _clean(
+                    row.get("discovery_source") or row.get("source_id") or "source", 80
+                ),
                 "source_level": str(row.get("source_level") or "C").upper(),
                 "published_at": str(row.get("published_at") or "")[:10],
             }
