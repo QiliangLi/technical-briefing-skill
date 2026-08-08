@@ -6,6 +6,7 @@ from typing import Sequence
 def main(argv: Sequence[str] | None = None) -> int:
     """Install briefing quality, coverage, and cost-control policies."""
 
+    from .balanced_evidence import install_balanced_evidence
     from .cache_fastpath import install_fact_cache_fastpath
     from .cost_schema import install_cost_schema
     from .coverage_policy import install_coverage_policy
@@ -70,6 +71,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Close the last deep-selection bypass after Technology Value has patched the
     # selector. Deep candidates must be assessed before high rule scores can compete.
     install_deep_selection_guard()
+    # Rebalance the same 18k first-read budget across context/mechanism/results/bounds.
+    # This must run after evidence-repair so cache versions include both policies.
+    install_balanced_evidence()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
