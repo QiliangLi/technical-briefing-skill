@@ -17,6 +17,42 @@ def _contains(text: str, terms: tuple[str, ...]) -> bool:
     return any(term in lower for term in terms)
 
 
+def _normalised_heading(value: Any) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
+def _role_candidates(
+    scored: list[dict[str, Any]],
+    used: set[int],
+    keywords: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Prefer explicit section headings; use body keywords only as a fallback.
+
+    Body-level terms such as ``system`` or ``performance`` commonly appear in an
+    Abstract/Introduction. Letting those mentions compete directly with a real Method
+    or Evaluation heading can starve the evidence role we are trying to reserve budget
+    for. Duplicate headings are collapsed so repeated/merged source text cannot consume
+    both slots for the same role.
+    """
+
+    available = [row for row in scored if int(row["index"]) not in used]
+    heading_matches = [row for row in available if _contains(str(row["title"]), keywords)]
+    matches = heading_matches or [
+        row for row in available if _contains(str(row["body"])[:1200], keywords)
+    ]
+    matches.sort(key=lambda row: (-float(row["score"]), int(row["index"])))
+
+    deduped: list[dict[str, Any]] = []
+    seen_headings: set[str] = set()
+    for row in matches:
+        heading = _normalised_heading(row["title"])
+        if heading in seen_headings:
+            continue
+        seen_headings.add(heading)
+        deduped.append(row)
+    return deduped
+
+
 def build_balanced_evidence_pack(
     text: str,
     topic: dict[str, Any],
@@ -67,15 +103,9 @@ def build_balanced_evidence_pack(
 
     for label, keywords, ratio in groups:
         budget = max(500, int((max_chars - len(header)) * ratio))
-        candidates = [
-            row
-            for row in scored
-            if row["index"] not in used
-            and _contains(f"{row['title']} {row['body'][:1200]}", keywords)
-        ]
+        candidates = _role_candidates(scored, used, keywords)
         if label == "context" and not candidates:
             candidates = [row for row in scored if row["index"] <= 1 and row["index"] not in used]
-        candidates.sort(key=lambda row: (-float(row["score"]), int(row["index"])))
         group_used = 0
         for row in candidates[:2]:
             locator = f"## Evidence locator: {row['title']}\n\n"
@@ -96,8 +126,14 @@ def build_balanced_evidence_pack(
     # Spend any unused budget on the strongest still-unseen sections. This handles
     # sources with unconventional headings while keeping the first read bounded.
     if remaining > 500:
+        supplemental_headings: set[str] = {
+            _normalised_heading(row["title"]) for row in selected
+        }
         for row in sorted(scored, key=lambda value: (-float(value["score"]), int(value["index"]))):
             if row["index"] in used:
+                continue
+            heading = _normalised_heading(row["title"])
+            if heading in supplemental_headings:
                 continue
             locator = f"## Evidence locator: {row['title']}\n\n"
             allowance = min(remaining - len(locator) - 2, 4200)
@@ -108,6 +144,7 @@ def build_balanced_evidence_pack(
                 continue
             selected.append({**row, "excerpt": excerpt, "group": "supplemental"})
             used.add(int(row["index"]))
+            supplemental_headings.add(heading)
             remaining -= len(locator) + len(excerpt) + 2
             if remaining <= 300:
                 break
@@ -163,7 +200,7 @@ def install_balanced_evidence() -> None:
     original_version = deep_efficiency._runtime_extractor_version
 
     def runtime_extractor_version(config, root: Path, topic_id=None, direction_id=None):
-        return f"{original_version(config, root, topic_id, direction_id)}:balanced-evidence-v1"
+        return f"{original_version(config, root, topic_id, direction_id)}:balanced-evidence-v2"
 
     deep_efficiency._runtime_extractor_version = runtime_extractor_version
 
@@ -171,13 +208,13 @@ def install_balanced_evidence() -> None:
 
     def fetch_candidate(self, run_id: str, candidate: dict):
         manifest = original_fetch(self, run_id, candidate)
-        if manifest.get("evidence_strategy") == "front-evidence-v2":
-            manifest["evidence_strategy"] = "balanced-evidence-v1"
+        if manifest.get("evidence_strategy") in {"front-evidence-v2", "balanced-evidence-v1"}:
+            manifest["evidence_strategy"] = "balanced-evidence-v2"
             document_id = str(manifest.get("document_id") or "")
             manifest_path = self.run_dir / "documents" / f"{document_id}.json"
             if document_id and manifest_path.is_file():
                 stored = read_json(manifest_path, {})
-                stored["evidence_strategy"] = "balanced-evidence-v1"
+                stored["evidence_strategy"] = "balanced-evidence-v2"
                 write_json(manifest_path, stored)
         return manifest
 
