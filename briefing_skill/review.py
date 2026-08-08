@@ -9,11 +9,24 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from .config import ConfigBundle
 from .db import Database
 from .emailer import EmailService
+from .human_feedback import (
+    EDITABLE_FIELDS,
+    FIELD_LABELS,
+    build_review_payload,
+    prepare_reviewed_items,
+    record_human_review,
+)
 from .paths import Paths
 from .utils import read_json, write_json
 
 
-def approve_issue(root: Path, db: Database, run_id: str, approved_ids: set[str]) -> Path:
+def approve_issue(
+    root: Path,
+    db: Database,
+    run_id: str,
+    approved_ids: set[str],
+    edits: dict[str, dict[str, str]] | None = None,
+) -> Path:
     issue = db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
     if not issue or not issue.get("issue_json_path"):
         raise RuntimeError("Issue not ready")
@@ -30,12 +43,16 @@ def approve_issue(root: Path, db: Database, run_id: str, approved_ids: set[str])
     if not approved_ids:
         raise ValueError("At least one fact-checked issue item must be approved")
 
+    # Validate and stage human text edits first. The immutable Agent item JSON files
+    # remain untouched; reviewed sidecars are used only for the approved deliverable.
+    prepared = prepare_reviewed_items(root, db, run_id, edits)
+
     for item_id in selectable:
         db.execute("UPDATE brief_items SET approved=? WHERE id=?", (int(item_id in approved_ids), item_id))
 
-    # Rebuild from immutable item JSON files instead of destructively filtering the
-    # previous issue JSON. This allows a reviewer to reopen the page and change the
-    # selection without losing rejected candidates.
+    # Rebuild from immutable item JSON + explicit reviewed sidecars instead of
+    # destructively editing the Agent output. Rejected candidates remain available
+    # through issue_items and can be restored on a later review pass.
     rows = db.fetchall(
         """
         SELECT ii.position, ii.visual_plan_path, ii.item_role, bi.id, bi.json_path,
@@ -69,7 +86,8 @@ def approve_issue(root: Path, db: Database, run_id: str, approved_ids: set[str])
     for row in rows:
         if row["id"] not in approved_ids:
             continue
-        item = read_json(root / row["json_path"])
+        entry = prepared.get(str(row["id"]))
+        item = dict(entry["item"]) if entry else read_json(root / row["json_path"])
         previous_item = previous_items.get(row["id"], {})
         plan = previous_item.get("visual_plan")
         if not isinstance(plan, dict):
@@ -101,6 +119,9 @@ def approve_issue(root: Path, db: Database, run_id: str, approved_ids: set[str])
         db.execute("UPDATE issues SET status='AWAITING_APPROVAL' WHERE id=?", (issue["id"],))
         db.update_run(run_id, stage="AWAITING_APPROVAL")
         raise RuntimeError(f"Approved email failed validation: {report['failures']}")
+
+    # Only a deliverable that passes validation becomes training/quality feedback.
+    record_human_review(db, run_id, approved_ids, prepared)
     return email_path
 
 
@@ -111,12 +132,17 @@ class ReviewServer:
         self.run_id = run_id
 
     def build_html(self) -> Path:
-        issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (self.run_id,))
-        if not issue or not issue.get("issue_json_path"):
-            raise RuntimeError("Issue not ready")
-        data = read_json(self.root / issue["issue_json_path"])
+        data = build_review_payload(self.root, self.db, self.run_id)
         env = Environment(loader=FileSystemLoader(self.root / "templates"), autoescape=select_autoescape(["html"]))
-        html_text = env.get_template("review.html").render(issue=data, run_id=self.run_id)
+        editable_fields = [
+            {"name": field, "label": FIELD_LABELS[field]}
+            for field in EDITABLE_FIELDS
+        ]
+        html_text = env.get_template("review.html").render(
+            issue=data,
+            run_id=self.run_id,
+            editable_fields=editable_fields,
+        )
         path = self.root / "workspace" / "runs" / self.run_id / "review.html"
         path.write_text(html_text, encoding="utf-8")
         return path
@@ -130,6 +156,9 @@ class ReviewServer:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 if self.path in {"/", "/review.html"}:
+                    # Rebuild for each page load so a saved review immediately shows
+                    # the latest selection, sidecars, and changed-field markers.
+                    ReviewServer(root, db, run_id).build_html()
                     content = html_path.read_bytes()
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -143,12 +172,16 @@ class ReviewServer:
                 if self.path != "/approve":
                     self.send_error(404)
                     return
-                length = int(self.headers.get("Content-Length", "0"))
-                payload = json.loads(self.rfile.read(length) or b"{}")
-                approved_ids = set(payload.get("approved_ids", []))
                 try:
-                    approve_issue(root, db, run_id, approved_ids)
-                    content = b'{"ok":true}'
+                    length = int(self.headers.get("Content-Length", "0"))
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    approved_ids = {str(value) for value in payload.get("approved_ids", [])}
+                    edits = payload.get("edits") or {}
+                    approve_issue(root, db, run_id, approved_ids, edits)
+                    content = json.dumps(
+                        {"ok": True, "approved": len(approved_ids)},
+                        ensure_ascii=False,
+                    ).encode("utf-8")
                     status = 200
                 except Exception as exc:
                     content = json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False).encode("utf-8")
