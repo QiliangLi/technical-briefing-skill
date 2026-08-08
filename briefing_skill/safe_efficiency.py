@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import defaultdict
-from pathlib import Path
 from typing import Any, Iterable
 
 from .utils import now_iso, read_json, stable_hash, write_json
@@ -11,10 +11,8 @@ from .utils import now_iso, read_json, stable_hash, write_json
 LOGGER = logging.getLogger(__name__)
 
 
-PRIMARY_IDENTITY_PREFIXES = (
-    "arxiv:",
+EXACT_PRIMARY_IDENTITY_PREFIXES = (
     "doi:",
-    "github:",
     "github-release:",
     "github-commit:",
 )
@@ -31,20 +29,63 @@ def _payload(row: dict[str, Any]) -> dict[str, Any]:
         return {}
 
 
-def _is_exact_primary(row: dict[str, Any]) -> bool:
+def _arxiv_version(row: dict[str, Any]) -> str | None:
+    """Return an explicit arXiv version only when the source actually exposes one."""
+
     identity = str(row.get("identity_key") or "").lower()
-    return (
-        str(row.get("source_level") or "").upper() == "A"
-        and not bool(row.get("discovery_only"))
-        and identity.startswith(PRIMARY_IDENTITY_PREFIXES)
+    if not identity.startswith("arxiv:"):
+        return None
+    expected_id = identity.split(":", 1)[1]
+    payload = _payload(row)
+    primary = payload.get("primary_source_resolution") or {}
+    values = (
+        row.get("external_id"),
+        row.get("original_url"),
+        row.get("canonical_url"),
+        payload.get("pdf_url"),
+        primary.get("url") if isinstance(primary, dict) else None,
     )
+    for value in values:
+        text = str(value or "").lower()
+        if not text:
+            continue
+        # Covers modern IDs (2608.12345v2) and legacy archive IDs
+        # (hep-th/9901001v2) without accepting an unrelated loose "v2" token.
+        match = re.search(
+            r"(?P<id>(?:\d{4}\.\d{4,5}|[a-z][a-z0-9.-]*/\d{7}))(?P<version>v\d+)(?:\.pdf)?(?:$|[?#])",
+            text,
+            flags=re.I,
+        )
+        if match and match.group("id").lower() == expected_id:
+            return match.group("version").lower()
+    return None
+
+
+def exact_primary_version_key(row: dict[str, Any]) -> str | None:
+    """Return a key only for a provably immutable source version.
+
+    `source_identity_key()` intentionally collapses arXiv versions for event history,
+    so pre-relevance dedup must add the explicit vN back. An unversioned arXiv link is
+    deliberately not deduplicated here: doing one extra relevance judgement is safer
+    than accidentally discarding a newer paper revision.
+    """
+
+    if str(row.get("source_level") or "").upper() != "A" or bool(row.get("discovery_only")):
+        return None
+    identity = str(row.get("identity_key") or "").lower()
+    if identity.startswith("arxiv:"):
+        version = _arxiv_version(row)
+        return f"{identity}@{version}" if version else None
+    if identity.startswith(EXACT_PRIMARY_IDENTITY_PREFIXES):
+        return identity
+    return None
 
 
 def dedupe_exact_primary_candidates(db, run_id: str) -> int:
     """Suppress duplicate relevance work for one exact primary in one routing lane.
 
     The same source may still be analysed under different topic/direction contexts;
-    only duplicate discovery paths that resolve to the exact same primary identity
+    only duplicate discovery paths that resolve to the exact same immutable version
     *and* the same topic/direction are collapsed.
     """
 
@@ -52,7 +93,7 @@ def dedupe_exact_primary_candidates(db, run_id: str) -> int:
         """
         SELECT c.*, r.identity_key, r.source_id, r.discovery_source,
                r.source_level, r.discovery_only, r.priority AS raw_priority,
-               r.payload_json
+               r.external_id, r.original_url, r.canonical_url, r.payload_json
         FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
         WHERE c.run_id=? AND c.status='PENDING_RELEVANCE'
         ORDER BY c.rule_score DESC, r.priority DESC, c.id
@@ -61,10 +102,11 @@ def dedupe_exact_primary_candidates(db, run_id: str) -> int:
     )
     groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     for row in rows:
-        if not _is_exact_primary(row):
+        version_key = exact_primary_version_key(row)
+        if not version_key:
             continue
         key = (
-            str(row.get("identity_key") or "").lower(),
+            version_key,
             str(row.get("topic_id") or ""),
             str(row.get("direction_id") or ""),
         )
@@ -111,7 +153,7 @@ def dedupe_exact_primary_candidates(db, run_id: str) -> int:
                     relevance_reason=?
                 WHERE id=?
                 """,
-                (f"exact primary duplicate of candidate {winner['id']}", member["id"]),
+                (f"exact immutable primary duplicate of candidate {winner['id']}", member["id"]),
             )
             suppressed += 1
     return suppressed
