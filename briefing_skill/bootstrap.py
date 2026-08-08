@@ -14,6 +14,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .efficiency import install_pipeline_optimizations
     from .evidence_repair import install_evidence_repair
     from .historical_backfill import install_historical_backfill
+    from .human_feedback import install_human_feedback_telemetry
     from .invalid_repair import install_invalid_targeted_repair
     from .primary_fulltext_cache import install_primary_fulltext_cache
     from .project_insight import install_project_insight_layer
@@ -60,10 +61,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # isolated from session grouping and receive the small sidecar path.
     install_invalid_targeted_repair()
     # Preserve all quality-neutral efficiency counters first, then append technology
-    # value metrics and finally the issue-level project insight layer.
+    # value, project-insight, and finally human-review telemetry.
     install_safe_efficiency_stats()
     install_technology_value_assessment()
     install_project_insight_layer()
+    install_human_feedback_telemetry()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))

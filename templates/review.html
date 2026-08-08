@@ -1,6 +1,100 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>简报审核</title>
-<style>body{margin:0;background:#eee;font:15px/1.6 Arial,'Microsoft YaHei',sans-serif;color:#111}.wrap{max-width:1000px;margin:30px auto;background:#faf9f5;padding:34px}.top{display:flex;justify-content:space-between;align-items:center;border-bottom:4px solid #002fa7}.item{border-top:1px solid #aaa;padding:24px 0}.meta{font:12px Consolas,monospace;color:#002fa7}.grid{display:grid;grid-template-columns:90px 1fr;gap:8px}.label{font:12px Consolas,monospace;color:#002fa7;font-weight:bold}.actions{position:sticky;bottom:0;background:#111;color:#fff;padding:16px;display:flex;justify-content:space-between}button{background:#002fa7;color:white;border:0;padding:12px 20px;font-weight:bold}</style></head>
-<body><div class="wrap"><div class="top"><div><div class="meta">RUN {{ run_id }}</div><h1>技术情报简报审核</h1></div><div>{{ issue["items"]|length }} 条</div></div>
-{% for item in issue["items"] %}<div class="item"><label><input type="checkbox" class="approve" value="{{ item.brief_item_id }}" checked> 接受</label><div class="meta">{{ item.type }} · {{ item.topic_name or item.topic_id }} · SCORE {{ item.score }}</div><h2>{{ item.title }}</h2><p><b>{{ item.core_conclusion }}</b></p><div class="grid"><div class="label">机制</div><div>{{ item.mechanism }}</div><div class="label">结果</div><div>{{ item.result or item.evidence_summary }}</div><div class="label">边界</div><div>{{ item.boundary }}</div><div class="label">启发</div><div>{{ item.project_relevance }}</div><div class="label">视觉</div><div>{{ item.visual_plan.visual_mode }} · {{ item.visual_plan.visual_purpose }}</div></div>{% for source in item.sources %}<p><a href="{{ source.url }}" target="_blank">{{ source.publisher }} · 原文</a></p>{% endfor %}</div>{% endfor %}
-<div class="actions"><span>取消勾选不应发送的条目</span><button onclick="approve()">保存审核结果</button></div></div>
-<script>async function approve(){const ids=[...document.querySelectorAll('.approve:checked')].map(x=>x.value);const r=await fetch('/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved_ids:ids})});alert(r.ok?'已保存':'保存失败')}</script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>简报审核</title>
+  <style>
+    body{margin:0;background:#eee;font:15px/1.6 Arial,'Microsoft YaHei',sans-serif;color:#111}
+    .wrap{max-width:1080px;margin:30px auto;background:#faf9f5;padding:34px}
+    .top{display:flex;justify-content:space-between;align-items:center;border-bottom:4px solid #002fa7}
+    .item{border-top:1px solid #aaa;padding:24px 0}
+    .item-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+    .meta{font:12px Consolas,monospace;color:#002fa7}
+    .hint{font-size:12px;color:#666;max-width:760px}
+    .badge{display:inline-block;padding:2px 7px;border:1px solid #b99000;background:#fff8d7;color:#6e5700;font-size:11px;margin-left:8px}
+    .edit-grid{display:grid;grid-template-columns:110px 1fr;gap:10px 12px;margin-top:14px}
+    .label{font:12px Consolas,monospace;color:#002fa7;font-weight:bold;padding-top:8px}
+    textarea.edit-field{width:100%;box-sizing:border-box;resize:vertical;min-height:68px;padding:9px 10px;border:1px solid #c8c8c2;background:#fff;color:#161616;font:14px/1.55 Arial,'Microsoft YaHei',sans-serif}
+    textarea.edit-field[data-field="title"]{min-height:54px;font-weight:700;font-size:16px}
+    textarea.edit-field.changed{border:2px solid #b99000;background:#fffdf2}
+    .visual{font-size:12px;color:#666;margin-top:12px}
+    .sources{font-size:12px}
+    .actions{position:sticky;bottom:0;background:#111;color:#fff;padding:16px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+    .actions span{font-size:13px;color:#ddd}
+    button{background:#002fa7;color:white;border:0;padding:12px 20px;font-weight:bold;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    @media(max-width:720px){.wrap{margin:0;padding:20px}.edit-grid{grid-template-columns:1fr}.label{padding-top:0}.item-head{display:block}.actions{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><div class="meta">RUN {{ run_id }}</div><h1>技术情报简报审核</h1></div>
+    <div>{{ issue["items"]|length }} 条</div>
+  </div>
+  <p class="hint">可以直接修改最终邮件中的核心文字。AI原始条目不会被覆盖；人工版本会单独保存，并只在邮件校验通过后记录字段级差异。取消勾选表示本期不发送该条。</p>
+
+  {% for item in issue["items"] %}
+  <div class="item" data-item-id="{{ item.brief_item_id }}">
+    <div class="item-head">
+      <div>
+        <label><input type="checkbox" class="approve" value="{{ item.brief_item_id }}" {% if item.review_checked %}checked{% endif %}> 接受</label>
+        {% if item.human_changed_fields %}<span class="badge">已修改 {{ item.human_changed_fields|length }} 项</span>{% endif %}
+      </div>
+      <div class="meta">{{ item.type }} · {{ item.topic_name or item.topic_id }} · SCORE {{ item.score }}</div>
+    </div>
+
+    <div class="edit-grid">
+      {% for field in editable_fields %}
+      <div class="label">{{ field.label }}</div>
+      <textarea class="edit-field{% if field.name in item.human_changed_fields %} changed{% endif %}"
+                data-item-id="{{ item.brief_item_id }}"
+                data-field="{{ field.name }}"
+                data-original="{{ item['_review_original'][field.name] }}"
+                rows="{% if field.name == 'title' %}2{% else %}3{% endif %}">{{ item[field.name] }}</textarea>
+      {% endfor %}
+    </div>
+
+    <div class="visual"><b>视觉：</b>{{ item.visual_plan.visual_mode }} · {{ item.visual_plan.visual_purpose }}</div>
+    <div class="sources">{% for source in item.sources %}<p><a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.publisher }} · 原文</a></p>{% endfor %}</div>
+  </div>
+  {% endfor %}
+
+  <div class="actions">
+    <span id="status">黄色边框表示相对AI原稿已发生修改；保存后会重新生成并校验最终邮件。</span>
+    <button id="save" onclick="approveReview()">保存审核结果</button>
+  </div>
+</div>
+<script>
+function normalized(value){return value.replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim()}
+function refreshChanged(el){el.classList.toggle('changed', normalized(el.value)!==normalized(el.dataset.original||''))}
+document.querySelectorAll('.edit-field').forEach(el=>el.addEventListener('input',()=>refreshChanged(el)))
+
+async function approveReview(){
+  const button=document.getElementById('save');
+  const status=document.getElementById('status');
+  const ids=[...document.querySelectorAll('.approve:checked')].map(x=>x.value);
+  const edits={};
+  for(const el of document.querySelectorAll('.edit-field')){
+    const itemId=el.dataset.itemId;
+    edits[itemId]??={};
+    edits[itemId][el.dataset.field]=el.value;
+  }
+  button.disabled=true;
+  status.textContent='正在保存并校验最终邮件…';
+  try{
+    const r=await fetch('/approve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved_ids:ids,edits})});
+    const payload=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(payload.error||'保存失败');
+    status.textContent=`已保存：批准 ${payload.approved??ids.length} 条。刷新页面可查看最终审核状态。`;
+    document.querySelectorAll('.edit-field').forEach(refreshChanged);
+  }catch(error){
+    status.textContent=`保存失败：${error.message||error}`;
+  }finally{
+    button.disabled=false;
+  }
+}
+</script>
+</body>
+</html>
