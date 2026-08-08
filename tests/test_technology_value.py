@@ -81,4 +81,4 @@ def test_existing_same_project_diversity_constraint_is_preserved():
 
 def test_missing_technology_value_never_penalises_existing_relevance_path():
     row = {"relevance_score": 83, "technology_value_score": None}
-    assert technology_selection_score(row) == 66.4
+    assert technology_selection_score(row) == 83
