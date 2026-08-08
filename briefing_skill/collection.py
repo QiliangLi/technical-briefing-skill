@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from time import perf_counter
+from typing import Any, Iterable
 
 from .adapters.aihot import AIHotCollector
 from .adapters.arxiv import ArxivCollector
@@ -20,6 +23,74 @@ from .primary_source import promote_discovery_primary
 from .utils import canonicalize_url, content_hash, now_iso, source_identity_key, stable_hash, write_json
 
 LOGGER = logging.getLogger(__name__)
+MAX_COLLECTION_WORKERS = 6
+
+
+@dataclass
+class CollectorRun:
+    name: str
+    items: list[CollectedItem]
+    duration_seconds: float
+    error: str | None = None
+
+    def telemetry(self) -> dict[str, Any]:
+        return {
+            "collector": self.name,
+            "count": len(self.items),
+            "duration_seconds": round(self.duration_seconds, 3),
+            "status": "ERROR" if self.error else "OK",
+            "error": self.error,
+        }
+
+
+def bounded_collection_workers(requested: int, collector_count: int) -> int:
+    """Bound collection concurrency without changing any collector-internal throttling."""
+
+    if collector_count <= 0:
+        return 1
+    return max(1, min(int(requested), int(collector_count), MAX_COLLECTION_WORKERS))
+
+
+def run_collectors_bounded(collectors: list[Any], *, max_workers: int) -> list[CollectorRun]:
+    """Run independent collectors concurrently but return results in declared order.
+
+    Each collector keeps its own internal request ordering/rate limits. In particular,
+    ArxivCollector still serializes direction queries and sleeps between requests. The
+    outer pool only overlaps independent collector lanes. Returning in declaration
+    order keeps persistence and tie behaviour deterministic even when a later lane
+    finishes first.
+    """
+
+    if not collectors:
+        return []
+    workers = bounded_collection_workers(max_workers, len(collectors))
+
+    def run_one(collector: Any) -> CollectorRun:
+        started = perf_counter()
+        name = collector.__class__.__name__
+        try:
+            batch = list(collector.collect())
+            duration = perf_counter() - started
+            LOGGER.info("%s collected %d items in %.3fs", name, len(batch), duration)
+            return CollectorRun(name=name, items=batch, duration_seconds=duration)
+        except Exception as exc:
+            duration = perf_counter() - started
+            LOGGER.exception("Collector failed %s: %s", name, exc)
+            return CollectorRun(
+                name=name,
+                items=[],
+                duration_seconds=duration,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+    if workers == 1:
+        return [run_one(collector) for collector in collectors]
+
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="briefing-collect") as executor:
+        # Submit in fixed source order. We intentionally consume future results in the
+        # same order rather than completion order so downstream persistence is stable.
+        futures = [executor.submit(run_one, collector) for collector in collectors]
+        return [future.result() for future in futures]
 
 
 class CollectionService:
@@ -27,36 +98,76 @@ class CollectionService:
         self.config = config
         self.db = db
         self.run_dir = run_dir
-        self.http = HttpClient(
-            timeout=float(config.settings.get("http_timeout_seconds", 25)),
-            user_agent=config.settings.get("http_user_agent", "TechnicalBriefingSkill/0.1"),
-        )
+        self._http_timeout = float(config.settings.get("http_timeout_seconds", 25))
+        self._http_user_agent = config.settings.get("http_user_agent", "TechnicalBriefingSkill/0.1")
+        # Keep the original service-level client for compatibility. Concurrent live
+        # collection gives every other lane its own connection pool below.
+        self.http = self._new_http()
+
+    def _new_http(self) -> HttpClient:
+        return HttpClient(timeout=self._http_timeout, user_agent=self._http_user_agent)
 
     def close(self) -> None:
         self.http.close()
 
     def collect(self, run_id: str, *, offline_fixture: bool = False) -> list[CollectedItem]:
+        started = perf_counter()
+        collector_telemetry: list[dict[str, Any]] = []
+        workers = 1
         if offline_fixture:
             items = offline_fixture_items()
+            collector_telemetry.append(
+                {
+                    "collector": "OfflineFixture",
+                    "count": len(items),
+                    "duration_seconds": 0.0,
+                    "status": "OK",
+                    "error": None,
+                }
+            )
         else:
-            items = []
+            # Use one HTTP client/connection pool per independent collector lane.
+            # This keeps cross-source cookies/connection state isolated and avoids
+            # making the outer concurrency policy depend on a shared-client contract.
+            extra_http = [self._new_http() for _ in range(5)]
+            clients = [self.http, *extra_http]
             collectors = [
-                AIHotCollector(self.config, self.db, self.http),
-                ArxivCollector(self.config, self.http),
-                RSSCollector(self.config, self.http),
-                GitHubReleaseCollector(self.config, self.http),
-                FollowBuildersCollector(self.config, self.db, self.http, self.run_dir),
-                YeeKalDailyCollector(self.config, self.db, self.http),
+                AIHotCollector(self.config, self.db, clients[0]),
+                ArxivCollector(self.config, clients[1]),
+                RSSCollector(self.config, clients[2]),
+                GitHubReleaseCollector(self.config, clients[3]),
+                FollowBuildersCollector(self.config, self.db, clients[4], self.run_dir),
+                YeeKalDailyCollector(self.config, self.db, clients[5]),
             ]
-            for collector in collectors:
-                try:
-                    batch = collector.collect()
-                    LOGGER.info("%s collected %d items", collector.__class__.__name__, len(batch))
-                    items.extend(batch)
-                except Exception as exc:
-                    LOGGER.exception("Collector failed %s: %s", collector.__class__.__name__, exc)
+            policy = dict(self.config.settings.get("efficiency") or {})
+            requested_workers = int(policy.get("collection_max_workers", 3))
+            workers = bounded_collection_workers(requested_workers, len(collectors))
+            try:
+                runs = run_collectors_bounded(collectors, max_workers=workers)
+            finally:
+                for client in extra_http:
+                    client.close()
+            items = []
+            for run in runs:
+                items.extend(run.items)
+                collector_telemetry.append(run.telemetry())
+
         persisted = self.persist(run_id, items)
-        write_json(self.run_dir / "collection.json", {"run_id": run_id, "count": len(persisted), "items": persisted})
+        wall_seconds = perf_counter() - started
+        write_json(
+            self.run_dir / "collection.json",
+            {
+                "run_id": run_id,
+                "count": len(persisted),
+                "items": persisted,
+                "execution": {
+                    "mode": "offline_fixture" if offline_fixture else ("concurrent" if workers > 1 else "serial"),
+                    "max_workers": workers,
+                    "wall_seconds": round(wall_seconds, 3),
+                    "collectors": collector_telemetry,
+                },
+            },
+        )
         return items
 
     def persist(self, run_id: str, items: Iterable[CollectedItem]) -> list[dict]:

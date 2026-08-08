@@ -1,0 +1,102 @@
+{
+  "version": "v1",
+  "description": "Synthetic systems/AI-infra corpus for deterministic regression of mechanism, numeric baseline/condition, boundary, and unsupported-claim retention. Synthetic by design; add production-source cases before changing evidence budgets or ranking thresholds.",
+  "cases": [
+    {
+      "id": "kv-network-scheduler",
+      "topic": "tpn",
+      "direction": "kv_network_scheduling",
+      "source_excerpt": "The scheduler tracks KV-cache location and decode urgency, then allocates network bandwidth between prefill transfers and latency-sensitive decode traffic. On 8 H100 GPUs connected by 200 GbE at 32 concurrent requests, P99 request latency is 48 ms versus 64 ms for the FIFO baseline. At low load where inference is compute-bound, the scheduler provides little benefit.",
+      "expected": {
+        "required_fields": ["problem", "mechanism", "limitations", "project_relevance", "evidence"],
+        "equals": {"primary_source_resolved": true},
+        "contains": {
+          "mechanism": ["KV", "decode", "bandwidth"],
+          "limitations": ["low load", "compute-bound"]
+        },
+        "forbidden_terms": ["2× latency improvement", "zero overhead"],
+        "evidence": [
+          {
+            "claim_contains": ["P99", "latency"],
+            "value": "48 ms",
+            "baseline_contains": ["64 ms", "FIFO"],
+            "condition_contains": ["8 H100", "200 GbE", "32 concurrent"],
+            "source_locator_contains": ["evaluation"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "dpu-inline-compression",
+      "topic": "dpu_inline",
+      "direction": "inline_datapath",
+      "source_excerpt": "A DPU performs LZ4 compression before cross-region transmission and decompression on receive. For a compressible 256 MB object stream over a 400 Gbps path, application-visible goodput reaches 1.8x the uncompressed baseline while DPU codec throughput stays above line rate. Incompressible payloads fall back to bypass because compression can add latency without reducing bytes on the wire.",
+      "expected": {
+        "required_fields": ["problem", "mechanism", "limitations", "project_relevance", "evidence"],
+        "equals": {"primary_source_resolved": true},
+        "contains": {
+          "mechanism": ["DPU", "LZ4", "compression"],
+          "limitations": ["incompressible", "bypass"]
+        },
+        "forbidden_terms": ["all traffic improves", "lossless 1.8x bandwidth"],
+        "evidence": [
+          {
+            "claim_contains": ["goodput"],
+            "value": "1.8x",
+            "baseline_contains": ["uncompressed"],
+            "condition_contains": ["256 MB", "400 Gbps", "compressible"],
+            "source_locator_contains": ["results"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "chip-memory-bottleneck",
+      "topic": "ai_chip_accelerator",
+      "direction": "memory_io_codesign",
+      "source_excerpt": "The accelerator leaves peak compute unchanged and instead increases effective HBM bandwidth through a revised data-movement pipeline. On batch-1 decoder inference for a 70B model, end-to-end token throughput improves by 1.22x over the same compute array with the original memory path. The gain shrinks for compute-bound matrix kernels, so peak TOPS is not the explanation for the system-level speedup.",
+      "expected": {
+        "required_fields": ["problem", "mechanism", "limitations", "project_relevance", "evidence"],
+        "equals": {"primary_source_resolved": true},
+        "contains": {
+          "mechanism": ["HBM", "data", "bandwidth"],
+          "limitations": ["compute-bound"]
+        },
+        "forbidden_terms": ["peak TOPS increased", "compute array was upgraded"],
+        "evidence": [
+          {
+            "claim_contains": ["token throughput"],
+            "value": "1.22x",
+            "baseline_contains": ["same compute", "original memory"],
+            "condition_contains": ["batch-1", "70B"],
+            "source_locator_contains": ["end-to-end"]
+          }
+        ]
+      }
+    },
+    {
+      "id": "cross-region-ec-loss",
+      "topic": "cross_region",
+      "direction": "transfer_placement",
+      "source_excerpt": "The transport stripes blocks with a 6+2 erasure code so isolated packet loss can be recovered without waiting for a full WAN retransmission round. At 80 ms RTT and 0.1% random loss, P99 completion time falls by 18% versus selective retransmission for 64 MB transfers. The code sends 33% parity overhead, so it is unattractive on lossless or severely bandwidth-constrained paths.",
+      "expected": {
+        "required_fields": ["problem", "mechanism", "limitations", "project_relevance", "evidence"],
+        "equals": {"primary_source_resolved": true},
+        "contains": {
+          "mechanism": ["6+2", "erasure", "retransmission"],
+          "limitations": ["33%", "bandwidth"]
+        },
+        "forbidden_terms": ["eliminates all retransmissions", "no bandwidth overhead"],
+        "evidence": [
+          {
+            "claim_contains": ["P99", "completion"],
+            "value": "18%",
+            "baseline_contains": ["selective retransmission"],
+            "condition_contains": ["80 ms", "0.1%", "64 MB"],
+            "source_locator_contains": ["evaluation"]
+          }
+        ]
+      }
+    }
+  ]
+}

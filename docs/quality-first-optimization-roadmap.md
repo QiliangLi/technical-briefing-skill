@@ -46,9 +46,9 @@ Implemented:
 6. **AI-chip discovery coverage**
    - adds chip-topic boosts/allowlists to existing discovery feeds without weakening final evidence requirements.
 
-## PR #13: quality-neutral efficiency hardening
+## PR #13: quality-neutral Agent-work hardening
 
-Implemented in the follow-up safe-efficiency pass:
+Implemented:
 
 ### INVALID targeted repair
 
@@ -98,31 +98,71 @@ Normalized fetched PDF/HTML text is cached separately from facts.
 
 ### Safe-efficiency telemetry
 
-`stats` adds deterministic counters for:
+`stats` adds deterministic counters for exact-primary suppression, fetch-deferred candidates, below-floor editorial skips, raw-fulltext cache hits, and targeted INVALID repair savings. These are avoided-work/cache proxies, not measured Codex billing.
 
-- exact-primary candidates suppressed;
-- fetch-deferred candidates;
-- below-floor editorial events skipped;
-- raw-fulltext cache hits;
-- targeted INVALID repairs and repair-sidecar character savings.
+## PR #14: wall-clock collection optimization + Golden Eval foundation
 
-These are avoided-work/cache proxies, not measured Codex billing.
+Implemented in the next low-risk pass:
+
+### Bounded collection concurrency
+
+Independent source collectors can now overlap while every collector keeps its existing internal request order and throttling.
+
+- default outer concurrency is 3 workers and is hard-capped at 6;
+- the single `ArxivCollector` still serializes topic/direction requests and preserves its configured request interval;
+- AI HOT, arXiv, RSS, GitHub Releases, Follow Builders and YeeKal may overlap as independent lanes;
+- collector failures remain isolated exactly as before;
+- completed batches are consumed in the original fixed collector declaration order rather than completion order;
+- persistence still happens only after collection and remains serial;
+- `collection.json` records execution mode, worker count, total wall time, per-collector duration/count/status/error.
+
+This is a wall-clock optimization only. It does not reduce requested source coverage, per-source result limits, freshness windows, or downstream relevance/deep budgets.
+
+### Golden Quality Eval v1
+
+A deterministic, versioned gate now exists under `eval/golden/v1`.
+
+The first synthetic corpus covers four representative failure modes:
+
+- KV-cache-aware network scheduling: preserve mechanism + P99 value + FIFO baseline + workload/network condition + compute-bound boundary;
+- DPU in-path compression: preserve codec mechanism + goodput value + uncompressed baseline + path/object condition + incompressible bypass boundary;
+- AI-chip memory/data-movement optimization: preserve end-to-end throughput evidence and prevent rewriting memory-path gains as peak-TOPS gains;
+- cross-region EC transport: preserve 6+2 mechanism + P99 improvement + retransmission baseline + RTT/loss/object condition + parity-overhead boundary.
+
+The evaluator hard-checks:
+
+- required structured fact fields;
+- exact primary-source resolution flags;
+- mechanism/boundary terms;
+- numeric evidence value;
+- material baseline and condition retention;
+- source-locator retention;
+- forbidden unsupported claims.
+
+CI runs both the positive baseline and negative regression tests, so dropping a baseline/condition or injecting a known unsupported conclusion fails the build.
+
+**Important limitation:** v1 is intentionally synthetic infrastructure. It is sufficient to prove the gate and catch structural regressions, but it is not yet a complete empirical quality benchmark. Before changing the 18k first-read budget, deep budget, relevance thresholds, or evidence requirements, add versioned production-source cases and freeze their accepted outputs/assertions.
 
 ## Next quality-neutral efficiency work
-
-### Collection concurrency
-
-Run independent collectors concurrently with bounded concurrency while preserving arXiv/request throttles and serializing persistence. This is wall-clock optimization only.
 
 ### More deterministic local transforms
 
 Inspect production INVALID telemetry before expanding the targeted-repair allowlist. Only errors whose repair can be proven not to require new factual evidence should move to local or small-context repair paths.
 
+### Collection concurrency tuning from production telemetry
+
+Do not raise the worker cap just because more concurrency is possible. Use `collection.json` across real runs to determine:
+
+- which collector dominates wall time;
+- whether remote rate limits or SQLite/source-state contention appear;
+- whether 2/3/4 workers materially changes total wall time;
+- whether source success/count distributions remain unchanged.
+
 ## P1/P2: quality improvements requiring measured validation
 
 ### Relevance score decomposition
 
-Return the rubric components instead of only one opaque 0-100 score:
+Return rubric components instead of only one opaque 0-100 score:
 
 - project relevance;
 - technical novelty/substance;
@@ -130,11 +170,11 @@ Return the rubric components instead of only one opaque 0-100 score:
 - actionability;
 - freshness.
 
-Use deterministic post-fact evidence metrics for final evidence quality instead of relying heavily on the fact Agent's self-rated `quality_score`. Avoid double-counting freshness/evidence between relevance and final ranking.
+Use deterministic post-fact evidence metrics for final evidence quality instead of relying heavily on the Fact Agent's self-rated `quality_score`. Avoid double-counting freshness/evidence between relevance and final ranking.
 
 ### Quality floor before diversity fairness
 
-Diversity should operate among sufficiently strong candidates. Do not give a deep slot to a weak topic merely to make every topic appear in every issue. The exact floor should be chosen from production evaluation rather than guessed.
+Diversity should operate among sufficiently strong candidates. Do not give a deep slot to a weak topic merely to make every topic appear in every issue. The exact floor should be chosen from Golden Eval + production review rather than guessed.
 
 ### Dynamic item-length budget
 
@@ -144,11 +184,11 @@ Keep an issue-level reading budget while allowing more space for evidence-dense 
 
 Add deterministic high-quality sources for AI chips, DPU/CXL/optical topics (official engineering sources and major systems/hardware venues) before increasing generic web-search volume.
 
-## P0 infrastructure before aggressive future cost changes
+## P0 infrastructure still needed before aggressive future changes
 
-### Golden quality evaluation set
+### Production-source Golden cases
 
-Build a small versioned corpus of representative sources with assertions such as:
+Extend the synthetic v1 gate with a small versioned set of real primary-source cases. Assertions should cover:
 
 - must capture mechanism X;
 - must retain number Y with baseline/condition Z;
@@ -157,7 +197,7 @@ Build a small versioned corpus of representative sources with assertions such as
 - must resolve source identity correctly;
 - must not merge event C with D.
 
-Metrics should include mechanism recall, unsupported-claim rate, baseline/condition retention, boundary retention, source/locator validity and final fact-check corrections. Future changes to evidence size, deep budget or model calls should not merge unless they hold this baseline.
+Metrics should include mechanism recall, unsupported-claim rate, baseline/condition retention, boundary retention, source/locator validity and final Fact Check corrections. Future changes to evidence size, deep budget or model calls should not merge unless they hold this baseline.
 
 ### Human edit telemetry
 
@@ -165,7 +205,7 @@ Where approval tooling permits, record structured differences between generated 
 
 ## Architectural cleanup (later, separate PR)
 
-The bootstrap currently composes many behavior wrappers/monkey patches and installation order matters. Once a Golden Eval exists, migrate behavior-preservingly toward explicit stages:
+The bootstrap currently composes many behavior wrappers/monkey patches and installation order matters. Once production-source Golden Eval exists, migrate behavior-preservingly toward explicit stages:
 
 `Collector -> PrimarySourceResolver -> CandidatePlanner -> RelevanceReviewer -> DeepSelector -> DocumentStore -> EvidenceBuilder -> FactExtractor -> EventClusterer -> EditorialSelector -> Writer -> FactChecker -> IssueBuilder`
 
