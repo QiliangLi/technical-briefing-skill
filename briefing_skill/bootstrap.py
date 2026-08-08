@@ -20,6 +20,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .release_family import install_release_family_aggregation
     from .relevance_efficiency import install_relevance_efficiency
     from .safe_efficiency import install_safe_efficiency
+    from .safe_efficiency_stats import install_safe_efficiency_stats
     from .session_grouping import install_session_grouping
     from .telemetry import install_task_telemetry
     from .topic_appendix_render import install_topic_appendix_rendering
@@ -49,9 +50,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_historical_backfill()
     # Session grouping changes task-dispatch instructions and stats only.
     install_session_grouping()
-    # INVALID repair is last so repairable fact tasks are isolated from session
-    # grouping and receive the small sidecar instruction path instead of full input.
+    # INVALID repair is last in the task-dispatch chain so repairable fact tasks are
+    # isolated from session grouping and receive the small sidecar path.
     install_invalid_targeted_repair()
+    # Stats composition is intentionally final so it preserves all earlier stats
+    # extensions and only appends quality-neutral efficiency counters.
+    install_safe_efficiency_stats()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
