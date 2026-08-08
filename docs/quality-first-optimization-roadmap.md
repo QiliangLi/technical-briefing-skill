@@ -14,7 +14,7 @@ This roadmap separates output-quality work from cost work. The hard rule is: **d
 
 ## PR #12: correctness hardening
 
-Implemented in this change:
+Implemented:
 
 1. **Discovery -> primary source resolution**
    - deterministically promotes only known primary identities such as arXiv, DOI, GitHub and specific OpenReview pages;
@@ -46,54 +46,77 @@ Implemented in this change:
 6. **AI-chip discovery coverage**
    - adds chip-topic boosts/allowlists to existing discovery feeds without weakening final evidence requirements.
 
-## P1: quality-neutral efficiency work after #12
+## PR #13: quality-neutral efficiency hardening
 
-These should reduce wasted work without reducing evidence or editorial quality.
+Implemented in the follow-up safe-efficiency pass:
 
 ### INVALID targeted repair
 
-Current generic reopen can cause a whole task to be repeated even for transport/schema/format failures. Split retries:
+Simple deterministic failures no longer require re-reading the expensive task context.
 
-- transport / `_task` / missing field / JSON / sentence-ending errors -> previous output + exact validator errors + schema only;
-- factual/evidence errors -> original evidence or a targeted evidence repair;
-- cap attempts, then require human inspection rather than looping indefinitely.
+- `_task`, sentence-ending, length, immutable-field and exact-ID-set failures may use one small repair sidecar;
+- the sidecar contains the previous invalid output, exact validator error and deterministic constraints only;
+- the retry is forbidden from reading the original Evidence Pack/full text/project context or adding facts;
+- substantive factual/evidence failures still use the normal evidence-aware path;
+- targeted repair is capped at one attempt.
 
-### Fetch failure gate
+### Fetch failure gate with deep-budget refill
 
-If primary full-text retrieval ends in `FALLBACK`, do not spend a deep fact task on a summary that cannot satisfy `primary_source_resolved`.
+A `FALLBACK` summary cannot satisfy primary-source deep evidence requirements, so it no longer consumes a Fact Agent task.
 
-- deterministic retry / alternate PDF URL first;
-- otherwise mark `DEFERRED_FETCH` and try a later run;
-- keep the discovery signal in Radar/appendix if useful.
+- the failed candidate is retained as `DEFERRED_FETCH` with an audit record;
+- a vacated deep slot is refilled from the next already-relevant A-level `DEFERRED_BUDGET` candidate;
+- refill obeys the unchanged total and per-topic deep budgets, so fetch failures do not silently shrink information volume or expand the configured budget.
 
 ### Pre-editorial deterministic score gate
 
-After facts/event scoring, events that are deterministically below the minimum observation threshold cannot be rescued by writing because score is immutable.
+After facts/event scoring, events below the lowest selectable final issue role skip Writer + Fact Check.
 
-- skip item-writing and fact-check tasks for those events;
-- retain them as deferred/appendix candidates when appropriate.
+- expanded mode uses the observation threshold;
+- compact mode uses the issue minimum;
+- downstream writing/fact checking cannot change the deterministic score, so these events could not otherwise enter the issue;
+- facts and event audit state remain available.
 
-### Exact cross-source primary dedup
+### Exact immutable cross-source primary dedup
 
-Before relevance review, combine only exact primary identities:
+Before relevance review, duplicate discovery paths are collapsed only when the same immutable primary version can be proven within the same topic/direction.
 
-- same arXiv ID/version;
-- same DOI;
-- same GitHub release/tag/commit;
-- same canonical primary URL.
-
-Keep all `discovered_via` provenance and never use fuzzy dedup at this stage.
+- explicit arXiv `vN`, DOI, GitHub release/tag/commit identities are eligible;
+- arXiv v1 and v2 remain distinct;
+- unversioned arXiv links deliberately remain separate because revision equality cannot be proven;
+- cross-topic/direction analysis remains separate;
+- all `discovered_via` provenance is retained.
 
 ### Raw full-text cache
 
-Cache normalized fetched PDF/HTML text by immutable source fingerprint separately from facts.
+Normalized fetched PDF/HTML text is cached separately from facts.
 
-- project-context or fact-prompt changes can rebuild front evidence/facts without another HTTP download/PDF parse;
-- mutable web pages remain revalidated.
+- native immutable sources reuse local normalized text without another HTTP/PDF parse;
+- deterministically promoted discovery records with an explicit immutable primary version can reuse the same raw text across discovery channels;
+- Front-18k construction and facts remain topic/context-specific;
+- mutable or unversioned sources remain conservative and are re-fetched.
+
+### Safe-efficiency telemetry
+
+`stats` adds deterministic counters for:
+
+- exact-primary candidates suppressed;
+- fetch-deferred candidates;
+- below-floor editorial events skipped;
+- raw-fulltext cache hits;
+- targeted INVALID repairs and repair-sidecar character savings.
+
+These are avoided-work/cache proxies, not measured Codex billing.
+
+## Next quality-neutral efficiency work
 
 ### Collection concurrency
 
 Run independent collectors concurrently with bounded concurrency while preserving arXiv/request throttles and serializing persistence. This is wall-clock optimization only.
+
+### More deterministic local transforms
+
+Inspect production INVALID telemetry before expanding the targeted-repair allowlist. Only errors whose repair can be proven not to require new factual evidence should move to local or small-context repair paths.
 
 ## P1/P2: quality improvements requiring measured validation
 
