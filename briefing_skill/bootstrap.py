@@ -10,6 +10,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .cost_schema import install_cost_schema
     from .coverage_policy import install_coverage_policy
     from .deep_efficiency import install_deep_efficiency
+    from .deep_selection_guard import install_deep_selection_guard
     from .editorial_batch import install_editorial_batching
     from .efficiency import install_pipeline_optimizations
     from .evidence_repair import install_evidence_repair
@@ -66,6 +67,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_technology_value_assessment()
     install_project_insight_layer()
     install_human_feedback_telemetry()
+    # Close the last deep-selection bypass after Technology Value has patched the
+    # selector. Deep candidates must be assessed before high rule scores can compete.
+    install_deep_selection_guard()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
