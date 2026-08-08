@@ -29,24 +29,39 @@ def _load_topics(paths: Paths) -> dict[str, Any]:
     topic_list = topics.setdefault("topics", [])
     known_ids = {str(topic.get("id") or "") for topic in topic_list}
 
-    chip_path = paths.config / "topics-chip.yaml"
-    if chip_path.exists():
-        chip_data = _load_yaml(chip_path)
-        extension = chip_data.get("topic")
+    # Focused topics live in small extension files so adding one does not require
+    # rewriting the large base taxonomy. Extensions are inserted before the horizontal
+    # Radar topic and otherwise behave exactly like base deep topics.
+    for filename in ("topics-chip.yaml", "topics-media.yaml"):
+        extension_path = paths.config / filename
+        if not extension_path.exists():
+            continue
+        extension_data = _load_yaml(extension_path)
+        extension = extension_data.get("topic")
         if not isinstance(extension, dict) or not extension.get("id"):
-            raise ConfigError(f"Topic extension must contain a topic mapping with id: {chip_path}")
-        if extension["id"] not in known_ids:
-            horizontal_index = next(
-                (index for index, topic in enumerate(topic_list) if topic.get("id") == "ai_infra_horizontal"),
-                len(topic_list),
+            raise ConfigError(
+                f"Topic extension must contain a topic mapping with id: {extension_path}"
             )
-            topic_list.insert(horizontal_index, extension)
-            known_ids.add(str(extension["id"]))
+        if extension["id"] in known_ids:
+            continue
+        horizontal_index = next(
+            (
+                index
+                for index, topic in enumerate(topic_list)
+                if topic.get("id") == "ai_infra_horizontal"
+            ),
+            len(topic_list),
+        )
+        topic_list.insert(horizontal_index, extension)
+        known_ids.add(str(extension["id"]))
 
     for topic in topic_list:
         if topic.get("id") == "ai_infra_horizontal":
             description = str(topic.get("description") or "")
-            topic["description"] = description.replace("前六个专题", "七个深度专题")
+            topic["description"] = (
+                description.replace("前六个专题", "八个深度专题")
+                .replace("七个深度专题", "八个深度专题")
+            )
             break
     return topics
 
@@ -96,6 +111,7 @@ class ConfigBundle:
             "cross_region": "cross-region.md",
             "optical_network": "optical-network.md",
             "ai_chip_accelerator": "ai-chip-accelerator.md",
+            "storage_media": "storage-media.md",
             "ai_infra_horizontal": "ai-infra-horizontal.md",
         }
         try:
