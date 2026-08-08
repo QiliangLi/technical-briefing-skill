@@ -68,7 +68,11 @@ def test_unversioned_arxiv_is_not_pre_relevance_deduplicated(tmp_path):
     run_id = "unversioned"
     db.create_run(run_id)
     created = now_iso()
-    for index in range(2):
+    discoveries = (
+        ("aihot", "AI HOT"),
+        ("yeekal", "YeeKal AI Daily"),
+    )
+    for index, (source_id, discovery_source) in enumerate(discoveries):
         raw_id = f"raw-{index}"
         candidate_id = f"candidate-{index}"
         url = "https://arxiv.org/abs/2608.54321"
@@ -81,7 +85,7 @@ def test_unversioned_arxiv_is_not_pre_relevance_deduplicated(tmp_path):
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
-                raw_id, run_id, "aihot", f"Discovery {index}", "A", 0,
+                raw_id, run_id, source_id, discovery_source, "A", 0,
                 "Unversioned paper", "summary", url, "", url,
                 "arxiv:2608.54321", created, created, "[]", f"discovery-{index}",
                 "tpn", "kv_transfer", 10, f"hash-{index}",
@@ -97,3 +101,7 @@ def test_unversioned_arxiv_is_not_pre_relevance_deduplicated(tmp_path):
         )
 
     assert dedupe_exact_primary_candidates(db, run_id) == 0
+    assert db.fetchone(
+        "SELECT COUNT(*) AS n FROM candidates WHERE run_id=? AND status='PENDING_RELEVANCE'",
+        (run_id,),
+    )["n"] == 2
