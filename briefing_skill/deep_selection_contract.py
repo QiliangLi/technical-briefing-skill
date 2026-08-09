@@ -112,6 +112,31 @@ def render_deferred_appendix_row(topic_name: str, items: list[dict[str, Any]]) -
     )
 
 
+def _prune_stale_persisted_appendix(service, run_id: str) -> None:
+    issue = service.db.fetchone("SELECT id FROM issues WHERE run_id=?", (run_id,))
+    if not issue:
+        return
+    appendix = getattr(service, "_topic_appendix_cache", {}) or {}
+    keep = {
+        (f"{APPENDIX_PREFIX}{topic_id}", canonicalize_url(item.get("url")))
+        for topic_id, items in appendix.items()
+        for item in items
+        if canonicalize_url(item.get("url"))
+    }
+    persisted = service.db.fetchall(
+        "SELECT canonical_url,category FROM issue_radar_items WHERE issue_id=? AND category LIKE ?",
+        (issue["id"], f"{APPENDIX_PREFIX}%"),
+    )
+    for row in persisted:
+        key = (str(row.get("category") or ""), canonicalize_url(row.get("canonical_url")))
+        if key in keep:
+            continue
+        service.db.execute(
+            "DELETE FROM issue_radar_items WHERE issue_id=? AND canonical_url=? AND category=?",
+            (issue["id"], row.get("canonical_url"), row.get("category")),
+        )
+
+
 def _selection_validation(service, run_id: str) -> list[str]:
     """Validate the DB-side invariant used by the reader-facing appendix."""
 
@@ -160,6 +185,7 @@ def install_deep_selection_contract() -> None:
     """Make topic-local Top4 / appendix semantics a fail-closed product contract."""
 
     from . import coverage_policy, topic_appendix_render
+    from .emailer import EmailService
     from .pipeline import Pipeline
     from .rendering import Renderer
 
@@ -174,6 +200,15 @@ def install_deep_selection_contract() -> None:
 
     coverage_policy.collect_topic_appendix = collect_topic_appendix
     topic_appendix_render._appendix_row = render_deferred_appendix_row
+
+    original_build = EmailService.build
+
+    def build(self, run_id: str, *args, **kwargs):
+        path = original_build(self, run_id, *args, **kwargs)
+        _prune_stale_persisted_appendix(self, run_id)
+        return path
+
+    EmailService.build = build
 
     original_validate = Renderer.validate
 
