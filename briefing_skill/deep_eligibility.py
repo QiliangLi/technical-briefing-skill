@@ -213,7 +213,6 @@ def deep_eligibility_semantic_errors(
 
 def ensure_deep_eligibility_schema(db) -> None:
     with db.connect() as conn:
-        candidate_columns = {row[1] for row in conn.execute("PRAGMA table_info(candidates)")}
         additions = {
             "topic_fit": "TEXT",
             "core_contribution": "TEXT",
@@ -222,14 +221,17 @@ def ensure_deep_eligibility_schema(db) -> None:
             "deep_eligible": "INTEGER",
             "deep_eligibility_reason": "TEXT",
         }
-        for name, sql_type in additions.items():
-            if name not in candidate_columns:
-                conn.execute(f"ALTER TABLE candidates ADD COLUMN {name} {sql_type}")
+        candidate_columns = {row[1] for row in conn.execute("PRAGMA table_info(candidates)")}
+        if candidate_columns:
+            for name, sql_type in additions.items():
+                if name not in candidate_columns:
+                    conn.execute(f"ALTER TABLE candidates ADD COLUMN {name} {sql_type}")
 
         cache_columns = {row[1] for row in conn.execute("PRAGMA table_info(relevance_cache)")}
-        for name, sql_type in additions.items():
-            if name not in cache_columns:
-                conn.execute(f"ALTER TABLE relevance_cache ADD COLUMN {name} {sql_type}")
+        if cache_columns:
+            for name, sql_type in additions.items():
+                if name not in cache_columns:
+                    conn.execute(f"ALTER TABLE relevance_cache ADD COLUMN {name} {sql_type}")
 
 
 def _cache_identity(config, root, row: dict[str, Any]) -> tuple[str, str, str, str]:
