@@ -64,10 +64,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_deep_efficiency()
     install_task_telemetry()
     install_fact_cache_fastpath()
-    # Legacy fact_cache rows are deliberately not migrated. The v2 layer wraps the
-    # existing Deep/cache fast paths, disables legacy reads/writes, and requires exact
-    # source+Evidence hashes inside execution-mode namespaces.
-    install_fact_cache_provenance()
     install_evidence_repair()
     install_editorial_batching()
     # Install after the existing CLI extensions so the backfill parser preserves
@@ -105,6 +101,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Rebalance the same 18k first-read budget across context/mechanism/results/bounds.
     # This must run after evidence-repair so cache versions include both policies.
     install_balanced_evidence()
+    # Legacy fact_cache rows are deliberately not migrated. Install after the final
+    # Evidence policy so v2 binds the exact runtime extractor version and Evidence Pack;
+    # it disables legacy reads/writes while preserving raw-fulltext reuse underneath.
+    install_fact_cache_provenance()
     # Reader-facing guards merge project impact into 本期判断 and remove internal metadata.
     install_reader_facing_quality()
     # Reuse the existing issue-synthesis Agent to turn broad Radar candidates into
