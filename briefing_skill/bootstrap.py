@@ -11,6 +11,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .cost_schema import install_cost_schema
     from .coverage_policy import install_coverage_policy
     from .deep_efficiency import install_deep_efficiency
+    from .deep_selection_contract import install_deep_selection_contract
     from .deep_selection_guard import install_deep_selection_guard
     from .editorial_batch import install_editorial_batching
     from .efficiency import install_pipeline_optimizations
@@ -79,6 +80,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # must install after the Technology Value guard so ranking semantics stay intact,
     # while fetch failures refill from the same topic instead of another topic.
     install_topic_local_deep_policy()
+    # Fail closed around the product meaning of that Top4: only genuine Deep-tail
+    # candidates may enter the topic appendix, and final validation rechecks it.
+    install_deep_selection_contract()
     # Rebalance the same 18k first-read budget across context/mechanism/results/bounds.
     # This must run after evidence-repair so cache versions include both policies.
     install_balanced_evidence()
