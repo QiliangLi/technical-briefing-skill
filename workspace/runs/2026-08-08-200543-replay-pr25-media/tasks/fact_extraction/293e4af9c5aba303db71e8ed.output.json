@@ -1,0 +1,60 @@
+{
+  "title": "CodeGrep: An RL-Trained Retrieval Agent for LLM Coding Agents",
+  "event_hint": "CodeGrep: a 14B retrieval agent trained with GRPO to issue parallel grep/glob/read calls, injected into a frozen OpenHands agent on SWE-Bench Verified, preserving resolve rate while cutting rounds 15% and tokens 19%.",
+  "problem": "Modern LLM coding agents (Claude Code, OpenHands) spend most of their token budget finding the file to patch rather than patching it. On SWE-Bench Verified a 30B OpenHands agent averages 23 rounds and 631K tokens per resolved issue, dominated by grep, glob, and view_file calls in ambiguous exploration loops, often 20+ rounds in a wrong direction.",
+  "mechanism": "CodeGrep is a 14B-parameter retriever built on Qwen3-14B-Instruct, trained end-to-end with GRPO to emit up to 8 concurrent grep/glob/read tool calls per turn over a Git-worktree environment and return candidate files. Its output is injected into a frozen downstream coding agent (only the retriever is trained). A reward-design study compares three iterations; the final v3 moves the efficiency signal from the reward layer to the advantage layer and drops an auxiliary line-range term. Supervision is mined via CATM from 67K open-source agent trajectories.",
+  "evidence": [
+    {
+      "claim": "On all 500 SWE-Bench Verified instances, injecting CodeGrep lifts resolve rate from 25.8% to 27.0% (+1.2 pp) while cutting resolved rounds 23.0 to 19.6 (-15%) and resolved tokens 631K to 514K (-19%).",
+      "value": "+1.2 pp resolve; -15% rounds; -19% tokens",
+      "baseline": "No-retrieval OpenHands baseline (25.8% resolve, 23.0 rounds, 631K tokens)",
+      "condition": "SWE-Bench Verified, 500 instances, frozen OpenHands + Qwen3-30B-A3B-Instruct-2507",
+      "source_locator": "Section 4.3 / Table 3, PDF Page 6"
+    },
+    {
+      "claim": "Downstream utility follows a precision threshold across three retrievers: BM25 at file-precision 0.375 hurts the agent, Jina at 0.445 is neutral, and only CodeGrep at 0.677 crosses the threshold at which retrieval begins to buy efficiency.",
+      "value": "BM25 0.375 / Jina 0.445 / CodeGrep 0.677 precision",
+      "baseline": "No-retrieval baseline",
+      "condition": "Three injected retrievers on the same agent stack",
+      "source_locator": "Abstract (PDF Page 1); Section 5.1 / Table 2, PDF Page 6"
+    },
+    {
+      "claim": "BM25 injection degrades the agent: resolve drops 0.6 pp and resolved tokens inflate 21% (631K to 763K); on the 94 instances both configs resolve, BM25 rollouts spend 6.6% more rounds and 38.6% more tokens.",
+      "value": "-0.6 pp resolve; +21% tokens (631K to 763K)",
+      "baseline": "No-retrieval baseline",
+      "condition": "BM25-injected OpenHands",
+      "source_locator": "Section 4.3 / Section 5.1, PDF Page 6"
+    },
+    {
+      "claim": "Reward design matters: applying the efficiency signal at the advantage layer (v2/v3) holds KL-to-reference at 0.09/0.15, versus reward-layer multiplicative scaling (v1) drifting to ~0.31 by step 900, i.e. roughly tripling policy drift.",
+      "value": "KL 0.09 (advantage-layer) vs ~0.31 (reward-layer)",
+      "baseline": "v1 reward-layer scaling",
+      "condition": "GRPO training, ~900-step run, 8xB200",
+      "source_locator": "Section 3.5 / Contributions (PDF Page 2); Figure 2 (PDF Page 6)"
+    },
+    {
+      "claim": "Training scale: 67,074 raw trajectories mined (CATM) yield 31,977 effective training samples (47.7% retention); end-to-end wall-clock is ~27 hours on a single 8xB200 node, early-stopped at step 897 of a planned 2000.",
+      "value": "67,074 trajectories; 31,977 samples; ~27 h on 8xB200",
+      "baseline": null,
+      "condition": "ms-swift + LoRA + vLLM-colocated rollout",
+      "source_locator": "Section 3.6 (PDF Page 5); Table 5, PDF Page 12"
+    }
+  ],
+  "evaluation_context": "SWE-Bench Verified (500 instances); downstream agent is OpenHands with Qwen3-30B-A3B-Instruct-2507 (temperature 0, 100-round max). Retriever is CodeGrep 14B on Qwen3-14B-Instruct, emitting up to 8 parallel tools/turn, max 4 turns (3 exploration + 1 answer), 32 max tool executions per rollout. Training on a single 8xB200 node with LoRA via ms-swift. Retriever quality measured by file-level F-beta and precision (Table 2): CodeGrep v3 F-beta mean 0.576, precision 0.677, F-beta>=0.8 on 43.0%, 2.3 turns. The 25.8% baseline reproduces the published 25.2 +/- 0.7%.",
+  "limitations": "The resolve-rate lift is small (+1.2 pp). Only one downstream agent stack is evaluated (OpenHands); retriever effect on other agents (e.g. Cursor, Windsurf Cascade) may differ, and the dropped line-range term could benefit agents whose editor consumes line ranges. LoRA (not full fine-tune) is used, and the model is released as such. The reward-design conclusions are specific to this GRPO/CATM setting.",
+  "project_relevance": "Directly relevant to reducing code-agent read/grep/glob overhead. It shows a specialized 14B retrieval agent can shorten exploration while preserving task success, and it gives a practical decision rule (a file-precision threshold around 0.45-0.67) for when injecting a retriever starts to buy efficiency versus hurts the agent. The advantage-layer efficiency signal is a concrete RL-design lesson for tool-using agents.",
+  "primary_source_resolved": true,
+  "quality_score": 87,
+  "source_notes": [
+    "Resolve/rounds/tokens figures and the precision-threshold characterization are from Tables 2-3 and Section 5.1 (PDF Pages 5-6).",
+    "KL-drift comparison (0.09 vs 0.31) is reported in the Contributions (PDF Page 2) and Figure 2 (PDF Page 6).",
+    "Training scale numbers are from Section 3.6 and Table 5 (PDF Pages 5 and 12)."
+  ],
+  "evidence_gaps": [],
+  "_task": {
+    "id": "293e4af9c5aba303db71e8ed",
+    "type": "fact_extraction",
+    "entity_id": "45975374431b2250f17d4023",
+    "input_digest": "03e47ee85979e17e31def53ae288b6da"
+  }
+}

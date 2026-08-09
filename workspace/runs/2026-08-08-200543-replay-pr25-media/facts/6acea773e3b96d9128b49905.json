@@ -1,0 +1,76 @@
+{
+  "title": "TensorCast: The Missing Tensor Management Layer in Large Language Model Infrastructure",
+  "event_hint": "TensorCast: a distributed tensor-management layer (Tensor-as-a-Service) that decouples tensor lifecycle management from computation, integrated with vLLM and SGLang; a programmable routing policy improves median TTFT by up to 93.2% under highly concurrent multi-turn agent workloads.",
+  "problem": "LLM infrastructure increasingly manages tensors (model weights, KV caches, checkpoints) as persistent distributed states, but existing systems optimize each task (weight loading, KV management, checkpoint sync) by deeply coupling task-specific mechanisms with execution engines, networks, or storage. This creates isolated silos that prevent reuse and cross-component composition, so operators repeatedly reimplement similar lifecycle logic and cannot express optimizations that span multiple components (e.g., jointly balancing load and preserving KV locality).",
+  "mechanism": "TensorCast proposes Tensor-as-a-Service (TaaS), decoupling tensor state management from computation. It provides first-class tensor abstractions, programmable lifecycle primitives (identify/place/materialize/transform/coordinate), and a runtime that separates tensor-management policies from execution mechanisms. Developers compose tensor-management programs via TensorCast APIs while transparently leveraging distributed execution and data movement; engine-specific state export/import is confined to an instance adaptor so callers evolve without modifying engines, transports, or storage.",
+  "evidence": [
+    {
+      "claim": "A programmable request-routing policy implemented with TensorCast improves median TTFT by up to 93.2% under highly concurrent multi-turn agent workloads.",
+      "value": "up to 93.2% median TTFT improvement",
+      "baseline": "Load-aware / cache-aware router policies",
+      "condition": "Highly concurrent multi-turn agent workloads",
+      "source_locator": "Abstract (PDF Page 1)"
+    },
+    {
+      "claim": "For high-cardinality KV management (Qwen3-32B, TP=2) with RDMA enabled, TensorCast achieves TTFT reductions of 60% to 87.5% (2.5x to 8x speedup), comparable to the state-of-the-art Mooncake KV backend; with RDMA disabled it significantly outperforms Mooncake.",
+      "value": "60-87.5% TTFT reduction (2.5x-8x) with RDMA",
+      "baseline": "Mooncake KV storage backend in SGLang",
+      "condition": "Qwen3-32B TP=2, LongBench prompts (~16k/35k tokens), 100% cache-hit stress test",
+      "source_locator": "Section 6.3, PDF Page 13 (Fig. 8)"
+    },
+    {
+      "claim": "TensorCast accelerates model weight synchronization by 1.14x to 2.63x compared with the default updater, evaluated on Qwen3-14B and Qwen3-32B with the WeightPublisher helper publishing versioned weights that rollout workers retrieve per TP-rank slice.",
+      "value": "1.14x to 2.63x weight-sync acceleration",
+      "baseline": "Default SGLang updater (full weights from JFS)",
+      "condition": "Two-node cluster, 4xH800 per node, RDMA disabled for fairness",
+      "source_locator": "Section 6.2, PDF Page 12"
+    },
+    {
+      "claim": "For the programmable router evaluation, three agentic workload presets are defined by inter-turn delay: fast (median 8.2 s), medium (median 20.1 s), slow (median 60.3 s); TensorCast's router shows the smallest cache-hit-rate drop as sessions scale, reducing request TTFT.",
+      "value": "fast 8.2 s / medium 20.1 s / slow 60.3 s median inter-turn delay",
+      "baseline": "Load-aware, Load-aware+Mooncake, Cache-aware routers",
+      "condition": "Agentic coding workloads, varying session number",
+      "source_locator": "Table 3 (PDF Page 13); Section 6.4 / Figures 10-11 (PDF Page 14)"
+    },
+    {
+      "claim": "At Qwen3-235B-A22B (TP=8) TensorCast is again comparable to Mooncake under RDMA and better without; TP=8 introduces 4x more concurrent KV-page retrieval requests than TP=2, increasing contention and reducing TTFT improvements for both systems.",
+      "value": "comparable (RDMA) / better (no RDMA) than Mooncake at TP=8",
+      "baseline": "Mooncake",
+      "condition": "Qwen3-235B-A22B TP=8",
+      "source_locator": "Section 6.3 (Fig. 9), PDF Page 13"
+    }
+  ],
+  "evaluation_context": "Integrated with vLLM and SGLang. KV-management cluster (Section 6.3): N nodes, each 64 CPU, 1 TB DRAM, 8xH800 GPUs, 200 Gbps RDMA; LongBench prompts grouped ~16k and ~35k tokens; KV reuse stress test forces N-1 instances to concurrently retrieve KV pages (100% cache hit). Weight-sync cluster (Section 6.2): two nodes, 64 CPU, 500 GB DRAM, 4xH800. Models: Qwen3-14B, Qwen3-32B, Qwen3-235B-A22B. Baselines: Mooncake (SGLang HiCache KV backend), default JFS weight updater, and load-aware / cache-aware request routers.",
+  "limitations": "The authors do not claim a general abstraction is inherently faster than every specialized implementation; TensorCast confines engine coupling to an instance adaptor (integration cost remains). Training-framework integration (Megatron-LM, DeepSpeed) is left to future work. The 93.2% median-TTFT headline is stated as an upper bound under highly concurrent multi-turn agent workloads; the exact preset/session-count condition producing that peak is not pinpointable from the reviewed figures. Without RDMA, gains come from a userspace mTCP implementation whose benefit is network-dependent.",
+  "project_relevance": "Directly relevant to state-aware network / KV-cache scheduling. TensorCast's value-add over pure per-GPU memory scheduling is precisely cross-component composition: a programmable router that jointly balances instance load and KV-cache placement (migrating requests with their KV caches) preserves cache locality and cuts TTFT, and a unified tensor abstraction makes KV transfer, weight sync, and checkpoint resharding reusable rather than siloed. This is concrete evidence for network/coordination-side value beyond GPU-memory scheduling.",
+  "primary_source_resolved": true,
+  "quality_score": 84,
+  "source_notes": [
+    "The 93.2% headline is from the Abstract (PDF Page 1); the router comparison is in Section 6.4 with Figures 10-11 (PDF Page 14).",
+    "KV-management and weight-sync numbers are from Sections 6.2-6.3 (PDF Pages 12-13).",
+    "Workload delay presets are from Table 3 (PDF Page 13)."
+  ],
+  "evidence_gaps": [
+    {
+      "question": "Which exact agent-workload preset (fast/medium/slow) and session count produces the up-to-93.2% median TTFT improvement, and what is the absolute TTFT for the TensorCast router versus each baseline at that point?",
+      "terms": [
+        "Agent fast",
+        "Agent medium",
+        "Agent slow",
+        "TTFT P50",
+        "Load-aware",
+        "Cache-aware",
+        "session number",
+        "TensorCast"
+      ]
+    }
+  ],
+  "_provenance": {
+    "task_id": "d73334d534599e5dc21aef51",
+    "candidate_id": "6acea773e3b96d9128b49905",
+    "source_title": "TensorCast: The Missing Tensor Management Layer in Large Language Model Infrastructure",
+    "source_url": "https://arxiv.org/abs/2608.06007v1",
+    "document_id": "a5660a80df2fe1ae454b2a3b",
+    "repair_of_task_id": "a3b9cce63a1a85906227d58d"
+  }
+}

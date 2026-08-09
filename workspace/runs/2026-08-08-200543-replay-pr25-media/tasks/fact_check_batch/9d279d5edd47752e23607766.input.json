@@ -1,0 +1,484 @@
+{
+  "_task": {
+    "id": "9d279d5edd47752e23607766",
+    "type": "fact_check_batch",
+    "entity_id": "fc8fa7dfb76aa42eac7779b3",
+    "input_digest": "44634abe12e5edb86c55c9d85976b0e8"
+  },
+  "batch_id": "fact-check-4",
+  "checks": [
+    {
+      "brief_item_id": "7c395710bc7d23fd2d5b0019",
+      "brief_item": {
+        "title": "TokTier以有状态CPU加GPU分词服务保证字节一致token ID，使分词不再是Agent推理首token的主要瓶颈。",
+        "type": "论文",
+        "topic_name": "跨域传输",
+        "direction_name": "Agent Cache、工具结果与记忆共享",
+        "published_at": "2026-07-31T17:56:30Z",
+        "importance": "值得关注",
+        "core_conclusion": "TokTier以有状态CPU加GPU分词服务保证字节一致token ID，使分词不再是Agent推理首token的主要瓶颈。",
+        "mechanism": "会话续接保留既有token序列，仅在追加窗口重切分并在边界稳定时拼接，否则回退。",
+        "result": "增量修复较HF分词快437倍，接入vLLM后中位TTFT降低16%至34%。",
+        "boundary": "大追加在缓存全预热时反而更慢，且四并发会话后前缀复用坍塌。",
+        "project_relevance": "每会话token状态不足15MB，远小于KV，使跨域共享token状态成本更低。",
+        "keywords": [
+          "跨域传输",
+          "ID",
+          "否则回退"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2607.29678v2",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-07-31T17:56:30Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "score": 87,
+        "_provenance": {
+          "task_id": "9d0d0cf211941ff3521d72c1",
+          "event_id": "1e12cf74ffc71a89c5986681",
+          "batch_id": "writing-3",
+          "source_urls": [
+            "https://arxiv.org/abs/2607.29678v2"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "TokTier: Exact Stateful CPU+GPU Tokenization for Agentic LLM Serving",
+          "event_hint": "TokTier (ASU) introduces a stateful CPU+GPU tokenization service that guarantees byte-identical token IDs, cutting tokenization time so sharply that under a 50ms P99 objective 4 CPU cores + 1 GPU sustain 1,821 req/s where a 16-core stateless front end saturates at 40.",
+          "problem": "LLM serving stacks cache prompt KV state but the front end still re-tokenizes the full request text on every call. For coding agents that append a small tool result to a long transcript, tokenization grows from 10% to 64% of time-to-first-token as the fleet prompt-cache hit rate approaches 0.99, because a short append can shift token boundaries near the end of the prior sequence.",
+          "mechanism": "A two-mode stateful tokenization service enforcing one contract (emitted IDs always identical to full reference tokenization). For session continuations it keeps the prior token sequence, re-tokenizes a small window around the append, and splices only when a per-request check finds a stable pre-tokenization boundary (else widens or falls back). For calls without a reusable prefix it decomposes GPT-family regex pre-tokenization into run-local rules and runs exact pre-tokenization and BPE on a GPU. A sampled shadow verifier re-checks live traffic against the reference.",
+          "evidence": [
+            {
+              "claim": "Across 153,951 agent calls the median append is ~1.4K characters and only 1.0-3.6% of calls start or rebuild a session; at the fleet's 94.1% prompt-cache hit rate, as it approaches 0.99 tokenization grows from 10% to 64% of time to first token.",
+              "value": "median append 1.4K chars; 1.0-3.6% session starts; tokenization 10%->64% of TTFT",
+              "baseline": "Full-context re-tokenization on every call",
+              "condition": "153,951 calls from two agent ecosystems; component measurements at varying prompt-cache hit rates",
+              "source_locator": "PDF Page 1 (Abstract): 'Across 153,951 calls ... the median call appends only about 1.4 K characters, and only 1.0-3.6% of calls start or re-build a session ... the aggregate prompt-cache hit rate is 94.1%, and as it approaches 0.99, tokenization grows from 10% to 64% of time to first token.'"
+            },
+            {
+              "claim": "Incremental repair takes 0.5-1.1ms from 100K to 3M characters, up to 437x faster than HF tokenization and 2.1x faster at 1M characters than Gigatoken (the strongest cache-based baseline) in its most favorable, fully prewarmed mode; GPU full tokenization encodes 1M characters in 0.87ms, up to 491x below HF and 23.4x below the fastest published CPU method.",
+              "value": "repair 0.5-1.1ms (437x vs HF; 2.1x vs Gigatoken); GPU 0.87ms @1M (491x vs HF; 23.4x vs fastest CPU)",
+              "baseline": "HuggingFace tokenization; Gigatoken (cache-based, fully prewarmed); fastest published CPU method",
+              "condition": "17 production tokenizer families; 1.5x10^10 split checks; 12.4TB real-text corpus; 93,000+ replayed agent steps; zero divergence",
+              "source_locator": "PDF Page 1 (Abstract): 'Incremental repair takes 0.5-1.1 ms from 100 K to 3 M characters, up to 437x faster than HF tokenization and 2.1x faster at 1 M characters than the strongest cache-based baseline (i.e., Gigatoken) ... GPU full tokenization encodes a 1 M-character request in 0.87 ms, up to 491x below HF tokenization and 23.4x below the fastest previously published CPU method.'"
+            },
+            {
+              "claim": "With vLLM in the loop, TokTier lowers median time to first token by 16-34% in loaded regimes and P99 by 23% under recorded burst arrivals.",
+              "value": "median TTFT -16-34%; P99 -23%",
+              "baseline": "vLLM with stateless front-end tokenization",
+              "condition": "Closed-loop sessions; e.g., 95K tokens/session improves median TTFT 23% with two back-to-back sessions, 16% with three, 34% with two sessions plus a two-second think time",
+              "source_locator": "PDF Page 1 (Abstract): 'With vLLM in the loop, TokTier lowers median time to first token by 16-34% in loaded regimes and P99 by 23% under recorded burst arrivals.' See also PDF Page 14 (closed-loop experiments)."
+            },
+            {
+              "claim": "Under a 50ms P99 objective, four repair cores plus one GPU sustain 1,821 requests/s, where a 16-core stateless CPU front end saturates at 40.",
+              "value": "1,821 req/s (4 cores + 1 GPU) vs 40 req/s (16-core stateless)",
+              "baseline": "16-core stateless CPU front end",
+              "condition": "50ms P99 TTFT objective",
+              "source_locator": "PDF Page 1 (Abstract): 'Under a 50 ms P99 objective, a four-core repair pool plus one GPU sustains 1,821 requests/s, where a 16-core stateless CPU front end saturates at 40.'"
+            },
+            {
+              "claim": "Per-request CPU time is 13.4ms for fastokens vs 2.3ms for TokTier repair and 0.15ms for GPU full tokenization; at 0.5 req/s per inference GPU this is 6.7 / 1.1 / 0.1 front-end CPU cores per 1,000 GPUs. Session token state costs ~16 bytes/token (a 500K-token session holds <15MB) vs gigabytes for the corresponding KV state.",
+              "value": "13.4ms vs 2.3ms vs 0.15ms per request; 6.7/1.1/0.1 cores per 1,000 GPUs; <15MB for 500K-token session",
+              "baseline": "fastokens (Rust)",
+              "condition": "153,529 calls with complete token accounting (mean 117K tokens, mean hit 0.88); rate normalization at 0.5 req/s per inference GPU",
+              "source_locator": "PDF Page 23 (Table 8) and PDF Page 14 (Section 5.7 Cost and resource use): '13.4 ms of CPU time per request for fastokens and 2.3 ms for TokTier repair ... GPU full tokenization contributes 0.15 ms ... 6.7, 1.1, and 0.1 front-end CPU cores per 1,000 GPUs ... a growing 500 K-token session holds its resident footprint under 15 MB.'"
+            }
+          ],
+          "evaluation_context": "Workload: 153,951 calls from two agent ecosystems (SWE-smith streams under Qwen3, Llama 3.1, gpt-oss; plus public Codex trace). Hardware: GPU full tokenization benchmarked across RTX 5090, RTX PRO 6000, GH200, H100 NVL, A100 (Table 9); repair measured with reference HF/Rust engines. Differential campaigns: 17 production tokenizer families, 1.5x10^10 split checks, 12.4TB real-text corpus, 93,000+ replayed agent steps, zero divergence. Closed-loop TTFT measured with vLLM at 95K tokens/session. Shadow verifier caught a history-dependent bug in a widely deployed production Rust tokenizer (39/40 sampled sessions diverged).",
+          "limitations": "At four concurrent sessions the inference engine cannot retain the needed KV state and prefix reuse collapses (tokenization placement becomes irrelevant). For large appends (delta=100K chars, beyond P99 of 38K / the 0.8% of calls reaching 50K) the fully prewarmed cache leads repair at every context shape; three explored prototype routes (A: parallel repair; B: cache-based window engine) are exploration prototypes that have not passed the certification battery gating the shipped repair path. GPU is only ~1.5x better in tokens/watt than the best 32-core CPU config under an accounting that favors the CPU.",
+          "project_relevance": "Directly relevant to cross-region / agent-cache infrastructure: tokenization is an overlooked front-end bottleneck that dominates TTFT once KV-cache reuse is saturated. TokTier's exactness contract (byte-identical IDs, certified-boundary splice) is what makes incremental token-state reuse safe alongside prefix-cache and KV-cache reuse, and its small per-session state (<15MB vs gigabytes for KV) makes token-state sharing across regions far cheaper than KV-state sharing.",
+          "primary_source_resolved": true,
+          "quality_score": 86,
+          "source_notes": [
+            "Primary source: arXiv:2607.29678v2, TokTier, Z. Zhang & Z. Cao, Arizona State University, 31 Jul 2026; document.fetch_status=FETCHED.",
+            "All headline numbers in the abstract are restated in the body with explicit baselines (HF, Gigatoken prewarmed, fastokens) and conditions (tokenizer family, context size, hardware) on PDF pages 1, 11, 14, and 23."
+          ],
+          "evidence_gaps": [],
+          "_provenance": {
+            "task_id": "d5e4a9bca76dc8c47f24dc80",
+            "candidate_id": "6f13e88afd4aee6ab8b8cebe",
+            "source_title": "TokTier: Exact Stateful CPU+GPU Tokenization for Agentic LLM Serving",
+            "source_url": "https://arxiv.org/abs/2607.29678v2",
+            "document_id": "2c3a77fd6e445c208b1a872f"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "058f29703a4ee2ba0cf4b023",
+      "brief_item": {
+        "title": "DiffusionGemma将Gemma 4微调为文本扩散模型，以256 token画布并行解码在单卡H100达到约1500 TPS。",
+        "type": "论文",
+        "topic_name": "AI芯片与加速器",
+        "direction_name": "AI计算芯片与加速器架构",
+        "published_at": "2026-07-31T16:11:46Z",
+        "importance": "值得关注",
+        "core_conclusion": "DiffusionGemma将Gemma 4微调为文本扩散模型，以256 token画布并行解码在单卡H100达到约1500 TPS。",
+        "mechanism": "采用双向注意力的离散文本扩散，经两阶段训练将自回归模型转为迭代降噪的块并行生成。",
+        "result": "单请求约1456 TPS，为自回归的7.1倍、带推测解码的4.8倍。",
+        "boundary": "单步时延为自回归的3.2倍，吞吐优势在约32并发以上消失。",
+        "project_relevance": "评估低并发场景下扩散解码对GPU内存带宽与批处理策略的影响。",
+        "keywords": [
+          "AI芯片与加速器",
+          "4微调为文本扩散模型",
+          "以256",
+          "TPS",
+          "单请求约1456"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2608.00146v1",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-07-31T16:11:46Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "score": 86,
+        "_provenance": {
+          "task_id": "bbe38f87a4847f66d71b70f8",
+          "event_id": "f3b85891a5a0883415f54cf1",
+          "batch_id": "writing-4",
+          "source_urls": [
+            "https://arxiv.org/abs/2608.00146v1"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "DiffusionGemma Technical Report",
+          "event_hint": "Google DeepMind releases DiffusionGemma, an open-weight text diffusion LLM fine-tuned from Gemma 4 that decodes 256-token blocks in parallel for ~1,500 tokens/sec on a single H100.",
+          "problem": "Autoregressive LLMs decode one token per forward pass, creating a sequential bottleneck that limits generation speed; even state-of-the-art speculative decoding only reaches ~3-6 tokens per forward pass.",
+          "mechanism": "Discrete text diffusion over 256-token canvases with bidirectional attention: a two-stage pipeline (SFT for bidirectional denoising, then online sampler distillation + reinforcement learning) converts a pretrained Gemma 4 MoE AR model into a diffusion model that iteratively refines token blocks in parallel, using adaptive stopping (avg 12 of 48 max denoising steps) to compress latency while retaining multimodal, long-context, and thinking-mode capabilities.",
+          "evidence": [
+            {
+              "claim": "DiffusionGemma is obtained by fine-tuning the Gemma 4 MoE model with 3.8B activated and 25.2B total parameters, and the two-stage training pipeline uses fewer than 10% of the starting AR model's total training token budget.",
+              "value": "3.8B activated / 25.2B total parameters; <10% training tokens",
+              "baseline": "Gemma 4 26B A4B MoE (AR starting model)",
+              "condition": "Two-stage pipeline: SFT then SD·RL; warm-started from final post-trained Gemma 4 weights",
+              "source_locator": "PDF Page 1 (Abstract) and PDF Page 3 (architecture/training section): 'we obtain DiffusionGemma by fine-tuning the mixture-of-experts Gemma 4 model with 3.8B activated and 25.2B total parameters. Our compute-efficient two-stage training pipeline uses fewer than 10% of the starting AR model's total training token budget.'"
+            },
+            {
+              "claim": "Averaged across the evaluation suite it generates around 20 tokens per forward pass and roughly 1,500 output tokens per second on a single NVIDIA H100 GPU; third-party (Unsloth) benchmarking shows speeds up to 2,000 TPS on the NVIDIA RTX 6000.",
+              "value": "~20 TPF; ~1,500 TPS (H100); up to 2,000 TPS (RTX 6000)",
+              "baseline": "~3-6 TPF with state-of-the-art speculative decoding",
+              "condition": "Single NVIDIA H100 GPU, FP8, batch size 1; average across GPQA-Diamond and LiveCodeBench-v6",
+              "source_locator": "PDF Page 3: 'DiffusionGemma generates on average 20 TPF—a step-change improvement over the ~3-6 TPF ... yields generation speeds of around 1,500 tokens per second (TPS) on a single NVIDIA H100 GPU ... scale up to 2,000 TPS on the NVIDIA RTX 6000.'"
+            },
+            {
+              "claim": "Serving a single request (4096 input, 1024 output tokens) on H100 FP8, a single denoising step takes t_fwd=13.56ms end-to-end (12.63ms per-step GPU time); with average TPF 19.74 the decoding throughput is 1456 TPS, a 7.1x improvement over Gemma 4 AR (204 TPS) and 4.8x over AR with MTP (303 TPS).",
+              "value": "1456 TPS; 7.1x over AR (204 TPS); 4.8x over AR+MTP (303 TPS)",
+              "baseline": "Gemma 4 AR (204 TPS); Gemma 4 AR with MTP (303 TPS)",
+              "condition": "H100, FP8, batch size 1, 4096 input / 1024 output tokens, PG-19; TPF 19.74 averaged over 7 benchmarks (Table 3)",
+              "source_locator": "PDF Page 18 ('Throughput for batch size of 1 serving'): 'a single denoising step of DiffusionGemma takes t_fwd = 13.56ms on average ... the average decoding throughput of the model is 1456 TPS—a 7.1x improvement over the Gemma 4 AR model (204 TPS) and a 4.8x improvement over the AR model with MTP (303 TPS).'"
+            },
+            {
+              "claim": "DiffusionGemma processes 256 tokens per step with only a 3.2x increase in per-step latency vs single-token AR; the MoE kernel is 4.3x slower because ~84 unique experts activate per 256-token canvas (vs 8 per token for AR), text diffusion sampling takes 3.06ms vs 0.56ms for AR, and attention is 4x slower.",
+              "value": "3.2x per-step latency; 4.3x slower MoE; 3.06ms vs 0.56ms sampling; 4x slower attention",
+              "baseline": "Gemma 4 AR single-token decoding",
+              "condition": "Batch size 1, H100, FP8, 4096 input / 1024 output tokens; ~84 experts/canvas measured on PG-19",
+              "source_locator": "PDF Page 17 (Figure 11 per-step GPU time breakdown): 'DiffusionGemma processes 256 tokens per step with only a 3.2x increase in per-step latency ... Activating more experts per forward pass results in a 4.3x slower MoE kernel ... text diffusion sampling takes 3.06ms while AR sampling takes only 0.56ms ... attention operation is 4x slower.'"
+            },
+            {
+              "claim": "AR models only gain a throughput advantage at moderate batch sizes around 32 concurrent requests; DiffusionGemma offers higher per-user and total throughput in the low batch size regime, with results not yet optimized for batch sizes larger than 1.",
+              "value": "AR throughput advantage begins at ~32 concurrent requests",
+              "baseline": "Gemma 4 AR with/without MTP (draft length 4)",
+              "condition": "H100, FP8, PG-19, 4096 input / 1024 output tokens; current kernel selection suboptimal for batch>1",
+              "source_locator": "PDF Page 18 (Figure 12): 'It is only at moderate batch sizes (around 32 concurrent requests) that AR models begin to have a throughput advantage ... these results are without targeted optimization for batch sizes larger than 1.'"
+            }
+          ],
+          "evaluation_context": "Open-weight (Apache 2.0) MoE text diffusion model, 262k vocabulary, 8/128 active/total experts + 1 shared, canvas length 256, max 48 denoising steps (avg 12 with adaptive stopping). Inference measured on single NVIDIA H100 (FP8, batch size 1) and RTX 6000; comparisons against Gemma 4 AR and AR+MTP on PG-19 (4096 input / 1024 output tokens). Quality-vs-speed Pareto averaged over GPQA-Diamond and LiveCodeBench-v6. Downstream LoRA fine-tuning demonstrated on Sudoku and PubMedQA (e.g., PubMedQA BLEU 10.76 -> 20.67 with LoRA rank 4).",
+          "limitations": "Per-step latency is 3.2x higher than AR and MoE kernel is 4.3x slower due to ~84 experts activating per canvas; sampling uses standard PyTorch/torch.compile primitives rather than hand-written GPU kernels. Throughput advantage does not hold beyond ~32 concurrent requests and current kernel selection is suboptimal for batch>1. FP8 numbers unavailable for Nemotron and LLaDA comparators. Closed-source/commercial diffusion models compared only via public API estimates.",
+          "project_relevance": "Directly relevant to AI accelerator/inference architecture: demonstrates that diffusion-based parallel token decoding can deliver 4.8-7.1x single-request speedups over AR+speculative decoding on the same H100, but the gain is concentrated at low batch sizes and comes with higher per-step memory traffic (more expert activation) — important for sizing GPU memory bandwidth and batching strategies in inference serving clusters.",
+          "primary_source_resolved": true,
+          "quality_score": 82,
+          "source_notes": [
+            "Primary source: arXiv:2608.00146v1, DiffusionGemma Technical Report, Google DeepMind, 31 Jul 2026; document.fetch_status=FETCHED.",
+            "Headline ~1,500 TPS and ~20 TPF are repeated in abstract and body and supported by the batch-size-1 throughput breakdown on PDF page 18 with explicit baselines (Gemma 4 AR 204 TPS, AR+MTP 303 TPS)."
+          ],
+          "evidence_gaps": [],
+          "_provenance": {
+            "task_id": "bfde81316a85c5f94e59afde",
+            "candidate_id": "9055ea299bc7f3c4d4f441fd",
+            "source_title": "DiffusionGemma Technical Report",
+            "source_url": "https://arxiv.org/abs/2608.00146v1",
+            "document_id": "6995a0e4c481a5eb91cbd0f2"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "5eb596ae7d8248b550fb8569",
+      "brief_item": {
+        "title": "Kairos将突发负载下的Prefill偏转到空闲Decode节点就地执行，消除跨节点KVCache传输并大幅降低尾延迟。",
+        "type": "论文",
+        "topic_name": "状态感知网络、TPN",
+        "direction_name": "KVCache传输与通信优化",
+        "published_at": "2026-07-02T11:10:05Z",
+        "importance": "值得关注",
+        "core_conclusion": "Kairos将突发负载下的Prefill偏转到空闲Decode节点就地执行，消除跨节点KVCache传输并大幅降低尾延迟。",
+        "mechanism": "调度时估算各路径TTFT，扫描满足TBT SLO的最大分块序列并在Decode路径更优时偏转。",
+        "result": "P95 TTFT最高降低81%，SLO达成率最高提升79%，单请求路由开销低于1毫秒。",
+        "boundary": "大分块在1024以上增加解码步时延，且主配置为2P2D小集群。",
+        "project_relevance": "解耦服务中KV传输与排队主导尾延迟，应验证负载感知偏转对消除跨节点传输的价值。",
+        "keywords": [
+          "状态感知网络、TPN",
+          "P95",
+          "扫描满足TBT"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2607.02043v1",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-07-02T11:10:05Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "score": 86,
+        "_provenance": {
+          "task_id": "bbe38f87a4847f66d71b70f8",
+          "event_id": "9bf7f66692b87759e578eccd",
+          "batch_id": "writing-4",
+          "source_urls": [
+            "https://arxiv.org/abs/2607.02043v1"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "Towards Load-Aware Prefill Deflection for Disaggregated LLM Serving",
+          "event_hint": "Kairos: a proactive prefill-deflection scheduler for disaggregated LLM serving that reroutes prefill to underutilized decode nodes as chunked-prefill steps, eliminating inter-node KV transfer and cutting P95 TTFT up to 81%.",
+          "problem": "In disaggregated LLM serving (separate prefill and decode GPU pools), bursty heavy-tailed workloads saturate prefill nodes while decode nodes sit underutilized. On a production-style 2P2D A100 cluster, prefill execution accounts for only 2-23% of P95 TTFT; the rest is prefill queueing and inter-node GPU-to-GPU KV-cache transfer.",
+          "mechanism": "Kairos estimates, at scheduling time, the TTFT a queued request would see on the prefill node, and for every decode node sweeps candidate chunk-size sequences to find the largest schedule that keeps in-flight decodes within their Time-Between-Tokens (TBT) SLO, then deflects the prefill phase to a decode node when the decode path helps tail latency. Because the deflected prefill runs in place on the decode node, the inter-node KV transfer is eliminated. A single operator-tunable knob alpha >= 1 bounds TTFT regression for deflected requests.",
+          "evidence": [
+            {
+              "claim": "Prefill execution accounts for only 2-23% of P95 TTFT across five workloads; queue wait and inter-node KV-cache transfer account for the remaining 77-98%.",
+              "value": "2-23% of P95 TTFT",
+              "baseline": null,
+              "condition": "2P2D A100 cluster, DeepSeek-V2-Lite, production-derived traces",
+              "source_locator": "Section 3.1 / Table 3, PDF Page 5"
+            },
+            {
+              "claim": "On the bursty workload, P95 TTFT was 7893.9 ms, with prefill queue 840.8 ms, prefill exec 1070.1 ms, KV transfer 2175.6 ms, decode queue 55.6 ms; KV transfer reached up to 4.2 s at P95 for LPLD.",
+              "value": "7893.9 ms P95 TTFT (Bursty)",
+              "baseline": null,
+              "condition": "Bursty and LPLD workloads, 2P2D",
+              "source_locator": "Table 3, PDF Page 5"
+            },
+            {
+              "claim": "Prefill SM utilization was 75-84% across workloads while decode SM utilization never exceeded 27%; the gap was widest for HPLD (84% vs 7.5%).",
+              "value": "75-84% prefill SM vs <=27% decode SM",
+              "baseline": null,
+              "condition": "Steady-state, 2P2D A100 80GB",
+              "source_locator": "Section 3.1 / Table 2, PDF Page 4"
+            },
+            {
+              "claim": "Kairos reduces P95 TTFT by up to 81% and raises SLO attainment by up to 79% over state-of-the-art disaggregated schedulers, at sub-millisecond per-request routing cost.",
+              "value": "up to 81% P95 TTFT reduction; up to 79% SLO attainment gain",
+              "baseline": "state-of-the-art disaggregated schedulers",
+              "condition": "Production-derived trace (Company X), bursty load",
+              "source_locator": "Abstract (PDF Page 1) and Contributions (PDF Page 2)"
+            },
+            {
+              "claim": "Implemented on vLLM 0.18.1 in approximately 2000 lines of Python; per-request scheduling overhead is less than 1 ms; chunked-prefill step latency stayed flat (delta Tstep <= 30 ms) for chunk sizes up to 512 tokens across workloads and batch sizes.",
+              "value": "<1 ms routing; ~2000 LoC; <=30 ms step-latency increase up to chunk size 512",
+              "baseline": null,
+              "condition": "vLLM 0.18.1, decode-node chunk injection",
+              "source_locator": "Contributions (PDF Page 2); Figure 1 caption, PDF Page 5"
+            }
+          ],
+          "evaluation_context": "Production-derived request traces replayed against DeepSeek-V2-Lite (MoE), token counts normalized to its 32K context window (prompt P25/median/P90 = 2071/3569/10366, median P:D ratio 69.7). Cluster: 2 prefill + 2 decode nodes (2P2D), each NVIDIA A100 80GB. Five workloads (LPLD, LPHD, HPLD, HPHD, Bursty). SLO targets: 4 s P95 TTFT, 70 ms TBT. Per-node utilization captured via NVIDIA Nsight Systems. Baselines include state-of-the-art disaggregated schedulers (Splitwise/DistServe/Mooncake/TetriInfer family).",
+          "limitations": "Chunk sizes >= 1024 increase decode step latency (up to ~50 ms for bursty/high-prefill workloads) and require knowledge of cached-token volume, so chunk selection is regime-dependent. The headline 81%/79% gains are stated relative to state-of-the-art disaggregated schedulers but the precise baseline system identity and the detailed comparison table are not in the reviewed front evidence. 2P2D is the main configuration (footnote notes 1P3D saturates the single prefill node and 3P1D is decode-capacity-limited).",
+          "project_relevance": "Directly relevant to KV-cache transfer and state-aware scheduling. It shows that under disaggregated serving, KV transfer and prefill queueing dominate tail TTFT, and that a load-aware scheduler aware of KV-cache occupancy, decode batch state, and per-step latency can eliminate inter-node KV transfer by deflecting prefill. This is a concrete case where network-side / cross-node coordination adds value beyond pure per-GPU memory scheduling.",
+          "primary_source_resolved": true,
+          "quality_score": 84,
+          "source_notes": [
+            "The 2-23% prefill-execution share and the full P95 TTFT breakdown (Table 3) are fully visible and verified.",
+            "Utilization figures (75-84% / <=27%) are from Table 2 (PDF Page 4).",
+            "The 81%/79% headline and <1 ms routing cost are restated identically in the Abstract and the Contributions list."
+          ],
+          "evidence_gaps": [
+            {
+              "question": "Which exact disaggregated-scheduler baseline underlies the up-to-81% P95 TTFT and 79% SLO-attainment gains, and what are the per-workload comparison numbers?",
+              "terms": [
+                "Splitwise",
+                "DistServe",
+                "Mooncake",
+                "TetriInfer",
+                "SLO attainment",
+                "P95 TTFT",
+                "bursty",
+                "baseline"
+              ]
+            }
+          ],
+          "_provenance": {
+            "task_id": "f082a54d85811aa0a1e811f9",
+            "candidate_id": "22a7b9f130e094cd46160837",
+            "source_title": "Towards Load-Aware Prefill Deflection for Disaggregated LLM Serving",
+            "source_url": "https://arxiv.org/abs/2607.02043v1",
+            "document_id": "84a7ebfd607eed46d70406c9",
+            "repair_of_task_id": "1fae4364538de81c826cbdcf"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "6b248507d7e622f34832ed81",
+      "brief_item": {
+        "title": "铠侠与SanDisk发布第十代332层QLC 3D闪存，以CBA键合架构带来业内最高位密度。",
+        "type": "发布",
+        "topic_name": "存储介质与器件",
+        "direction_name": "NAND、Flash与高带宽闪存",
+        "published_at": "2026-08-04T09:00:00Z",
+        "importance": "值得关注",
+        "core_conclusion": "铠侠与SanDisk发布第十代332层QLC 3D闪存，以CBA键合架构带来业内最高位密度。",
+        "mechanism": "CMOS与阵列分片键合并以PI-LTT省电，配合Toggle DDR6.0与SCA提速接口。",
+        "result": "位密度超37 Gb/mm²（较八代约+60%），NAND接口首达4.8 Gb/s。",
+        "boundary": "尚未公布送样与量产时间，非系统基准。",
+        "project_relevance": "直接抬高QLC密度与接口速率天花板，但缺耐久和绝对带宽等系统数据。",
+        "keywords": [
+          "存储介质与器件",
+          "3D闪存",
+          "位密度超37",
+          "Gb/mm²",
+          "较八代约+60%"
+        ],
+        "sources": [
+          {
+            "publisher": "SanDisk",
+            "url": "https://www.sandisk.com/company/newsroom/press-releases/2026/2026-08-04-new-3d-flash-memory-technology-from-kioxia-and-sandisk-qlc-nand",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-08-04T09:00:00Z"
+          }
+        ],
+        "discovered_via": "SanDisk",
+        "incremental_update": false,
+        "score": 86,
+        "_provenance": {
+          "task_id": "bbe38f87a4847f66d71b70f8",
+          "event_id": "98e6495db1b1db0bcfb80946",
+          "batch_id": "writing-4",
+          "source_urls": [
+            "https://www.sandisk.com/company/newsroom/press-releases/2026/2026-08-04-new-3d-flash-memory-technology-from-kioxia-and-sandisk-qlc-nand"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "Kioxia and SanDisk 10th-Gen 332-Layer QLC NAND Achieves Industry's Highest Bit Density",
+          "event_hint": "Kioxia and Sandisk unveil 10th-generation 332-layer QLC 3D flash memory at FMS 2026 (August 4, 2026), claiming the industry's highest bit density for QLC NAND.",
+          "problem": "AI training, inference and hyperscale datacenter workloads drive unprecedented data growth, pressuring flash storage to deliver greater capacity, higher performance and improved energy efficiency simultaneously, while AI/cloud infrastructure faces power and cooling limits.",
+          "mechanism": "CMOS directly Bonded to Array (CBA) architecture fabricates CMOS logic and the memory array on separate wafers then bonds them with high-precision wafer-to-wafer alignment; a 332-layer optimized floorplan raises bit density; Toggle DDR6.0 plus the Separate Command Address (SCA) protocol enables a faster interface; Power-Isolated Low-Tapped Termination (PI-LTT) improves I/O data-out transfer power efficiency.",
+          "evidence": [
+            {
+              "claim": "The 10th-gen QLC 3D flash delivers up to a 60% increase in bit density versus the 8th-generation, surpassing 37 Gb/mm^2, presented as the industry benchmark for QLC bit density.",
+              "value": ">37 Gb/mm^2 (up to +60% vs 8th-gen)",
+              "baseline": "8th-generation 3D flash memory",
+              "condition": "QLC; vendor survey as of August 3, 2026",
+              "source_locator": "Press release lede + 'Key ... highlights' bullet - 332-layer architecture / bit density"
+            },
+            {
+              "claim": "It is the industry's first QLC 3D flash memory technology to reach a 4.8 Gb/s NAND interface, enabled by Toggle DDR6.0 and the Separate Command Address (SCA) protocol.",
+              "value": "4.8 Gb/s NAND interface",
+              "baseline": "8th-generation 3D flash memory interface",
+              "condition": "Vendor test environment (value may vary by use); 1 Gb/s = 1,000,000,000 bits/s",
+              "source_locator": "Press release lede + 'Key ... highlights' bullet - 4.8 Gb/s NAND interface"
+            },
+            {
+              "claim": "The new generation improves read and write bandwidth compared to the 8th-generation 3D flash memory.",
+              "value": "Read/write bandwidth increase (relative)",
+              "baseline": "8th-generation 3D flash memory",
+              "condition": "Absolute GB/s not disclosed",
+              "source_locator": "Press release lede - CBA technology paragraph"
+            },
+            {
+              "claim": "CMOS-directly-Bonded-to-Array (CBA) architecture enhances density scaling, performance, and manufacturing efficiency; Power-Isolated Low-Tapped Termination (PI-LTT) improves I/O data-out transfer power efficiency.",
+              "value": null,
+              "baseline": null,
+              "condition": "CBA: CMOS and cell array wafers manufactured separately then bonded; PI-LTT for I/O power",
+              "source_locator": "'Key ... highlights' bullets - CBA architecture and PI-LTT"
+            }
+          ],
+          "evaluation_context": "Joint Kioxia/Sandisk press release issued at Future of Memory and Storage (FMS) 2026, Santa Clara, August 4, 2026. 'Industry's highest' is a Kioxia/Sandisk survey claim as of August 3, 2026. Interface speed obtained under a vendor-specific test environment; no end-system or SSD-level benchmark results are provided.",
+          "limitations": "No absolute die capacity (Gb), P/E endurance, write amplification, access latency, or absolute read/write bandwidth (GB/s) are given. No sampling or mass-production timing is stated (Kioxia says it will 'accelerate development toward the commercialization'). The PI-LTT power-efficiency gain is qualitative only (no multiplier or percentage). 'Industry's highest bit density' is a vendor self-survey claim.",
+          "project_relevance": "Strongly relevant to storage_media density/bandwidth/power evidence: >37 Gb/mm^2 and a 4.8 Gb/s interface are concrete QLC density and interface advances, while CBA plus PI-LTT target the power/cooling constraints of AI infrastructure. However, missing endurance, absolute bandwidth and volume timing currently limit any assessment of deployable performance or cost/bit gain.",
+          "primary_source_resolved": true,
+          "quality_score": 70,
+          "source_notes": [
+            "fetch_status=LOCAL_SOURCE; primary vendor URL https://www.sandisk.com/company/newsroom/press-releases/2026/2026-08-04-new-3d-flash-memory-technology-from-kioxia-and-sandisk-qlc-nand.",
+            "'Industry's highest bit density for QLC NAND' is a Kioxia/Sandisk self-survey as of August 3, 2026; 4.8 Gb/s measured under vendor-specific test environment."
+          ],
+          "evidence_gaps": [],
+          "_provenance": {
+            "task_id": "c83e626a918d66344b8f19b7",
+            "candidate_id": "aec04c1f1f010cb7b8fd22ac",
+            "source_title": "Kioxia and SanDisk 10th-Gen 332-Layer QLC NAND Achieves Industry's Highest Bit Density",
+            "source_url": "https://www.sandisk.com/company/newsroom/press-releases/2026/2026-08-04-new-3d-flash-memory-technology-from-kioxia-and-sandisk-qlc-nand",
+            "document_id": "44a2d25e048c28f596e64b4b"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    }
+  ],
+  "constraints": {
+    "independent_items": true,
+    "no_cross_item_evidence": true
+  }
+}

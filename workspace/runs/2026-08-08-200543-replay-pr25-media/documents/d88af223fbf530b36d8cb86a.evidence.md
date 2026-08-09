@@ -1,0 +1,15 @@
+# Balanced Evidence Pack
+
+This first read intentionally spans problem context, mechanism, evaluation/results, and limitations. Evidence locators preserve the source section names.
+
+## Evidence locator: A Few Neurons Reveal When LLMs Misuse Tools: Sparse Detection and Selective Steering for Reliable Tool Use
+
+# A Few Neurons Reveal When LLMs Misuse Tools: Sparse Detection and Selective Steering for Reliable Tool Use
+
+Source: https://arxiv.org/abs/2608.00218v1
+
+## Evidence locator: Available summary
+
+## Available summary
+
+Agentic LLMs exhibit three consequential tool-use failures: invalid arguments (validity), unnecessary calls (over-calling), and omitted calls when tools are needed (missing). We find that a small, failure-specific set of MLP neurons could distinguish such failures with linearly separable decision boundaries. Building on this observation, we introduce PRISMS (Probing Representations In Support of Monitoring and Steering), a closed-loop framework that shares a failure-specific neuron basis between sparse detection and activation steering. PRISMS selects contribution-critical MLP neurons and fits an L1-regularized detector on their activations. Across six models from the Qwen3, Llama, and Gemma families, over-calling and missing are detected at the pre-generation prompt boundary with ROC-AUC 0.90-1.00, while validity is detected from the generated tool-call span with ROC-AUC 0.86-0.90. These results are achieved with highly sparse readouts: only 1-2 MLP neurons for missing, 2-16 for over-calling, and approximately 128 for validity. These sparse detectors match or outperform dense residual-stream baselines using 23-627 times fewer features. The shared neuron basis also supports bidirectional control over tool-calling behavior, suppressing unnecessary calls and eliciting omitted ones. PRISMS therefore gates intervention on predicted failure risk to mitigate the collateral effects of unconditional steering. Across all six models, PRISMS reduces pooled over-calling rate by 80% (from 0.131 to 0.026) while increasing tool-required accuracy by 14.2 percentage points (from 0.689 to 0.831). PRISMS thus provides lightweight failure detection and selective intervention across model families.

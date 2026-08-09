@@ -1,0 +1,60 @@
+{
+  "title": "DiffusionGemma Technical Report",
+  "event_hint": "Google DeepMind releases DiffusionGemma, an open-weight text diffusion LLM fine-tuned from Gemma 4 that decodes 256-token blocks in parallel for ~1,500 tokens/sec on a single H100.",
+  "problem": "Autoregressive LLMs decode one token per forward pass, creating a sequential bottleneck that limits generation speed; even state-of-the-art speculative decoding only reaches ~3-6 tokens per forward pass.",
+  "mechanism": "Discrete text diffusion over 256-token canvases with bidirectional attention: a two-stage pipeline (SFT for bidirectional denoising, then online sampler distillation + reinforcement learning) converts a pretrained Gemma 4 MoE AR model into a diffusion model that iteratively refines token blocks in parallel, using adaptive stopping (avg 12 of 48 max denoising steps) to compress latency while retaining multimodal, long-context, and thinking-mode capabilities.",
+  "evidence": [
+    {
+      "claim": "DiffusionGemma is obtained by fine-tuning the Gemma 4 MoE model with 3.8B activated and 25.2B total parameters, and the two-stage training pipeline uses fewer than 10% of the starting AR model's total training token budget.",
+      "value": "3.8B activated / 25.2B total parameters; <10% training tokens",
+      "baseline": "Gemma 4 26B A4B MoE (AR starting model)",
+      "condition": "Two-stage pipeline: SFT then SD·RL; warm-started from final post-trained Gemma 4 weights",
+      "source_locator": "PDF Page 1 (Abstract) and PDF Page 3 (architecture/training section): 'we obtain DiffusionGemma by fine-tuning the mixture-of-experts Gemma 4 model with 3.8B activated and 25.2B total parameters. Our compute-efficient two-stage training pipeline uses fewer than 10% of the starting AR model's total training token budget.'"
+    },
+    {
+      "claim": "Averaged across the evaluation suite it generates around 20 tokens per forward pass and roughly 1,500 output tokens per second on a single NVIDIA H100 GPU; third-party (Unsloth) benchmarking shows speeds up to 2,000 TPS on the NVIDIA RTX 6000.",
+      "value": "~20 TPF; ~1,500 TPS (H100); up to 2,000 TPS (RTX 6000)",
+      "baseline": "~3-6 TPF with state-of-the-art speculative decoding",
+      "condition": "Single NVIDIA H100 GPU, FP8, batch size 1; average across GPQA-Diamond and LiveCodeBench-v6",
+      "source_locator": "PDF Page 3: 'DiffusionGemma generates on average 20 TPF—a step-change improvement over the ~3-6 TPF ... yields generation speeds of around 1,500 tokens per second (TPS) on a single NVIDIA H100 GPU ... scale up to 2,000 TPS on the NVIDIA RTX 6000.'"
+    },
+    {
+      "claim": "Serving a single request (4096 input, 1024 output tokens) on H100 FP8, a single denoising step takes t_fwd=13.56ms end-to-end (12.63ms per-step GPU time); with average TPF 19.74 the decoding throughput is 1456 TPS, a 7.1x improvement over Gemma 4 AR (204 TPS) and 4.8x over AR with MTP (303 TPS).",
+      "value": "1456 TPS; 7.1x over AR (204 TPS); 4.8x over AR+MTP (303 TPS)",
+      "baseline": "Gemma 4 AR (204 TPS); Gemma 4 AR with MTP (303 TPS)",
+      "condition": "H100, FP8, batch size 1, 4096 input / 1024 output tokens, PG-19; TPF 19.74 averaged over 7 benchmarks (Table 3)",
+      "source_locator": "PDF Page 18 ('Throughput for batch size of 1 serving'): 'a single denoising step of DiffusionGemma takes t_fwd = 13.56ms on average ... the average decoding throughput of the model is 1456 TPS—a 7.1x improvement over the Gemma 4 AR model (204 TPS) and a 4.8x improvement over the AR model with MTP (303 TPS).'"
+    },
+    {
+      "claim": "DiffusionGemma processes 256 tokens per step with only a 3.2x increase in per-step latency vs single-token AR; the MoE kernel is 4.3x slower because ~84 unique experts activate per 256-token canvas (vs 8 per token for AR), text diffusion sampling takes 3.06ms vs 0.56ms for AR, and attention is 4x slower.",
+      "value": "3.2x per-step latency; 4.3x slower MoE; 3.06ms vs 0.56ms sampling; 4x slower attention",
+      "baseline": "Gemma 4 AR single-token decoding",
+      "condition": "Batch size 1, H100, FP8, 4096 input / 1024 output tokens; ~84 experts/canvas measured on PG-19",
+      "source_locator": "PDF Page 17 (Figure 11 per-step GPU time breakdown): 'DiffusionGemma processes 256 tokens per step with only a 3.2x increase in per-step latency ... Activating more experts per forward pass results in a 4.3x slower MoE kernel ... text diffusion sampling takes 3.06ms while AR sampling takes only 0.56ms ... attention operation is 4x slower.'"
+    },
+    {
+      "claim": "AR models only gain a throughput advantage at moderate batch sizes around 32 concurrent requests; DiffusionGemma offers higher per-user and total throughput in the low batch size regime, with results not yet optimized for batch sizes larger than 1.",
+      "value": "AR throughput advantage begins at ~32 concurrent requests",
+      "baseline": "Gemma 4 AR with/without MTP (draft length 4)",
+      "condition": "H100, FP8, PG-19, 4096 input / 1024 output tokens; current kernel selection suboptimal for batch>1",
+      "source_locator": "PDF Page 18 (Figure 12): 'It is only at moderate batch sizes (around 32 concurrent requests) that AR models begin to have a throughput advantage ... these results are without targeted optimization for batch sizes larger than 1.'"
+    }
+  ],
+  "evaluation_context": "Open-weight (Apache 2.0) MoE text diffusion model, 262k vocabulary, 8/128 active/total experts + 1 shared, canvas length 256, max 48 denoising steps (avg 12 with adaptive stopping). Inference measured on single NVIDIA H100 (FP8, batch size 1) and RTX 6000; comparisons against Gemma 4 AR and AR+MTP on PG-19 (4096 input / 1024 output tokens). Quality-vs-speed Pareto averaged over GPQA-Diamond and LiveCodeBench-v6. Downstream LoRA fine-tuning demonstrated on Sudoku and PubMedQA (e.g., PubMedQA BLEU 10.76 -> 20.67 with LoRA rank 4).",
+  "limitations": "Per-step latency is 3.2x higher than AR and MoE kernel is 4.3x slower due to ~84 experts activating per canvas; sampling uses standard PyTorch/torch.compile primitives rather than hand-written GPU kernels. Throughput advantage does not hold beyond ~32 concurrent requests and current kernel selection is suboptimal for batch>1. FP8 numbers unavailable for Nemotron and LLaDA comparators. Closed-source/commercial diffusion models compared only via public API estimates.",
+  "project_relevance": "Directly relevant to AI accelerator/inference architecture: demonstrates that diffusion-based parallel token decoding can deliver 4.8-7.1x single-request speedups over AR+speculative decoding on the same H100, but the gain is concentrated at low batch sizes and comes with higher per-step memory traffic (more expert activation) — important for sizing GPU memory bandwidth and batching strategies in inference serving clusters.",
+  "primary_source_resolved": true,
+  "quality_score": 82,
+  "source_notes": [
+    "Primary source: arXiv:2608.00146v1, DiffusionGemma Technical Report, Google DeepMind, 31 Jul 2026; document.fetch_status=FETCHED.",
+    "Headline ~1,500 TPS and ~20 TPF are repeated in abstract and body and supported by the batch-size-1 throughput breakdown on PDF page 18 with explicit baselines (Gemma 4 AR 204 TPS, AR+MTP 303 TPS)."
+  ],
+  "evidence_gaps": [],
+  "_provenance": {
+    "task_id": "bfde81316a85c5f94e59afde",
+    "candidate_id": "9055ea299bc7f3c4d4f441fd",
+    "source_title": "DiffusionGemma Technical Report",
+    "source_url": "https://arxiv.org/abs/2608.00146v1",
+    "document_id": "6995a0e4c481a5eb91cbd0f2"
+  }
+}

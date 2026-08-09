@@ -1,0 +1,86 @@
+{
+  "title": "Accelerating GPU Inference of Large Language Models with Moderately Unstructured Sparse Weight Matrices",
+  "event_hint": "DAC 2026 paper proposing sparse matrix inference acceleration for LLMs on GPUs",
+  "problem": "At moderate unstructured sparsity (~50%), existing GPU kernels for sparse matrix multiplication (SpMM) cannot outperform dense counterparts, limiting inference acceleration while maintaining model quality.",
+  "mechanism": "Three-layer matrix storage format: (i) Sparse-TC layer enabling sparse tensor cores to accelerate SpMM; (ii) Slot-Filling layer using parallel differential distance (PDD) encoding for matrix compression with low-cost on-chip decoding; (iii) lightweight Residual Layer (CSR format) for remaining non-zeros. Co-optimized SpMM kernel jointly utilizes sparse tensor cores and CUDA cores with pipelined execution overlapping computation with memory access.",
+  "evidence": [
+    {
+      "claim": "Kernel achieves up to 1.64× speedup over SpInfer at 50% sparsity",
+      "value": 1.64,
+      "baseline": "SpInfer (EuroSys'25)",
+      "condition": "50% sparsity, H100 GPU with HBM3",
+      "source_locator": "PDF Page 5, Figure 8"
+    },
+    {
+      "claim": "Kernel achieves up to 1.81× speedup over FlashLLM at 50% sparsity",
+      "value": 1.81,
+      "baseline": "FlashLLM (VLDB'24)",
+      "condition": "50% sparsity, H100 GPU with HBM3",
+      "source_locator": "PDF Page 5, Figure 8"
+    },
+    {
+      "claim": "End-to-end inference throughput up to 41.4% higher than FlashLLM for OPT-30B",
+      "value": 41.4,
+      "baseline": "FlashLLM",
+      "condition": "OPT-30B model, 50% sparsity, batch size 16",
+      "source_locator": "PDF Page 6, Section 5.3"
+    },
+    {
+      "claim": "Peak memory usage reduced by 21.4% compared to dense baseline",
+      "value": 21.4,
+      "baseline": "Dense matrix format",
+      "condition": "OPT-30B model, 50% sparsity, batch size 16",
+      "source_locator": "PDF Page 6, Section 5.3"
+    },
+    {
+      "claim": "Format conversion cost is one-time: 41.1s for OPT-30B, 92.6s for OPT-66B",
+      "value": "41.1s (OPT-30B), 92.6s (OPT-66B)",
+      "baseline": null,
+      "condition": "Intel Xeon Platinum 8460Y+ CPU",
+      "source_locator": "PDF Page 6, Section 5.3"
+    }
+  ],
+  "evaluation_context": "NVIDIA H100 SXM5 GPUs with 80GB HBM3, NVLink interconnect; OPT-30B and OPT-66B models pruned with Wanda algorithm; batch sizes 8/16/32; sparsity levels 50%/60%/70%; input/output sequence length 512; GCC 12.3.0 and NVCC 12.6.",
+  "limitations": "Does not outperform FlashLLM under high sparsity due to zero-padding requirements; constrained during compute-bound prefill phase with large N (runs slower than cuBLAS); targets decoding phase optimization; requires GPUs with sparse tensor cores and HBM; incurs slightly higher memory usage than SpInfer due to bitmap encoding in baseline method. Absolute throughput in tokens/second or latency in milliseconds not reported. HBM bandwidth utilization or memory traffic measurements not provided. Power consumption or performance-per-watt not measured. Supplement contains only acknowledgments and references—no additional experimental data addressing evidence gaps.",
+  "project_relevance": "Addresses GPU memory bandwidth bottleneck in LLM inference through sparse matrix computation co-design with modern GPU hardware (sparse tensor cores + HBM). Relevant to direction on AI accelerator memory interface and hardware-software co-design. Demonstrates 1.64× kernel speedup and 21.4% memory reduction at 50% sparsity on H100, showing how algorithm-hardware specialization can extract performance from memory-bound workloads. However, absolute throughput numbers (tokens/second), HBM bandwidth utilization measurements, and power efficiency metrics are not reported—key evidence gaps for assessing real-world deployment value.",
+  "primary_source_resolved": true,
+  "quality_score": 75,
+  "evidence_gaps": [
+    {
+      "question": "What is the absolute throughput in tokens/second or latency in milliseconds for OPT-30B and OPT-66B at batch sizes 8/16/32?",
+      "terms": [
+        "throughput",
+        "tokens",
+        "latency",
+        "ms",
+        "OPT-30B",
+        "OPT-66B",
+        "batch size"
+      ]
+    },
+    {
+      "question": "What are the specific HBM bandwidth utilization numbers or memory traffic measurements?",
+      "terms": [
+        "HBM bandwidth",
+        "memory traffic",
+        "bandwidth utilization",
+        "GB/s"
+      ]
+    },
+    {
+      "question": "What is the power consumption or performance-per-watt compared to dense baselines?",
+      "terms": [
+        "power",
+        "energy",
+        "performance-per-watt",
+        "efficiency"
+      ]
+    }
+  ],
+  "_task": {
+    "id": "6962b955e2992cef742ee626",
+    "type": "fact_extraction",
+    "entity_id": "e50cb2e0c613f6737a947e0d",
+    "input_digest": "cefaa793add9ca0466bd2341e6bd8282"
+  }
+}

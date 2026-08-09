@@ -1,0 +1,74 @@
+{
+  "title": "ResKV: Reconstructing Omitted Attention Contributions for Fixed-Budget KV Cache Compression",
+  "event_hint": "ResKV: a KV-cache compression method that splits a fixed KV budget into an exact main cache plus a compact residual cache whose entries participate in the same softmax normalization, reconstructing the attention mass of evicted tokens.",
+  "problem": "KV-cache eviction methods permanently discard unselected tokens and so remove their aggregate contribution to attention (both numerator and denominator mass of softmax). Merging-based alternatives preserve more information but can perturb retained keys/values that should remain exact. Either way, quality drops sharply under tight cache budgets.",
+  "mechanism": "ResKV divides a fixed KV budget into an exact main cache and a compact residual cache. Residual entries are not a post-hoc correction; they participate in the same softmax normalization as exact main-cache tokens, restoring both attention numerator and denominator mass. A construction-time validation proxy selects the residual budget per layer and KV head only when it improves held-out attention-output reconstruction, and a decode-time dynamic gate scales residual logits per query according to the sharpness of main-cache attention.",
+  "evidence": [
+    {
+      "claim": "ResKV improves all 32 displayed LongBench configurations and 63 of 64 displayed RULER configurations under the same retained KV budget, with the clearest gains under tight cache budgets and on tasks requiring distributed contextual evidence.",
+      "value": "32/32 LongBench and 63/64 RULER configs improved",
+      "baseline": "H2O, SnapKV, TOVA, AdaKV (same retained KV budget)",
+      "condition": "LongBench and RULER, multiple backbones and budgets",
+      "source_locator": "Introduction, PDF Page 2"
+    },
+    {
+      "claim": "On RULER-4K with LLaMA-3.1-8B-Instruct at 10% budget (query-aware), adding ResKV raises the H2O average from 33.49 to 48.17 (+14.68), and on the same baseline at 40% budget from 75.25 to 80.74.",
+      "value": "33.49 to 48.17 (10% q-Aware); 75.25 to 80.74 (40% q-Aware)",
+      "baseline": "H2O without ResKV",
+      "condition": "RULER-4K, LLaMA-3.1-8B-Instruct, same KV budget",
+      "source_locator": "Table 5, PDF Page 13"
+    },
+    {
+      "claim": "The gains are largest at tight budgets and shrink as budget grows: SnapKV 10% q-Aware rises from 56.37 to 60.74 with ResKV, while at 40% q-Aware it moves from 82.66 to 83.31; TOVA 10% q-Aware rises from 61.75 to 65.10.",
+      "value": "+4.37 (SnapKV 10%) vs +0.65 (SnapKV 40%); +3.35 (TOVA 10%)",
+      "baseline": "SnapKV and TOVA without ResKV",
+      "condition": "RULER-4K, LLaMA-3.1-8B-Instruct",
+      "source_locator": "Table 5, PDF Page 13"
+    },
+    {
+      "claim": "ResKV keeps retained main-cache keys and values exact (no perturbation of selected entries), unlike merging-based methods that fold evicted states into retained entries.",
+      "value": null,
+      "baseline": "Merging-based methods (Ca, KVMerger, KeepKV, SemantiCache)",
+      "condition": "Main-cache integrity",
+      "source_locator": "Introduction / Related Work, PDF Pages 1-2"
+    },
+    {
+      "claim": "ResKV preserves the practical efficiency of compressed decoding, including peak memory usage and long-context decode throughput, with negligible additional memory overhead and stable throughput at long context lengths.",
+      "value": "negligible memory overhead; stable throughput",
+      "baseline": "Underlying compression baseline",
+      "condition": "Same retained KV budget",
+      "source_locator": "Abstract (PDF Page 1) and Introduction, PDF Page 2"
+    }
+  ],
+  "evaluation_context": "LongBench and RULER (4K and 32K context) benchmarks. Backbones: LLaMA-3.1-8B-Instruct and Qwen-2.5-7B-Instruct. Both query-aware and query-agnostic construction, cache budgets 10/20/30/40%. Baselines: H2O, SnapKV, TOVA, AdaKV. RULER-4K full-cache reference averages 95.25 (LLaMA) and 93.57 (Qwen). ResKV is applied additively on top of each baseline.",
+  "limitations": "Residual allocation is decided per layer and KV head (validation proxy) and gated per query, adding mechanism complexity. The reviewed evidence emphasizes quality (RULER/LongBench) and states efficiency is preserved, but the detailed peak-memory and decode-throughput table behind the efficiency claim is not in the reviewed front evidence. Results are reported for 7-8B-class backbones in the visible tables.",
+  "project_relevance": "Relevant to compression/transfer/placement for KV cache. By reconstructing the attention mass of evicted tokens under a fixed budget, ResKV improves quality at the same cache size, which directly reduces the bytes that must be stored or transferred for a given quality level. The shared-softmax residual is a mechanism insight for cache compression that avoids perturbing exact retained entries.",
+  "primary_source_resolved": true,
+  "quality_score": 84,
+  "source_notes": [
+    "Coverage claim (32/32 LongBench, 63/64 RULER) is from the Introduction (PDF Page 2).",
+    "All numeric quality comparisons are read from Tables 5-7 (RULER-4K LLaMA, RULER-4K Qwen, RULER-32K LLaMA) on PDF Pages 13-15.",
+    "The efficiency claim is stated in the Abstract and Introduction but its supporting table is not in the reviewed evidence pack."
+  ],
+  "evidence_gaps": [
+    {
+      "question": "What are the quantitative peak-memory and long-context decode-throughput numbers showing ResKV preserves efficiency under the same KV budget?",
+      "terms": [
+        "peak memory",
+        "decode throughput",
+        "long context",
+        "memory overhead",
+        "efficiency",
+        "ResKV"
+      ]
+    }
+  ],
+  "_provenance": {
+    "task_id": "8c814f5d1e61bbabe9cc3420",
+    "candidate_id": "63b0675e70852fb6344e7253",
+    "source_title": "ResKV: Reconstructing Omitted Attention Contributions for Fixed-Budget KV Cache Compression",
+    "source_url": "https://arxiv.org/abs/2607.29591v1",
+    "document_id": "7c6f7446bdde04ad3a5ac8e1",
+    "repair_of_task_id": "2bba2049b554ebd043cd428a"
+  }
+}
