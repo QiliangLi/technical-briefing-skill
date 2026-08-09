@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from briefing_skill.execution_envelope import (
     EXECUTION_CONTRACT_VERSION,
+    _rebind_deterministic_fastpath_output,
     canonical_task_instructions,
     ensure_execution_envelope,
     verify_bound_resources,
@@ -94,6 +95,24 @@ def test_bound_resource_change_invalidates_task_output(tmp_path):
     (service.root / "prompts" / "p.md").write_text("changed prompt", encoding="utf-8")
 
     assert verify_bound_resources(service, task) == ["bound prompt changed after task dispatch"]
+
+
+def test_cached_fact_output_transport_binding_is_upgraded_without_touching_payload(tmp_path):
+    service, task = _fixture(tmp_path)
+    old_input = read_json(service.root / task["input_path"], {})
+    prior = dict(old_input[TASK_BINDING_KEY])
+    old_input["document"] = {"fact_cache_hit": True}
+    write_json(service.root / task["input_path"], old_input)
+    task["task_type"] = "fact_extraction"
+    write_json(service.root / task["output_path"], {TASK_BINDING_KEY: prior, "title": "cached fact"})
+
+    ensure_execution_envelope(service, task)
+    _rebind_deterministic_fastpath_output(service, task, prior)
+
+    bound = read_json(service.root / task["input_path"], {})[TASK_BINDING_KEY]
+    output = read_json(service.root / task["output_path"], {})
+    assert output[TASK_BINDING_KEY] == bound
+    assert output["title"] == "cached fact"
 
 
 def test_tasks_next_instruction_points_to_canonical_envelope(tmp_path):
