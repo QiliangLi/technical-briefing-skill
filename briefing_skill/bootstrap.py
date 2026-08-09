@@ -25,8 +25,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .fact_cache_text_normalization import install_fact_cache_source_normalization
     from .final_reader_contract import install_final_reader_contract
     from .historical_backfill import install_historical_backfill
-    from .human_feedback import install_human_feedback_telemetry
     from .invalid_repair import install_invalid_targeted_repair
+    from .no_human_review import install_no_human_review_gate
     from .primary_fulltext_cache import install_primary_fulltext_cache
     from .project_insight import install_project_insight_layer
     from .quality_guard import install_quality_guards
@@ -75,8 +75,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # INVALID repair is last in the task-dispatch chain so repairable fact tasks are
     # isolated from session grouping and receive the small sidecar path.
     install_invalid_targeted_repair()
-    # Preserve all quality-neutral efficiency counters first, then append technology
-    # value, project-insight, and finally human-review telemetry.
+    # Preserve all quality-neutral efficiency counters before semantic quality layers.
     install_safe_efficiency_stats()
     # Contract changes must invalidate both relevance and Technology Value cache keys,
     # even when prompt/schema text happens to stay unchanged.
@@ -88,7 +87,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_deep_eligibility_contract()
     install_deep_eligibility_demo()
     install_project_insight_layer()
-    install_human_feedback_telemetry()
     # Close the last deep-selection bypass after Technology Value has patched the
     # selector. Deep candidates must be assessed before high rule scores can compete.
     install_deep_selection_guard()
@@ -120,6 +118,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Final rendering is independently checked: no internal scores, no duplicate
     # Deep/appendix/Radar sources, no half-width orphan cards, and no invalid prose.
     install_final_reader_contract()
+    # Final validation now replaces the unused review/approve gate. Successful builds
+    # become READY_TO_SEND; failed builds become VALIDATION_FAILED. Send still needs
+    # explicit --confirm-send.
+    install_no_human_review_gate()
     # Install after every task-shaping wrapper so the outermost Host sees only the
     # canonical bound envelope, including grouped Fact dispatch.
     install_execution_envelope_contract()
