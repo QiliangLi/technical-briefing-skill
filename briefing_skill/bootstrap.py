@@ -30,6 +30,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .radar_signal_synthesis import install_radar_signal_synthesis
     from .radar_taxonomy import install_radar_taxonomy
     from .reader_facing_quality import install_reader_facing_quality
+    from .reader_writing_contract import install_reader_writing_contract
     from .release_family import install_release_family_aggregation
     from .relevance_efficiency import install_relevance_efficiency
     from .safe_efficiency import install_safe_efficiency
@@ -103,6 +104,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Reuse the existing issue-synthesis Agent to turn broad Radar candidates into
     # concrete technical signals.
     install_radar_signal_synthesis()
+    # Reader-facing prose is a product contract, not a prompt preference: reject
+    # title/conclusion repetition, generic filler, and verbose/numeric-heavy judgements.
+    install_reader_writing_contract()
     # Install after every task-shaping wrapper so the outermost Host sees only the
     # canonical bound envelope, including grouped Fact dispatch.
     install_execution_envelope_contract()

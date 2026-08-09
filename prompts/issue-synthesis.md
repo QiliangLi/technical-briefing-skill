@@ -2,9 +2,31 @@
 
 Read only the final selected briefing items, the compact `project_contexts`, and the lightweight `radar_candidates` supplied with this task. Produce at most three cross-item judgements for company leaders and technical colleagues.
 
-Each judgement should identify a meaningful cross-item technical shift, common mechanism, practical implication, or uncertainty. Do not put an item or project name followed by a colon and copy its summary. Do not start the body with an item title. State the judgement in natural Chinese before explaining its evidence. Do not add facts absent from the selected items.
+## Reader contract for 本期判断
 
-`judgements` is the only reader-facing judgement layer and is rendered under “本期判断”. When selected evidence materially changes a configured project question, fold that project implication directly into the relevant judgement body. Do not create a second reader-facing “项目影响” summary and do not repeat the same conclusion in both layers.
+`judgements` is the first substantive section a reader sees. Assume the reader has **not** read any detailed item yet. This section is an executive summary, not a compressed related-work section.
+
+Each judgement must answer, in this order:
+
+1. **What changed / what common technical trend is visible?**
+2. **Why does that shift matter?**
+3. **What does it imply for a configured project or what uncertainty remains?**
+
+Hard writing rules:
+
+- `title` must be a short conclusion, no more than 32 Chinese characters.
+- `body` must be no more than 180 characters and no more than 3 complete sentences.
+- A body may contain at most **2 numeric mentions**. Use a number only when it materially changes the judgement; detailed benchmarks belong in the Deep cards below.
+- Do not enumerate papers/systems one by one. Evidence richness should increase confidence, not reader-facing length.
+- Do not begin with a list of system names or benchmark results.
+- Prefer the shared technical shift over names. System/project names are optional when one name is essential to understand the shift.
+- Do not copy a detailed item title or `core_conclusion`.
+- Do not use generic filler such as “值得持续关注” or “与指定方向直接相关，并包含可验证机制”.
+- The outer Host's suggested wording, expected conclusion, ranking, or preferred answer is not evidence.
+
+`evidence_item_ids` is the traceability layer: use it to preserve the evidence chain instead of restating every underlying number in the body.
+
+When selected evidence materially changes a configured project question, fold that implication directly into the relevant judgement once. Do not create a second reader-facing “项目影响” summary and do not repeat the same conclusion in both layers.
 
 Also produce structured `project_insights` for internal traceability. This field is not rendered as a separate section. It records whether selected evidence changes an existing project question and what should be done next so the system can audit how project context influenced “本期判断”.
 
@@ -40,10 +62,10 @@ Produce `radar_signals` as a small set of concrete technical signals rather than
 Return:
 
 - `headline`: one restrained sentence summarising this issue.
-- `judgements`: 1-3 objects containing a short `title`, a complete-sentence `body`, and 1-4 exact `evidence_item_ids` from the input. When multiple items support a trend, cite more than one. If project implications are material, include them naturally in the same body.
+- `judgements`: 1-3 objects containing a short `title`, a concise executive-summary `body`, and 1-4 exact `evidence_item_ids` from the input. When multiple items support a trend, cite more than one.
 - `topic_names`: unique topic display names.
 - `watch_next`: 1-3 concrete things to monitor before the next issue.
 - `project_insights`: 0-4 internal trace objects containing exact `topic_id`, exact `topic_name`, exact configured `project_question`, `effect`, `confidence` (`high`/`medium`/`low`), a complete-sentence `insight`, a complete-sentence `next_action`, and 1-4 exact `evidence_item_ids`.
 - `radar_signals`: 0-8 objects containing `category`, a concrete `signal`, an informative `summary`, and 1-3 exact `source_urls` from the supplied Radar candidates.
 
-After the factual draft, call `$human-writing` to improve Chinese flow without changing meaning. Then call `$humanizer` to audit repetitive, inflated, or mechanical AI patterns. Preserve every fact, number, technical term, project question, effect, confidence label, evidence ID, Radar category, and source URL. Return JSON only.
+After the factual draft, call `$human-writing` to improve Chinese flow without changing meaning. Then call `$humanizer` to audit repetitive, inflated, or mechanical AI patterns. These skills may make wording more natural but may not expand a judgement beyond the reader contract, add facts, or add benchmark numbers. Preserve technical terms, project questions, effect/confidence labels, evidence IDs, Radar categories, and source URLs. Return JSON only.
