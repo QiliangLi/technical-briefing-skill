@@ -19,6 +19,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .editorial_batch import install_editorial_batching
     from .efficiency import install_pipeline_optimizations
     from .evidence_repair import install_evidence_repair
+    from .execution_envelope import install_execution_envelope_contract
     from .executor_usage import install_executor_usage_telemetry
     from .historical_backfill import install_historical_backfill
     from .human_feedback import install_human_feedback_telemetry
@@ -102,6 +103,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Reuse the existing issue-synthesis Agent to turn broad Radar candidates into
     # concrete technical signals.
     install_radar_signal_synthesis()
+    # Install after every task-shaping wrapper so the outermost Host sees only the
+    # canonical bound envelope, including grouped Fact dispatch.
+    install_execution_envelope_contract()
     # Install last so `stats` sees every preceding telemetry wrapper. Executor usage
     # remains optional; without imported transcripts the existing proxies still work.
     install_executor_usage_telemetry()
