@@ -17,6 +17,7 @@ BRIEF_FIELDS = ("core_conclusion", "mechanism", "result", "boundary", "project_r
 INCOMPLETE_ENDING_RE = re.compile(r"(?:…|\.\.\.|[，,:：;；、])(?:[”’\"）)\]]*)$")
 COMPLETE_ENDING_RE = re.compile(r"[。！？.!?](?:[”’\"）)\]]*)$")
 TASK_BINDING_KEY = "_task"
+RESOLVED_PRIMARY_FETCH_STATUSES = {"FETCHED", "LOCAL_SOURCE"}
 
 
 def brief_item_validation_errors(
@@ -252,7 +253,7 @@ class TaskService:
                     errors.append("primary_source_resolved cannot be true for a discovery-only source")
                 if not source_url_is_resolved(source.get("url")):
                     errors.append("primary_source_resolved requires a specific, resolved source URL")
-                if document.get("fetch_status") != "FETCHED":
+                if document.get("fetch_status") not in RESOLVED_PRIMARY_FETCH_STATUSES:
                     errors.append("primary_source_resolved requires a fetched source document")
 
         if task["task_type"] == "agent_web_search":

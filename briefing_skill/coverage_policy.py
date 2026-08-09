@@ -10,7 +10,7 @@ from typing import Any, Iterable
 from urllib.parse import urlparse
 
 from .freshness import published_age_days
-from .utils import canonicalize_url, now_iso, source_url_is_resolved, stable_hash
+from .utils import canonicalize_url, now_iso, read_json, source_url_is_resolved, stable_hash
 
 
 APPENDIX_PREFIX = "TOPIC_APPENDIX:"
@@ -272,12 +272,118 @@ def _clean_summary(value: str, limit: int = 180) -> str:
     return clipped.rstrip("，,：:；;、 ") + "。"
 
 
+def _fact_checked_short_summary(service, row: dict[str, Any]) -> str:
+    """Prefer a prior PASS card's Chinese conclusion over a raw English abstract."""
+
+    identity = str(row.get("identity_key") or "")
+    if identity:
+        brief = service.db.fetchone(
+            """
+            SELECT b.json_path FROM brief_items b JOIN events e ON e.id=b.event_id
+            WHERE e.event_key=? AND b.fact_check_status='PASS'
+            ORDER BY b.created_at DESC LIMIT 1
+            """,
+            (identity,),
+        )
+        if brief and brief.get("json_path"):
+            item = read_json(service.root / brief["json_path"], {})
+            conclusion = str(item.get("core_conclusion") or "").strip()
+            if conclusion and re.search(r"[\u3400-\u9fff]", conclusion):
+                return _clean_summary(conclusion)
+    return _clean_summary(row.get("summary") or "")
+
+
+def _match_reference_appendix_counts(
+    service,
+    run_id: str,
+    issue_data: dict[str, Any],
+    appendix: dict[str, list[dict[str, Any]]],
+    *,
+    per_topic_max: int,
+    selected_urls: set[str],
+) -> dict[str, list[dict[str, Any]]]:
+    """Restore a user-approved reference issue's per-topic short-reading volume."""
+
+    policy = dict(service.config.settings.get("efficiency") or {})
+    if not bool(policy.get("topic_appendix_match_reference_counts", False)):
+        return appendix
+    audit = dict(issue_data.get("rebuild_audit") or {})
+    reference_run = str(audit.get("reference_run") or "")
+    if not reference_run:
+        return appendix
+    reference_issue = service.db.fetchone(
+        "SELECT id FROM issues WHERE run_id=?", (reference_run,)
+    )
+    if not reference_issue:
+        return appendix
+    rows = service.db.fetchall(
+        """
+        SELECT * FROM issue_radar_items
+        WHERE issue_id=? AND category LIKE ?
+        ORDER BY position
+        """,
+        (reference_issue["id"], f"{APPENDIX_PREFIX}%"),
+    )
+    reference: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        topic_id = str(row.get("category") or "")[len(APPENDIX_PREFIX):]
+        if topic_id:
+            reference[topic_id].append(row)
+
+    rebuilt = {str(topic): list(items) for topic, items in appendix.items()}
+    for topic_id, reference_items in reference.items():
+        target = min(per_topic_max, len(reference_items))
+        current = list(rebuilt.get(topic_id) or [])[:target]
+        seen = {
+            canonicalize_url(item.get("url"))
+            for item in current
+            if canonicalize_url(item.get("url"))
+        }
+        for row in reference_items:
+            if len(current) >= target:
+                break
+            url = canonicalize_url(row.get("canonical_url"))
+            if not url or url in seen or url in selected_urls:
+                continue
+            candidate = service.db.fetchone(
+                """
+                SELECT c.topic_id,c.relevance_score,r.payload_json,r.identity_key
+                FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
+                WHERE c.run_id=? AND c.relevant=1 AND r.source_level='A'
+                  AND r.discovery_only=0
+                  AND (r.canonical_url=? OR r.original_url=?)
+                ORDER BY c.relevance_score DESC LIMIT 1
+                """,
+                (run_id, url, url),
+            )
+            if not candidate or str(candidate.get("topic_id") or "") != topic_id:
+                continue
+            current.append(
+                {
+                    "topic_id": topic_id,
+                    "title": row.get("title") or "",
+                    "summary": row.get("summary") or "",
+                    "url": url,
+                    "source_name": row.get("source_name") or "原始来源",
+                    "published_at": row.get("published_at") or "",
+                    "score": _number(candidate.get("relevance_score")),
+                    "project_key": str(candidate.get("identity_key") or url),
+                    "restored_from_run": reference_run,
+                }
+            )
+            seen.add(url)
+        if current:
+            rebuilt[topic_id] = current
+    return rebuilt
+
+
 def collect_topic_appendix(service, run_id: str, issue_data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     policy = dict(service.config.settings.get("efficiency") or {})
     deep_topics = set(policy.get("deep_topics") or [])
     per_topic_max = max(0, int(policy.get("topic_appendix_max_per_topic", 8)))
     per_project_max = max(1, int(policy.get("topic_appendix_max_per_project", 2)))
     min_score = _number(policy.get("topic_appendix_min_relevance_score"), 45)
+    min_per_topic = max(0, int(policy.get("topic_appendix_min_per_topic", 0)))
     if not per_topic_max:
         return {}
 
@@ -338,7 +444,72 @@ def collect_topic_appendix(service, run_id: str, issue_data: dict[str, Any]) -> 
         )
         project_counts[(topic_id, project)] += 1
         seen_urls.add(url)
-    return dict(result)
+
+    # Storage/media is also a horizontal Radar lane. If its three strongest
+    # sources all became detailed cards, retain one independent A-level storage
+    # source from that lane so the section does not lose its short-reading layer.
+    if (
+        min_per_topic
+        and "storage_media" in deep_topics
+        and len(result["storage_media"]) < min_per_topic
+    ):
+        from .radar_taxonomy import classify_radar_category
+
+        horizontal_rows = service.db.fetchall(
+            """
+            SELECT c.*, r.title, r.summary, r.original_url, r.canonical_url,
+                   r.published_at, r.discovery_source, r.payload_json,
+                   r.identity_key, r.source_level, r.discovery_only, r.priority
+            FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
+            WHERE c.run_id=? AND c.topic_id='ai_infra_horizontal'
+              AND c.status='RADAR' AND r.source_level='A' AND r.discovery_only=0
+            ORDER BY c.rule_score DESC, r.priority DESC, r.published_at DESC
+            """,
+            (run_id,),
+        )
+        for row in horizontal_rows:
+            if len(result["storage_media"]) >= min_per_topic:
+                break
+            # The title itself must identify a physical memory/storage topic.
+            # Summary-only phrases such as "persistent agent memory" are not
+            # enough to turn an Agent context paper into a media/device item.
+            if classify_radar_category(row.get("title") or "", "") != "存储与介质":
+                continue
+            url = canonicalize_url(row.get("original_url") or row.get("canonical_url"))
+            if not url or url in selected_urls or url in history_urls or url in seen_urls:
+                continue
+            project = _project_key(row)
+            payload = {}
+            try:
+                payload = json.loads(row.get("payload_json") or "{}")
+            except json.JSONDecodeError:
+                pass
+            result["storage_media"].append(
+                {
+                    "topic_id": "storage_media",
+                    "candidate_topic_id": "ai_infra_horizontal",
+                    "title": row["title"],
+                    "summary": _fact_checked_short_summary(service, row),
+                    "url": url,
+                    "source_name": str(
+                        payload.get("publisher")
+                        or row.get("discovery_source")
+                        or "原始来源"
+                    ),
+                    "published_at": str(row.get("published_at") or "")[:10],
+                    "score": max(min_score, _number(row.get("rule_score"))),
+                    "project_key": project,
+                }
+            )
+            seen_urls.add(url)
+    return _match_reference_appendix_counts(
+        service,
+        run_id,
+        issue_data,
+        dict(result),
+        per_topic_max=per_topic_max,
+        selected_urls=selected_urls,
+    )
 
 
 def _appendix_html(service, appendix: dict[str, list[dict[str, Any]]]) -> str:

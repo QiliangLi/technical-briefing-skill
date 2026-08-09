@@ -132,7 +132,7 @@ def select_expanded_rows(
 def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: str) -> dict[str, Any]:
     issue = db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
     run = db.fetchone("SELECT * FROM runs WHERE id=?", (run_id,))
-    if not issue or not run or not issue.get("issue_json_path"):
+    if not issue or not run:
         raise RuntimeError("Run does not have a rebuildable issue")
     if issue.get("status") == "SENT" or run.get("status") == "COMPLETED":
         raise RuntimeError("Refusing to rebuild a sent or completed run")
@@ -214,14 +214,16 @@ def rebuild_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_i
     if counts["total"] > limits["total_max"] or counts["core"] > limits["core_max"] or counts["observations"] > limits["observation_max"]:
         raise RuntimeError("Expanded issue exceeds configured capacity")
     issue = plan["issue"]
-    issue_path = root / issue["issue_json_path"]
-    issue_dir = issue_path.parent
+    issue_path = root / issue["issue_json_path"] if issue.get("issue_json_path") else None
+    issue_dir = issue_path.parent if issue_path else root / "workspace" / "runs" / run_id / "issue"
     issue_dir.mkdir(parents=True, exist_ok=True)
     history = issue_dir / "history"
     history.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    backup = history / f"issue-before-expanded-v2-{stamp}.json"
-    shutil.copy2(issue_path, backup)
+    backup = None
+    if issue_path and issue_path.is_file():
+        backup = history / f"issue-before-expanded-v2-{stamp}.json"
+        shutil.copy2(issue_path, backup)
 
     with db.transaction() as conn:
         conn.execute("DELETE FROM issue_items WHERE issue_id=?", (issue["id"],))
@@ -269,7 +271,7 @@ def rebuild_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_i
     return {
         "dry_run": False,
         "counts": counts,
-        "backup": str(backup),
+        "backup": str(backup) if backup else None,
         "status": "AWAITING_ISSUE_SYNTHESIS",
         "stage": "AWAITING_ISSUE_SYNTHESIS",
         "next_task": tasks.instructions(task),

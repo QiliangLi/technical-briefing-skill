@@ -13,7 +13,7 @@ Return a complete facts object for the same source:
 - If a requested fact is still unavailable, keep the claim conservative, record the missing validation in `limitations`, and retain the unresolved request in `evidence_gaps`.
 - `evidence_gaps` may contain only unresolved material gaps from the input; do not invent new research questions. There is no second supplemental-read round.
 - `title` must still exactly match the source title.
-- `primary_source_resolved` follows the same rule as normal fact extraction: the source must be a specific primary source and the document fetch must be valid.
+- `primary_source_resolved` follows the same rule as normal fact extraction: the source must be a specific primary source and the document must be `FETCHED`, a workspace-confined `LOCAL_SOURCE`, or an exact validated cache hit.
 - Adjust `quality_score` only when the supplement materially changes completeness or confidence.
 
 Never move facts, numbers, or conditions from another item/source into this source. Never infer that omitted raw text was checked. Return JSON only and copy the input `_task` object unchanged into the top level.

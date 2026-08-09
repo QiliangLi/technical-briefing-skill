@@ -124,6 +124,28 @@ def test_fact_extraction_rejects_wrong_article_even_with_correct_binding(tmp_pat
     assert "tasked source title" in error
 
 
+def test_fact_extraction_accepts_workspace_local_primary_source(tmp_path: Path) -> None:
+    db, service = _service(tmp_path, "facts.schema.json")
+    task_input = _fact_input("candidate-a", "2608.00001")
+    task_input["document"]["fetch_status"] = "LOCAL_SOURCE"
+    task = service.create(
+        "run-1",
+        "fact_extraction",
+        "candidate-a",
+        task_input,
+        prompt="fact-extraction.md",
+        schema="facts.schema.json",
+    )
+    binding = read_json(tmp_path / task["input_path"])[TASK_BINDING_KEY]
+    write_json(
+        tmp_path / task["output_path"],
+        {TASK_BINDING_KEY: binding, **_facts("Source 2608.00001")},
+    )
+
+    assert service.sync("run-1") == (1, 0)
+    assert db.fetchone("SELECT status FROM tasks WHERE id=?", (task["id"],))["status"] == "COMPLETED"
+
+
 def test_item_writing_rejects_wrong_topic_and_invented_source(tmp_path: Path) -> None:
     db, service = _service(tmp_path, "brief-item.schema.json")
     task = service.create(

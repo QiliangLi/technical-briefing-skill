@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from briefing_skill.final_reader_contract import (
+    _core_selection_errors,
     filter_final_radar_groups,
     html_reader_contract_errors,
     normalise_orphan_card_widths,
@@ -64,6 +65,75 @@ def test_final_radar_drops_signal_if_any_source_already_appears_in_deep_or_appen
     )
 
     assert [item["title"] for item in filtered[0]["items"]] == ["independent"]
+
+
+def test_final_radar_drops_a_different_release_from_an_appendix_github_repo():
+    service = SimpleNamespace(
+        db=FakeDB(),
+        _topic_appendix_cache={
+            "tpn": [
+                {
+                    "url": "https://github.com/LMCache/LMCache/releases/tag/v0.5.3",
+                    "links": [],
+                }
+            ]
+        },
+    )
+    service._normalise_reference = lambda value: value.lower()
+    groups = [
+        {
+            "name": "KVCache生态",
+            "items": [
+                {
+                    "title": "LMCache platform wheel",
+                    "summary": "same repository, different release URL",
+                    "url": "https://github.com/LMCache/LMCache/releases/tag/v0.5.3-cu129",
+                    "sources": [
+                        {
+                            "url": "https://github.com/LMCache/LMCache/releases/tag/v0.5.3-cu129"
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+    assert filter_final_radar_groups(
+        service, groups, issue_id=None, issue_data={"items": []}
+    ) == []
+
+
+def test_final_selection_rejects_old_restored_detailed_item(monkeypatch):
+    monkeypatch.setattr(
+        "briefing_skill.final_reader_contract._reference_restore_is_valid",
+        lambda _service, _item: True,
+    )
+    service = SimpleNamespace(
+        config=SimpleNamespace(
+            settings={
+                "efficiency": {
+                    "deep_topics": ["dpu_inline"],
+                    "deep_lookback_days": 60,
+                }
+            }
+        )
+    )
+    data = {
+        "date_to": "2026-08-09",
+        "core_items": [
+            {
+                "topic_id": "dpu_inline",
+                "title": "old restored card",
+                "published_at": "2024-08-23",
+                "restored_from_run": "reference-run",
+                "restored_brief_item_id": "old-item",
+            }
+        ],
+    }
+
+    errors = _core_selection_errors(service, "run-1", data)
+
+    assert any("outside the 60-day window" in error for error in errors)
 
 
 def test_html_rejects_deep_appendix_and_radar_source_overlap():

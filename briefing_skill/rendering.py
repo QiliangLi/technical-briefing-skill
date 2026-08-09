@@ -407,7 +407,7 @@ const fs = require('fs');
         else:
             report["passes"].append("Expanded email links only to accepted destinations")
 
-        expected_title = "AI语义Fabric技术情报（内测版）"
+        expected_title = "AI语义Fabric技术情报（公测版）"
         if expected_title not in visible_text or "TECHNICAL BRIEFING" not in visible_text:
             report["failures"].append("Expanded email header is incorrect")
         else:

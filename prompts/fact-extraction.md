@@ -11,7 +11,7 @@ Return structured facts, not newsletter prose:
 - `evaluation_context`: workload, scale, hardware/software, baseline, or deployment context that is actually visible.
 - `limitations`: explicit limits and clearly labelled missing validation.
 - `project_relevance`: project inference, separate from source facts.
-- `primary_source_resolved`: true only for a specific primary-source URL with `document.fetch_status=FETCHED` or an exact validated cache hit.
+- `primary_source_resolved`: true only for a specific primary-source URL whose document is available as `FETCHED`, a workspace-confined `LOCAL_SOURCE`, or an exact validated cache hit. `LOCAL_SOURCE` means the pipeline successfully loaded the configured local source file; it is not a fallback summary.
 - `quality_score`: 0-100; reduce it when important conditions/boundaries are missing.
 - `evidence_gaps`: normally `[]`. Add at most 3 only when a missing fact would materially change the final briefing and is plausibly later in this same source, such as the exact baseline behind a headline speedup, workload/hardware condition, deployment constraint, or explicit limitation. Each gap needs a concrete `question` and 1-8 source-native literal `terms` (system/baseline/hardware/metric/table/workload names) for deterministic retrieval. Never request later text merely for completeness.
 

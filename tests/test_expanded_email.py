@@ -120,10 +120,56 @@ def test_expanded_rebuild_requeues_synthesis_and_blocks_email_build(tmp_path: Pa
         EmailService(tmp_path, _config(), db).build("run-1")
 
 
+def test_expanded_rebuild_accepts_interrupted_draft_without_issue_json(tmp_path: Path) -> None:
+    db = Database(tmp_path / "workspace" / "briefing.sqlite")
+    db.init()
+    db.create_run("run-draft", "AWAITING_ISSUE_SYNTHESIS")
+    now = now_iso()
+    db.execute(
+        "INSERT INTO issues(id,run_id,status,date_from,date_to,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+        ("issue-draft", "run-draft", "DRAFT", "2026-08-02", "2026-08-02", now, now),
+    )
+    db.execute(
+        "INSERT INTO events(id,topic_id,direction_id,canonical_title,fingerprint,score,first_seen_at,last_updated_at,payload_json) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("event-draft", "tpn", "d", "draft", "draft", 82, now, now, "{}"),
+    )
+    item_path = tmp_path / "workspace" / "runs" / "run-draft" / "items" / "draft.json"
+    write_json(
+        item_path,
+        {
+            "title": "draft",
+            "score": 82,
+            "published_at": "2026-08-01T00:00:00Z",
+            "topic_name": "状态感知网络、TPN",
+            "sources": [{"source_level": "A", "url": "https://example.com/draft"}],
+        },
+    )
+    db.execute(
+        "INSERT INTO brief_items(id,run_id,event_id,json_path,score,fact_check_status,created_at) VALUES (?,?,?,?,?,?,?)",
+        (
+            "item-draft",
+            "run-draft",
+            "event-draft",
+            str(item_path.relative_to(tmp_path)),
+            82,
+            "PASS",
+            now,
+        ),
+    )
+
+    rebuilt = rebuild_expanded_issue(tmp_path, _config(), db, "run-draft", confirm=True)
+
+    assert rebuilt["backup"] is None
+    assert rebuilt["counts"]["core"] == 1
+    assert db.fetchone(
+        "SELECT status FROM tasks WHERE run_id='run-draft' AND task_type='issue_synthesis'"
+    )["status"] == "PENDING"
+
+
 def test_email_template_contains_no_item_images() -> None:
     template = (Path(__file__).resolve().parents[1] / "templates" / "email.html").read_text(encoding="utf-8")
     assert "<img" not in template.lower()
-    assert "AI语义Fabric技术情报（内测版）" in template
+    assert "AI语义Fabric技术情报（公测版）" in template
     assert ">热点雷达<" in template
     assert "阅读原文：" in template
     assert "stack-col" in template
@@ -134,7 +180,7 @@ def test_email_template_contains_no_item_images() -> None:
 def test_expanded_email_validator_checks_the_deliverable_not_unused_cards(tmp_path: Path) -> None:
     email_path = tmp_path / "email.html"
     email_path.write_text(
-        '<header>TECHNICAL BRIEFING AI语义Fabric技术情报（内测版） 2026-08-02</header>'
+        '<header>TECHNICAL BRIEFING AI语义Fabric技术情报（公测版） 2026-08-02</header>'
         '<div>本期判断 <span data-judgement-ref-count="1"><a href="#item-a1">对应</a></span></div>'
         '<section id="topic-tpn"><article id="item-a1">内容 阅读原文：<a href="https://example.com/a">原始来源</a></article></section>'
         '<footer>热点雷达 · 未经本简报深度核验</footer>',

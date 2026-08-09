@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any
+from urllib.parse import urlparse
 
+from .item_freshness import item_is_within_lookback, parse_publication_date
 from .reader_writing_contract import (
     GENERIC_READER_PHRASES,
     issue_writing_contract_errors,
@@ -23,6 +25,27 @@ def _source_urls(items: list[dict[str, Any]]) -> set[str]:
     }
 
 
+def _reference_restore_is_valid(service, item: dict[str, Any]) -> bool:
+    policy = dict(service.config.settings.get("efficiency") or {})
+    if not bool(policy.get("allow_fact_checked_reference_restores", False)):
+        return False
+    reference_run = str(item.get("restored_from_run") or "")
+    reference_item_id = str(item.get("restored_brief_item_id") or "")
+    if not reference_run or not reference_item_id:
+        return False
+    row = service.db.fetchone(
+        """
+        SELECT * FROM brief_items
+        WHERE id=? AND run_id=? AND fact_check_status='PASS'
+        """,
+        (reference_item_id, reference_run),
+    )
+    if not row:
+        return False
+    restored = read_json(service.root / row["json_path"], {})
+    return bool(_source_urls([item])) and _source_urls([item]) == _source_urls([restored])
+
+
 def _appendix_urls(service) -> set[str]:
     urls: set[str] = set()
     for items in (getattr(service, "_topic_appendix_cache", {}) or {}).values():
@@ -32,6 +55,106 @@ def _appendix_urls(service) -> set[str]:
                 if canonical:
                     urls.add(canonical)
     return urls
+
+
+def _item_urls(item: dict[str, Any]) -> set[str]:
+    return {
+        canonicalize_url(value)
+        for value in [
+            item.get("url"),
+            *(source.get("url") for source in item.get("sources") or []),
+        ]
+        if canonicalize_url(value)
+    }
+
+
+def _github_projects(urls: set[str]) -> set[str]:
+    projects: set[str] = set()
+    for url in urls:
+        parsed = urlparse(url)
+        if (parsed.hostname or "").lower() not in {"github.com", "www.github.com"}:
+            continue
+        parts = [part.lower() for part in parsed.path.split("/") if part]
+        if len(parts) >= 2:
+            projects.add(f"github:{parts[0]}/{parts[1]}")
+    return projects
+
+
+def _fill_from_reference_radar(
+    service,
+    groups: list[dict[str, Any]],
+    *,
+    issue_data: dict[str, Any] | None,
+    forbidden: set[str],
+    forbidden_projects: set[str],
+) -> list[dict[str, Any]]:
+    """Refill post-dedup Radar gaps from the named local reference issue."""
+
+    audit = dict((issue_data or {}).get("rebuild_audit") or {})
+    reference_run = str(audit.get("reference_run") or "")
+    if not reference_run:
+        return groups
+    radar_policy = dict(getattr(service.config, "scoring", {}).get("radar") or {})
+    target = max(0, int(radar_policy.get("reference_fill_min", 0)))
+    total_max = max(target, int(radar_policy.get("total_max", 8)))
+    per_category = max(1, int(radar_policy.get("max_per_category", 2)))
+    if sum(len(group.get("items") or []) for group in groups) >= target:
+        return groups
+
+    row = service.db.fetchone(
+        "SELECT issue_json_path FROM issues WHERE run_id=?", (reference_run,)
+    )
+    if not row or not row.get("issue_json_path"):
+        return groups
+    reference_issue = read_json(service.root / row["issue_json_path"], {})
+    from .radar_signal_synthesis import _signal_groups
+
+    reference_groups = _signal_groups(service, None, reference_issue) or []
+    merged = [{**group, "items": list(group.get("items") or [])} for group in groups]
+    by_name = {str(group.get("name") or ""): group for group in merged}
+    seen = {
+        url for group in merged for item in group.get("items") or [] for url in _item_urls(item)
+    }
+    total = sum(len(group.get("items") or []) for group in merged)
+    for reference_group in reference_groups:
+        if total >= target or total >= total_max:
+            break
+        name = str(reference_group.get("name") or "其他技术前沿")
+        destination = by_name.get(name)
+        if destination is None:
+            destination = {"name": name, "items": []}
+            merged.append(destination)
+            by_name[name] = destination
+        for item in reference_group.get("items") or []:
+            if total >= target or total >= total_max:
+                break
+            urls = _item_urls(item)
+            if (
+                not urls
+                or urls & forbidden
+                or urls & seen
+                or _github_projects(urls) & forbidden_projects
+            ):
+                continue
+            if len(destination["items"]) >= per_category:
+                continue
+            # Every restored Radar source must also exist in this run's frozen
+            # source set. This keeps the refill reproducible and auditable.
+            if any(
+                not service.db.fetchone(
+                    """
+                    SELECT 1 FROM raw_items
+                    WHERE run_id=? AND (canonical_url=? OR original_url=?) LIMIT 1
+                    """,
+                    (str((issue_data or {}).get("run_id") or ""), url, url),
+                )
+                for url in urls
+            ):
+                continue
+            destination["items"].append(item)
+            seen.update(urls)
+            total += 1
+    return [group for group in merged if group.get("items")]
 
 
 def filter_final_radar_groups(
@@ -45,23 +168,25 @@ def filter_final_radar_groups(
 
     issue_items = list((issue_data or {}).get("items") or [])
     forbidden = _source_urls(issue_items) | _appendix_urls(service)
+    forbidden_projects = _github_projects(forbidden)
     filtered: list[dict[str, Any]] = []
     for group in groups or []:
         kept: list[dict[str, Any]] = []
         for item in group.get("items") or []:
-            urls = {
-                canonicalize_url(value)
-                for value in [
-                    item.get("url"),
-                    *(source.get("url") for source in item.get("sources") or []),
-                ]
-                if canonicalize_url(value)
-            }
-            if urls & forbidden:
+            urls = _item_urls(item)
+            if urls & forbidden or _github_projects(urls) & forbidden_projects:
                 continue
             kept.append(item)
         if kept:
             filtered.append({**group, "items": kept})
+
+    filtered = _fill_from_reference_radar(
+        service,
+        filtered,
+        issue_data=issue_data,
+        forbidden=forbidden,
+        forbidden_projects=forbidden_projects,
+    )
 
     if issue_id:
         service.db.execute(
@@ -195,6 +320,17 @@ def _core_selection_errors(service, run_id: str, data: dict[str, Any]) -> list[s
 
     errors: list[str] = []
     deep_topics = set((service.config.settings.get("efficiency") or {}).get("deep_topics") or [])
+    lookback_days = max(
+        1,
+        int(
+            (service.config.settings.get("efficiency") or {}).get(
+                "deep_lookback_days", 60
+            )
+        ),
+    )
+    issue_end = parse_publication_date(data.get("date_to"))
+    if not issue_end:
+        errors.append("final issue has no valid date_to for detailed-item freshness checks")
     core = data.get("core_items")
     if core is None:
         core = [item for item in data.get("items") or [] if item.get("item_role", "core") == "core"]
@@ -206,6 +342,22 @@ def _core_selection_errors(service, run_id: str, data: dict[str, Any]) -> list[s
         counts[topic_id] += 1
         if counts[topic_id] > 4:
             errors.append(f"{topic_id}: final detailed item count exceeds topic-local Top4")
+            continue
+        if item.get("restored_from_run") or item.get("restored_brief_item_id"):
+            if not issue_end or not item_is_within_lookback(
+                item,
+                issue_end=issue_end,
+                lookback_days=lookback_days,
+            ):
+                errors.append(
+                    f"{topic_id}: restored detailed item is outside the {lookback_days}-day window or lacks an original publication date: {item.get('title')}"
+                )
+                continue
+            if _reference_restore_is_valid(service, item):
+                continue
+            errors.append(
+                f"{topic_id}: restored detailed item lacks valid fact-checked reference provenance: {item.get('title')}"
+            )
             continue
         urls = [
             canonicalize_url(source.get("url"))
@@ -240,6 +392,13 @@ def final_reader_contract_errors(service, run_id: str) -> list[str]:
 
     for item in data.get("items") or []:
         if item.get("item_role", "core") == "core":
+            if item.get("restored_from_run") or item.get("restored_brief_item_id"):
+                if not _reference_restore_is_valid(service, item):
+                    errors.append(
+                        f"{item.get('title')}: restored item provenance is not a fact-checked reference"
+                    )
+                # Provenance permits reusing verified facts; it does not exempt
+                # restored prose from current reader-facing title/summary rules.
             errors.extend(f"{item.get('title')}: {value}" for value in item_writing_contract_errors(item))
     errors.extend(issue_writing_contract_errors(data.get("synthesis") or {}))
     errors.extend(_core_selection_errors(service, run_id, data))

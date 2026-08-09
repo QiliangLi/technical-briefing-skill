@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
+from .radar_taxonomy import classify_radar_category
 from .utils import canonicalize_url
 
 
@@ -23,6 +24,45 @@ def appendix_candidate_is_deferred(row: dict[str, Any] | None) -> bool:
     )
 
 
+def appendix_candidate_is_allowed(
+    row: dict[str, Any] | None,
+    *,
+    require_deferred_budget: bool,
+    target_topic_id: str | None = None,
+) -> bool:
+    """Apply the configured appendix breadth without weakening detailed cards."""
+
+    if not row:
+        return False
+    related_a = (
+        int(row.get("relevant") or 0) == 1
+        and str(row.get("source_level") or "").upper() == "A"
+        and not bool(row.get("discovery_only"))
+    )
+    horizontal_storage = (
+        target_topic_id == "storage_media"
+        and str(row.get("topic_id") or "") == "ai_infra_horizontal"
+        and str(row.get("status") or "") == "RADAR"
+        and str(row.get("source_level") or "").upper() == "A"
+        and not bool(row.get("discovery_only"))
+        and classify_radar_category(
+            str(row.get("title") or ""), ""
+        )
+        == "存储与介质"
+    )
+    if not related_a and not horizontal_storage:
+        return False
+    if horizontal_storage:
+        return not require_deferred_budget
+    return appendix_candidate_is_deferred(row) if require_deferred_budget else True
+
+
+def _require_deferred_budget(service) -> bool:
+    settings = getattr(getattr(service, "config", None), "settings", {}) or {}
+    policy = dict(settings.get("efficiency") or {})
+    return bool(policy.get("topic_appendix_require_deferred_budget", True))
+
+
 def _candidate_for_url(service, run_id: str, url: str) -> dict[str, Any] | None:
     canonical = canonicalize_url(url)
     if not canonical:
@@ -30,7 +70,8 @@ def _candidate_for_url(service, run_id: str, url: str) -> dict[str, Any] | None:
     return service.db.fetchone(
         """
         SELECT c.relevant,c.fulltext_required,c.status,c.topic_id,
-               r.source_level,r.discovery_only,r.canonical_url,r.original_url
+               r.source_level,r.discovery_only,r.canonical_url,r.original_url,
+               r.title,r.summary
         FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
         WHERE c.run_id=? AND (r.canonical_url=? OR r.original_url=?)
         ORDER BY CASE WHEN c.status='DEFERRED_BUDGET' THEN 0 ELSE 1 END,
@@ -42,16 +83,25 @@ def _candidate_for_url(service, run_id: str, url: str) -> dict[str, Any] | None:
 
 
 def _filter_deferred_appendix(service, run_id: str, appendix: dict[str, list[dict[str, Any]]]):
-    """Drop relevant-only candidates; an appendix is the tail of the Deep pool only."""
+    """Keep either strict Deep tail or broader related A-level reading by policy."""
 
+    require_deferred = _require_deferred_budget(service)
     cleaned: dict[str, list[dict[str, Any]]] = {}
     for topic_id, items in appendix.items():
         kept: list[dict[str, Any]] = []
         for item in items:
             row = _candidate_for_url(service, run_id, str(item.get("url") or ""))
-            if not appendix_candidate_is_deferred(row):
+            if not appendix_candidate_is_allowed(
+                row,
+                require_deferred_budget=require_deferred,
+                target_topic_id=str(topic_id),
+            ):
                 continue
-            if str(row.get("topic_id") or "") != str(topic_id):
+            horizontal_storage = (
+                str(topic_id) == "storage_media"
+                and str(row.get("topic_id") or "") == "ai_infra_horizontal"
+            )
+            if str(row.get("topic_id") or "") != str(topic_id) and not horizontal_storage:
                 continue
 
             # Release-family aggregation may attach several source links. Keep only
@@ -59,9 +109,26 @@ def _filter_deferred_appendix(service, run_id: str, appendix: dict[str, list[dic
             links = []
             for link in item.get("links") or []:
                 linked = _candidate_for_url(service, run_id, str(link.get("url") or ""))
-                if appendix_candidate_is_deferred(linked) and str(linked.get("topic_id") or "") == str(topic_id):
+                if appendix_candidate_is_allowed(
+                    linked,
+                    require_deferred_budget=require_deferred,
+                    target_topic_id=str(topic_id),
+                ) and (
+                    str(linked.get("topic_id") or "") == str(topic_id)
+                    or (
+                        not require_deferred
+                        and str(item.get("project_key") or "").startswith("github:")
+                    )
+                ):
                     links.append(link)
-            updated = {**item, "selection_role": "DEFERRED_TOP4"}
+            updated = {
+                **item,
+                "selection_role": (
+                    "HORIZONTAL_STORAGE_A"
+                    if horizontal_storage
+                    else "DEFERRED_TOP4" if require_deferred else "RELATED_A"
+                ),
+            }
             if item.get("links") is not None:
                 updated["links"] = links
                 updated["family_size"] = max(1, len(links)) if links else 1
@@ -106,7 +173,7 @@ def render_deferred_appendix_row(topic_name: str, items: list[dict[str, Any]]) -
         "<tr data-topic-appendix='1'><td class='pad-x' style='padding:0 28px 12px'>"
         "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='background:#f3f4f1;border-left:3px solid #8a8a82'><tr><td style='padding:10px 12px'>"
         f"<div style='font:700 11px Microsoft YaHei,Arial,sans-serif;color:#555;margin-bottom:2px'>{html.escape(topic_name)} · 其他相关进展</div>"
-        "<div style='font-size:10px;line-height:1.4;color:#888;margin-bottom:3px'>以下内容已达到深度候选门槛，但位于本专题前4名之后，仅作速览；不包含仅相关但未达到深度门槛的候选。</div>"
+        "<div style='font-size:10px;line-height:1.4;color:#888;margin-bottom:3px'>以下为详细卡之外、已判定相关且具有A级原始来源的内容，仅作速览，不参与本期综合判断。</div>"
         + "".join(entries)
         + "</td></tr></table></td></tr>"
     )
@@ -143,9 +210,10 @@ def _selection_validation(service, run_id: str) -> list[str]:
     policy = dict(service.config.settings.get("efficiency") or {})
     deep_topics = set(policy.get("deep_topics") or [])
     per_topic_max = max(1, int(policy.get("max_fact_candidates_per_topic", 4)))
+    require_deferred = _require_deferred_budget(service)
     failures: list[str] = []
 
-    for topic_id in sorted(deep_topics):
+    for topic_id in sorted(deep_topics) if require_deferred else []:
         row = service.db.fetchone(
             """
             SELECT
@@ -174,9 +242,13 @@ def _selection_validation(service, run_id: str) -> list[str]:
     for item in appendix_rows:
         topic_id = str(item.get("category") or "")[len(APPENDIX_PREFIX):]
         candidate = _candidate_for_url(service, run_id, str(item.get("canonical_url") or ""))
-        if not appendix_candidate_is_deferred(candidate):
+        if not appendix_candidate_is_allowed(
+            candidate,
+            require_deferred_budget=require_deferred,
+            target_topic_id=topic_id,
+        ):
             failures.append(
-                f"{topic_id}: topic appendix contains a candidate that is not DEFERRED_BUDGET Deep tail"
+                f"{topic_id}: topic appendix contains a candidate outside the configured A-level selection policy"
             )
     return failures
 
@@ -219,7 +291,7 @@ def install_deep_selection_contract() -> None:
             report.setdefault("failures", []).extend(failures)
         else:
             report.setdefault("passes", []).append(
-                "Topic appendices contain only genuine DEFERRED_BUDGET Deep-tail candidates"
+                "Topic appendices satisfy the configured A-level related-reading policy"
             )
         return report
 

@@ -174,7 +174,7 @@ class EmailService:
         date_from = str(data.get("date_from") or "")
         date_to = str(data.get("date_to") or date_from)
         date_label = date_to if date_from == date_to else f"{date_from}—{date_to}"
-        subject = self.config.email.get("subject_template", "AI语义Fabric技术情报（内测版）").replace("{{ date_range }}", date_label).replace("{{ item_count }}", str(len(data.get("items", []))))
+        subject = self.config.email.get("subject_template", "AI语义Fabric技术情报（公测版）").replace("{{ date_range }}", date_label).replace("{{ item_count }}", str(len(data.get("items", []))))
         topic_groups = self._topic_groups(data)
         judgement_refs = self._judgement_refs(data)
         aihot_groups = self._aihot_groups(data.get("date_to"), issue_id=issue["id"], issue_data=data)
@@ -644,7 +644,7 @@ class EmailService:
         if body_path.stat().st_size > 1024 * 1024:
             raise RuntimeError("agently-cli email body exceeds its 1 MB limit")
 
-        subject = issue.get("subject") or "AI语义Fabric技术情报（内测版）"
+        subject = issue.get("subject") or "AI语义Fabric技术情报（公测版）"
         body_rel = body_path.relative_to(self.root.resolve()).as_posix()
         request_key = stable_hash(subject, config.recipients, config.cc, config.bcc, body_path.read_bytes())
         pending_path = self.root / "workspace" / "runs" / run_id / "agently-send-pending.json"
@@ -706,7 +706,7 @@ class EmailService:
         smtp = resolve_smtp_config()
         password = os.getenv("SMTP_PASSWORD")
         msg = EmailMessage()
-        msg["Subject"] = issue.get("subject") or "AI语义Fabric技术情报（内测版）"
+        msg["Subject"] = issue.get("subject") or "AI语义Fabric技术情报（公测版）"
         msg["From"] = smtp.sender
         msg["To"] = ", ".join(smtp.recipients)
         msg.set_content("本邮件包含HTML技术情报，请使用支持HTML的邮件客户端查看。")
