@@ -13,6 +13,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .deep_efficiency import install_deep_efficiency
     from .deep_eligibility import install_deep_eligibility_contract
     from .deep_eligibility_demo import install_deep_eligibility_demo
+    from .deep_eligibility_version import install_deep_eligibility_cache_version
     from .deep_selection_contract import install_deep_selection_contract
     from .deep_selection_guard import install_deep_selection_guard
     from .editorial_batch import install_editorial_batching
@@ -72,6 +73,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Preserve all quality-neutral efficiency counters first, then append technology
     # value, project-insight, and finally human-review telemetry.
     install_safe_efficiency_stats()
+    # Contract changes must invalidate both relevance and Technology Value cache keys,
+    # even when prompt/schema text happens to stay unchanged.
+    install_deep_eligibility_cache_version()
     install_technology_value_assessment()
     # Deep admission is now derived by Python from structured topic fit + Technology
     # Value. Install immediately after Technology Value so later selection only sees
