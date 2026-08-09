@@ -53,20 +53,22 @@ def _envelope_path(task: dict[str, Any]) -> str:
 
 
 def ensure_execution_envelope(service, task: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    """Create/refresh the canonical execution envelope and bind it into `_task`."""
+    """Create the immutable canonical execution envelope for a task."""
 
     input_path = service.root / str(task["input_path"])
     input_data = read_json(input_path, {})
     existing = dict(input_data.get(TASK_BINDING_KEY) or {})
-    # Regeneration must be idempotent: the previous envelope digest is an output of
-    # this calculation and therefore cannot become an input to the next calculation.
+    relative = _envelope_path(task)
+    existing_envelope = read_json(service.root / relative, {}) if (service.root / relative).is_file() else {}
+
+    # Once bound, dispatch must never silently rebind a task. Resource changes are
+    # detected by verify_bound_resources and invalidate the output instead.
+    if int(existing.get("contract_version") or 0) >= EXECUTION_CONTRACT_VERSION and existing_envelope:
+        return existing_envelope, relative
+
     existing.pop("execution_envelope_digest", None)
     resources = _resource_binding(service, task, input_data)
-
-    base_binding = {
-        **existing,
-        **resources,
-    }
+    base_binding = {**existing, **resources}
     policy = {
         "semantic_authority": "task_input_and_bound_resources_only",
         "outer_host_semantic_guidance": "forbidden",
@@ -99,7 +101,6 @@ def ensure_execution_envelope(service, task: dict[str, Any]) -> tuple[dict[str, 
             "Write exactly one output for this task and echo the exact `_task` object from the input.",
         ],
     }
-    relative = _envelope_path(task)
     write_json(service.root / relative, envelope)
 
     try:
@@ -123,7 +124,7 @@ def ensure_execution_envelope(service, task: dict[str, Any]) -> tuple[dict[str, 
 
 
 def verify_bound_resources(service, task: dict[str, Any]) -> list[str]:
-    """Reject outputs when prompt/schema/context changed after task creation/dispatch."""
+    """Reject outputs when prompt/schema/context changed after task binding."""
 
     input_data = read_json(service.root / str(task["input_path"]), {})
     binding = input_data.get(TASK_BINDING_KEY) or {}
@@ -156,6 +157,19 @@ def canonical_task_instructions(service, task: dict[str, Any]) -> str:
     )
 
 
+def _binding_drift(service, task: dict[str, Any], raw: dict[str, Any] | None) -> str:
+    expected = (read_json(service.root / str(task["input_path"]), {}) or {}).get(TASK_BINDING_KEY) or {}
+    actual_payload = raw if raw is not None else read_json(service.root / str(task["output_path"]), {})
+    actual = (actual_payload or {}).get(TASK_BINDING_KEY) or {}
+    keys = sorted(set(expected) | set(actual))
+    differences = [key for key in keys if expected.get(key) != actual.get(key)]
+    details = ", ".join(
+        f"{key}: expected={str(expected.get(key))[:120]!r} actual={str(actual.get(key))[:120]!r}"
+        for key in differences
+    )
+    return f"task_type={task.get('task_type')} task_id={task.get('id')} differing_keys={differences}; {details}"
+
+
 def install_execution_envelope_contract() -> None:
     """Constrain host dispatch to auditable task envelopes without changing semantics."""
 
@@ -178,7 +192,12 @@ def install_execution_envelope_contract() -> None:
     original_read = TaskService.read_result
 
     def read_result(self, task, raw=None):
-        data = original_read(self, task, raw)
+        try:
+            data = original_read(self, task, raw)
+        except ValueError as exc:
+            if "task binding mismatch" in str(exc):
+                raise ValueError(f"{exc}; {_binding_drift(self, task, raw)}") from exc
+            raise
         errors = verify_bound_resources(self, task)
         if errors:
             raise ValueError("; ".join(errors))
