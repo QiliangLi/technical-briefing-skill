@@ -149,19 +149,33 @@ def test_tampered_cached_fact_payload_is_rejected(tmp_path):
 
 def test_legacy_fact_cache_rows_are_not_read_by_v2_lookup(tmp_path):
     db = _db(tmp_path)
-    # A legacy table can exist and contain the exact old identity; v2 intentionally
-    # has no migration/read fallback, so this cannot satisfy a production lookup.
+    # Database.init creates the legacy table. Seed a row with the exact old identity;
+    # v2 deliberately has no migration/read fallback, so it cannot satisfy lookup.
+    now = now_iso()
     db.execute(
         """
-        CREATE TABLE IF NOT EXISTS fact_cache(
-          source_fingerprint TEXT, extractor_version TEXT, json_path TEXT,
-          PRIMARY KEY(source_fingerprint, extractor_version)
-        )
-        """
-    )
-    db.execute(
-        "INSERT OR REPLACE INTO fact_cache(source_fingerprint,extractor_version,json_path) VALUES (?,?,?)",
-        ("source-v1", "extractor-v1", "legacy.json"),
+        INSERT OR REPLACE INTO fact_cache(
+          source_fingerprint,extractor_version,cache_key,source_url,source_identity,
+          external_id,source_content_hash,json_path,quality_score,event_hint,
+          raw_char_count,evidence_char_count,created_at,last_used_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            "source-v1",
+            "extractor-v1",
+            "legacy-k",
+            "https://example.com/source",
+            "arxiv:2608.12345",
+            "2608.12345v1",
+            "content-v1",
+            "workspace/cache/facts/legacy.json",
+            99,
+            None,
+            1000,
+            500,
+            now,
+            now,
+        ),
     )
 
     assert _lookup(db, tmp_path) is None
