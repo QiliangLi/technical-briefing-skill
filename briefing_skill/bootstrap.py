@@ -21,6 +21,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .evidence_repair import install_evidence_repair
     from .execution_envelope import install_execution_envelope_contract
     from .executor_usage import install_executor_usage_telemetry
+    from .fact_cache_provenance import install_fact_cache_provenance
     from .final_reader_contract import install_final_reader_contract
     from .historical_backfill import install_historical_backfill
     from .human_feedback import install_human_feedback_telemetry
@@ -63,6 +64,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_deep_efficiency()
     install_task_telemetry()
     install_fact_cache_fastpath()
+    # Legacy fact_cache rows are deliberately not migrated. The v2 layer wraps the
+    # existing Deep/cache fast paths, disables legacy reads/writes, and requires exact
+    # source+Evidence hashes inside execution-mode namespaces.
+    install_fact_cache_provenance()
     install_evidence_repair()
     install_editorial_batching()
     # Install after the existing CLI extensions so the backfill parser preserves
