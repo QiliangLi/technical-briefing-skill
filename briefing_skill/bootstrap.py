@@ -32,6 +32,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .technology_value import install_technology_value_assessment
     from .telemetry import install_task_telemetry
     from .topic_appendix_render import install_topic_appendix_rendering
+    from .topic_local_deep import install_topic_local_deep_policy
     from .value_scoring import install_value_scoring
 
     install_cost_schema()
@@ -73,6 +74,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Close the last deep-selection bypass after Technology Value has patched the
     # selector. Deep candidates must be assessed before high rule scores can compete.
     install_deep_selection_guard()
+    # Product policy: every deep topic independently gets its own ranked Top4. This
+    # must install after the Technology Value guard so ranking semantics stay intact,
+    # while fetch failures refill from the same topic instead of another topic.
+    install_topic_local_deep_policy()
     # Rebalance the same 18k first-read budget across context/mechanism/results/bounds.
     # This must run after evidence-repair so cache versions include both policies.
     install_balanced_evidence()

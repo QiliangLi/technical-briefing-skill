@@ -47,15 +47,17 @@ def test_compact_item_character_budget_accepts_180_to_260_chars():
     assert brief_item_validation_errors(item, min_chars=200, max_chars=260)
 
 
-def test_compact_schema_and_issue_capacity_match_settings():
+def test_compact_schema_and_issue_capacity_match_topic_local_top4_policy():
     config = ConfigBundle.load(Paths(ROOT))
     schema = json.loads((ROOT / "schemas" / "brief-item.schema.json").read_text(encoding="utf-8"))
     assert config.settings["brief_item_min_chars"] == 180
     assert config.settings["brief_item_max_chars"] == 260
     assert schema["properties"]["core_conclusion"]["maxLength"] == 75
     assert schema["properties"]["boundary"]["maxLength"] == 35
-    assert config.scoring["expanded_v2"]["core_max"] == 16
-    assert config.scoring["expanded_v2"]["total_max"] == 20
+    assert config.scoring["expanded_v2"]["core_max"] == 32
+    assert config.scoring["expanded_v2"]["observation_max"] == 32
+    assert config.scoring["expanded_v2"]["total_max"] == 32
     assert config.scoring["expanded_v2"]["max_per_topic"] == 4
-    assert config.settings["efficiency"]["max_fact_candidates_total"] == 16
+    assert config.settings["efficiency"]["max_fact_candidates_total"] == 32
+    assert config.settings["efficiency"]["max_fact_candidates_hard_cap"] == 32
     assert config.settings["efficiency"]["max_fact_candidates_per_topic"] == 4
