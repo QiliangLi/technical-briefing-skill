@@ -11,6 +11,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .cost_schema import install_cost_schema
     from .coverage_policy import install_coverage_policy
     from .deep_efficiency import install_deep_efficiency
+    from .deep_eligibility import install_deep_eligibility_contract
     from .deep_selection_contract import install_deep_selection_contract
     from .deep_selection_guard import install_deep_selection_guard
     from .editorial_batch import install_editorial_batching
@@ -71,6 +72,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # value, project-insight, and finally human-review telemetry.
     install_safe_efficiency_stats()
     install_technology_value_assessment()
+    # Deep admission is now derived by Python from structured topic fit + Technology
+    # Value. Install immediately after Technology Value so later selection only sees
+    # candidates that passed the deterministic eligibility contract.
+    install_deep_eligibility_contract()
     install_project_insight_layer()
     install_human_feedback_telemetry()
     # Close the last deep-selection bypass after Technology Value has patched the
