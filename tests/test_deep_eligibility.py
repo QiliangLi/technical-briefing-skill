@@ -7,6 +7,7 @@ from briefing_skill.deep_eligibility import (
     deep_eligibility_semantic_errors,
     derive_deep_eligibility,
 )
+from briefing_skill.deep_eligibility_version import contract_fingerprint
 
 
 def _technology_value(score: int = 4):
@@ -132,3 +133,12 @@ def test_all_configured_deep_topics_have_machine_readable_entry_contracts():
         "storage_media",
     }
     assert all(contract["allowed_core_contributions"] for contract in DEEP_ENTRY_CONTRACTS.values())
+
+
+def test_contract_fingerprint_changes_when_machine_rule_changes(monkeypatch):
+    before = contract_fingerprint("cross_region")
+    changed = dict(DEEP_ENTRY_CONTRACTS["cross_region"])
+    changed["min_technology_value_score"] = 19
+    monkeypatch.setitem(DEEP_ENTRY_CONTRACTS, "cross_region", changed)
+
+    assert contract_fingerprint("cross_region") != before
