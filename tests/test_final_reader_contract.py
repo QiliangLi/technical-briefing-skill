@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from briefing_skill.final_reader_contract import (
     filter_final_radar_groups,
     html_reader_contract_errors,
+    normalise_orphan_card_widths,
 )
 
 
@@ -87,7 +88,7 @@ def test_html_rejects_deep_appendix_and_radar_source_overlap():
 def test_html_requires_orphan_deep_card_to_be_full_width_and_hides_scores():
     html = """
     <table>
-      <tr data-reader-row="deep-row"><td width="50%" data-reader-role="deep-card">
+      <tr data-reader-row="deep-row"><td width="50%" data-reader-role="deep-card" style="padding:0 5px 0 0">
         <div data-reader-meta="1">论文 · 2026-08-09 · 95分</div>
         <a href="https://example.com/a">Deep</a>
       </td></tr>
@@ -98,6 +99,23 @@ def test_html_requires_orphan_deep_card_to_be_full_width_and_hides_scores():
 
     assert any("100% width" in error for error in errors)
     assert any("internal selection scores" in error for error in errors)
+
+
+def test_orphan_card_normalizer_repairs_actual_rendered_dom():
+    html = """
+    <table>
+      <tr data-reader-row="deep-row"><td width="50%" data-reader-role="deep-card" style="padding:0 5px 0 0">
+        <div data-reader-meta="1">论文 · 2026-08-09</div>
+        <a href="https://example.com/deep">Deep</a>
+      </td></tr>
+    </table>
+    """
+
+    normalized = normalise_orphan_card_widths(html)
+
+    assert html_reader_contract_errors(normalized) == []
+    assert 'width="100%"' in normalized
+    assert "padding:0 5px 0 0" not in normalized
 
 
 def test_clean_final_html_passes_layout_score_and_url_contracts():
