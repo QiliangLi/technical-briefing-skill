@@ -120,6 +120,14 @@ class FulltextService:
         return manifest
 
     def _fetch(self, url: str, raw: dict) -> tuple[str, str]:
+        # Offline replay mode: never hit the network. Both fulltext cache layers
+        # (safe_efficiency + primary_fulltext_cache) run before this method, so a
+        # cache HIT returns earlier and this only fires on a MISS. The raised
+        # error is caught by fetch_candidate -> fetch_status=FALLBACK, which
+        # safe_efficiency defers (DEFERRED_FETCH) without creating a fact task.
+        # Gated by env so normal collection/fact extraction is unaffected.
+        if __import__("os").environ.get("BRIEFING_OFFLINE_REPLAY"):
+            raise RuntimeError("offline replay: fulltext not in cache, network disabled")
         if not url:
             raise ValueError("No original URL")
         payload = __import__("json").loads(raw.get("payload_json") or "{}")

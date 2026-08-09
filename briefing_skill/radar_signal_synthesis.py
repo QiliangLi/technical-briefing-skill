@@ -221,12 +221,15 @@ def _signal_groups(email_service, issue_id: str | None, issue_data: dict[str, An
                 (url, canonicalize_url(url)),
             )
             parsed = urlparse(url)
-            source_name = _clean(
-                (row or {}).get("discovery_source")
-                or (row or {}).get("source_id")
-                or (parsed.hostname or "source").removeprefix("www."),
-                60,
-            )
+            # Radar signals link to the original source, so the reader-facing name is the
+            # original hostname (arXiv/GitHub/domain). Never surface internal discovery-source
+            # branding such as "AI HOT" / "YeeKal AI Daily" / "Follow Builders" here.
+            _host = (parsed.hostname or "source").removeprefix("www.")
+            if _host.endswith("arxiv.org"):
+                _host = "arXiv"
+            elif _host.endswith("github.com") or _host.endswith("github.io"):
+                _host = "GitHub"
+            source_name = _clean(_host, 60)
             published = str((row or {}).get("published_at") or "")[:10]
             newest_date = max(newest_date, published)
             sources.append(
