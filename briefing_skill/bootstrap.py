@@ -15,6 +15,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .editorial_batch import install_editorial_batching
     from .efficiency import install_pipeline_optimizations
     from .evidence_repair import install_evidence_repair
+    from .executor_usage import install_executor_usage_telemetry
     from .historical_backfill import install_historical_backfill
     from .human_feedback import install_human_feedback_telemetry
     from .invalid_repair import install_invalid_targeted_repair
@@ -84,8 +85,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Reader-facing guards merge project impact into 本期判断 and remove internal metadata.
     install_reader_facing_quality()
     # Reuse the existing issue-synthesis Agent to turn broad Radar candidates into
-    # concrete technical signals. Installed last so it sees all final synthesis enrichers.
+    # concrete technical signals.
     install_radar_signal_synthesis()
+    # Install last so `stats` sees every preceding telemetry wrapper. Executor usage
+    # remains optional; without imported transcripts the existing proxies still work.
+    install_executor_usage_telemetry()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
