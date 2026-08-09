@@ -1,0 +1,517 @@
+## PDF Page 1
+
+[AAFLOW+] Stateful Operator Abstraction with Zero-Copy
+Distributed KV Cache Orchestration for Multi-Agent Workflows
+Arup Kumar Sarker
+Alexander James Halpern
+Mills Staylor
+University of Virginia,
+Biocomplexity Institute and Initiative
+Charlottesville, VA, USA
+djy8hg@virginia.edu
+halperna22@gmail.com
+qad5gv@virginia.edu
+Gregor von Laszewski
+Geoffrey Fox
+Yue Cheng
+Biocomplexity Institute and Initiative
+University of Virginia
+Charlottesville, VA, USA
+laszewski@gmail.com
+vxj6mb@virginia.edu
+mrz7dp@virginia.edu
+Aymen Alsaadi
+Shantenu Jha
+Rutgers University
+Princeton Plasma Physics Laboratory
+Princeton, NJ, USA
+aymen.alsaadi@rutgers.edu
+shantenu.jha@rutgers.edu
+ABSTRACT
+Multi-agent LLM systems increasingly integrate retrieval, plan-
+ning, and reasoning, but remain fundamentally text-centric, re-
+quiring agents to repeatedly recompute shared context through
+expensive prefill. Although single-request inference is known to
+be accelerated by KV-cache management, it is usually restricted
+to local serving scopes. We introduce AAFLOW+, a stateful ex-
+tension of agentic workflow operators that makes KV cache a
+first-class distributed systems object. AAFLOW+ builds processes
+into communication-aware graphs that concurrently optimize data,
+prompts, and reusable model state. It also provides operators for KV
+materialization, transfer, fork, composition, and eviction. Its run-
+time enables zero-copy, transfer-aware execution, allowing agents
+to reuse long context without recomputation. AAFLOW+ reduces
+TTFT by up to 50.2×, achieves up to 7.63× reduced multi-agent com-
+pute cost at 16-agent scale, reduces KV memory by 1.72–6.10×, and
+increases throughput by more than 7.74×, based on an analytical
+cost model parameterized by empirical hardware microbenchmarks.
+The results demonstrate that KV transmission outperforms recom-
+putation on networks with moderate to high bandwidth, making
+sure KV-state sharing greatly increases efficiency in multi-agent
+LLM systems by replacing text passing.
+PVLDB Reference Format:
+Arup Kumar Sarker, Alexander James Halpern, Mills Staylor, Gregor von
+Laszewski, Geoffrey Fox, Yue Cheng, Aymen Alsaadi, and Shantenu Jha.
+[AAFLOW+] Stateful Operator Abstraction with Zero-Copy Distributed
+KV Cache Orchestration for Multi-Agent Workflows. PVLDB, 14(1):
+XXX-XXX, 2020.
+doi:XX.XX/XXX.XX
+PVLDB Artifact Availability:
+The source code, data, and/or other artifacts have been made available in
+AAFLOW/stateful_agentic_algebra directory at https://github.com/aru
+pcsedu/AAFLOW.
+This work is licensed under the Creative Commons BY-NC-ND 4.0 International
+License. Visit https://creativecommons.org/licenses/by-nc-nd/4.0/ to view a copy of
+this license. For any use beyond those covered by this license, obtain permission by
+emailing info@vldb.org. Copyright is held by the owner/author(s). Publication rights
+licensed to the VLDB Endowment.
+Proceedings of the VLDB Endowment, Vol. 14, No. 1 ISSN 2150-8097.
+doi:XX.XX/XXX.XX
+1 INTRODUCTION
+Large language models are increasingly deployed asagentic sys-
+temsthat interleave retrieval, reasoning, tool invocation, and mem-
+ory across multiple stages. Frameworks such as ReAct, Reflex-
+ion, AutoGen, and DSPy expand this design space, while RAG
+improves factual grounding by conditioning generation on exter-
+nal data [16, 20, 38, 41, 42]. However, as these workflows become
+deeper and more collaborative, a fundamental systems bottleneck
+emerges: agents continue to communicate primarily throughtext.
+Even when shared context has already been computed, downstream
+agents must replay it through costly prefill computation, repeatedly
+reconstructing identical model state.
+This inefficiency is closely tied to the treatment of the key-value
+(KV) cache, a central object in LLM inference and a key component
+of AI memory [ 22]. Recent serving systems such as vLLM [ 19],
+SGLang [47], DistServe, MemServe, Mooncake, ChunkAttention,
+KVCOMM, and RelayCaching [12, 15, 29, 43, 44, 49] demonstrate
+that KV cache management is critical for reducing latency and
+improving throughput. These systems optimize KV reuse through
+techniques such as block-level allocation, prefix sharing, and de-
+coupled prefill and decode stages. However, their scope is largely
+confined to single-request or single-cluster execution. They do not
+provide a workflow-level abstraction for explicitly transferring,
+branching, and reusing KV state across multiple agents, which im-
+pacts pipeline execution. In planner–retriever–solver workflows,
+multiple agents often operate over the same long context prefix.
+In tree-of-thought or debate settings, agents branch from shared
+prefixes and explore alternative reasoning paths. In collaborative
+RAG, agents independently retrieve overlapping evidence and re-
+process similar context. In all cases, current systems serialize shared
+state back into text, transforming a stateful execution problem into
+repeated prompt replay. The result is increased time-to-first-token
+(TTFT), duplicated computation, higher framework overhead, and
+limited control over state placement and reuse.
+Recent frameworks like AAFLOW [ 34], model agentic work-
+flows as compositions of distributed operators and reduce orches-
+tration overhead via communication-aware DAG execution and
+zero-copy data transfer. However, AAFLOW remains data-centric
+and does not expose internal model state, such as KV cache, as
+part of its abstraction. We introduceAAFLOW+, a stateful ex-
+tension that elevates KV cache to a first-class distributed systems
+arXiv:2607.10987v1  [cs.DC]  13 Jul 2026
+
+## PDF Page 2
+
+object. AAFLOW+ extends operator abstraction fromdataflowto
+stateflow, enabling explicit modeling of KV-state lifecycle through
+operators for materialization, transfer, fork, restricted composition,
+and eviction (Figure 1). This lets the compiler choose between text
+passing, KV reuse, state transfer, and eviction, shifting optimiza-
+tion from prompt construction to explicit state management. Our
+runtime makes the KV cache transportable by using explicit meta-
+data, zero-copy communication, and transfer-aware scheduling. By
+separating metadata from tensor buffers and using Arrow-based
+formats, the system minimizes serialization costs and enables effi-
+cient state transfer between distributed components [2]. AAFLOW+
+ensures correctness by enforcing compatibility on model identity,
+positional encoding, and execution history, allowing safe prefix
+reuse and controlled state composition.
+Figure 1: Layered architecture of stateful operator abstrac-
+tion. The design extends AAFLOW-style operator execution
+with explicit KV-state materialization, fork, transfer, merge,
+and eviction.
+We evaluate AAFLOW+ on GPU clusters using Mistral-7B and
+Llama-3-8B. Results show that stateful execution significantly im-
+proves performance over text-based orchestration. AAFLOW+ re-
+duces TTFT by up to50.2 × at long context, achieves up to7.63 ×
+lower multi-agent latency at 16-agent scale, reduces peak KV mem-
+ory by1.72 ×–6.10×, and improves throughput by over7.74 ×.
+Transfer–recompute analysis shows that KV transfer dominates
+recomputation on moderate-to-high bandwidth networks, while
+consistency experiments preserve deterministic output agreement.
+These results show that workflow-level KV-state sharing reduces
+latency, memory pressure, and framework overhead while comple-
+menting existing LLM serving systems.
+2 BACKGROUND AND MOTIV ATION
+2.1 From Agentic Dataflow to Stateful Execution
+Agentic large language model (LLM) applications are increasingly
+organized as multi-stage workflows in which retrieval, reasoning,
+tool use, memory access, and response generation interact dynami-
+cally. While frameworks like DSPy treat language-model applica-
+tions as compositional programs that can be optimized through
+compilation [16, 41], systems like AutoGen and LangGraph offer
+flexible multi-agent programming abstractions. Nonetheless, the
+majority of agent frameworks continue to be largely text-centric,
+with agents exchanging serialized strings representing tool outputs,
+recovered excerpts, intermediate summaries, and natural language
+messages. Although this approach is practical at the application
+layer, it conceals a more serious inefficiency in the system. A down-
+stream agent typically needs to re-tokenize and re-prefill the same
+context before it can produce fresh output when it receives text
+that has previously been handled by an upstream model invocation.
+Instead of viewing agentic workflows as loosely connected frame-
+work callbacks, AAFLOW [ 34] treated them as compilable dis-
+tributed programs. In AAFLOW, a workflow is represented as a set
+of operators,
+𝑊={𝑂𝑝 𝑒𝑚𝑏𝑒𝑑 , 𝑂𝑝𝑟𝑒𝑡𝑟𝑖𝑒𝑣𝑒 , 𝑂𝑝𝑟𝑒𝑎𝑠𝑜𝑛 , 𝑂𝑝𝑚𝑒𝑚𝑜𝑟 𝑦, 𝑂𝑝𝑢𝑝𝑠𝑒𝑟𝑡 },(1)
+where each operator is defined as
+𝑂𝑝 𝑖 =(𝐼 𝑖, 𝑂𝑖, 𝑓𝑖, 𝑃𝑖 ).(2)
+Here, 𝐼𝑖 and 𝑂𝑖 denote the input and output objects, 𝑓𝑖 is the trans-
+formation function, and 𝑃𝑖 is the communication pattern associated
+with the operator. This abstraction allows the runtime to lower an
+agentic workflow into an execution graph,
+𝐺=𝐶𝑜𝑚𝑝𝑖𝑙𝑒(𝑊),(3)
+where communication patterns such as broadcast, shuffle, reduce,
+and embarrassingly parallel execution become explicit parts of
+the execution plan. The key insight of this paper is that the same
+principle should apply not only to external workflow data, such
+as documents, embeddings, and vector indices, but also tointer-
+nal model execution state. The state created during LLM prefill is
+typically locked inside a local serving runtime in current agentic
+systems. Because of this, multi-agent workflows maximize the flow
+of data throughout the model, but they are unable to optimize the
+transportation and reuse of the key-value (KV) cache, the model’s
+most costly intermediate artifact.
+Figure 2: Textflow forces downstream agents to replay con-
+text, whereas stateflow transfers reusable KV execution state.
+2.2 Cost of Text-Based Agent Communication
+Consider a two-agent workflow where an upstream agent gets
+documents and creates a lengthy context, and a downstream agent
+uses that context to perform reasoning in order to comprehend the
+limitations of text-based communication. In existing systems, text
+is usually emitted by the upstream agent and consumed as a new
+prompt by the downstream agent. Before generating its first output
+2
+
+## PDF Page 3
+
+token, the downstream model must make a prefill pass over the
+whole context if the prompt length is𝐿. We denote this cost as
+𝑇𝑝𝑟𝑒 𝑓 𝑖𝑙𝑙 (𝐿).(4)
+The total execution time for a single agent invocation can therefore
+be approximated as
+𝑇𝑎𝑔𝑒𝑛𝑡 =𝑇 𝑝𝑟𝑒 𝑓 𝑖𝑙𝑙 (𝐿) +𝑇 𝑑𝑒𝑐𝑜𝑑𝑒 (𝑌) +Ω,(5)
+where 𝑇𝑑𝑒𝑐𝑜𝑑𝑒 (𝑌) is the cost of autoregressively generating an out-
+put sequence of length 𝑌 , and Ω captures framework overhead
+from scheduling, serialization, synchronization, and data move-
+ment. The inefficiency becomes more severe in multi-agent settings.
+If 𝑘 agents consume the same context independently, the system
+may pay the prefill cost𝑘times:
+𝑇 𝑘
+𝑡𝑒𝑥𝑡 ≈𝑘·𝑇 𝑝𝑟𝑒 𝑓 𝑖𝑙𝑙 (𝐿) +
+𝑘∑︁
+𝑗=1
+𝑇𝑑𝑒𝑐𝑜𝑑𝑒 (𝑌𝑗 ) +Ω 𝑡𝑒𝑥𝑡 .(6)
+Figure 3: Text-based multi-agent execution duplicates prefill
+computation across branches that share the same context.
+Tree-of-Thought reasoning, multi-agent argument, self-consistency
+sampling, speculative planning, and parallel retrieval synthesis all
+exhibit this execution pattern. Although the process in each sce-
+nario has a shared prefix or shared context, text-based communi-
+cation compels each branch to separately recreate the model state.
+This redundancy is shown in Figure 3. The execution system han-
+dles each branch as a separate model invocation even though the
+agents conceptually share a shared context. Poor branch factor
+scalability is the outcome, particularly for long-context workloads
+where time-to-first-token (TTFT) is dominated by prefill.
+2.3 KV Cache as Reusable Execution State
+Serving systems have already demonstrated that performance de-
+pends on appropriate KV-cache management. To manage KV cache
+using block-level paging and minimize memory fragmentation [19],
+vLLM provides PagedAttention. To enhance KV-cache reuse across
+structured language-model programs, SGLang introduces Radix-
+Attention [47]. These systems show that effective LLM execution
+depends on the KV cache. Their optimizations, however, mostly
+function within a serving runtime. A universal distributed abstrac-
+tion for exposing KV cache as a schedulable state object across
+multi-agent workflows is not offered by them.
+Our work is motivated by this distinction. We don’t try to replace
+the current serving systems. Rather, we investigate the possibil-
+ity of lifting KV cache from a local serving optimization into a
+distributed workflow abstraction. According to this perspective, a
+multi-agent workflow should be able to manage partitions, buffers,
+and interim outputs in the same manner as distributed data systems
+may materialize, transmit, fork, reuse, and ultimately evict KV state.
+2.4 Motivating Stateflow Example
+Figure 2 illustrates the difference between textflow and stateflow.
+Agent B needs to prefill the textual context that Agent A emits
+in the textflow scenario. Agent A produces a reusable KV state
+object in addition to a logical output in the stateflow scenario.
+Then, instead of paying for complete prompt replay, Agent B can
+resume execution from the transferred state, simply paying for
+state movement and continuation. By contrasting the cost of state
+transfer with the cost of text replay, the anticipated benefit may
+be stated. Text-based execution is beneficially replaced by stateful
+execution when
+𝑇𝑡𝑟𝑎𝑛𝑠 𝑓 𝑒𝑟 (𝐾𝑉) +𝑇 𝑟𝑒𝑠𝑢𝑚𝑒 +Ω 𝑠𝑡𝑎𝑡𝑒 <𝑇 𝑝𝑟𝑒 𝑓 𝑖𝑙𝑙 (𝐿) +Ω 𝑡𝑒𝑥𝑡 .(7)
+Equation 7 defines the central systems condition studied in this
+paper. Multi-agent workflows can lower TTFT and overall latency
+by working over state rather than text if transferring and resuming
+from KV state is less expensive than replaying the prompt.
+3 STATEFUL OPERATOR ABSTRACTION
+3.1 Extending the Operator Model
+Each operator is described by AAFLOW [34] as a tuple with inputs,
+outputs, a transformation function, and a communication pattern.
+For data-centric workflow steps including embedding, retrieval,
+reasoning, memory lookup, and index updating, this approach is
+adequate. It does not, however, specifically differentiate between
+model execution state and ordinary data. Because KV cache is
+connected to model settings, token placements, attention layout,
+device placement, and branch lineage, it is distinct from regular
+data. Reusing it inappropriately can modify model meaning, while
+discarding it unnecessarily produces wasteful processing. We there-
+fore extend the original operator definition into a stateful operator:
+𝑂𝑝 𝑠
+𝑖 =(𝐼 𝑖, 𝑂𝑖, 𝑆𝑖𝑛
+𝑖 , 𝑆𝑜𝑢𝑡
+𝑖 , 𝑓𝑖, 𝑃𝑖, 𝜎𝑖 ).(8)
+Here, 𝐼𝑖 and 𝑂𝑖 remain the ordinary data inputs and outputs, while
+𝑆𝑖𝑛
+𝑖 and 𝑆𝑜𝑢𝑡
+𝑖 represent input and output state objects. The function
+𝑓𝑖 describes the logical transformation performed by the operator,
+and 𝑃𝑖 describes the communication pattern used to execute it. The
+new term 𝜎𝑖 denotes the state policy associated with the operator.
+This policy determines whether state is transferred, aliased, forked,
+merged, pinned, evicted, or recomputed. Making state movement
+transparent to the compiler is the goal of Equation 8. The runtime
+only observes strings and tensors moving between operators in a
+text-based workflow. The runtime also detects state dependencies
+in a stateful workflow, which may affect placement and scheduling.
+Thus, the execution graph becomes
+𝐺𝑠 =(𝑉 , 𝐸 𝑑, 𝐸𝑠 ),(9)
+where 𝑉 is the set of operators, 𝐸𝑑 is the set of data edges, and 𝐸𝑠
+is the set of state edges. Data edges describe conventional work-
+flow dependencies, while state edges describe KV-cache reuse and
+movement.
+3.2 KV State Object
+A KV cache object must carry enough information to determine
+whether it can be safely reused. We define a state object as
+𝑆𝐾𝑉 =(𝑀,Θ, 𝐵,Π,Λ,Γ),(10)
+3
+
+## PDF Page 4
+
+where 𝑀 is the model identifier, Θ is the model and tokenizer
+configuration, 𝐵 is the set of KV blocks, Π is positional metadata,
+Λ is lineage metadata, and Γ describes placement and ownership.
+The block set𝐵is represented as
+𝐵={𝑏 1, 𝑏2, . . . , 𝑏𝑚 },(11)
+where each block has the form
+𝑏 𝑗 =(𝐾 𝑗, 𝑉𝑗, ℓ𝑗, 𝑟𝑗, 𝑑𝑗 ).(12)
+The key and value tensors in this representation are 𝐾𝑗 and 𝑉𝑗 , the
+layer index is ℓ𝑗 , the token-position range covered by the block is𝑟 𝑗 ,
+and the device or memory domain where the block is now located is
+𝑑 𝑗 . The idea behind this block-level representation is similar to that
+of paged KV-cache management in vLLM, which manages cache
+storage in blocks as opposed to a single monolithic sequence [19].
+The lineage term Λ is particularly important for multi-agent
+workflows. It records whether a state was produced by direct prefill,
+by transfer, by fork, or by restricted composition. This prevents the
+runtime from treating all KV states as interchangeable. Two states
+are compatible only if they satisfy the predicate
+𝐶𝑜𝑚𝑝𝑎𝑡(𝑆 𝑎, 𝑆𝑏 )=⊮[𝑀 𝑎 =𝑀 𝑏 ] ·⊮[Θ 𝑎 =Θ 𝑏 ] ·⊮[Π 𝑎 ∼Π 𝑏 ],(13)
+where Π𝑎 ∼Π 𝑏 denotes positional compatibility. This predicate is
+conservative by design: when compatibility cannot be established,
+the runtime falls back to text replay or recomputation.
+3.3 Stateful Operator Semantics
+The abstraction introduces a family of KV-state operators that ex-
+tend the original AAFLOW workflow. The first operator is materi-
+alization:
+𝑂𝑝 𝑘𝑣_𝑚𝑎𝑡𝑒𝑟𝑖𝑎𝑙𝑖𝑧𝑒 (𝑥, 𝑀) →𝑆 𝐾𝑉 .(14)
+This operator creates a reusable KV state object after consuming a
+tokenized context 𝑥 and a model 𝑀. Materialization distinguishes
+between the cost of decoding future tokens and the cost of process-
+ing the input context, as contrast to regular generation. The second
+operator is transfer:
+𝑂𝑝 𝑘𝑣_𝑡𝑟𝑎𝑛𝑠 𝑓 𝑒𝑟 (𝑆𝐾𝑉 , 𝑛𝑎, 𝑛𝑏 ) →𝑆 ′
+𝐾𝑉 .(15)
+A state object is moved or aliased from node 𝑛𝑎 to node 𝑛𝑏 by this
+operation. Depending on where the source and destination are
+located, its communication pattern could be point-to-point transfer,
+RDMA, or a collective operation. The transfer operator modifies the
+state’s location and ownership metadata but not its logical content.
+The third operator is fork:
+𝑂𝑝 𝑘𝑣_𝑓 𝑜𝑟𝑘 (𝑆𝐾𝑉 , 𝑘) → {𝑆 (1)
+𝐾𝑉 , 𝑆 (2)
+𝐾𝑉 , . . . , 𝑆(𝑘)
+𝐾𝑉 }.(16)
+The abstraction procedure that makes branching effective is
+called a fork. It generates several logical offspring of a common
+prefix state. When branches diverge, copy-on-write behavior is ap-
+plied, even if these descendants may initially share the same physi-
+cal blocks. Self-consistency sampling, Tree-of-Thought reasoning,
+multi-agent argument, and parallel plan exploration all directly
+benefit from this operation. The fourth operator is restricted merge:
+𝑂𝑝 𝑘𝑣_𝑚𝑒𝑟𝑔𝑒 (𝑆1, 𝑆2, 𝜇) →𝑆 ∗.(17)
+The merge discipline is specified by the policy 𝜇. Since arbitrary
+KV-cache merging is not typically semantically correct, we pur-
+posefully limit this operation. Merge is only permitted under spe-
+cific structural limitations, such as prefix-compatible concatena-
+tion, segment-aware assembly, or reduction through a summariz-
+ing model invocation, because KV state is position-dependent and
+model-layout-dependent. KV cache is not treated as a general tensor
+object by this cautious approach.
+3.4 Cost Model for Stateful Execution
+The operator abstraction is useful only if it exposes an optimization
+target. For text-based execution, the cost of a branch with context
+length𝐿can be written as
+𝑇𝑡𝑒𝑥𝑡 =𝑇 𝑝𝑟𝑒 𝑓 𝑖𝑙𝑙 (𝐿) +𝑇 𝑑𝑒𝑐𝑜𝑑𝑒 (𝑌) +Ω 𝑡𝑒𝑥𝑡 .(18)
+For stateful execution, the corresponding cost is
+𝑇𝑠𝑡𝑎𝑡𝑒 =𝑇 𝑡𝑟𝑎𝑛𝑠 𝑓 𝑒𝑟 (𝑆𝐾𝑉 ) +𝑇 𝑟𝑒𝑠𝑢𝑚𝑒 +𝑇 𝑑𝑒𝑐𝑜𝑑𝑒 (𝑌) +Ω 𝑠𝑡𝑎𝑡𝑒 .(19)
+The system should choose stateful execution when
+𝑇𝑠𝑡𝑎𝑡𝑒 <𝑇 𝑡𝑒𝑥𝑡 .(20)
+Expanding this condition gives
+𝑇𝑡𝑟𝑎𝑛𝑠 𝑓 𝑒𝑟 (𝑆𝐾𝑉 ) +𝑇 𝑟𝑒𝑠𝑢𝑚𝑒 +Ω 𝑠𝑡𝑎𝑡𝑒 <𝑇 𝑝𝑟𝑒 𝑓 𝑖𝑙𝑙 (𝐿) +Ω 𝑡𝑒𝑥𝑡 .(21)
+For a branching workflow with 𝑘 branches sharing a prefix, the
+text-based cost is approximately
+𝑇 𝑘
+𝑡𝑒𝑥𝑡 =𝑘·𝑇 𝑝𝑟𝑒 𝑓 𝑖𝑙𝑙 (𝐿) +
+𝑘∑︁
+𝑗=1
+𝑇𝑑𝑒𝑐𝑜𝑑𝑒 (𝑌𝑗 ) +Ω 𝑘
+𝑡𝑒𝑥𝑡 .(22)
+With KV-state fork, the prefix is materialized once:
+𝑇 𝑘
+𝑠𝑡𝑎𝑡𝑒 =𝑇 𝑝𝑟𝑒 𝑓 𝑖𝑙𝑙 (𝐿) +𝑇 𝑓 𝑜𝑟𝑘 (𝑆𝐾𝑉 , 𝑘) +
+𝑘∑︁
+𝑗=1
+𝑇𝑑𝑒𝑐𝑜𝑑𝑒 (𝑌𝑗 ) +Ω 𝑘
+𝑠𝑡𝑎𝑡𝑒 .(23)
+The expected savings therefore come from replacing repeated prefill
+with a single materialization and a cheaper fork operation:
+Δ𝑇=(𝑘−1)𝑇 𝑝𝑟𝑒 𝑓 𝑖𝑙𝑙 (𝐿) −𝑇 𝑓 𝑜𝑟𝑘 (𝑆𝐾𝑉 , 𝑘) − (Ω 𝑘
+𝑠𝑡𝑎𝑡𝑒 −Ω 𝑘
+𝑡𝑒𝑥𝑡 ).(24)
+This equation makes the performance intuition precise. Stateful
+execution is most beneficial when the shared context is long, the
+branch factor is high, and state management overhead remains
+lower than the avoided prefill cost.
+3.5 Correctness and Validity Constraints
+The inability to treat KV cache like arbitrary data is a major problem
+in stateful abstraction. Only model-specific and sequence-specific
+requirements make it valid. As a result, three invariants must be
+maintained in every state transition.
+Model compatibility must first be maintained. One incompati-
+ble model, tokenizer, or attention layout cannot reuse a KV state
+created by another. Secondly, positional compatibility needs to be
+maintained. Fork and merge operations must maintain position se-
+mantics since attention state is linked to word order and positional
+encoding. Third, lineage consistency needs to be maintained. In
+order for the scheduler to assess if future reuse is safe, a branch
+formed from a prefix state must document its pedigree. Equation 10
+contains metadata terms that encode these requirements. The ab-
+straction does not try unsafe reuse if any invariant fails. Rather,
+4
+
+## PDF Page 5
+
+the runtime resorts to text-based recomputation. The abstraction
+is useful for real systems because of this cautious design, which is
+crucial for accuracy.
+AAFLOW is extended from dataflow to stateflow by the stateful
+abstraction. The abstraction treats the KV cache as a structured state
+object with explicit operators, compatibility criteria, placement
+metadata, and cost models rather than as an opaque local artifact
+inside the serving engine. This makes it possible for the runtime
+and compiler to decide when to materialize, transfer, fork, merge,
+or evict model state. The outcome is a workflow architecture that
+allows for the effective reuse of costly LLM prefill computation
+while maintaining the analyzability of operator-driven execution.
+4 DESIGN
+We design a distributed runtime that extends AAFLOW’s operator-
+driven execution to astateful execution systemcapable of managing
+KV cache across multi-agent workflows. The key principle is to treat
+model execution state as a first-class distributed object, rather than
+a temporary artifact limited to one node. The runtime integrates
+a stateful compiler, a distributed KV-state layer, and a state-aware
+scheduler to coordinate data and state dependencies, as well as
+transfer/recompute decisions.
+4.1 Stateful Workflow Compilation
+The first step in our system is to extend the compilation process
+from a purely data-driven model to a hybrid data-state model. Given
+a workflow𝑊 , AAFLOW compiles it into an execution graph𝐺. We
+extend this to construct astateful execution graph: 𝐺𝑠 =(𝑉 , 𝐸 𝑑, 𝐸𝑠 ),
+where 𝑉 represents operator nodes, 𝐸𝑑 captures data dependencies,
+and 𝐸𝑠 captures state dependencies corresponding to KV cache
+flow. Unlike traditional DAGs that only encode data movement,𝐺𝑠
+exposes KV-state propagation. State edges allow the scheduler to
+reason about locality, reuse, and transfer before recomputing shared
+context. This enables optimizations such as avoiding recomputation
+when compatible state already exists elsewhere in the system.
+4.2 KV State Representation
+To support distributed state management, we define a structured
+representation of KV cache. Conceptually, KV cache consists of a
+sequence of blocks:
+𝐾𝑉={𝐵 1, 𝐵2, . . . , 𝐵𝑛 }(25)
+where each block corresponds to a segment of the input sequence
+and contains key-value tensors 𝐵𝑖 =(𝐾 𝑖, 𝑉𝑖, 𝑙𝑖, 𝑝𝑖 ). Here, 𝐾𝑖 and 𝑉𝑖
+denote the key and value tensors,𝑙 𝑖 identifies the layer index, and
+𝑝𝑖 encodes the positional range associated with the block. We use
+Apache Arrow [3] to represent metadata and block layouts in a
+columnar, zero-copy format. This allows different components of
+the system to share state descriptors without serialization over-
+head. The underlying tensor buffers are transferred using high-
+performance communication frameworks such as UCX [ 35, 39]
+and MPI [6], ensuring efficient movement across nodes. The trans-
+port subsystem overlaps communication and computation, allow-
+ing operators to begin execution as KV blocks arrive, improving
+throughput.
+4.3 KV State Lifecycle
+Figure 4: Lifecycle of KV state from creation to reuse and
+eviction.
+The lifecycle of KV state in our system follows a structured se-
+quence, as shown in Figure 4. State is first materialized during the
+prefill phase of LLM execution, then can be forked to enable parallel
+reasoning (e.g., in Tree-of-Thought workflows).Forkedstates may
+be transferred between nodes for distributed processing. When com-
+putation resumes, agents use thetransferredstate directly, avoiding
+redundant prefill. If necessary, state may beevicteddue to memory
+constraints or policy. This lifecycle promotes state reuse, reduces
+redundant computation, and maintains execution flexibility.
+4.4 Memory Management and Eviction
+Managing KV state for multiple agents strains GPU memory. To
+mitigate this, a cost-aware eviction strategy balances reuse with
+memory use. Each state receives a score based on reuse and size.
+States with lower scores are evicted first under memory pressure,
+similar to distributed cache strategies but tailored for KV state
+reuse.
+To mitigate GPU memory exhaustion, the runtime implements a
+heuristic eviction strategy prioritizing KV states based on a com-
+bination of memory footprint size and historical reuse frequency.
+Formalizing and profiling optimal distributed KV eviction policies
+remains future work.
+4.5 Stateful Workflow Composition
+A stateful workflow composes data operators and state operators
+into a single graph. A typical branching workflow can be written as
+𝑂𝑝 𝑘𝑣_𝑚𝑎𝑡𝑒𝑟𝑖𝑎𝑙𝑖𝑧𝑒 →𝑂𝑝 𝑘𝑣_𝑓 𝑜𝑟𝑘 →
+{𝑂𝑝 (1)
+𝑟𝑒𝑎𝑠𝑜𝑛 , . . . , 𝑂𝑝(𝑘)
+𝑟𝑒𝑎𝑠𝑜𝑛 } →𝑂𝑝 𝑘𝑣_𝑚𝑒𝑟𝑔𝑒 .(26)
+This expression models a workflow where shared context is pro-
+cessed once, branched into multiple reasoning paths, and later
+merged under specific policies. As illustrated in Figure 5, dashed
+edges indicate KV state flow and solid edges denote standard op-
+erator outputs. Explicitly distinguishing state from data depen-
+dencies enables the compiler to schedule reasoning branches effi-
+ciently, avoiding redundant prefill computation for each branch.
+Currently, restricted merge supports strictly non-overlapping se-
+quential concatenation of independent branch outputs, avoiding
+arbitrary tensor-blending of divergent attention states, which would
+violate positional encoding semantics.
+4.6 State-Aware Scheduling
+The scheduler plays a central role in determining how state is man-
+aged during execution. For each operator, the scheduler evaluates
+5
+
+## PDF Page 6

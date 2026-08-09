@@ -1,0 +1,57 @@
+{
+  "title": "ReMP: Low-Downtime Runtime Model-Parallelism Reconfiguration for LLM Serving",
+  "event_hint": "ReMP: runtime model-parallelism reconfiguration framework for LLM serving",
+  "problem": "Current LLM inference systems treat model parallelism topology (TP/PP) as static configuration, which conflicts with dynamically changing inference workloads. State-of-the-art systems lack online reconfiguration capabilities and can only switch configurations by restarting the service, resulting in several minutes of service interruption, KV cache loss, and prohibitive recomputation overhead.",
+  "mechanism": "ReMP achieves dynamic TP/PP adjustment through three key techniques: (1) decoupling model parallelism topology from runtime state to avoid full service reconstruction; (2) two-dimensional KV cache migration mechanism to preserve reusable cache states after TP/PP changes; (3) end-to-end online reconfiguration using shared-memory model reloading, prebuilt parallel-state snapshots, and worker reuse. The MPU State Space preconstructs parallel-state snapshots for candidate topologies, moving process-group construction off the switching critical path. Worker lifecycle management classifies workers into active and standby states, avoiding CUDA runtime and model object reinitialization overhead.",
+  "evidence": [
+    {
+      "claim": "ReMP topology switching time on H100 platform",
+      "value": "1-8 seconds",
+      "baseline": "restart-based approach (several minutes of service interruption)",
+      "condition": "Llama2-7B (~2s), Qwen3-30B-A3B (~5s), DeepSeek-R1-Distill-Qwen-32B (~5s), Llama2-70B (~8s), 8× H100 GPUs",
+      "source_locator": "PDF Page 11, Figure 6 / Section 4.2"
+    },
+    {
+      "claim": "ReMP topology switching time on RTX 5090 platform",
+      "value": "1-4 seconds",
+      "baseline": "restart-based approach (several minutes)",
+      "condition": "Llama2-7B (~1s), Qwen3-30B-A3B (~2s), DeepSeek-R1-Distill-Qwen-32B (~2.5s), 8× RTX 5090 GPUs",
+      "source_locator": "PDF Page 11, Figure 6(b)"
+    },
+    {
+      "claim": "ReMP achieves 13-32% switching time reduction through KV transfer and model loading overlap",
+      "value": "13-32%",
+      "baseline": "sequential KV transfer + model loading",
+      "condition": "Overlapped execution: T_overlap_state ≈ max(T_model, T_kv)",
+      "source_locator": "PDF Page 11, Figure 6 / Section 4.2"
+    },
+    {
+      "claim": "ReMP achieves lower TTFT and TPOT than fixed TP1PP8 and TP2PP4 configurations",
+      "value": "superior latency",
+      "baseline": "TP1PP8 (pipeline-heavy, higher latency), TP2PP4 (balanced)",
+      "condition": "Under medium-to-high request pressure using BurstGPT-derived traces, all four models tested",
+      "source_locator": "PDF Page 12, Figure 7 / Section 4.3.2"
+    },
+    {
+      "claim": "ReMP achieves higher output throughput than fixed TP1PP8 and TP2PP4 configurations",
+      "value": "higher throughput",
+      "baseline": "TP1PP8 and TP2PP4 fixed baselines",
+      "condition": "Under medium-to-high request pressure using BurstGPT-derived traces, all four models tested",
+      "source_locator": "PDF Page 12, Figure 7 / Section 4.3.2"
+    }
+  ],
+  "evaluation_context": "Experiments conducted on two 8-GPU platforms (H100 and RTX 5090) using four representative LLMs from 7B to 70B parameters. Workload uses BurstGPT-derived request traces replayed under different request pressures. Comparisons made against restart-based reconfiguration baseline (qualitatively several minutes) and two fixed TP/PP configurations (TP1PP8 pipeline-heavy, TP2PP4 balanced). ReMP uses weighted selection metric combining output throughput, mean TPOT, and mean TTFT. Software implemented on vLLM V1.",
+  "limitations": "Llama2-70B not evaluated on RTX 5090 due to GPU memory limitations. Evidence pack focuses on single-node or cluster-level reconfiguration without WAN/cross-region deployment validation. Restart baseline defined qualitatively as 'several minutes' without explicit time measurements in primary evidence. No production deployment validation or multi-tenant isolation analysis. KV cache migration overhead visible but WAN RTT/bandwidth constraints not evaluated. Two-dimensional KV cache migration mechanism (Figure 4) shows layer-wise streaming transfer with P2P KV slice transfer, but specific transfer data volumes not quantified. Fixed baselines (TP1PP8, TP2PP4) are representative deployment choices but may not cover all optimal configurations.",
+  "project_relevance": "ReMP demonstrates KV cache migration across model parallelism topologies within a single cluster, with specific switching times now quantified: 1-8 seconds on H100 (1-4 seconds on RTX 5090) versus several minutes for restart-based approach. The two-dimensional KV cache migration mechanism provides insights for remote KV cache access patterns—PP changes move layers across pipeline stages, TP changes split or merge KV-head ranges, with layer-wise streaming transfer bounding peak GPU memory. However, the paper focuses on TP/PP reconfiguration for adaptive serving rather than cross-region transmission. WAN costs, compression, incremental transfer, and cross-region consistency are not addressed. Cache state preservation techniques and overlapping model reloading with KV migration (13-32% time savings) could inform cross-region cache migration strategies, though this application is beyond the paper's scope.",
+  "primary_source_resolved": true,
+  "quality_score": 85,
+  "evidence_gaps": [],
+  "_provenance": {
+    "task_id": "8237a1a5c3c6196a09859d17",
+    "candidate_id": "5103abf8ddb6599ea864632d",
+    "source_title": "ReMP: Low-Downtime Runtime Model-Parallelism Reconfiguration for LLM Serving",
+    "source_url": "https://arxiv.org/abs/2606.18741v1",
+    "document_id": "ef5cf572361017335fcd345e",
+    "repair_of_task_id": "5434c865a0db767bb5ac7c13"
+  }
+}
