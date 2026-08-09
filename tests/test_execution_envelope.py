@@ -77,6 +77,15 @@ def test_envelope_binds_prompt_schema_context_and_forbids_host_semantic_guidance
     assert json.loads(service.db.metadata)["execution_contract_required"] is True
 
 
+def test_execution_envelope_regeneration_is_idempotent(tmp_path):
+    service, task = _fixture(tmp_path)
+    first, _ = ensure_execution_envelope(service, task)
+    second, _ = ensure_execution_envelope(service, task)
+
+    assert first["task"] == second["task"]
+    assert first["task"]["execution_envelope_digest"] == second["task"]["execution_envelope_digest"]
+
+
 def test_bound_resource_change_invalidates_task_output(tmp_path):
     service, task = _fixture(tmp_path)
     ensure_execution_envelope(service, task)
