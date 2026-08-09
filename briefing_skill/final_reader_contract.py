@@ -57,9 +57,6 @@ def filter_final_radar_groups(
                 ]
                 if canonicalize_url(value)
             }
-            # A synthesized multi-source signal may depend on every source in its
-            # summary. If any source is already covered above, drop the whole signal
-            # instead of silently changing its evidence while keeping its prose.
             if urls & forbidden:
                 continue
             kept.append(item)
@@ -107,6 +104,48 @@ def _links(node) -> set[str]:
         if canonical:
             urls.add(canonical)
     return urls
+
+
+def normalise_orphan_card_widths(email_html: str) -> str:
+    """Make the final rendered DOM robust even when Jinja batch padding is absent.
+
+    Jinja's `batch(2, none)` does not pad because `none` is the filter's default
+    sentinel, so source-template checks against `row[1] is none` can miss a one-item
+    row. Normalize the actual final DOM after all HTML post-processors instead.
+    """
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(email_html, "html.parser")
+    specs = (
+        ('tr[data-reader-row="deep-row"]', '[data-reader-role="deep-card"]'),
+        ('tr[data-reader-row="observation-row"]', '[data-reader-role="observation-card"]'),
+    )
+    for row_selector, card_selector in specs:
+        for row in soup.select(row_selector):
+            cards = row.select(card_selector)
+            if len(cards) != 1:
+                continue
+            card = cards[0]
+            card["width"] = "100%"
+            style = str(card.get("style") or "")
+            if style:
+                # Existing one-card rows are the first column and therefore carry a
+                # right gap intended only for a sibling. Remove that gap as well.
+                style = style.replace("padding:0 5px 0 0", "padding:0")
+                card["style"] = style
+    # Radar rows do not currently carry a row marker. A single radar card's nearest
+    # presentation row can still be normalized safely because the role is unique.
+    for card in soup.select('[data-reader-role="radar-card"]'):
+        row = card.find_parent("tr")
+        if row is None:
+            continue
+        cards = row.select('[data-reader-role="radar-card"]')
+        if len(cards) == 1:
+            card["width"] = "100%"
+            style = str(card.get("style") or "").replace("padding:0 5px 0 0", "padding:0")
+            card["style"] = style
+    return str(soup)
 
 
 def html_reader_contract_errors(email_html: str) -> list[str]:
@@ -237,6 +276,18 @@ def install_final_reader_contract() -> None:
         )
 
     EmailService._aihot_groups = aihot_groups
+
+    original_build = EmailService.build
+
+    def build(self, run_id: str, *args, **kwargs):
+        path = original_build(self, run_id, *args, **kwargs)
+        path.write_text(
+            normalise_orphan_card_widths(path.read_text(encoding="utf-8")),
+            encoding="utf-8",
+        )
+        return path
+
+    EmailService.build = build
 
     original_validate = Renderer.validate
 
