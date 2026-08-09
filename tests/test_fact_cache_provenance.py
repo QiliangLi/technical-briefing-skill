@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from briefing_skill.cost_schema import ensure_cost_schema
 from briefing_skill.db import Database
 from briefing_skill.fact_cache_provenance import (
     FACT_CACHE_PROVENANCE_VERSION,
@@ -19,6 +20,7 @@ from briefing_skill.utils import now_iso, write_json
 def _db(tmp_path):
     db = Database(tmp_path / "state.sqlite3")
     db.init()
+    ensure_cost_schema(db)
     ensure_fact_cache_provenance_schema(db)
     return db
 
@@ -149,8 +151,8 @@ def test_tampered_cached_fact_payload_is_rejected(tmp_path):
 
 def test_legacy_fact_cache_rows_are_not_read_by_v2_lookup(tmp_path):
     db = _db(tmp_path)
-    # Database.init creates the legacy table. Seed a row with the exact old identity;
-    # v2 deliberately has no migration/read fallback, so it cannot satisfy lookup.
+    # The legacy table can contain the exact old identity; v2 deliberately has no
+    # migration/read fallback, so it cannot satisfy a production lookup.
     now = now_iso()
     db.execute(
         """
