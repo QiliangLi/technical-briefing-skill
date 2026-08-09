@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 
 from .reader_writing_contract import (
@@ -42,12 +41,7 @@ def filter_final_radar_groups(
     issue_id: str | None,
     issue_data: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
-    """Drop Radar signals that repeat final Deep/Observation/appendix sources.
-
-    Candidate-time exclusion is not sufficient because final Deep/appendix membership can
-    change after relevance, fetch refill, and writing. The reader-facing Radar therefore
-    gets one deterministic last-mile de-duplication pass against the actual final issue.
-    """
+    """Drop Radar signals that repeat final Deep/Observation/appendix sources."""
 
     issue_items = list((issue_data or {}).get("items") or [])
     forbidden = _source_urls(issue_items) | _appendix_urls(service)
@@ -73,8 +67,6 @@ def filter_final_radar_groups(
             filtered.append({**group, "items": kept})
 
     if issue_id:
-        # Keep persistence aligned with what the reader actually sees. Appendices share
-        # this table but use a reserved category prefix and are deliberately retained.
         service.db.execute(
             "DELETE FROM issue_radar_items WHERE issue_id=? AND category NOT LIKE ?",
             (issue_id, f"{APPENDIX_PREFIX}%"),
@@ -160,15 +152,18 @@ def html_reader_contract_errors(email_html: str) -> list[str]:
 
 
 def _core_selection_errors(service, run_id: str, data: dict[str, Any]) -> list[str]:
-    """Check that final detailed items came from machine-approved Deep candidates."""
+    """Check final detailed items only for topics governed by the Deep Top4 contract."""
 
     errors: list[str] = []
+    deep_topics = set((service.config.settings.get("efficiency") or {}).get("deep_topics") or [])
     core = data.get("core_items")
     if core is None:
         core = [item for item in data.get("items") or [] if item.get("item_role", "core") == "core"]
     counts: dict[str, int] = defaultdict(int)
     for item in core:
         topic_id = str(item.get("topic_id") or "")
+        if topic_id not in deep_topics:
+            continue
         counts[topic_id] += 1
         if counts[topic_id] > 4:
             errors.append(f"{topic_id}: final detailed item count exceeds topic-local Top4")
@@ -215,7 +210,7 @@ def final_reader_contract_errors(service, run_id: str) -> list[str]:
         errors.append("Final reader contract requires rendered email.html")
     else:
         errors.extend(html_reader_contract_errors(email_path.read_text(encoding="utf-8")))
-    return errors
+    return list(dict.fromkeys(errors))
 
 
 def install_final_reader_contract() -> None:
@@ -254,8 +249,9 @@ def install_final_reader_contract() -> None:
             report.setdefault("passes", []).append(
                 "Final reader output satisfies selection, writing, layout, score, and Radar de-dup contracts"
             )
-        # Several older validation wrappers write their intermediate report. Persist
-        # the final outermost result so validation.json always matches CLI output.
+        report["failures"] = list(dict.fromkeys(report.get("failures") or []))
+        report["warnings"] = list(dict.fromkeys(report.get("warnings") or []))
+        report["passes"] = list(dict.fromkeys(report.get("passes") or []))
         write_json(self.root / "workspace" / "runs" / run_id / "validation.json", report)
         return report
 
