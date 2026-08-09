@@ -21,6 +21,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .evidence_repair import install_evidence_repair
     from .execution_envelope import install_execution_envelope_contract
     from .executor_usage import install_executor_usage_telemetry
+    from .fact_cache_provenance import install_fact_cache_provenance
+    from .fact_cache_text_normalization import install_fact_cache_source_normalization
     from .final_reader_contract import install_final_reader_contract
     from .historical_backfill import install_historical_backfill
     from .human_feedback import install_human_feedback_telemetry
@@ -100,6 +102,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Rebalance the same 18k first-read budget across context/mechanism/results/bounds.
     # This must run after evidence-repair so cache versions include both policies.
     install_balanced_evidence()
+    # Legacy fact_cache rows are deliberately not migrated. Install after the final
+    # Evidence policy so v2 binds the exact runtime extractor version and Evidence Pack;
+    # it disables legacy reads/writes while preserving raw-fulltext reuse underneath.
+    install_fact_cache_provenance()
+    # Raw-fulltext cache entries are beneath FulltextService sanitization; normalize
+    # before reconstructing Evidence so V2 hashes the exact text Fact Extraction saw.
+    install_fact_cache_source_normalization()
     # Reader-facing guards merge project impact into 本期判断 and remove internal metadata.
     install_reader_facing_quality()
     # Reuse the existing issue-synthesis Agent to turn broad Radar candidates into
