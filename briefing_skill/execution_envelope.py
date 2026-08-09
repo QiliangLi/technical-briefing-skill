@@ -123,6 +123,33 @@ def ensure_execution_envelope(service, task: dict[str, Any]) -> tuple[dict[str, 
     return envelope, relative
 
 
+def _rebind_deterministic_fastpath_output(service, task: dict[str, Any], prior_binding: dict[str, Any]) -> None:
+    """Upgrade transport metadata on a synchronously materialized trusted cache hit.
+
+    Deep-efficiency may write a validated fact-cache result inside its TaskService.create
+    wrapper, before this outer execution-contract wrapper gets a chance to add v2 binding
+    fields. Rebind only that explicit fact-cache path, only when the output still carries
+    the exact pre-envelope binding. Semantic result fields are never modified.
+    """
+
+    if task.get("task_type") != "fact_extraction":
+        return
+    input_data = read_json(service.root / str(task["input_path"]), {})
+    if not bool((input_data.get("document") or {}).get("fact_cache_hit")):
+        return
+    output_path = service.root / str(task["output_path"])
+    if not output_path.is_file():
+        return
+    output = read_json(output_path, {})
+    if output.get(TASK_BINDING_KEY) != prior_binding:
+        return
+    new_binding = input_data.get(TASK_BINDING_KEY)
+    if not isinstance(new_binding, dict) or int(new_binding.get("contract_version") or 0) < EXECUTION_CONTRACT_VERSION:
+        return
+    output[TASK_BINDING_KEY] = new_binding
+    write_json(output_path, output)
+
+
 def verify_bound_resources(service, task: dict[str, Any]) -> list[str]:
     """Reject outputs when prompt/schema/context changed after task binding."""
 
@@ -184,7 +211,10 @@ def install_execution_envelope_contract() -> None:
     def create(self, *args, **kwargs):
         row = original_create(self, *args, **kwargs)
         task = self.db.fetchone("SELECT * FROM tasks WHERE id=?", (row["id"],)) or dict(row)
+        before = read_json(self.root / str(task["input_path"]), {})
+        prior_binding = dict(before.get(TASK_BINDING_KEY) or {})
         ensure_execution_envelope(self, task)
+        _rebind_deterministic_fastpath_output(self, task, prior_binding)
         return self.db.fetchone("SELECT * FROM tasks WHERE id=?", (row["id"],)) or row
 
     TaskService.create = create
