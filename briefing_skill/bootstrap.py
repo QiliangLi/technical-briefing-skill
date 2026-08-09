@@ -21,6 +21,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .evidence_repair import install_evidence_repair
     from .execution_envelope import install_execution_envelope_contract
     from .executor_usage import install_executor_usage_telemetry
+    from .final_reader_contract import install_final_reader_contract
     from .historical_backfill import install_historical_backfill
     from .human_feedback import install_human_feedback_telemetry
     from .invalid_repair import install_invalid_targeted_repair
@@ -107,6 +108,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Reader-facing prose is a product contract, not a prompt preference: reject
     # title/conclusion repetition, generic filler, and verbose/numeric-heavy judgements.
     install_reader_writing_contract()
+    # Final rendering is independently checked: no internal scores, no duplicate
+    # Deep/appendix/Radar sources, no half-width orphan cards, and no invalid prose.
+    install_final_reader_contract()
     # Install after every task-shaping wrapper so the outermost Host sees only the
     # canonical bound envelope, including grouped Fact dispatch.
     install_execution_envelope_contract()
