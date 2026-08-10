@@ -60,8 +60,18 @@ def render_illustrated_html(root: Path, base_html: str, manifest: dict[str, Any]
     """Add only generated issue-level explanatory images to the final base email.
 
     The base publication remains untouched. Missing/failed assets are skipped, so the
-    illustrated artifact deterministically degrades to the same readable HTML.
+    illustrated artifact deterministically degrades to the exact baseline HTML.
     """
+
+    prepared: list[tuple[int, dict[str, Any], str]] = []
+    for index, item in enumerate(manifest.get("illustrations") or [], 1):
+        if str(item.get("status") or "") != "generated":
+            continue
+        src = _asset_src(root, item.get("generated_asset_path"))
+        if src:
+            prepared.append((index, item, src))
+    if not prepared:
+        return base_html
 
     from bs4 import BeautifulSoup
 
@@ -71,12 +81,7 @@ def render_illustrated_html(root: Path, base_html: str, manifest: dict[str, Any]
     if judgements:
         after_judgements_target = judgements[-1].find_parent("tr")
 
-    for index, item in enumerate(manifest.get("illustrations") or [], 1):
-        if str(item.get("status") or "") != "generated":
-            continue
-        src = _asset_src(root, item.get("generated_asset_path"))
-        if not src:
-            continue
+    for index, item, src in prepared:
         fragment = BeautifulSoup(_illustration_row(item, src, index), "html.parser").find("tr")
         if fragment is None:
             continue
