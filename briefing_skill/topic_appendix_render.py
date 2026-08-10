@@ -1,99 +1,10 @@
 from __future__ import annotations
 
-import html
-import re
 from typing import Any
 
 
-def _source_links(item: dict[str, Any], fallback_url: str, fallback_source: str) -> str:
-    links = item.get("links") or []
-    rendered = []
-    for index, link in enumerate(links, 1):
-        url = html.escape(str(link.get("url") or ""), quote=True)
-        if not url:
-            continue
-        label = html.escape(str(link.get("label") or f"更新{index}"))
-        rendered.append(f"<a href='{url}' style='color:#002fa7'>{label}</a>")
-    if rendered:
-        return " · ".join(rendered)
-    return f"<a href='{fallback_url}' style='color:#002fa7'>{fallback_source}</a>"
-
-
-def _appendix_row(topic_name: str, items: list[dict[str, Any]]) -> str:
-    entries = []
-    for item in items:
-        summary = str(item.get("summary") or "").strip()
-        url = html.escape(str(item.get("url") or "#"), quote=True)
-        title = html.escape(str(item.get("title") or ""))
-        source = html.escape(str(item.get("source_name") or "原始来源"))
-        published = html.escape(str(item.get("published_at") or ""))
-        score = float(item.get("score") or 0)
-        source_links = _source_links(item, url, source)
-        family_label = (
-            f" · {int(item.get('family_size') or 0)}项合并"
-            if int(item.get("family_size") or 0) > 1
-            else ""
-        )
-        entries.append(
-            "<div style='padding:7px 0;border-top:1px solid #deded8'>"
-            f"<a href='{url}' style='font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none'>{title}</a>"
-            + (f"<div style='font-size:11px;line-height:1.45;color:#666;margin-top:3px'>{html.escape(summary)}</div>" if summary else "")
-            + f"<div style='font-size:10px;color:#888;margin-top:3px'>{published} · {score:.0f}分{family_label} · 阅读原文：{source_links}</div>"
-            "</div>"
-        )
-    return (
-        "<tr data-topic-appendix='1'><td class='pad-x' style='padding:0 28px 12px'>"
-        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='background:#f3f4f1;border-left:3px solid #8a8a82'><tr><td style='padding:10px 12px'>"
-        f"<div style='font:700 11px Microsoft YaHei,Arial,sans-serif;color:#555;margin-bottom:2px'>{html.escape(topic_name)} · 更多相关进展</div>"
-        "<div style='font-size:10px;line-height:1.4;color:#888;margin-bottom:3px'>Top4之外已判定相关的A级原始内容，仅作速览，不参与本期综合判断；同一GitHub项目的多条低优先级更新会合并展示。</div>"
-        + "".join(entries)
-        + "</td></tr></table></td></tr>"
-    )
-
-
-def insert_inline_topic_appendices(
-    html_text: str,
-    topic_list: list[dict[str, Any]],
-    appendix: dict[str, list[dict[str, Any]]],
-) -> str:
-    """Insert each topic's short remainder before the next topic header or Radar."""
-
-    if not appendix:
-        return html_text
-    from bs4 import BeautifulSoup
-
-    soup = BeautifulSoup(html_text, "html.parser")
-    topics_by_id = {str(topic.get("id")): topic for topic in topic_list}
-    topic_anchor_re = re.compile(r"^topic-")
-
-    for topic_id, items in appendix.items():
-        if not items:
-            continue
-        anchor = soup.find("a", id=f"topic-{topic_id}")
-        if anchor is None:
-            continue
-        header_row = anchor.find_parent("tr")
-        if header_row is None:
-            continue
-        target = header_row.find_next_sibling("tr")
-        while target is not None:
-            if target.find("a", id=topic_anchor_re):
-                break
-            if "热点雷达" in target.get_text(" ", strip=True):
-                break
-            target = target.find_next_sibling("tr")
-        if target is None:
-            continue
-        topic_name = str((topics_by_id.get(topic_id) or {}).get("name") or topic_id)
-        fragment = BeautifulSoup(_appendix_row(topic_name, items), "html.parser")
-        row = fragment.find("tr")
-        if row is not None:
-            target.insert_before(row)
-    return str(soup)
-
-
 def install_topic_appendix_rendering() -> None:
-    """Attach Top4 remainder summaries to their owning topic section."""
+    """Attach Top4 remainder summaries to their owning topic before Jinja rendering."""
 
     from . import coverage_policy
     from .emailer import EmailService
@@ -102,7 +13,6 @@ def install_topic_appendix_rendering() -> None:
         return
 
     original_topic_groups = EmailService._topic_groups
-    original_build = EmailService.build
 
     def topic_groups(self, data: dict[str, Any]) -> list[dict[str, Any]]:
         groups = original_topic_groups(self, data)
@@ -138,21 +48,9 @@ def install_topic_appendix_rendering() -> None:
         groups.sort(key=lambda group: order.get(str(group.get("id")), len(order)))
         return groups
 
-    def build(self, run_id: str, *, status_after: str = "AWAITING_APPROVAL"):
-        path = original_build(self, run_id, status_after=status_after)
-        appendix = getattr(self, "_topic_appendix_cache", {}) or {}
-        if appendix:
-            rendered = insert_inline_topic_appendices(
-                path.read_text(encoding="utf-8"),
-                self.config.topic_list(),
-                appendix,
-            )
-            path.write_text(rendered, encoding="utf-8")
-        return path
+    def no_legacy_appendix_html(service, appendix):
+        return ""
 
-    # coverage_policy originally injected one combined appendix before the
-    # global Radar. Inline topic rendering supersedes that fallback.
-    coverage_policy._appendix_html = lambda service, appendix: ""
+    coverage_policy._appendix_html = no_legacy_appendix_html
     EmailService._topic_groups = topic_groups
-    EmailService.build = build
     EmailService._topic_appendix_rendering_installed = True

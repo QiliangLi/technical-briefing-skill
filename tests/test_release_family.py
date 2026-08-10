@@ -1,7 +1,37 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+
 from briefing_skill.release_family import collapse_release_families
-from briefing_skill.topic_appendix_render import _appendix_row
+
+
+def _render_appendix(items):
+    root = Path(__file__).resolve().parents[1]
+    env = Environment(
+        loader=FileSystemLoader(root / "templates"),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    return env.get_template("email.html").render(
+        issue={"synthesis": {"headline": "headline"}, "date_to": "2026-08-10"},
+        subject="briefing",
+        footer="footer",
+        topic_groups=[
+            {
+                "id": "tpn",
+                "name": "TPN",
+                "description": "",
+                "items": [],
+                "observations": [],
+                "appendix": items,
+                "total_count": len(items),
+            }
+        ],
+        judgement_refs=[],
+        aihot_groups=[],
+        aihot_count=0,
+    )
 
 
 def test_same_github_project_appendix_updates_collapse_but_other_sources_do_not():
@@ -70,7 +100,7 @@ def test_release_family_renderer_keeps_each_original_link():
             ]
         }
     )["tpn"]
-    rendered = _appendix_row("TPN", items)
+    rendered = _render_appendix(items)
     assert "2项合并" in rendered
     assert "releases/tag/a" in rendered
     assert "releases/tag/b" in rendered
