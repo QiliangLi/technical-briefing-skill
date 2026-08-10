@@ -23,6 +23,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .executor_usage import install_executor_usage_telemetry
     from .fact_cache_provenance import install_fact_cache_provenance
     from .fact_cache_text_normalization import install_fact_cache_source_normalization
+    from .fact_stage import install_fact_stage
     from .final_reader_contract import install_final_reader_contract
     from .historical_backfill import install_historical_backfill
     from .invalid_repair import install_invalid_targeted_repair
@@ -57,11 +58,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_topic_appendix_rendering()
     install_value_scoring()
     # This layer must precede deep-efficiency so its raw-fulltext cache becomes
-    # the underlying fetch path captured by the context-aware Evidence wrapper.
+    # the underlying fetch path captured by the bounded Evidence wrapper.
     install_safe_efficiency()
     # Extend the same raw-text reuse to discovery records that were deterministically
     # promoted to an explicit immutable primary version while retaining source_id.
     install_primary_fulltext_cache()
+    # Deep efficiency owns Evidence construction only. Fact-cache ownership is V2
+    # below, so the old V1 read/write wrappers are no longer in the runtime chain.
     install_deep_efficiency()
     install_task_telemetry()
     install_fact_cache_fastpath()
@@ -100,13 +103,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Rebalance the same 18k first-read budget across context/mechanism/results/bounds.
     # This must run after evidence-repair so cache versions include both policies.
     install_balanced_evidence()
-    # Legacy fact_cache rows are deliberately not migrated. Install after the final
-    # Evidence policy so v2 binds the exact runtime extractor version and Evidence Pack;
-    # it disables legacy reads/writes while preserving raw-fulltext reuse underneath.
+    # V2 is the only production Fact Cache. It binds exact source/evidence provenance
+    # and never falls back to the historical V1 table.
     install_fact_cache_provenance()
     # Raw-fulltext cache entries are beneath FulltextService sanitization; normalize
     # before reconstructing Evidence so V2 hashes the exact text Fact Extraction saw.
     install_fact_cache_source_normalization()
+    # Cache persistence belongs to Fact finalization: only FACTS_READY outputs without
+    # unresolved evidence gaps can be committed, including successful repair outputs.
+    install_fact_stage()
     # Reader-facing guards merge project impact into 本期判断 and remove internal metadata.
     install_reader_facing_quality()
     # Reuse the existing issue-synthesis Agent to turn broad Radar candidates into
