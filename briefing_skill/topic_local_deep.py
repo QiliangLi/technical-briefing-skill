@@ -13,22 +13,24 @@ def _number(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _rank_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Rank a topic-local pool consistently with the Technology Value guard.
-
-    New runs should have Technology Value on every deep-topic candidate. For legacy
-    mixed pools, assessed rows stay ahead of missing-value rows just like PR20's
-    deep-selection guard. If the whole pool predates Technology Value, relevance
-    remains the compatibility fallback.
-    """
+def _rank_rows(
+    rows: Iterable[dict[str, Any]],
+    *,
+    any_assessed: bool | None = None,
+) -> list[dict[str, Any]]:
+    """Rank candidates with the canonical assessed-before-legacy compatibility rule."""
 
     source = [dict(row) for row in rows]
-    any_assessed = any(row.get("technology_value_score") is not None for row in source)
+    assessed_exists = (
+        any(row.get("technology_value_score") is not None for row in source)
+        if any_assessed is None
+        else bool(any_assessed)
+    )
 
     def rank(row: dict[str, Any]) -> tuple[float, float, float, str]:
         if row.get("technology_value_score") is not None:
             primary = technology_selection_score(row)
-        elif any_assessed:
+        elif assessed_exists:
             primary = -1.0
         else:
             primary = _number(row.get("relevance_score"))
@@ -46,12 +48,13 @@ def select_topic_local_deep_budget(
     rows: Iterable[dict[str, Any]],
     settings: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Select the top N deep candidates independently inside every deep topic.
+    """Select the Technology-Value-ranked Top N independently inside each topic.
 
-    Topic ranking is the product contract: a hot topic may not consume another
-    topic's detailed-reading slots. The configured hard cap is only a safety fuse;
-    it must be large enough for all active topic-local quotas and never silently
-    reintroduces cross-topic competition.
+    This is the final Deep selector. It owns both ranking and budget semantics instead
+    of relying on a wrapper to temporarily overwrite relevance_score before calling a
+    separately monkey-patched coverage selector. Product behavior remains identical:
+    assessed candidates rank by 0.8*relevance + Technology Value, missing legacy rows
+    fall behind assessed rows in a mixed run, and every topic receives its own Top4.
     """
 
     policy = dict(settings.get("efficiency") or {})
@@ -61,22 +64,24 @@ def select_topic_local_deep_budget(
         int(policy.get("max_fact_candidates_hard_cap", policy.get("max_fact_candidates_total", 32))),
     )
 
+    source_rows = [dict(row) for row in rows]
+    any_assessed = any(row.get("technology_value_score") is not None for row in source_rows)
     by_topic: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in rows:
-        by_topic[str(row.get("topic_id") or "unknown")].append(dict(row))
+    for row in source_rows:
+        by_topic[str(row.get("topic_id") or "unknown")].append(row)
 
     selected: list[dict[str, Any]] = []
     deferred: list[dict[str, Any]] = []
     for topic_id in sorted(by_topic):
-        ordered = sorted(
-            by_topic[topic_id],
-            key=lambda row: (
-                -_number(row.get("relevance_score")),
-                -_number(row.get("rule_score")),
-                -_number(row.get("priority")),
-                str(row.get("id") or ""),
-            ),
-        )
+        ordered = _rank_rows(by_topic[topic_id], any_assessed=any_assessed)
+        for row in ordered:
+            if row.get("technology_value_score") is not None:
+                row["technology_selection_score"] = technology_selection_score(row)
+            elif any_assessed:
+                row["technology_selection_score"] = -1.0
+            else:
+                row["technology_selection_score"] = _number(row.get("relevance_score"))
+            row["technology_value_missing"] = row.get("technology_value_score") is None
         selected.extend(ordered[:per_topic_max])
         deferred.extend(ordered[per_topic_max:])
 
@@ -95,14 +100,7 @@ def pick_topic_local_refill_rows(
     existing_topic_counts: dict[str, int],
     settings: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Refill failed deep work from the same topic before any slot can disappear.
-
-    With topic-local Top4 selection, a topic has deferred rows only after its first
-    four ranked candidates were selected. Therefore a topic that now has fewer than
-    four occupied Fact slots and still has deferred candidates has lost executable
-    work and should refill locally. Topics that never had enough candidates have no
-    deferred tail and are not padded with weak material.
-    """
+    """Refill failed Deep work from the same topic before any slot can disappear."""
 
     policy = dict(settings.get("efficiency") or {})
     per_topic_max = max(1, int(policy.get("max_fact_candidates_per_topic", 4)))
@@ -133,22 +131,19 @@ def pick_topic_local_refill_rows(
 
 
 def install_topic_local_deep_policy() -> None:
-    """Replace global deep-slot competition with per-topic Top4 semantics."""
+    """Install one explicit final Deep selector plus topic-local refill semantics."""
 
-    from . import coverage_policy, safe_efficiency
+    from . import efficiency, safe_efficiency
     from .pipeline import Pipeline
 
     if getattr(Pipeline, "_topic_local_deep_policy_installed", False):
         return
 
-    # PR20's final selector calls coverage_policy.select_diverse_deep_budget at
-    # runtime after it has converted relevance_score to Technology Value ranking.
-    # Replacing this function therefore preserves PR20 ranking while changing only
-    # the budget semantics from global competition to topic-local Top4.
-    coverage_policy.select_diverse_deep_budget = select_topic_local_deep_budget
+    # Direct ownership removes the previous three-layer selector chain:
+    # Technology Value -> Deep Guard -> monkey-patched coverage selector.
+    efficiency.select_deep_budget = select_topic_local_deep_budget
 
-    # safe_efficiency's nested fetch-failure loop resolves this module global at
-    # runtime, so replacing it makes every vacated slot refill from its own topic.
+    # Fetch-failure refill remains topic-local and resolves this function at runtime.
     safe_efficiency.pick_deep_refill_rows = pick_topic_local_refill_rows
 
     Pipeline._topic_local_deep_policy_installed = True
