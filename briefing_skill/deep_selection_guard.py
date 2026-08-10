@@ -23,12 +23,7 @@ def require_technology_review_for_deep(
     plan: RelevancePlan,
     settings: dict[str, Any],
 ) -> RelevancePlan:
-    """Prevent deterministic rule-score acceptance from bypassing Technology Value.
-
-    Deep-topic A-level candidates may still be rejected deterministically at the low
-    rule-score floor, but candidates strong enough to compete for Deep analysis must
-    pass the relevance/Technology Value batch. Horizontal/Radar behavior is unchanged.
-    """
+    """Prevent deterministic rule-score acceptance from bypassing assessment."""
 
     deep_topics = _deep_topics(settings)
     moved = [row for row in plan.accepted if str(row.get("topic_id") or "") in deep_topics]
@@ -76,46 +71,19 @@ def select_deep_budget_with_complete_technology_value(
     rows: Iterable[dict[str, Any]],
     settings: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Rank assessed candidates ahead of legacy/missing Technology Value rows.
+    """Compatibility helper for callers/tests predating the explicit final selector.
 
-    A partially evaluated pool is the dangerous case: a legacy deterministic accept can
-    otherwise keep a very large rule/relevance score and outrank candidates that actually
-    received Technology Value assessment. Missing-value rows remain eligible only after
-    assessed rows, so unfinished legacy runs can still make progress without letting the
-    bypass dominate a mixed pool.
+    Runtime selection is now owned directly by topic_local_deep. This helper preserves
+    the old result semantics for external callers while avoiding another runtime patch.
     """
 
-    from . import coverage_policy
+    from .topic_local_deep import select_topic_local_deep_budget
 
-    source_rows = [dict(row) for row in rows]
-    if not source_rows:
-        return [], []
-    any_assessed = any(row.get("technology_value_score") is not None for row in source_rows)
-
-    originals: dict[str, float] = {}
-    prepared: list[dict[str, Any]] = []
-    for row in source_rows:
-        row_id = str(row.get("id") or "")
-        originals[row_id] = _number(row.get("relevance_score"))
-        if row.get("technology_value_score") is not None:
-            rank = technology_selection_score(row)
-        elif any_assessed:
-            rank = -1.0
-        else:
-            rank = originals[row_id]
-        row["relevance_score"] = rank
-        row["technology_selection_score"] = rank
-        row["technology_value_missing"] = row.get("technology_value_score") is None
-        prepared.append(row)
-
-    selected, deferred = coverage_policy.select_diverse_deep_budget(prepared, settings)
-    for row in [*selected, *deferred]:
-        row["relevance_score"] = originals.get(str(row.get("id") or ""), _number(row.get("relevance_score")))
-    return selected, deferred
+    return select_topic_local_deep_budget(rows, settings)
 
 
 def install_deep_selection_guard() -> None:
-    """Close the rule-score bypass after Technology Value has been installed."""
+    """Ensure Deep candidates are assessed; leave final ranking to SelectionStage."""
 
     from . import efficiency
     from .pipeline import Pipeline
@@ -129,5 +97,7 @@ def install_deep_selection_guard() -> None:
         return require_technology_review_for_deep(original_plan(rows, settings), settings)
 
     efficiency.plan_relevance_rows = plan_relevance_rows
-    efficiency.select_deep_budget = select_deep_budget_with_complete_technology_value
+    # Do not patch `select_deep_budget` here. Topic-local Deep policy installs the
+    # single final selector after this guard, so ranking no longer depends on nested
+    # monkey-patch order through coverage_policy.
     Pipeline._deep_selection_guard_installed = True
