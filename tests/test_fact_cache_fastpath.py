@@ -6,12 +6,10 @@ from briefing_skill import cli
 from briefing_skill.cache_fastpath import install_fact_cache_fastpath
 from briefing_skill.cost_schema import ensure_cost_schema
 from briefing_skill.db import Database
-from briefing_skill.deep_efficiency import _runtime_extractor_version, _source_fingerprint, install_deep_efficiency
-from briefing_skill.fulltext import FulltextService
 from briefing_skill.pipeline import Pipeline
-from briefing_skill.tasks import TaskService
+from briefing_skill.tasks import TASK_BINDING_KEY, TaskService
 from briefing_skill.telemetry import install_task_telemetry
-from briefing_skill.utils import now_iso, write_json
+from briefing_skill.utils import now_iso, read_json, write_json
 
 
 def _restore_attr(obj, name: str, value, existed: bool) -> None:
@@ -21,9 +19,11 @@ def _restore_attr(obj, name: str, value, existed: bool) -> None:
         delattr(obj, name)
 
 
-def test_fact_cache_fastpath_materializes_facts_without_pending_agent_task(tmp_path):
+def test_fact_cache_fastpath_materializes_prefilled_v2_output_without_agent_task(tmp_path):
     root = tmp_path
     run_id = "cached-run"
+    run_dir = root / "workspace" / "runs" / run_id
+    run_dir.mkdir(parents=True)
     db = Database(root / "workspace" / "briefing.sqlite")
     db.init()
     ensure_cost_schema(db)
@@ -56,79 +56,70 @@ def test_fact_cache_fastpath_materializes_facts_without_pending_agent_task(tmp_p
         """,
         (candidate_id, run_id, raw_id, "tpn", "kv_transfer", 90, 1, 90, "valuable", 1, "RELEVANT", created),
     )
-    (root / "context.md").write_text("topic context", encoding="utf-8")
     config = SimpleNamespace(
-        settings={
-            "efficiency": {
-                "fact_cache_enabled": True,
-                "fact_extractor_version": "front-evidence-v2",
-                "evidence_pack_max_chars": 18000,
-                "evidence_repair_enabled": True,
-                "evidence_repair_max_chars": 9000,
-                "max_fact_candidates_total": 4,
-                "max_fact_candidates_per_topic": 4,
-            }
-        },
+        settings={"efficiency": {"max_fact_candidates_total": 4, "max_fact_candidates_per_topic": 4}},
         scoring={"weights": {}},
-        topic=lambda topic_id: {"id": topic_id, "name": "TPN", "current_questions": [], "valuable_evidence": []},
+        topic=lambda topic_id: {"id": topic_id, "name": "TPN"},
         direction=lambda topic_id, direction_id: {"id": direction_id, "name": "KV transfer"},
-        context_path=lambda paths, topic_id: root / "context.md",
-    )
-
-    raw = db.fetchone("SELECT * FROM raw_items WHERE id=?", (raw_id,))
-    fingerprint = _source_fingerprint(raw)
-    version = _runtime_extractor_version(config, root, "tpn", "kv_transfer")
-    cache_key = "fast-cache-key"
-    cached = {
-        "title": "Cached fastpath paper",
-        "event_hint": "fastpath-event",
-        "problem": "problem",
-        "mechanism": "mechanism",
-        "evidence": [],
-        "evaluation_context": "context",
-        "limitations": "limits",
-        "project_relevance": "relevance",
-        "primary_source_resolved": True,
-        "quality_score": 91,
-        "evidence_gaps": [],
-    }
-    cache_path = root / "workspace" / "cache" / "facts" / f"{cache_key}.json"
-    write_json(cache_path, cached)
-    db.execute(
-        """
-        INSERT INTO fact_cache(
-            cache_key,source_fingerprint,extractor_version,source_url,source_identity,external_id,
-            source_content_hash,json_path,quality_score,event_hint,raw_char_count,evidence_char_count,
-            created_at,last_used_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """,
-        (
-            cache_key, fingerprint, version, url, raw["identity_key"], raw["external_id"],
-            raw["content_hash"], str(cache_path.relative_to(root)), 91, "fastpath-event",
-            120000, 18000, created, created,
-        ),
     )
 
     snapshots = {
-        "fetch": (FulltextService.fetch_candidate, hasattr(FulltextService, "fetch_candidate")),
-        "task_create": (TaskService.create, hasattr(TaskService, "create")),
         "task_next": (TaskService.next, hasattr(TaskService, "next")),
         "task_sync": (TaskService.sync, hasattr(TaskService, "sync")),
         "task_reopen": (TaskService.reopen_invalid, hasattr(TaskService, "reopen_invalid")),
         "pipeline_apply": (Pipeline._apply_task, hasattr(Pipeline, "_apply_task")),
         "pipeline_facts": (Pipeline._maybe_prepare_facts, hasattr(Pipeline, "_maybe_prepare_facts")),
         "cli_parser": (cli.build_parser, hasattr(cli, "build_parser")),
-        "fetch_flag": (getattr(FulltextService, "_evidence_pack_installed", None), hasattr(FulltextService, "_evidence_pack_installed")),
-        "task_cache_flag": (getattr(TaskService, "_fact_cache_installed", None), hasattr(TaskService, "_fact_cache_installed")),
         "task_telemetry_flag": (getattr(TaskService, "_telemetry_installed", None), hasattr(TaskService, "_telemetry_installed")),
-        "pipeline_cache_flag": (getattr(Pipeline, "_fact_cache_installed", None), hasattr(Pipeline, "_fact_cache_installed")),
         "pipeline_fast_flag": (getattr(Pipeline, "_fact_cache_fastpath_installed", None), hasattr(Pipeline, "_fact_cache_fastpath_installed")),
         "cli_stats_flag": (getattr(cli, "_stats_command_installed", None), hasattr(cli, "_stats_command_installed")),
     }
     try:
-        install_deep_efficiency()
         install_task_telemetry()
         install_fact_cache_fastpath()
+
+        tasks = TaskService(db, root, run_dir)
+        task = tasks.create(
+            run_id,
+            "fact_extraction",
+            candidate_id,
+            {
+                "candidate_id": candidate_id,
+                "source": {"title": "Cached fastpath paper", "url": url},
+                "topic": {"id": "tpn", "name": "TPN"},
+                "direction": {"id": "kv_transfer", "name": "KV transfer"},
+                "document": {
+                    "document_id": "cached-document",
+                    "fetch_status": "FETCHED",
+                    "fact_cache_hit": True,
+                    "fact_cache_v2_hit": True,
+                    "fact_cache_v2_key": "v2-cache-key",
+                    "text_path": "workspace/cache/facts-v2/production/v2-cache-key.json",
+                    "chunks": [],
+                },
+            },
+            prompt="fact-extraction.md",
+            schema="facts.schema.json",
+        )
+        task_input = read_json(root / task["input_path"], {})
+        cached = {
+            "title": "Cached fastpath paper",
+            "event_hint": "fastpath-event",
+            "problem": "problem",
+            "mechanism": "mechanism",
+            "evidence": [],
+            "evaluation_context": "context",
+            "limitations": "limits",
+            "project_relevance": "relevance",
+            "primary_source_resolved": True,
+            "quality_score": 91,
+            "evidence_gaps": [],
+        }
+        write_json(
+            root / task["output_path"],
+            {TASK_BINDING_KEY: task_input[TASK_BINDING_KEY], **cached},
+        )
+
         pipeline = Pipeline(root, config, db, run_id)
         pipeline._maybe_prepare_facts()
 
@@ -137,26 +128,21 @@ def test_fact_cache_fastpath_materializes_facts_without_pending_agent_task(tmp_p
         assert fact["quality_score"] == 91
         candidate = db.fetchone("SELECT status FROM candidates WHERE id=?", (candidate_id,))
         assert candidate["status"] == "FACTS_READY"
-        task = db.fetchone("SELECT status FROM tasks WHERE run_id=? AND task_type='fact_extraction'", (run_id,))
-        assert task["status"] == "APPLIED"
+        applied = db.fetchone("SELECT status FROM tasks WHERE id=?", (task["id"],))
+        assert applied["status"] == "APPLIED"
         pending = db.fetchone("SELECT COUNT(*) AS n FROM tasks WHERE run_id=? AND status='PENDING'", (run_id,))
         assert pending["n"] == 0
-        metric = db.fetchone("SELECT cache_hit,attempts,completed_at FROM task_metrics WHERE run_id=?", (run_id,))
+        metric = db.fetchone("SELECT cache_hit,attempts,completed_at FROM task_metrics WHERE task_id=?", (task["id"],))
         assert metric["cache_hit"] == 1
         assert metric["attempts"] == 0
         assert metric["completed_at"] is not None
     finally:
-        _restore_attr(FulltextService, "fetch_candidate", *snapshots["fetch"])
-        _restore_attr(TaskService, "create", *snapshots["task_create"])
         _restore_attr(TaskService, "next", *snapshots["task_next"])
         _restore_attr(TaskService, "sync", *snapshots["task_sync"])
         _restore_attr(TaskService, "reopen_invalid", *snapshots["task_reopen"])
         _restore_attr(Pipeline, "_apply_task", *snapshots["pipeline_apply"])
         _restore_attr(Pipeline, "_maybe_prepare_facts", *snapshots["pipeline_facts"])
         _restore_attr(cli, "build_parser", *snapshots["cli_parser"])
-        _restore_attr(FulltextService, "_evidence_pack_installed", *snapshots["fetch_flag"])
-        _restore_attr(TaskService, "_fact_cache_installed", *snapshots["task_cache_flag"])
         _restore_attr(TaskService, "_telemetry_installed", *snapshots["task_telemetry_flag"])
-        _restore_attr(Pipeline, "_fact_cache_installed", *snapshots["pipeline_cache_flag"])
         _restore_attr(Pipeline, "_fact_cache_fastpath_installed", *snapshots["pipeline_fast_flag"])
         _restore_attr(cli, "_stats_command_installed", *snapshots["cli_stats_flag"])
