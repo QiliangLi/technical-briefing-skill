@@ -5,9 +5,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .cost_schema import ensure_cost_schema
 from .paths import Paths
-from .utils import now_iso, read_json, stable_hash, write_json
+from .utils import stable_hash, write_json
 
 
 EVIDENCE_SIGNALS = (
@@ -70,7 +69,7 @@ def _source_fingerprint(raw: dict[str, Any]) -> str:
 
 
 def _cache_eligible(raw: dict[str, Any]) -> bool:
-    """Allow zero-fetch reuse only for sources with a strong immutable version identity."""
+    """Allow cross-run reuse only for sources with a strong immutable version identity."""
 
     payload = _payload(raw)
     external_id = str(raw.get("external_id") or "")
@@ -112,12 +111,7 @@ def _runtime_extractor_version(
     topic_id: str | None = None,
     direction_id: str | None = None,
 ) -> str:
-    """Invalidate facts when source interpretation context or extraction policy changes.
-
-    Facts include project-specific interpretation, so a cache produced for one topic or
-    direction must never be reused under another. The version also captures the exact
-    project context card and front-evidence policy in addition to prompt/schema changes.
-    """
+    """Invalidate facts when source interpretation context or extraction policy changes."""
 
     policy = dict(config.settings.get("efficiency") or {})
     parts = [
@@ -142,8 +136,6 @@ def _runtime_extractor_version(
             if context.is_file():
                 parts.append(context.read_text(encoding="utf-8"))
         except Exception:
-            # Fail closed for cache reuse: even a minimal/diagnostic config gets a
-            # context-specific version instead of accidentally sharing generic facts.
             parts.extend([str(topic_id), str(direction_id)])
 
     return f"{parts[0]}:{stable_hash(*parts, length=16)}"
@@ -228,35 +220,28 @@ def build_evidence_pack(
     *,
     max_chars: int = 18000,
 ) -> str:
-    """Return the beginning of the primary source, bounded at a clean sentence/paragraph.
-
-    Abstract + introduction normally establish problem, mechanism and claimed
-    contribution. Evaluation details that are material to the final briefing are
-    retrieved later through the existing one-shot targeted Evidence Repair path.
-    Topic/direction arguments remain in the signature for compatibility and for the
-    context-aware cache version, but they no longer reorder source text.
-    """
+    """Return the beginning of the primary source, bounded at a clean sentence/paragraph."""
 
     del topic, direction
     return _safe_excerpt(text, max_chars)
 
 
 def install_deep_efficiency() -> None:
-    """Install front evidence and conservative, context-aware cross-run fact reuse."""
+    """Install bounded evidence construction only.
+
+    Fact-cache ownership intentionally lives in fact_cache_provenance (V2).  Keeping
+    cache reads/writes out of this lower layer removes the legacy V1 side effects and
+    makes Evidence building independent from cross-run Fact reuse.
+    """
 
     from .fulltext import FulltextService
-    from .pipeline import Pipeline
-    from .tasks import TASK_BINDING_KEY, TaskService
 
     if getattr(FulltextService, "_evidence_pack_installed", False):
         return
 
     original_fetch = FulltextService.fetch_candidate
-    original_create = TaskService.create
-    original_apply = Pipeline._apply_task
 
     def fetch_candidate(self, run_id: str, candidate: dict) -> dict:
-        ensure_cost_schema(self.db)
         effective_candidate = dict(candidate)
         if not effective_candidate.get("topic_id") or not effective_candidate.get("direction_id"):
             candidate_row = self.db.fetchone(
@@ -266,57 +251,16 @@ def install_deep_efficiency() -> None:
             if candidate_row:
                 effective_candidate.setdefault("topic_id", candidate_row.get("topic_id"))
                 effective_candidate.setdefault("direction_id", candidate_row.get("direction_id"))
+
         raw = self.db.fetchone("SELECT * FROM raw_items WHERE id=?", (effective_candidate["raw_item_id"],))
         if not raw:
             raise KeyError(effective_candidate["raw_item_id"])
-        root = self.run_dir.parents[2]
-        topic_id = effective_candidate.get("topic_id")
-        direction_id = effective_candidate.get("direction_id")
-        fingerprint = _source_fingerprint(raw)
-        version = _runtime_extractor_version(self.config, root, topic_id, direction_id)
-        cache_enabled = bool((self.config.settings.get("efficiency") or {}).get("fact_cache_enabled", True)) and _cache_eligible(raw)
-        if cache_enabled:
-            cached = self.db.fetchone(
-                "SELECT * FROM fact_cache WHERE source_fingerprint=? AND extractor_version=?",
-                (fingerprint, version),
-            )
-            if cached:
-                cache_path = root / cached["json_path"]
-                if cache_path.is_file():
-                    url = raw.get("original_url") or raw.get("canonical_url") or raw.get("aihot_url")
-                    document_id = stable_hash(run_id, effective_candidate["id"], url)
-                    stub = self.run_dir / "documents" / f"{document_id}.evidence.md"
-                    stub.parent.mkdir(parents=True, exist_ok=True)
-                    stub.write_text(
-                        "# Fact cache hit\n\nThe fact extraction result for this exact source and judging context is reused.\n",
-                        encoding="utf-8",
-                    )
-                    self.db.execute(
-                        "UPDATE fact_cache SET last_used_at=? WHERE cache_key=?",
-                        (now_iso(), cached["cache_key"]),
-                    )
-                    return {
-                        "document_id": document_id,
-                        "candidate_id": effective_candidate["id"],
-                        "url": url,
-                        "media_type": "application/x-fact-cache",
-                        "fetch_status": "FETCHED",
-                        "text_path": str(stub),
-                        "chunks": [str(stub)],
-                        "char_count": int(cached.get("evidence_char_count") or 0),
-                        "raw_char_count": int(cached.get("raw_char_count") or 0),
-                        "evidence_char_count": int(cached.get("evidence_char_count") or 0),
-                        "fact_cache_hit": True,
-                        "fact_cache_key": cached["cache_key"],
-                        "source_fingerprint": fingerprint,
-                        "extractor_version": version,
-                        "evidence_strategy": "front-evidence-v2",
-                        "error": None,
-                    }
 
         manifest = original_fetch(self, run_id, effective_candidate)
         raw_text_path = Path(manifest["text_path"])
         text = raw_text_path.read_text(encoding="utf-8")
+        topic_id = effective_candidate.get("topic_id")
+        direction_id = effective_candidate.get("direction_id")
         if not topic_id or not direction_id:
             return manifest
         try:
@@ -324,6 +268,7 @@ def install_deep_efficiency() -> None:
             direction = self.config.direction(topic_id, direction_id)
         except Exception:
             return manifest
+
         policy = dict(self.config.settings.get("efficiency") or {})
         max_chars = max(4000, int(policy.get("evidence_pack_max_chars", 18000)))
         pack = build_evidence_pack(text, topic, direction, max_chars=max_chars)
@@ -339,106 +284,14 @@ def install_deep_efficiency() -> None:
             "evidence_reduction_ratio": round(max(0.0, 1.0 - len(pack) / max(1, len(text))), 4),
             "evidence_strategy": "front-evidence-v2",
             "fact_cache_hit": False,
-            "source_fingerprint": fingerprint,
-            "extractor_version": version,
-            "fact_cache_eligible": cache_enabled,
+            "source_fingerprint": _source_fingerprint(raw),
+            "extractor_version": _runtime_extractor_version(self.config, self.run_dir.parents[2], topic_id, direction_id),
+            # Kept false as a compatibility field for historical consumers. V2 owns
+            # the real eligibility decision and writes fact_cache_v2_eligible later.
+            "fact_cache_eligible": False,
         }
         write_json(self.run_dir / "documents" / f"{manifest['document_id']}.json", enriched)
         return enriched
 
-    def create(self, run_id: str, task_type: str, entity_id: str, input_data: dict[str, Any], **kwargs):
-        row = original_create(self, run_id, task_type, entity_id, input_data, **kwargs)
-        if task_type != "fact_extraction":
-            return row
-        document = input_data.get("document") or {}
-        cache_key = document.get("fact_cache_key") if document.get("fact_cache_hit") else None
-        if not cache_key:
-            return row
-        ensure_cost_schema(self.db)
-        cache = self.db.fetchone("SELECT * FROM fact_cache WHERE cache_key=?", (cache_key,))
-        if not cache:
-            return row
-        cache_path = self.root / cache["json_path"]
-        if not cache_path.is_file():
-            return row
-        task_input = read_json(self.root / row["input_path"], {})
-        binding = task_input.get(TASK_BINDING_KEY)
-        cached_output = read_json(cache_path, {})
-        if not binding or not cached_output:
-            return row
-        write_json(self.root / row["output_path"], {TASK_BINDING_KEY: binding, **cached_output})
-        return row
-
-    def apply_task(self, task: dict[str, Any]) -> None:
-        original_apply(self, task)
-        if task["task_type"] != "fact_extraction":
-            return
-        ensure_cost_schema(self.db)
-        task_input = read_json(self.root / task["input_path"], {})
-        document = task_input.get("document") or {}
-        if document.get("fact_cache_hit") or not document.get("fact_cache_eligible"):
-            return
-        fingerprint = str(document.get("source_fingerprint") or "")
-        version = str(document.get("extractor_version") or "")
-        if not fingerprint or not version or document.get("fetch_status") != "FETCHED":
-            return
-        facts_row = self.db.fetchone("SELECT * FROM facts WHERE run_id=? AND candidate_id=?", (self.run_id, task["entity_id"]))
-        if not facts_row:
-            return
-        facts = read_json(self.root / facts_row["json_path"], {})
-        if not facts.get("primary_source_resolved"):
-            return
-        facts.pop("_provenance", None)
-        source = task_input.get("source") or {}
-        candidate = self.db.fetchone("SELECT raw_item_id FROM candidates WHERE id=?", (task["entity_id"],))
-        raw = self.db.fetchone("SELECT * FROM raw_items WHERE id=?", (candidate["raw_item_id"],)) if candidate else None
-        if not raw or not _cache_eligible(raw):
-            return
-        cache_key = stable_hash("fact-cache", fingerprint, version, length=32)
-        cache_path = self.root / "workspace" / "cache" / "facts" / f"{cache_key}.json"
-        write_json(cache_path, facts)
-        now = now_iso()
-        self.db.execute(
-            """
-            INSERT INTO fact_cache(
-                cache_key,source_fingerprint,extractor_version,source_url,source_identity,
-                external_id,source_content_hash,json_path,quality_score,event_hint,
-                raw_char_count,evidence_char_count,created_at,last_used_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(source_fingerprint,extractor_version) DO UPDATE SET
-                cache_key=excluded.cache_key,
-                source_url=excluded.source_url,
-                source_identity=excluded.source_identity,
-                external_id=excluded.external_id,
-                source_content_hash=excluded.source_content_hash,
-                json_path=excluded.json_path,
-                quality_score=excluded.quality_score,
-                event_hint=excluded.event_hint,
-                raw_char_count=excluded.raw_char_count,
-                evidence_char_count=excluded.evidence_char_count,
-                last_used_at=excluded.last_used_at
-            """,
-            (
-                cache_key,
-                fingerprint,
-                version,
-                source.get("url"),
-                raw.get("identity_key"),
-                raw.get("external_id"),
-                raw.get("content_hash"),
-                str(cache_path.relative_to(self.root)),
-                facts.get("quality_score"),
-                facts.get("event_hint"),
-                int(document.get("raw_char_count") or 0),
-                int(document.get("evidence_char_count") or 0),
-                now,
-                now,
-            ),
-        )
-
     FulltextService.fetch_candidate = fetch_candidate
     FulltextService._evidence_pack_installed = True
-    TaskService.create = create
-    TaskService._fact_cache_installed = True
-    Pipeline._apply_task = apply_task
-    Pipeline._fact_cache_installed = True
