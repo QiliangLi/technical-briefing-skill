@@ -8,8 +8,8 @@ from .cost_schema import ensure_cost_schema
 from .utils import now_iso, read_json, stable_hash
 
 
-DEFAULT_FACT_SESSION_GROUP_SIZE = 2
-DEFAULT_FACT_SESSION_MAX_EVIDENCE_CHARS = 40000
+DEFAULT_FACT_SESSION_GROUP_SIZE = 4
+DEFAULT_FACT_SESSION_MAX_EVIDENCE_CHARS = 72000
 
 
 def _number(value: Any, default: int = 0) -> int:
@@ -34,10 +34,11 @@ def _embedded_context_fingerprint(value: Any) -> str:
 def _fact_group_key(task: dict[str, Any], data: dict[str, Any]) -> tuple[str, ...] | None:
     """Return a conservative execution-session key without changing task semantics.
 
-    Only fact-extraction tasks with the same embedded topic/direction context,
-    project-context card, prompt, and schema may share one Agent session. The tasks
-    themselves remain separate files with separate bindings, validation, cache, and
-    repair paths.
+    Fact extraction is independent per candidate. Compatible tasks may share one
+    Agent invocation only when they use the same prompt/schema, the exact same topic
+    context and project-context card. Direction remains task-local and is read from
+    each input, so different directions inside one topic may share the invocation
+    without sharing evidence, facts, outputs, cache state, or repair state.
     """
 
     if task.get("task_type") != "fact_extraction":
@@ -64,9 +65,7 @@ def _fact_group_key(task: dict[str, Any], data: dict[str, Any]) -> tuple[str, ..
         str(task.get("prompt_path") or ""),
         str(task.get("schema_path") or ""),
         topic_id,
-        direction_id,
         topic_fingerprint,
-        direction_fingerprint,
         context_path,
     )
 
@@ -86,11 +85,12 @@ def plan_fact_session_groups(
     max_size: int = DEFAULT_FACT_SESSION_GROUP_SIZE,
     max_evidence_chars: int = DEFAULT_FACT_SESSION_MAX_EVIDENCE_CHARS,
 ) -> list[list[dict[str, Any]]]:
-    """Plan quality-neutral Agent sessions for already-independent fact tasks.
+    """Plan quality-neutral Agent invocations for independent fact tasks.
 
-    No task, Evidence Pack, prompt result, schema, or downstream gate is merged.
-    This planner only decides which compatible standalone tasks may be processed
-    sequentially by one Agent session so shared prompt/context startup is amortised.
+    No task, Evidence Pack, prompt result, schema, cache entry, repair path, or
+    downstream gate is merged. This planner only decides which compatible standalone
+    tasks may be processed during one Agent invocation so startup/prompt/context cost
+    is amortised. Each task still produces its own schema-bound output file.
     """
 
     size_limit = max(1, int(max_size))
@@ -190,12 +190,11 @@ def fact_session_instructions(service, tasks: list[dict[str, Any]]) -> str:
     schema_path = str(tasks[0]["schema_path"])
     context_path = str(first_input.get("project_context_path") or "")
     topic = first_input.get("topic") or {}
-    direction = first_input.get("direction") or {}
 
     lines = [
-        f"Fact-extraction session group: {len(tasks)} independent tasks",
-        "This is an execution-session optimization only. Do NOT merge tasks, outputs, facts, or evidence.",
-        f"Shared topic/direction: {topic.get('id', '')}/{direction.get('id', '')}",
+        f"Fact-extraction execution batch: {len(tasks)} independent tasks in one Agent invocation",
+        "This is an execution optimization only. Do NOT merge tasks, outputs, facts, directions, or evidence.",
+        f"Shared topic: {topic.get('id', '')}",
         f"1. Read the shared prompt once: {prompt_path}",
         f"2. Read the shared result schema once: {schema_path}",
     ]
@@ -205,22 +204,24 @@ def fact_session_instructions(service, tasks: list[dict[str, Any]]) -> str:
         step += 1
     lines.extend(
         [
-            f"{step}. Process the following tasks strictly one at a time, in order.",
-            "   - For each task, read its own input JSON and only the Evidence Pack/chunks referenced by that input.",
-            "   - Evidence from an earlier task is inadmissible for every later task, even though the Agent session is shared.",
+            f"{step}. Process the following tasks strictly one at a time, in order, within this same Agent invocation.",
+            "   - For each task, read its own input JSON, including its own direction, and only the Evidence Pack/chunks referenced by that input.",
+            "   - Evidence from an earlier task is inadmissible for every later task, even though the Agent invocation is shared.",
             "   - Apply the shared fact-extraction prompt independently to each source; never compare or synthesize the sources.",
             "   - Copy that task input's exact `_task` object into that task's output.",
-            "   - Write a separate JSON output for every task; never return a combined array or batch file.",
+            "   - Write a separate JSON output for every task; never return a combined array or batch file, and never reuse another task's facts.",
         ]
     )
     for index, task in enumerate(tasks, 1):
         data = _task_input(service.root, task)
         document = data.get("document") or {}
+        direction = data.get("direction") or {}
         evidence_paths = document.get("chunks") or [document.get("text_path")]
         evidence_paths = [str(path) for path in evidence_paths if path]
         lines.extend(
             [
                 f"   Task {index}: {task['id']} ({task['entity_id']})",
+                f"     direction: {direction.get('id', '')}",
                 f"     input:  {task['input_path']}",
                 f"     evidence: {', '.join(evidence_paths)}",
                 f"     output: {task['output_path']}",
@@ -257,10 +258,10 @@ def _mark_group_started(service, tasks: list[dict[str, Any]]) -> None:
 
 
 def install_session_grouping() -> None:
-    """Reuse one Agent session across compatible standalone fact tasks.
+    """Reuse one Agent invocation across compatible standalone fact tasks.
 
     The task graph and quality gates remain unchanged. Existing `tasks next` becomes
-    group-aware only at the CLI/instruction layer; `tasks next-single` is retained as
+    batch-aware only at the CLI/instruction layer; `tasks next-single` is retained as
     an explicit compatibility/debug escape hatch.
     """
 
@@ -376,10 +377,10 @@ def install_session_grouping() -> None:
             "saved_agent_starts": max(0, requiring_agent - len(groups)),
             "group_size_limit": max_size,
             "group_evidence_char_limit": max_chars,
-            "quality_guard": "same exact topic/direction context; task/input/output/schema/evidence/cache/repair remain independent",
+            "quality_guard": "same exact topic/project context; each task keeps its own direction/input/output/schema/evidence/cache/repair",
         }
         result.setdefault("notes", []).append(
-            "fact_session_plan estimates host Agent-session starts when `tasks next` grouping is followed; it does not change the task count or evidence volume."
+            "fact_session_plan estimates host Agent invocations when `tasks next` batching is followed; it does not change the task count or evidence volume."
         )
         return result
 
