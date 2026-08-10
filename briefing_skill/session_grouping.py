@@ -209,7 +209,7 @@ def fact_session_instructions(service, tasks: list[dict[str, Any]]) -> str:
             "   - Evidence from an earlier task is inadmissible for every later task, even though the Agent invocation is shared.",
             "   - Apply the shared fact-extraction prompt independently to each source; never compare or synthesize the sources.",
             "   - Copy that task input's exact `_task` object into that task's output.",
-            "   - Write a separate JSON output for every task; never return a combined facts object or reuse another task's facts.",
+            "   - Write a separate JSON output for every task; never return a combined array or batch file, and never reuse another task's facts.",
         ]
     )
     for index, task in enumerate(tasks, 1):
