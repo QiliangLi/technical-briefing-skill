@@ -14,7 +14,7 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 ## 核心架构
 
 - Python负责确定性工作：当前采集、可恢复外部历史回填、过滤、去重、状态、预算、滚动专题池、保守的跨期relevance cache、多样性选择、Evidence Pack、定向Evidence Repair、跨期facts cache、事实任务会话分组、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
-- 当前Agent负责智能工作：未命中relevance cache时的批量相关性与价值判断、未命中facts cache时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和视觉路由。兼容的事实抽取可以复用同一Agent会话，但每篇来源的任务、Evidence Pack、输出、Schema、cache和repair始终独立。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
+- 当前Agent负责智能工作：未命中relevance cache时的批量相关性与价值判断、未命中facts cache时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和一期一次的`illustrated_publication`。兼容的事实抽取可以复用同一Agent会话，但每篇来源的任务、Evidence Pack、输出、Schema、cache和repair始终独立。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
 - 重点专题走深度通道；Top4之外的相关A级内容走专题补充；AI Infra、Agent生态、KVCache生态、存储与介质等广度信息走Radar通道。
 - 同一GitHub项目在专题补充中的多条低价值release可以聚合显示，但不得把不同论文或Top4深度条目强行合并。
 - 不得在Python中绑定某家模型API。
@@ -300,40 +300,42 @@ relevance复用的目标是避免60天滚动池中同一个不可变版本反复
 
 ## 视觉规则
 
-先运行视觉路由，不要直接生图。
-
-优先级：原始图 > 官方图 > 真实截图 > 精确程序化图表 > 材质机制图 > 个人IP判断图 > 纯文字卡。
-
-### Guizang Material Illustration
-
-只负责卡片中的中心解释图。适合流程、机制、层级、对比和系统关系。图内只放3～5个短标签。需要时读取：
+生产流程不再运行逐条`visual_routing`。每一期只创建一个`illustrated_publication`任务，在已经事实检查并完成综合判断的最终简报上做整期视觉策划，然后固定生成两份邮件：
 
 ```text
-vendor/guizang-material-illustration/SKILL.md
+email.html
+email-illustrated.html
 ```
 
-### Guizang Social Card
+`email.html`始终保持纯正文基线；`email-illustrated.html`使用完全相同的正文，只增加解释图。生图任务不得改写、缩写、重排或补充事实。
 
-负责整张卡片和21:9头图。默认Swiss International + IKB Blue。使用上游种子模板，失败时使用本Skill内置fallback模板。发送前强制运行validator。
-
-### 精确图表
-
-任何百分比、时延、吞吐、P95、误差线和坐标必须由程序化图表生成。图像模型不得负责数值准确性。
+解释图数量**不设固定上限**。由整期内容决定需要多少张：只要是彼此独立、能实质帮助理解的机制、架构关系、系统路径、取舍或项目判断，都可以生成；不得为了“多图”填充装饰图、重复图或近重复图。信息密集的一期超过3张完全正常，信息较少时也可以少于3张甚至0张。
 
 ### 个人视觉IP
 
-个人角色为“技术侦察员”：黑色短发、细框眼镜、白色衬衫、略松的深蓝色条纹领带，平静认真。角色只承担筛选、检查、追踪和连接动作。
+个人角色为“技术侦察员”：黑色短发、细框眼镜、白色衬衫、略松的深蓝色条纹领带，平静认真。批准参考来自`assets/persona/reference.jpg`以及`pics/圆框形象/`、`pics/方框形象/`。
 
-- 每期最多出现2次；
-- 默认占画面15%，上限25%；
-- 不得卖萌、抢镜或遮挡证据；
-- 主要用于“本期判断”和最重要条目的项目启发；
+- **每一张AI生成的解释图都必须包含个人IP**，不设每期出现次数上限；
+- 人物通常占画面10%～25%，必须是技术机制的参与者而不是视觉主体；
+- 角色承担筛选、检查证据、追踪工具/数据路径、检查DPU/KVCache搬移、比较方案或标记边界等真实技术动作；
+- 不得卖萌、抢镜、摆主持人姿势、遮挡证据或使用未经批准的通用替代角色；
+- 每张图可以变化人物位置和动作，但人物身份和核心视觉特征必须稳定；
 - 不直接使用Ian Xiaohei的“小黑”角色。
+
+### 生图约束
+
+- 默认横图比例`1.9:1`；
+- 每张图只放少量必要的中文短标签，通常3～5个；
+- 图像模型不得虚构百分比、时延、吞吐、P95、坐标或实验柱状图；需要精确数字时应依赖正文和原始证据，而不是让生图模型制造数值图表；
+- 每张图生成后检查个人IP一致性、中文文字、箭头/节点关系、裁切、安全边距和事实结构；
+- 只有`status=generated`且`persona_used=true`的图片才允许进入`email-illustrated.html`。
+
+详细执行契约见`docs/illustrated-publication.md`、`prompts/illustrated-publication.md`和`schemas/illustrated-publication.schema.json`。
 
 ## 失败降级
 
-- 当前Agent不能生图：输出完整prompt并标记`waiting_for_image_generation`。
-- 生图失败：原始图/截图 → 程序化图表 → 纯文字卡。
+- 当前Agent不能生图或某张图无法可靠生成：该图标记`fallback_to_text`/`failed`或直接省略，不得阻塞简报；
+- 即使所有图片失败，也必须同时生成`email.html`和`email-illustrated.html`，后者退化为完整正文基线；
 - 全文抓取失败：使用摘要做低置信Radar候选，但不得成为无A级来源的重点信息。
 - relevance cache来源指纹、版本、评分上下文或新鲜度桶不匹配：按cache miss重新进入批量价值判断，不得为了省Token强行复用；普通可变网页始终按miss处理。
 - Evidence Pack缺少材料性条件且明确gap terms在未曝光章节中有命中：最多生成一次targeted supplement；没有命中或repair后仍不足时降低结论强度并写入`limitations`，不得偷偷扩大到未引用全文。
@@ -355,7 +357,8 @@ vendor/guizang-material-illustration/SKILL.md
 - 无重复事件或重复推送的专题补充；
 - 旧事件写明增量；
 - 项目判断与来源事实分开；
-- Guizang validator无FAIL；
+- `email.html`和`email-illustrated.html`都已生成；
+- 所有成功生成并进入增强版邮件的解释图都包含批准的个人IP；
 - HTML正文可复制、链接可点击；
 - 图片无法加载时正文仍完整；
 - 已经经过人工审核。
