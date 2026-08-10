@@ -12,8 +12,8 @@ from briefing_skill.deep_efficiency import (
 )
 from briefing_skill.fulltext import FulltextService
 from briefing_skill.pipeline import Pipeline
-from briefing_skill.tasks import TASK_BINDING_KEY, TaskService
-from briefing_skill.utils import now_iso, read_json, write_json
+from briefing_skill.tasks import TaskService
+from briefing_skill.utils import now_iso, write_json
 
 
 def test_evidence_pack_is_front_excerpt_for_initial_paper_understanding():
@@ -114,7 +114,7 @@ def test_fact_cache_version_changes_with_direction_and_project_context(tmp_path)
     assert changed_context != first
 
 
-def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
+def test_deep_efficiency_ignores_legacy_fact_cache_and_only_wraps_evidence(tmp_path):
     root = tmp_path
     run_id = "run-new"
     run_dir = root / "workspace" / "runs" / run_id
@@ -127,25 +127,12 @@ def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
     config = _test_config(root)
 
     from briefing_skill.deep_efficiency import _source_fingerprint
+
     raw = db.fetchone("SELECT * FROM raw_items WHERE id=?", (candidate["raw_item_id"],))
     fingerprint = _source_fingerprint(raw)
     version = _runtime_extractor_version(config, root, "tpn", "kv_transfer")
-    cache_key = "cache-key"
-    cached_result = {
-        "title": "Cached paper",
-        "event_hint": "cached-event",
-        "problem": "problem",
-        "mechanism": "mechanism",
-        "evidence": [],
-        "evaluation_context": "context",
-        "limitations": "limits",
-        "project_relevance": "relevance",
-        "primary_source_resolved": True,
-        "quality_score": 88,
-        "evidence_gaps": [],
-    }
-    cache_path = root / "workspace" / "cache" / "facts" / f"{cache_key}.json"
-    write_json(cache_path, cached_result)
+    legacy_path = root / "workspace" / "cache" / "facts" / "legacy.json"
+    write_json(legacy_path, {"title": "must not be used", "primary_source_resolved": True})
     db.execute(
         """
         INSERT INTO fact_cache(
@@ -155,52 +142,50 @@ def test_fact_cache_hit_avoids_fetch_and_prefills_task_output(tmp_path):
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
-            cache_key, fingerprint, version, raw["original_url"], raw["identity_key"],
-            raw["external_id"], raw["content_hash"], str(cache_path.relative_to(root)), 88, "cached-event",
+            "legacy-key", fingerprint, version, raw["original_url"], raw["identity_key"],
+            raw["external_id"], raw["content_hash"], str(legacy_path.relative_to(root)), 99, "legacy",
             90000, 17000, now_iso(), now_iso(),
         ),
     )
+
+    source_path = run_dir / "documents" / "source.md"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text("# Abstract\nFresh primary-source text.\n", encoding="utf-8")
 
     snapshots = {
         "fetch": (FulltextService.fetch_candidate, hasattr(FulltextService, "fetch_candidate")),
         "create": (TaskService.create, hasattr(TaskService, "create")),
         "apply": (Pipeline._apply_task, hasattr(Pipeline, "_apply_task")),
         "fetch_flag": (getattr(FulltextService, "_evidence_pack_installed", None), hasattr(FulltextService, "_evidence_pack_installed")),
-        "task_flag": (getattr(TaskService, "_fact_cache_installed", None), hasattr(TaskService, "_fact_cache_installed")),
-        "pipeline_flag": (getattr(Pipeline, "_fact_cache_installed", None), hasattr(Pipeline, "_fact_cache_installed")),
     }
+
+    def base_fetch(_self, _run_id, _candidate):
+        return {
+            "document_id": "doc-fresh",
+            "candidate_id": candidate["id"],
+            "url": raw["original_url"],
+            "media_type": "text/markdown",
+            "fetch_status": "FETCHED",
+            "text_path": str(source_path),
+            "chunks": [str(source_path)],
+            "char_count": source_path.stat().st_size,
+            "error": None,
+        }
+
     try:
+        FulltextService.fetch_candidate = base_fetch
         install_deep_efficiency()
         service = FulltextService(config, db, run_dir)
         manifest = service.fetch_candidate(run_id, candidate)
         service.close()
-        assert manifest["fact_cache_hit"] is True
-        assert manifest["raw_char_count"] == 90000
-        assert manifest["evidence_char_count"] == 17000
-        assert manifest["evidence_strategy"] == "front-evidence-v2"
 
-        tasks = TaskService(db, root, run_dir)
-        task = tasks.create(
-            run_id,
-            "fact_extraction",
-            candidate["id"],
-            {
-                "candidate_id": candidate["id"],
-                "source": {"title": "Cached paper", "url": raw["original_url"]},
-                "document": manifest,
-            },
-            prompt="fact-extraction.md",
-            schema="facts.schema.json",
-        )
-        output = read_json(root / task["output_path"])
-        task_input = read_json(root / task["input_path"])
-        assert output[TASK_BINDING_KEY] == task_input[TASK_BINDING_KEY]
-        assert output["quality_score"] == 88
-        assert output["event_hint"] == "cached-event"
+        assert manifest["fact_cache_hit"] is False
+        assert manifest["fact_cache_eligible"] is False
+        assert "Fresh primary-source text" in (root / manifest["text_path"]).read_text(encoding="utf-8") if not Path(manifest["text_path"]).is_absolute() else Path(manifest["text_path"]).read_text(encoding="utf-8")
+        assert TaskService.create is snapshots["create"][0]
+        assert Pipeline._apply_task is snapshots["apply"][0]
     finally:
         _restore_attr(FulltextService, "fetch_candidate", *snapshots["fetch"])
         _restore_attr(TaskService, "create", *snapshots["create"])
         _restore_attr(Pipeline, "_apply_task", *snapshots["apply"])
         _restore_attr(FulltextService, "_evidence_pack_installed", *snapshots["fetch_flag"])
-        _restore_attr(TaskService, "_fact_cache_installed", *snapshots["task_flag"])
-        _restore_attr(Pipeline, "_fact_cache_installed", *snapshots["pipeline_flag"])
