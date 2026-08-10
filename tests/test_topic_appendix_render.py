@@ -59,7 +59,7 @@ def test_topic_appendix_is_rendered_inline_before_next_topic():
 
     assert "状态感知网络、TPN · 更多相关进展" in rendered
     assert "Additional KVCache paper" in rendered
-    assert rendered.index("topic-tpn") < rendered.index("更多相关进展") < rendered.index("topic-dpu_inline")
+    assert rendered.index('id="topic-tpn"') < rendered.index("更多相关进展") < rendered.index('id="topic-dpu_inline"')
     assert rendered.count('data-topic-appendix="1"') == 1
 
 
