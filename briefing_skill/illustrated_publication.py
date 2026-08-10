@@ -57,15 +57,19 @@ def _illustration_row(item: dict[str, Any], src: str, index: int) -> str:
 
 
 def render_illustrated_html(root: Path, base_html: str, manifest: dict[str, Any]) -> str:
-    """Add only generated issue-level explanatory images to the final base email.
+    """Add generated issue-level explanatory images to the final base email.
 
     The base publication remains untouched. Missing/failed assets are skipped, so the
-    illustrated artifact deterministically degrades to the exact baseline HTML.
+    illustrated artifact deterministically degrades to the exact baseline HTML. A
+    generated image is rendered only when it satisfies the production invariant that
+    the approved personal technical-scout IP is present.
     """
 
     prepared: list[tuple[int, dict[str, Any], str]] = []
     for index, item in enumerate(manifest.get("illustrations") or [], 1):
         if str(item.get("status") or "") != "generated":
+            continue
+        if item.get("persona_used") is not True:
             continue
         src = _asset_src(root, item.get("generated_asset_path"))
         if src:
@@ -151,15 +155,13 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
             }
         )
     visuals = dict(pipeline.config.settings.get("visuals") or {})
-    max_illustrations = max(0, min(3, int(visuals.get("max_material_illustrations_per_issue", 3))))
-    max_persona = max(0, min(2, int(visuals.get("persona_max_appearances_per_issue", 2))))
     return {
         "issue_id": issue["id"],
         "synthesis": read_json(pipeline.root / issue["synthesis_path"], {}),
         "items": items,
         "constraints": {
-            "max_illustrations": max_illustrations,
-            "max_persona_appearances": max_persona,
+            "illustration_count_policy": "no_fixed_cap; create every distinct explanatory image that materially improves understanding, without decorative or near-duplicate filler",
+            "persona_required_for_generated_images": True,
             "aspect_ratio": "1.9:1",
             "persona_spec_path": "assets/persona/persona-spec.yaml",
             "persona_reference_path": visuals.get("persona_reference", "assets/persona/reference.jpg"),
@@ -175,9 +177,10 @@ def install_illustrated_publication() -> None:
     """Make the verified issue-level illustrated email a mandatory second artifact.
 
     This deliberately replaces the unverified per-item visual-routing execution path
-    for the active workflow. One Agent pass chooses at most three explanatory images
-    across the whole issue, with the personal technical-scout IP appearing at most
-    twice. Rendering always preserves email.html and also writes
+    for the active workflow. One Agent pass chooses every distinct explanatory image
+    that materially improves the issue, with no fixed numeric cap. Every generated
+    image must incorporate the approved personal technical-scout IP as a secondary,
+    professional participant. Rendering always preserves email.html and also writes
     email-illustrated.html; failed image generation only removes images, never text.
     """
 
