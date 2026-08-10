@@ -65,7 +65,7 @@ def _task(
     }
 
 
-def test_fact_session_grouping_only_shares_same_topic_and_direction(tmp_path):
+def test_fact_session_grouping_shares_same_topic_across_directions(tmp_path):
     tasks = [
         _task(tmp_path, task_id="t1", topic_id="tpn", direction_id="kv_transfer", priority=90),
         _task(tmp_path, task_id="t2", topic_id="tpn", direction_id="kv_transfer", priority=80),
@@ -73,16 +73,15 @@ def test_fact_session_grouping_only_shares_same_topic_and_direction(tmp_path):
         _task(tmp_path, task_id="t4", topic_id="cross_region", direction_id="kv_transfer", priority=60),
     ]
 
-    groups = plan_fact_session_groups(tmp_path, tasks, max_size=2, max_evidence_chars=40000)
+    groups = plan_fact_session_groups(tmp_path, tasks, max_size=4, max_evidence_chars=72000)
     ids = [[task["id"] for task in group] for group in groups]
 
-    assert ["t1", "t2"] in ids
-    assert ["t3"] in ids
+    assert ["t1", "t2", "t3"] in ids
     assert ["t4"] in ids
     assert sorted(task_id for group in ids for task_id in group) == ["t1", "t2", "t3", "t4"]
 
 
-def test_fact_session_grouping_requires_exact_embedded_direction_context(tmp_path):
+def test_fact_session_grouping_keeps_direction_context_task_local(tmp_path):
     first = _task(tmp_path, task_id="t1", priority=90)
     changed = _task(tmp_path, task_id="t2", priority=80)
     changed_path = tmp_path / changed["input_path"]
@@ -90,9 +89,16 @@ def test_fact_session_grouping_requires_exact_embedded_direction_context(tmp_pat
     data["direction"]["include_terms"] = ["new-rule-added-after-old-task-was-created"]
     write_json(changed_path, data)
 
-    groups = plan_fact_session_groups(tmp_path, [first, changed], max_size=2, max_evidence_chars=40000)
+    groups = plan_fact_session_groups(tmp_path, [first, changed], max_size=4, max_evidence_chars=72000)
 
-    assert [[task["id"] for task in group] for group in groups] == [["t1"], ["t2"]]
+    # Direction is no longer shared session context. Each task keeps its exact embedded
+    # direction in its own input, so changing one direction does not force another Agent
+    # startup as long as topic/project context and prompt/schema remain identical.
+    assert [[task["id"] for task in group] for group in groups] == [["t1", "t2"]]
+    assert read_json(tmp_path / first["input_path"], {})["direction"].get("include_terms") is None
+    assert read_json(tmp_path / changed["input_path"], {})["direction"]["include_terms"] == [
+        "new-rule-added-after-old-task-was-created"
+    ]
 
 
 def test_fact_session_grouping_never_drops_evidence_to_make_a_pair_fit(tmp_path):
