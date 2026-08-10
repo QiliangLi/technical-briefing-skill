@@ -74,8 +74,8 @@ def test_final_selector_uses_technology_value_without_overwriting_relevance():
 
     selected, deferred = select_topic_local_deep_budget(rows, _settings())
 
-    # 0.8*relevance + technology score preserves the existing Technology Value rank.
-    assert [row["id"] for row in selected] == ["tpn-2", "tpn-1", "tpn-3", "tpn-4"]
+    # 0.8*relevance + Technology Value preserves the existing Technology Value rank.
+    assert [row["id"] for row in selected] == ["tpn-2", "tpn-3", "tpn-1", "tpn-4"]
     assert [row["id"] for row in deferred] == ["tpn-5"]
     assert next(row for row in selected if row["id"] == "tpn-1")["relevance_score"] == 99
 
