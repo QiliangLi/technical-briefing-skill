@@ -26,6 +26,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .fact_stage import install_fact_stage
     from .final_reader_contract import install_final_reader_contract
     from .historical_backfill import install_historical_backfill
+    from .illustrated_publication import install_illustrated_publication
     from .invalid_repair import install_invalid_targeted_repair
     from .no_human_review import install_no_human_review_gate
     from .primary_fulltext_cache import install_primary_fulltext_cache
@@ -123,6 +124,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Final rendering is independently checked: no internal scores, no duplicate
     # Deep/appendix/Radar sources, no half-width orphan cards, and no invalid prose.
     install_final_reader_contract()
+    # The verified visual workflow is one issue-level publication pass, not one
+    # routing/generation task per card. It always preserves email.html and adds
+    # email-illustrated.html, with image failures degrading only the second artifact.
+    install_illustrated_publication()
     # Final validation now replaces the unused review/approve gate. Successful builds
     # become READY_TO_SEND; failed builds become VALIDATION_FAILED. Send still needs
     # explicit --confirm-send.
