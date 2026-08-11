@@ -26,8 +26,6 @@ def _asset_src(root: Path, value: str | None) -> str | None:
         path = root / path
     if not path.is_file():
         return None
-    # Absolute local paths keep archived HTML directly previewable. The existing
-    # send path rewrites them to CID parts before transport.
     return str(path.resolve())
 
 
@@ -57,13 +55,7 @@ def _illustration_row(item: dict[str, Any], src: str, index: int) -> str:
 
 
 def render_illustrated_html(root: Path, base_html: str, manifest: dict[str, Any]) -> str:
-    """Add generated issue-level explanatory images to the final base email.
-
-    The base publication remains untouched. Missing/failed assets are skipped, so the
-    illustrated artifact deterministically degrades to the exact baseline HTML. A
-    generated image is rendered only when it satisfies the production invariant that
-    the approved personal technical-scout IP is present.
-    """
+    """Add generated issue-level explanatory images to the final base email."""
 
     prepared: list[tuple[int, dict[str, Any], str]] = []
     for index, item in enumerate(manifest.get("illustrations") or [], 1):
@@ -89,7 +81,6 @@ def render_illustrated_html(root: Path, base_html: str, manifest: dict[str, Any]
         fragment = BeautifulSoup(_illustration_row(item, src, index), "html.parser").find("tr")
         if fragment is None:
             continue
-
         placement = str(item.get("placement") or "after_judgements")
         topic_id = str(item.get("topic_id") or "").strip()
         inserted = False
@@ -103,11 +94,8 @@ def render_illustrated_html(root: Path, base_html: str, manifest: dict[str, Any]
             after_judgements_target.insert_after(fragment)
             after_judgements_target = fragment
             inserted = True
-        if not inserted:
-            body = soup.body
-            if body is not None:
-                body.append(fragment)
-
+        if not inserted and soup.body is not None:
+            soup.body.append(fragment)
     return str(soup)
 
 
@@ -125,13 +113,6 @@ def build_illustrated_email(service, run_id: str, base_path: Path) -> Path:
 
 
 def _host_execution_policy() -> dict[str, Any]:
-    """Describe how the same illustration task is executed by supported hosts.
-
-    Host-specific image-generation routing belongs in the task contract, not in the
-    deterministic Python renderer. In particular, Claude Code must not treat its lack
-    of native image generation as a reason to skip the illustrated publication.
-    """
-
     return {
         "codex": {
             "mode": "direct",
@@ -156,22 +137,21 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
     if not issue_path:
         raise RuntimeError("Illustrated publication requires a finalized IssueDocument")
     issue_data = read_json(pipeline.root / issue_path, {})
-    items: list[dict[str, Any]] = []
-    for item in issue_data.get("items") or []:
-        items.append(
-            {
-                "brief_item_id": item.get("brief_item_id"),
-                "item_role": item.get("item_role") or "core",
-                "topic_id": item.get("topic_id"),
-                "direction_id": item.get("direction_id"),
-                "title": item.get("title"),
-                "core_conclusion": item.get("core_conclusion"),
-                "mechanism": item.get("mechanism"),
-                "result": item.get("result") or item.get("evidence_summary"),
-                "boundary": item.get("boundary"),
-                "project_relevance": item.get("project_relevance"),
-            }
-        )
+    items = [
+        {
+            "brief_item_id": item.get("brief_item_id"),
+            "item_role": item.get("item_role") or "core",
+            "topic_id": item.get("topic_id"),
+            "direction_id": item.get("direction_id"),
+            "title": item.get("title"),
+            "core_conclusion": item.get("core_conclusion"),
+            "mechanism": item.get("mechanism"),
+            "result": item.get("result") or item.get("evidence_summary"),
+            "boundary": item.get("boundary"),
+            "project_relevance": item.get("project_relevance"),
+        }
+        for item in issue_data.get("items") or []
+    ]
     visuals = dict(pipeline.config.settings.get("visuals") or {})
     return {
         "issue_id": issue["id"],
@@ -194,14 +174,7 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
 
 
 def install_illustrated_publication() -> None:
-    """Make illustration a publication enhancement after IssueDocument finalization.
-
-    The fact-checked IssueDocument is finalized first and therefore never depends on
-    image generation. One later issue-level Agent task consumes only that immutable
-    document and writes the illustration manifest. The text-first email remains the
-    baseline; the final send artifact is produced only after the illustration task has
-    either generated acceptable images or explicitly degraded to text.
-    """
+    """Finalize text, render the baseline, then run illustration as enhancement."""
 
     from . import demo
     from .emailer import EmailService
@@ -211,13 +184,15 @@ def install_illustrated_publication() -> None:
         return
 
     original_apply = Pipeline._apply_task
+    original_finalize = Pipeline._maybe_finalize_issue
+    # Captured before no_human_review is installed: this is the fully decorated
+    # deterministic baseline renderer, without final release promotion.
+    original_build = EmailService.build
 
     def apply_task(self, task: dict[str, Any]) -> None:
         if task["task_type"] != TASK_TYPE:
             return original_apply(self, task)
-        output = self.tasks.read_result(task)
-        path = self.run_dir / MANIFEST_RELATIVE_PATH
-        write_json(path, output)
+        write_json(self.run_dir / MANIFEST_RELATIVE_PATH, self.tasks.read_result(task))
 
     Pipeline._apply_task = apply_task
 
@@ -241,27 +216,30 @@ def install_illustrated_publication() -> None:
         )
         self.db.update_run(self.run_id, stage="AWAITING_ILLUSTRATIONS")
 
-    # Supersede the old per-item materialisation/illustration-brief stage. The
-    # active publication contract is one issue-level pass over the finalized issue.
     Pipeline._maybe_prepare_illustrations = prepare_illustrations
 
-    original_finalize = Pipeline._maybe_finalize_issue
-
     def finalize_issue(self) -> None:
-        # Finalize the factual/text issue first. `illustrated_publication` is not a
-        # prerequisite for issue.json and can never block READY_FOR_RENDER.
+        # The immutable factual/text issue is finalized without waiting for image work.
         original_finalize(self)
         issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (self.run_id,))
-        if issue and issue.get("issue_json_path"):
-            self._maybe_prepare_illustrations()
+        if not issue or not issue.get("issue_json_path"):
+            return
+
+        # Render the baseline immediately from the finalized IssueDocument. This call
+        # intentionally bypasses the later no_human_review release wrapper.
+        baseline = self.run_dir / "email.html"
+        if not baseline.is_file():
+            email = EmailService(self.root, self.config, self.db)
+            original_build(email, self.run_id, status_after="READY_FOR_RENDER")
+
+        # Only after issue.json + email.html exist may the visual enhancement begin.
+        self._maybe_prepare_illustrations()
 
     Pipeline._maybe_finalize_issue = finalize_issue
 
-    original_build = EmailService.build
-
     def build(self, run_id: str, *args, **kwargs):
-        # Build the deterministic baseline first. If the visual task is still running,
-        # leave email.html available but do not promote any send artifact yet.
+        # Rebuild the deterministic baseline from the immutable IssueDocument so final
+        # publication always derives from current structured state.
         base_path = original_build(self, run_id, *args, **kwargs)
         issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
         if not issue:
@@ -272,7 +250,7 @@ def install_illustrated_publication() -> None:
         )
         if task and task.get("status") != "APPLIED":
             raise RuntimeError(
-                "Baseline email.html was built, but illustrated publication is still pending; "
+                "Baseline email.html is ready, but illustrated publication is still pending; "
                 "complete the illustration task before final validation/send"
             )
         if task and not (self.root / "workspace" / "runs" / run_id / MANIFEST_RELATIVE_PATH).is_file():
