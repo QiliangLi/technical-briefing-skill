@@ -12,7 +12,7 @@ from briefing_skill.issue_style_polish import (
 
 def test_old_per_batch_writing_skill_chain_is_removed() -> None:
     metadata = {
-        "required_skills": ["human-writing", "humanizer"],
+        "required_skills": ["human-writing", "legacy-writing-skill"],
         "skill_mode": "old",
         "keep": "value",
     }
@@ -22,7 +22,7 @@ def test_old_per_batch_writing_skill_chain_is_removed() -> None:
     assert _strip_redundant_writing_skills("fact_check_batch", metadata) == metadata
 
 
-def test_issue_level_polish_prompt_uses_human_writing_not_humanizer() -> None:
+def test_issue_level_polish_is_the_only_writing_skill_stage() -> None:
     root = Path(__file__).resolve().parents[1]
     prompt = (root / "prompts" / "item-style-polish.md").read_text(encoding="utf-8")
     draft_prompt = (root / "prompts" / "item-writing-batch.md").read_text(encoding="utf-8")
@@ -30,9 +30,9 @@ def test_issue_level_polish_prompt_uses_human_writing_not_humanizer() -> None:
 
     assert "single issue-level Chinese style pass" in prompt
     assert "Call `$human-writing` **once for the entire `items` array**" in prompt
-    assert "Do not call `$humanizer`" in prompt
-    assert "Do not call `$human-writing` or `$humanizer` here" in draft_prompt
-    assert "Do **not** call `$human-writing` or `$humanizer` here" in synthesis_prompt
+    assert "do not load any other writing Skill" in prompt
+    assert "Do not call any writing Skill here" in draft_prompt
+    assert "Do not call any writing Skill here" in synthesis_prompt
 
 
 def test_style_polish_schema_edits_only_reader_facing_fields() -> None:

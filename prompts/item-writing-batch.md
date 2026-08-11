@@ -17,6 +17,6 @@ Return exactly one result for every input `event_id`, with no omissions, duplica
 - Every field must be one complete compact sentence and must not end with an ellipsis, comma, colon, or semicolon.
 - Do not use hype language or turn a preprint into proven production technology.
 
-This task is **draft generation only**. Do not call `$human-writing` or `$humanizer` here. A later issue-level `item_style_polish` task sees all drafted items together and calls `$human-writing` exactly once for cross-item Chinese style cleanup. That later pass may change wording but not facts; the polished result is then independently fact-checked.
+This task is **draft generation only**. Do not call any writing Skill here. A later issue-level `item_style_polish` task sees all drafted items together and calls `$human-writing` exactly once for cross-item Chinese style cleanup. That later pass may change wording but not facts; the polished result is then independently fact-checked.
 
 Return JSON only. Copy the input `_task` object unchanged into the top level of the output.

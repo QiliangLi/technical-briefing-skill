@@ -68,4 +68,4 @@ Return:
 - `project_insights`: 0-4 internal trace objects containing exact `topic_id`, exact `topic_name`, exact configured `project_question`, `effect`, `confidence` (`high`/`medium`/`low`), a complete-sentence `insight`, a complete-sentence `next_action`, and 1-4 exact `evidence_item_ids`.
 - `radar_signals`: 0-8 objects containing `category`, a concrete `signal`, an informative `summary`, and 1-3 exact `source_urls` from the supplied Radar candidates.
 
-The detailed items have already passed the single issue-level Chinese style polish and independent fact checks before this task. Do **not** call `$human-writing` or `$humanizer` here. Synthesize directly under the reader contract above; do not add a second style-rewrite pass that could drift from the fact-checked item text. Return JSON only.
+The detailed items have already passed the single issue-level Chinese style polish and independent fact checks before this task. Do not call any writing Skill here. Synthesize directly under the reader contract above; do not add a second style-rewrite pass that could drift from the fact-checked item text. Return JSON only.

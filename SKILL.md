@@ -14,7 +14,7 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 ## 核心架构
 
 - Python负责确定性工作：当前采集、可恢复外部历史回填、过滤、去重、状态、预算、滚动专题池、保守的跨期relevance cache、多样性选择、Evidence Pack、定向Evidence Repair、跨期facts cache、事实任务会话分组、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
-- 当前Agent负责智能工作：未命中relevance cache时的批量相关性与价值判断、未命中facts cache时的事实抽取、必要时一次定向facts修复、批量条目草稿写作、一期一次的中文条目润色、按字符预算合并的批量事实校验、综合判断和一期一次的`illustrated_publication`。条目草稿阶段不加载写作Skill；全部草稿完成后`item_style_polish`对整期条目只调用一次`$human-writing`，随后Fact Check验证润色后的最终条目文本。`$humanizer`不再进入日报主链。Codex宿主直接使用自身生图能力；Claude Code宿主在该任务中通过已安装的`openai/codex-plugin-cc`把整期生图委派给`codex:codex-rescue`子Agent。兼容的事实抽取可以复用同一Agent会话，但每篇来源的任务、Evidence Pack、输出、Schema、cache和repair始终独立。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
+- 当前Agent负责智能工作：未命中relevance cache时的批量相关性与价值判断、未命中facts cache时的事实抽取、必要时一次定向facts修复、批量条目草稿写作、一期一次的中文条目润色、按字符预算合并的批量事实校验、综合判断和一期一次的`illustrated_publication`。条目草稿阶段不加载写作Skill；全部草稿完成后`item_style_polish`对整期条目只调用一次`$human-writing`，随后Fact Check验证润色后的最终条目文本。Codex宿主直接使用自身生图能力；Claude Code宿主在该任务中通过已安装的`openai/codex-plugin-cc`把整期生图委派给`codex:codex-rescue`子Agent。兼容的事实抽取可以复用同一Agent会话，但每篇来源的任务、Evidence Pack、输出、Schema、cache和repair始终独立。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
 - 重点专题走深度通道；Top4之外的相关A级内容走专题补充；AI Infra、Agent生态、KVCache生态、存储与介质等广度信息走Radar通道。
 - 同一GitHub项目在专题补充中的多条低价值release可以聚合显示，但不得把不同论文或Top4深度条目强行合并。
 - 不得在Python中绑定某家模型API。
@@ -31,13 +31,14 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
    python briefing.py doctor
    ```
 
-2. 用户需要个人形象时，请其提供或放置经过确认的参考照片：
+2. AI解释图使用唯一的 Ian/Qiliang 人物契约：
 
    ```text
-   assets/persona/reference.jpg
+   assets/persona/ian-qiliang/overlay.md
+   assets/persona/ian-qiliang/reference-manifest.yaml
    ```
 
-   没有参考照片时，不得声称还原本人面部，只能使用通用低细节技术侦察员。
+   `reference-manifest.yaml`中的`identity_anchor`、`action_anchor`和`wide_scene_anchor`都必须指向仓库内真实图片。运行时会在创建`illustrated_publication`前校验这些文件；缺失时只能让图片路径失败并保留正文，不得换成通用人物或其他生图风格。
 
 ### Ian 风格的项目级人物覆盖
 
@@ -149,7 +150,7 @@ python briefing.py send --confirm-send
 10. facts cache只能复用稳定来源指纹与运行时抽取版本完全匹配的结果。零抓取复用仅用于明确版本arXiv、GitHub Release/Tag和DOI类强版本身份；普通可变网页必须重新验证。事实Prompt、Facts Schema和Evidence Repair Prompt变化会自动影响运行时版本；Evidence Pack算法发生实质改变时仍应更新`fact_extractor_version`。
 11. facts cache命中必须走同步fast path，不能再次生成需要Agent处理的事实抽取任务；存在未解决`evidence_gaps`的facts不得写入跨期cache。未命中cache的独立`fact_extraction`任务允许在**不修改任务图和证据量**的前提下复用执行会话：仅同topic+direction+项目判断卡+Prompt/Schema可分组，默认最多2篇且组内Evidence合计默认不超过40k字符；Evidence长度未知、超过预算、不兼容或任何隔离条件无法证明时必须单独运行。分组不得改变任何单篇输出、校验、cache、repair或fact check语义。
 12. 新运行的深度条目先使用最多4条的`item_writing_batch`独立形成事实受约束的草稿；所有草稿完成后只创建一个`item_style_polish`，对整期条目调用一次`$human-writing`。Fact Check只在该润色任务APPLIED后创建，并优先按`editorial_batch_max_input_chars`字符预算合并；`fact_check_batch_size`默认24只是安全上限，正常一期目标为1～2个`fact_check_batch`。每个event/item仍保持独立ID、来源、Schema/语义校验、provenance和PASS/FAIL，禁止跨条目移动事实。旧run已经存在单条`item_writing`或已有fact-check任务时按旧任务继续恢复。
-13. `$humanizer`不再进入日报主链。`item_writing_batch`不调用任何写作Skill；`item_style_polish`只允许修改标题和五个正文域，不得改变事实、数字、条件、因果强度、ID、score、日期、关键词或来源；Fact Check检查的必须是这份润色后的最终条目文本。`issue_synthesis`直接依据已通过Fact Check的核心条目生成综合判断，不再追加第二轮`$human-writing`/`$humanizer`，避免事实检查之后再次发生措辞漂移。
+13. `item_writing_batch`不调用任何写作Skill；`item_style_polish`只允许修改标题和五个正文域，不得改变事实、数字、条件、因果强度、ID、score、日期、关键词或来源，并且只加载`$human-writing`一次。Fact Check检查的必须是这份润色后的最终条目文本。`issue_synthesis`直接依据已通过Fact Check的核心条目生成综合判断，不再追加写作Skill，避免事实检查之后再次发生措辞漂移。
 14. 专题补充默认每专题最多8条、同项目最多2条；每条仅1～2句总结和原文链接，不参与本期综合判断。同一GitHub项目多条低优先级release可聚合为Release Family，必须保留每个原始链接。
 15. 完成facts抽取/必要的repair后，后续任务只读取结构化facts，不再读取全文。
 16. 最终综合判断只读取通过事实检查的核心深度解读，不读取专题补充和热点Radar。
@@ -328,14 +329,14 @@ email-illustrated.html
 
 ### 个人视觉IP
 
-个人角色为“技术侦察员”：黑色短发、细框眼镜、白色衬衫、略松的深蓝色条纹领带，平静认真。批准参考来自`assets/persona/reference.jpg`以及`pics/圆框形象/`、`pics/方框形象/`。
+AI解释图的个人角色只由`assets/persona/ian-qiliang/overlay.md`和`assets/persona/ian-qiliang/reference-manifest.yaml`定义。当前Qiliang形象为短而略蓬松的黑发、细黑框圆形或轻微圆角眼镜、白色衬衫领口外搭黑色针织衫、深色长裤，神情平静、认真、克制；身份、动作和横版场景分别以manifest中的三张批准参考图为准。
 
 - **每一张AI生成的解释图都必须包含个人IP**，不设每期出现次数上限；
-- 人物通常占画面10%～25%，必须是技术机制的参与者而不是视觉主体；
-- 角色承担筛选、检查证据、追踪工具/数据路径、检查DPU/KVCache搬移、比较方案或标记边界等真实技术动作；
+- 人物通常占画面15%～25%，必须是技术机制的参与者而不是视觉主体；
+- 角色必须通过实际动作参与核心技术隐喻，而不是在角落旁观、摆拍或充当水印；
 - 不得卖萌、抢镜、摆主持人姿势、遮挡证据或使用未经批准的通用替代角色；
 - 每张图可以变化人物位置和动作，但人物身份和核心视觉特征必须稳定；
-- 不直接使用Ian Xiaohei的“小黑”角色。
+- 不直接使用Ian Xiaohei的“小黑”角色，也不得切换到其他人物或插图生成风格。
 
 ### 生图约束
 

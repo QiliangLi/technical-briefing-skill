@@ -56,7 +56,7 @@ def test_issue_synthesis_rejects_unknown_ids_copying_and_correspondence_label() 
     assert any("selection process" in error for error in errors)
 
 
-def test_required_skills_are_listed_and_replace_existing_requeues_task(tmp_path: Path) -> None:
+def test_required_skill_metadata_and_replace_existing_requeues_task(tmp_path: Path) -> None:
     db = Database(tmp_path / "workspace" / "briefing.sqlite")
     db.init()
     db.create_run("run-1")
@@ -68,7 +68,7 @@ def test_required_skills_are_listed_and_replace_existing_requeues_task(tmp_path:
         input_data(),
         prompt="issue-synthesis.md",
         schema="issue-synthesis.schema.json",
-        metadata={"required_skills": ["human-writing", "humanizer"]},
+        metadata={"required_skills": ["example-skill"]},
     )
     output_path = tmp_path / task["output_path"]
     write_json(output_path, {TASK_BINDING_KEY: read_json(tmp_path / task["input_path"])[TASK_BINDING_KEY], **valid_output()})
@@ -81,12 +81,11 @@ def test_required_skills_are_listed_and_replace_existing_requeues_task(tmp_path:
         {**input_data(), "max_judgements": 3},
         prompt="issue-synthesis.md",
         schema="issue-synthesis.schema.json",
-        metadata={"required_skills": ["human-writing", "humanizer"]},
+        metadata={"required_skills": ["example-skill"]},
         replace_existing=True,
     )
 
     assert not output_path.exists()
     assert db.fetchone("SELECT status,error FROM tasks WHERE id=?", (task["id"],)) == {"status": "PENDING", "error": None}
     instructions = service.instructions(replaced)
-    assert "$human-writing, $humanizer" in instructions
-    assert instructions.index("$human-writing") < instructions.index("$humanizer")
+    assert "$example-skill" in instructions
