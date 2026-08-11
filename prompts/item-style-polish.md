@@ -2,7 +2,7 @@
 
 This is the **single issue-level Chinese style pass** after all detailed item drafts have been written and before fact checking.
 
-Call `$human-writing` **once for the entire `items` array**. Do not call `$humanizer`. Do not invoke `$human-writing` separately for each item.
+Call `$human-writing` **once for the entire `items` array**. Do not invoke `$human-writing` separately for each item, and do not load any other writing Skill in this stage.
 
 The goal is narrow: make the whole issue read like natural, restrained Chinese technical writing while preserving the exact information carried by every item.
 
