@@ -45,6 +45,12 @@ HEADING_WEIGHTS = {
     "结论": 5,
 }
 
+INTRO_TERMS = ("abstract", "introduction", "overview", "motivation", "background", "摘要", "引言", "背景")
+METHOD_TERMS = ("method", "design", "architecture", "implementation", "algorithm", "system", "方法", "设计", "架构", "实现", "算法")
+EVAL_TERMS = ("evaluation", "experiment", "results", "benchmark", "performance", "latency", "throughput", "实验", "评估", "结果", "性能", "时延", "吞吐")
+BOUNDARY_TERMS = ("limitation", "limitations", "discussion", "conclusion", "threat", "限制", "局限", "讨论", "结论")
+EVIDENCE_STRATEGY = "balanced-evidence-v2"
+
 
 def _payload(raw: dict[str, Any]) -> dict[str, Any]:
     try:
@@ -111,7 +117,12 @@ def _runtime_extractor_version(
     topic_id: str | None = None,
     direction_id: str | None = None,
 ) -> str:
-    """Invalidate facts when source interpretation context or extraction policy changes."""
+    """Invalidate facts when source interpretation context or extraction policy changes.
+
+    Keep the historical front-evidence marker inside the hashed compatibility payload so
+    existing balanced-v2 Fact Cache keys remain stable across this ownership refactor.
+    Balanced Evidence is nevertheless the only runtime EvidenceBuilder.
+    """
 
     policy = dict(config.settings.get("efficiency") or {})
     parts = [
@@ -138,7 +149,8 @@ def _runtime_extractor_version(
         except Exception:
             parts.extend([str(topic_id), str(direction_id)])
 
-    return f"{parts[0]}:{stable_hash(*parts, length=16)}"
+    base = f"{parts[0]}:{stable_hash(*parts, length=16)}"
+    return f"{base}:{EVIDENCE_STRATEGY}"
 
 
 def _evidence_terms(topic: dict[str, Any], direction: dict[str, Any]) -> list[str]:
@@ -213,6 +225,37 @@ def _safe_excerpt(text: str, limit: int) -> str:
     return clipped.rstrip()
 
 
+def _contains(text: str, terms: tuple[str, ...]) -> bool:
+    lower = text.lower()
+    return any(term in lower for term in terms)
+
+
+def _normalised_heading(value: Any) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
+def _role_candidates(
+    scored: list[dict[str, Any]],
+    used: set[int],
+    keywords: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    available = [row for row in scored if int(row["index"]) not in used]
+    heading_matches = [row for row in available if _contains(str(row["title"]), keywords)]
+    matches = heading_matches or [
+        row for row in available if _contains(str(row["body"])[:1200], keywords)
+    ]
+    matches.sort(key=lambda row: (-float(row["score"]), int(row["index"])))
+    deduped: list[dict[str, Any]] = []
+    seen_headings: set[str] = set()
+    for row in matches:
+        heading = _normalised_heading(row["title"])
+        if heading in seen_headings:
+            continue
+        seen_headings.add(heading)
+        deduped.append(row)
+    return deduped
+
+
 def build_evidence_pack(
     text: str,
     topic: dict[str, Any],
@@ -220,18 +263,93 @@ def build_evidence_pack(
     *,
     max_chars: int = 18000,
 ) -> str:
-    """Return the beginning of the primary source, bounded at a clean sentence/paragraph."""
+    """Build the single canonical first read across context/mechanism/results/bounds."""
 
-    del topic, direction
-    return _safe_excerpt(text, max_chars)
+    max_chars = max(4000, int(max_chars))
+    sections = _sections(text)
+    if not sections:
+        return _safe_excerpt(text, max_chars)
+
+    terms = _evidence_terms(topic, direction)
+    scored = [
+        {"index": index, "title": title, "body": body, "score": _section_score(index, title, body, terms)}
+        for index, title, body in sections
+        if str(body or "").strip()
+    ]
+    groups: list[tuple[str, tuple[str, ...], float]] = [
+        ("context", INTRO_TERMS, 0.18),
+        ("mechanism", METHOD_TERMS, 0.30),
+        ("results", EVAL_TERMS, 0.38),
+        ("boundary", BOUNDARY_TERMS, 0.14),
+    ]
+    selected: list[dict[str, Any]] = []
+    used: set[int] = set()
+    header = (
+        "# Balanced Evidence Pack\n\n"
+        "This first read intentionally spans problem context, mechanism, evaluation/results, "
+        "and limitations. Evidence locators preserve the source section names.\n\n"
+    )
+    remaining = max_chars - len(header)
+
+    for label, keywords, ratio in groups:
+        budget = max(500, int((max_chars - len(header)) * ratio))
+        candidates = _role_candidates(scored, used, keywords)
+        if label == "context" and not candidates:
+            candidates = [row for row in scored if row["index"] <= 1 and row["index"] not in used]
+        group_used = 0
+        for row in candidates[:2]:
+            locator = f"## Evidence locator: {row['title']}\n\n"
+            allowance = min(budget - group_used, remaining - len(locator) - 2, 5200)
+            if allowance <= 180:
+                break
+            excerpt = _safe_excerpt(str(row["body"]), allowance)
+            if not excerpt:
+                continue
+            selected.append({**row, "excerpt": excerpt, "group": label})
+            used.add(int(row["index"]))
+            consumed = len(locator) + len(excerpt) + 2
+            group_used += consumed
+            remaining -= consumed
+            if group_used >= budget or remaining <= 300:
+                break
+
+    if remaining > 500:
+        supplemental_headings = {_normalised_heading(row["title"]) for row in selected}
+        for row in sorted(scored, key=lambda value: (-float(value["score"]), int(value["index"]))):
+            if row["index"] in used:
+                continue
+            heading = _normalised_heading(row["title"])
+            if heading in supplemental_headings:
+                continue
+            locator = f"## Evidence locator: {row['title']}\n\n"
+            allowance = min(remaining - len(locator) - 2, 4200)
+            if allowance <= 180:
+                break
+            excerpt = _safe_excerpt(str(row["body"]), allowance)
+            if not excerpt:
+                continue
+            selected.append({**row, "excerpt": excerpt, "group": "supplemental"})
+            used.add(int(row["index"]))
+            supplemental_headings.add(heading)
+            remaining -= len(locator) + len(excerpt) + 2
+            if remaining <= 300:
+                break
+
+    if not selected:
+        return _safe_excerpt(text, max_chars)
+    group_order = {"context": 0, "mechanism": 1, "results": 2, "boundary": 3, "supplemental": 4}
+    selected.sort(key=lambda row: (group_order.get(str(row["group"]), 9), int(row["index"])))
+    blocks = [header.rstrip()]
+    for row in selected:
+        blocks.append(f"## Evidence locator: {row['title']}\n\n{str(row['excerpt']).strip()}")
+    return "\n\n".join(blocks).strip()[:max_chars].rstrip()
 
 
 def install_deep_efficiency() -> None:
-    """Install bounded evidence construction only.
+    """Install the canonical Balanced EvidenceBuilder.
 
-    Fact-cache ownership intentionally lives in fact_cache_provenance (V2).  Keeping
-    cache reads/writes out of this lower layer removes the legacy V1 side effects and
-    makes Evidence building independent from cross-run Fact reuse.
+    Fact-cache ownership lives in Fact Cache V2. This stage performs only source-to-
+    Evidence transformation and records the exact strategy/version consumed downstream.
     """
 
     from .fulltext import FulltextService
@@ -282,12 +400,10 @@ def install_deep_efficiency() -> None:
             "raw_char_count": len(text),
             "evidence_char_count": len(pack),
             "evidence_reduction_ratio": round(max(0.0, 1.0 - len(pack) / max(1, len(text))), 4),
-            "evidence_strategy": "front-evidence-v2",
+            "evidence_strategy": EVIDENCE_STRATEGY,
             "fact_cache_hit": False,
             "source_fingerprint": _source_fingerprint(raw),
             "extractor_version": _runtime_extractor_version(self.config, self.run_dir.parents[2], topic_id, direction_id),
-            # Kept false as a compatibility field for historical consumers. V2 owns
-            # the real eligibility decision and writes fact_cache_v2_eligible later.
             "fact_cache_eligible": False,
         }
         write_json(self.run_dir / "documents" / f"{manifest['document_id']}.json", enriched)
