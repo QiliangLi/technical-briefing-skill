@@ -9,6 +9,27 @@ The production contract is mandatory dual output:
 
 Do **not** rewrite, shorten, expand, re-rank, fact-check, or otherwise modify the briefing text. Do not recreate the old per-item seven-mode visual-routing workflow. The goal is to reproduce the already-validated issue-level illustrated briefing pattern: identify every distinct place where a visual materially improves understanding, generate those images, and let the renderer add them to the second HTML artifact.
 
+## Host execution is mandatory
+
+The illustration contract is the same on every host, but image generation is routed differently.
+
+### Running inside Codex
+
+Use the current Codex host's image-generation capability directly. Do not add an extra delegation layer just because this repository also supports Claude Code.
+
+### Running inside Claude Code
+
+Claude Code's model not having native image generation is **not** a reason to return `fallback_to_text`. This repository assumes the already-installed `openai/codex-plugin-cc` bridge is available for this case.
+
+1. Invoke the plugin's **`codex:codex-rescue` subagent via the `Agent` tool**. It is a subagent, not a Skill; do not call `Skill(codex:codex-rescue)` or recursively invoke `/codex:rescue` from another Skill.
+2. Delegate the **entire current `illustrated_publication` task once**, rather than delegating one image at a time. Use a fresh foreground Codex run (`--fresh --wait`) because the pipeline needs the generated assets and task JSON before `advance` can continue.
+3. Forward enough exact task transport context for Codex to work in the same checkout: the current task input, this prompt, the required Schema/result binding, `constraints.output_directory`, persona spec/reference paths, and the expected task output path.
+4. Tell Codex to use its image-generation capability to create all selected images under `constraints.output_directory`, perform the same QA below, and write the final Schema-valid task result JSON to the expected output path. The rescue runtime is write-capable and uses the same local repository checkout.
+5. After Codex returns, Claude Code should verify that the expected output JSON and referenced image files exist and satisfy the Schema, then continue the normal task/`advance` flow. Do not paraphrase Codex stdout into a second, independently reconstructed manifest.
+6. Only if the Codex bridge is unavailable, unauthenticated, or the delegated image-generation task actually fails may this task degrade to `fallback_to_text`. Lack of native Claude image generation alone is never a valid fallback reason.
+
+The machine-readable version of this rule is also supplied as `constraints.host_execution_policy`.
+
 ## Selection
 
 1. Read the issue synthesis and all supplied final items.
@@ -33,7 +54,7 @@ Every AI-generated illustration must include the approved personal technical-sco
 
 ## Image generation
 
-When the current Agent has image generation:
+Once the host routing above has provided an image-capable Codex execution context:
 
 1. Generate a horizontal `1.9:1` explanatory image under `constraints.output_directory`.
 2. Prefer high-information-density mechanism/relationship illustrations similar to the previously validated illustrated briefing.
@@ -42,7 +63,7 @@ When the current Agent has image generation:
 5. Inspect each generated image for personal-IP consistency, Chinese text, cropping, factual structure, and visual consistency before returning it.
 6. Set the illustration `status` to `generated`, set `persona_used=true`, and return the exact `generated_asset_path`.
 
-When image generation is unavailable or an image cannot be made reliably:
+When image generation is genuinely unavailable after applying the host-routing rule, or an individual image cannot be made reliably:
 
 - do not block the briefing;
 - omit that concept or set its status to `fallback_to_text`/`failed` with a null asset path;
