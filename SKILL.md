@@ -14,7 +14,7 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 ## 核心架构
 
 - Python负责确定性工作：当前采集、可恢复外部历史回填、过滤、去重、状态、预算、滚动专题池、保守的跨期relevance cache、多样性选择、Evidence Pack、定向Evidence Repair、跨期facts cache、事实任务会话分组、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
-- 当前Agent负责智能工作：未命中relevance cache时的批量相关性与价值判断、未命中facts cache时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和一期一次的`illustrated_publication`。兼容的事实抽取可以复用同一Agent会话，但每篇来源的任务、Evidence Pack、输出、Schema、cache和repair始终独立。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
+- 当前Agent负责智能工作：未命中relevance cache时的批量相关性与价值判断、未命中facts cache时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和一期一次的`illustrated_publication`。Codex宿主直接使用自身生图能力；Claude Code宿主在该任务中通过已安装的`openai/codex-plugin-cc`把整期生图委派给`codex:codex-rescue`子Agent。兼容的事实抽取可以复用同一Agent会话，但每篇来源的任务、Evidence Pack、输出、Schema、cache和repair始终独立。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
 - 重点专题走深度通道；Top4之外的相关A级内容走专题补充；AI Infra、Agent生态、KVCache生态、存储与介质等广度信息走Radar通道。
 - 同一GitHub项目在专题补充中的多条低价值release可以聚合显示，但不得把不同论文或Top4深度条目强行合并。
 - 不得在Python中绑定某家模型API。
@@ -311,6 +311,14 @@ email-illustrated.html
 
 解释图数量**不设固定上限**。由整期内容决定需要多少张：只要是彼此独立、能实质帮助理解的机制、架构关系、系统路径、取舍或项目判断，都可以生成；不得为了“多图”填充装饰图、重复图或近重复图。信息密集的一期超过3张完全正常，信息较少时也可以少于3张甚至0张。
 
+### 宿主执行规则
+
+- **Codex中运行整个Skill**：直接使用当前Codex宿主的生图能力执行`illustrated_publication`，不增加额外委派。
+- **Claude Code中运行整个Skill**：Claude模型本身没有原生生图能力不算失败。必须通过已经安装的`openai/codex-plugin-cc`调用`codex:codex-rescue`子Agent，把整期`illustrated_publication`一次性委派给Codex；使用fresh、foreground执行（`--fresh --wait`），不要按图片拆成多个Codex任务。
+- `codex:codex-rescue`是Claude Code的subagent，不是Skill；通过`Agent`工具调用，不得使用`Skill(codex:codex-rescue)`，也不要在另一个Skill里递归调用`/codex:rescue`。
+- 委派时必须把当前任务输入、Prompt、Schema/结果绑定、个人IP参考路径、图片输出目录和预期结果路径一起交给Codex。Codex在同一checkout中生成和QA图片，并直接写入最终任务JSON；Claude Code只验证产物后继续`advance`，不得依据stdout重新编造一份manifest。
+- 只有插件不可用、Codex未认证、委派任务真实失败或图片QA失败时，Claude Code才允许降级；**“Claude自身不能生图”不是`fallback_to_text`的理由**。
+
 ### 个人视觉IP
 
 个人角色为“技术侦察员”：黑色短发、细框眼镜、白色衬衫、略松的深蓝色条纹领带，平静认真。批准参考来自`assets/persona/reference.jpg`以及`pics/圆框形象/`、`pics/方框形象/`。
@@ -334,7 +342,7 @@ email-illustrated.html
 
 ## 失败降级
 
-- 当前Agent不能生图或某张图无法可靠生成：该图标记`fallback_to_text`/`failed`或直接省略，不得阻塞简报；
+- Codex宿主只有在直接生图真实失败时才降级；Claude Code宿主必须先走`openai/codex-plugin-cc`桥接，只有桥接/委派真实失败或图片无法可靠生成时，才把该图标记`fallback_to_text`/`failed`或省略；
 - 即使所有图片失败，也必须同时生成`email.html`和`email-illustrated.html`，后者退化为完整正文基线；
 - 全文抓取失败：使用摘要做低置信Radar候选，但不得成为无A级来源的重点信息。
 - relevance cache来源指纹、版本、评分上下文或新鲜度桶不匹配：按cache miss重新进入批量价值判断，不得为了省Token强行复用；普通可变网页始终按miss处理。
