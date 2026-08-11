@@ -17,16 +17,16 @@
 - 同一GitHub项目在“专题补充”中的多条低优先级release自动聚合为一个Release Family，同时保留每个原文链接；
 - 缺口驱动的开放搜索；TPN单一项目不视为充分覆盖；
 - 深度事实抽取默认只向Agent暴露约18k字符的Evidence Pack，而不是完整140k字符全文；
-- 未命中facts cache的兼容事实任务可复用同一Agent会话，默认最多2篇；任务、Evidence Pack、输出、Schema、cache、repair和fact check仍逐篇独立，Evidence绝不为分组而缩短；
+- 未命中facts cache的兼容事实任务可复用同一Agent会话；任务、Evidence Pack、输出、Schema、cache、repair和fact check仍逐篇独立，Evidence绝不为分组而缩短；
 - Evidence Pack缺少会改变结论解释的关键条件时，仅允许一轮最多9k字符的定向补证据，不重新打开完整全文；
 - 相同来源指纹与抽取版本可跨期复用facts，缓存命中时不创建需要Agent执行的事实抽取任务；
-- 深度条目写作和事实校验默认4条一批，同时保留逐条Schema、事实边界、PASS/FAIL和provenance；
+- 深度条目先按最多4条一批生成草稿，再对整期只调用一次`human-writing`，随后按字符预算合并Fact Check；
 - `stats`命令记录任务数、尝试次数、facts/relevance缓存命中、事实Agent会话计划和文本字符量等确定性成本代理；
 - 180～260字的紧凑深度条目；
 - 横向Radar继续覆盖AI Infra、Agent、KVCache、存储与介质等近7天信号；
 - 独立事实校验和人工审核；
-- Guizang Material Illustration中心配图；
-- Guizang Social Card卡片排版；
+- `ian-xiaohei-illustrations` + Qiliang项目覆盖层生成整期解释图；
+- Guizang Social Card负责卡片/HTML排版，不参与AI生图风格；
 - agently-cli邮件发送、SMTP备用发送、归档和断点恢复。
 
 ## 快速开始
@@ -73,7 +73,7 @@ python briefing.py approve --all
 python briefing.py send --confirm-send
 ```
 
-`tasks next`只在能证明同topic、同direction、同项目判断卡、同Prompt/Schema且Evidence总量不超预算时，把最多2个**独立**`fact_extraction`任务放到同一Agent会话连续处理。需要显式单任务执行时使用 `python briefing.py tasks next-single`。会话复用失败或不确定时应回退到单任务，而不是减少Evidence或放宽校验。
+`tasks next`只在能证明任务上下文兼容且Evidence总量不超预算时，把多个**独立**`fact_extraction`任务放到同一Agent会话连续处理。需要显式单任务执行时使用 `python briefing.py tasks next-single`。会话复用失败或不确定时应回退到单任务，而不是减少Evidence或放宽校验。
 
 默认使用本机已授权的 `agently-cli` 发送 HTML 邮件。第一次执行会请求发送确认令牌并停止；用户确认后，再次执行同一命令才会真正发送。若需要使用SMTP后端，设置 `EMAIL_BACKEND=smtp`。
 
@@ -94,11 +94,14 @@ python briefing.py send --confirm-send
    │    → facts cache查询
    │       ├─ 命中：直接生成FACTS_READY，不进入Agent任务队列
    │       └─ 未命中：每篇保留独立fact_extraction任务
-   │            → 兼容任务可两篇复用一个Agent会话，但Evidence/输出/校验仍逐篇独立
+   │            → 兼容任务可复用一个Agent会话，但Evidence/输出/校验仍逐篇独立
    │            ├─ 证据足够：写入跨期facts cache
    │            └─ 存在材料性缺口：按明确术语从未曝光章节提取一次补充包（≤9k）
    │                 → facts修复 → 必要时写入跨期facts cache
-   │    → 4条一批写作 → 4条一批fact check → 深度解读
+   │    → item_writing_batch（≤4条/批）
+   │    → item_style_polish ×1（$human-writing整期一次）
+   │    → fact_check_batch（字符预算约束，通常1～2批）
+   │    → 深度解读
    └─ 其余相关A级
         → 1～2句专题补充 + 原文链接
         → 同一GitHub项目多条低优先级更新合并为Release Family
@@ -107,7 +110,7 @@ B/C级、discovery-only与横向信号
 → 近7天热点Radar
 ```
 
-历史回填和正常简报run刻意解耦：一次手工回填即使找到1000条历史记录，也只是先进入独立历史池；后续正常run仍受 `backlog_materialize_per_run: 120` 控制，再经过批量相关性判断和16条深读预算。因此“扩大历史覆盖”不会直接等价为“线性增加Agent任务”。
+历史回填和正常简报run刻意解耦：一次手工回填即使找到1000条历史记录，也只是先进入独立历史池；后续正常run仍受 `backlog_materialize_per_run: 120` 控制，再经过批量相关性判断和深读预算。因此“扩大历史覆盖”不会直接等价为“线性增加Agent任务”。
 
 目前只有能确定性分页并判断时间边界的固定A级源被计入可验证历史覆盖：arXiv按专题方向向后翻页，GitHub Releases按仓库向后翻页。RSS Feed无法通用证明自己保留了完整60天，所以不会被标成“已完整回填”；其他暂不支持确定性历史分页的A级源会在 `backfill-status` 的 `unsupported_sources` 中明确列出。
 
@@ -117,19 +120,19 @@ B/C级、discovery-only与横向信号
 
 relevance cache只用于“同一个不可变版本在滚动60天池中被反复看到”的场景，不是永久冻结评分。缓存只面向明确版本arXiv、GitHub Release/Tag和DOI等强版本来源；普通可变网页仍每期重新判断。来源指纹包含版本、内容hash、标题和摘要；Evaluator版本包含当前Prompt、Schema、实际暴露给Agent的topic/direction判断卡以及项目上下文。由于价值评分还有5分新鲜度，缓存再按 `freshness_days` 的2/7/30/60天边界分桶，跨越年龄边界必须重新评审。
 
-深度事实抽取仍默认最多16条、单专题最多4条、同专题同项目最多1条。原始抓取文本仍可保留到最多140k字符用于审计和必要时人工回看，但正常 `fact_extraction` 只读取确定性选择出的Evidence Pack。默认上限是18k字符，优先保留Architecture/Method/Evaluation/Results/Limitations及专题相关段落，并保留章节或页码定位信息。
+深度事实抽取的原始抓取文本仍可保留到最多140k字符用于审计和必要时人工回看，但正常 `fact_extraction` 只读取确定性选择出的Evidence Pack。默认上限是18k字符，优先保留Architecture/Method/Evaluation/Results/Limitations及专题相关段落，并保留章节或页码定位信息。
 
-事实抽取会话复用只优化宿主Agent的启动次数，不改变上面的16条深读预算和18k Evidence Pack上限。默认只有同topic+direction的兼容任务可两篇一组，并且组内Evidence合计最多40k字符；任何一篇Evidence长度未知、总量超限、项目判断卡不同或其他兼容条件无法证明时直接单独运行。组内每篇仍使用原来的独立 `_task`、输入、输出和 `facts.schema.json`；前一篇证据对后一篇不可采信。即使一篇INVALID，也只重试该篇，而不是把另一篇一起重做。
+事实抽取会话复用只优化宿主Agent的启动次数，不改变独立事实任务和18k Evidence Pack上限。组内每篇仍使用原来的独立 `_task`、输入、输出和 `facts.schema.json`；前一篇证据对后一篇不可采信。即使一篇INVALID，也只重试该篇，而不是把其他任务一起重做。
 
 如果首轮事实抽取明确发现一个会影响正确解释的关键缺口，例如具体baseline、硬件/工作负载条件、部署限制或原文明确的limitation，可以通过 `evidence_gaps` 请求一次定向补证据。Python只在首轮Evidence Pack未包含的章节中检索Agent给出的原文术语，生成默认最多9k字符的supplement；Agent修复facts时只读取结构化旧facts和这份supplement，不重读原18k Evidence Pack，也不打开140k原始全文。找不到明确术语时直接保持保守结论，不退化为通用全文搜索，也不会进行第二轮补读。
 
 事实抽取结果会按稳定来源指纹与运行时抽取版本保存到本地跨期缓存。零抓取复用只面向具有强版本身份的来源，例如明确版本的arXiv、GitHub Release/Tag和DOI类稳定身份；普通可变网页不会为了省Token直接跳过重新验证。Prompt、Schema和Evidence Repair Prompt会参与运行时版本，因此相关规则变化会自动使旧缓存失效；Evidence Pack算法发生实质变化时仍应主动修改 `fact_extractor_version`。
 
-深度条目的写作与事实检查不再默认“一条内容启动一次Agent任务”。新运行按最多4条且总输入字符受限的小批次生成 `item_writing_batch` 与 `fact_check_batch`。每个批次只摊薄Agent启动、Prompt加载以及 `$human-writing` / `$humanizer` 的固定成本；每条内容仍有独立event/item ID、来源、Schema和语义校验，fact check仍逐条给出PASS/FAIL。升级前已经生成旧式单条任务的未完成run继续按旧任务恢复，不会破坏断点状态。
+深度条目的写作采用“批量草稿 → 整期一次中文润色 → 独立Fact Check”。`item_writing_batch`只根据结构化facts形成草稿，不加载写作Skill；所有草稿完成后，一个`item_style_polish`任务对整期只调用一次`$human-writing`，随后Fact Check按`editorial_batch_max_input_chars`字符预算打包，`fact_check_batch_size: 24`只是安全上限。每条内容仍有独立event/item ID、来源、Schema和语义校验，Fact Check仍逐条给出PASS/FAIL。升级前已经生成旧式单条任务的未完成run继续按旧任务恢复，不会破坏断点状态。
 
 Top4之外的专题补充不触发全文、写作和事实检查，因此能够扩充信息量而不线性放大Token消耗。同一GitHub项目的多个普通release只在专题补充中聚合；Top4深度条目和不同论文不会被强行合并。
 
-开放Web搜索只补充固定信源没有覆盖的重点方向，默认最多4次。TPN同一方向只有一个项目时仍视为覆盖不足，以主动寻找不同项目或不同机制的原始来源。
+开放Web搜索只补充固定信源没有覆盖的重点方向，最多选择4条coverage-gap lane，并合并进一期至多一个`agent_web_search` Agent任务。TPN同一方向只有一个项目时仍视为覆盖不足，以主动寻找不同项目或不同机制的原始来源。
 
 ## 运行成本统计
 
@@ -182,7 +185,7 @@ python scripts/estimate_efficiency.py
 
 ## Agent如何处理任务
 
-该Skill不调用固定模型API。Python脚本会生成任务文件，当前Agent负责严格执行 `tasks next` 返回的说明。普通任务仍按单任务处理；兼容的`fact_extraction`可能被安排到一个会话组，默认最多2个**独立任务**。
+该Skill不调用固定模型API。Python脚本会生成任务文件，当前Agent负责严格执行 `tasks next` 返回的说明。普通任务仍按单任务处理；兼容的`fact_extraction`可能被安排到一个会话组，但每个任务保持独立。
 
 单任务规则：
 
@@ -201,13 +204,12 @@ python scripts/estimate_efficiency.py
 
 相关候选使用 `relevance_batch` 任务：每批最多24条同专题候选，同时受默认48k字符预算约束；topic与direction信息只在批次级出现一次，候选用 `direction_id` 引用。输出必须对每个输入候选返回且只返回一条结果，缺失、重复或未知ID都会被拒绝。强版本来源命中有效relevance cache时不会创建该候选对应的Agent判断；普通可变网页仍必须重新判断。
 
-新运行的深度条目使用 `item_writing_batch`，默认最多4条一批。Agent先逐条依据各自结构化facts形成初稿，再对整批只调用一次 `$human-writing` 和一次 `$humanizer`；两个Skill只允许调整自然中文，不得跨条目移动或增加事实、数字、因果、来源和ID。`fact_check_batch` 同样按条目独立校验，批处理不改变逐条证据边界。`issue_synthesis` 仍只读取通过事实检查的核心条目，并按原规则进行综合判断和语言审查。
+新运行的深度条目使用 `item_writing_batch` 先生成草稿；该任务不加载写作Skill。全部草稿完成后只创建一个 `item_style_polish`，整期调用一次 `$human-writing`，然后才创建 `fact_check_batch`。Fact Check仍按条目独立校验，批处理不改变逐条证据边界。`issue_synthesis`只读取通过事实检查的核心条目并直接完成综合判断，不再运行额外写作Skill。
 
-未安装时可在本机执行：
+未安装`human-writing`时可在本机执行：
 
 ```bash
 npx skills add https://github.com/KKKKhazix/human-writing --global --agent codex
-npx skills add https://github.com/blader/humanizer --global --agent codex
 ```
 
 ## 专题配置
@@ -218,17 +220,18 @@ npx skills add https://github.com/blader/humanizer --global --agent codex
 
 ## 配图策略
 
+生产流程不再逐条运行配图路由；事实检查和综合判断完成后，一期只运行一个`illustrated_publication`任务：
+
 ```text
-论文/官方原图
-→ 官方产品图
-→ GitHub或产品截图
-→ 精确程序化图表
-→ Guizang材质机制图
-→ 个人IP判断图
-→ 纯文字卡
+最终issue.json + email.html正文基线
+→ ian-xiaohei-illustrations
+→ assets/persona/ian-qiliang/overlay.md
+→ assets/persona/ian-qiliang/reference-manifest.yaml
+→ 按内容需要生成0..N张解释图
+→ email-illustrated.html
 ```
 
-精确数字不得交给图像模型绘制。
+三张persona anchor必须真实存在；缺失时图片路径失败并保留完整正文，不得切换到其他人物或生图风格。精确数字不得交给图像模型绘制。Guizang Social Card只负责既有卡片/HTML排版。
 
 ## 定时运行
 
