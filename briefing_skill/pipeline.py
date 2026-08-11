@@ -439,8 +439,8 @@ class Pipeline:
                 schema="brief-item.schema.json",
                 priority=score,
                 metadata={
-                    "required_skills": ["human-writing", "humanizer"],
-                    "skill_mode": "chinese_technical_rewrite_then_ai_pattern_audit",
+                    "required_skills": ["human-writing"],
+                    "skill_mode": "single_item_chinese_technical_polish",
                 },
             )
         self.db.update_run(self.run_id, stage="AWAITING_ITEMS")
@@ -571,10 +571,6 @@ class Pipeline:
             prompt="issue-synthesis.md",
             schema="issue-synthesis.schema.json",
             priority=100,
-            metadata={
-                "required_skills": ["human-writing", "humanizer"],
-                "skill_mode": "chinese_technical_rewrite_then_ai_pattern_audit",
-            },
         )
         if mode == "expanded_v2":
             return
@@ -591,7 +587,8 @@ class Pipeline:
                         "evidence_first": True,
                         "no_decorative_ai_image": True,
                         "exact_numbers_require_programmatic_chart": True,
-                        "persona_reference": self.config.settings.get("visuals", {}).get("persona_reference"),
+                        "persona_overlay": "assets/persona/ian-qiliang/overlay.md",
+                        "persona_reference_manifest": "assets/persona/ian-qiliang/reference-manifest.yaml",
                         "persona_role": "技术侦察员",
                     },
                 },
@@ -637,8 +634,9 @@ class Pipeline:
                     {
                         "brief_item": read_json(self.root / item["json_path"]),
                         "visual_plan": plan,
-                        "material_skill_path": "vendor/guizang-material-illustration/SKILL.md",
-                        "persona_spec_path": "assets/persona/persona-spec.yaml",
+                        "illustration_style_skill": "ian-xiaohei-illustrations",
+                        "persona_overlay_path": "assets/persona/ian-qiliang/overlay.md",
+                        "persona_reference_manifest_path": "assets/persona/ian-qiliang/reference-manifest.yaml",
                         "output_directory": str((self.run_dir / "visuals" / "generated").relative_to(self.root)),
                         "fallback_allowed": True,
                     },
