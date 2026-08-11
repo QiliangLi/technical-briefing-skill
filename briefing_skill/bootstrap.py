@@ -17,6 +17,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .deep_eligibility_version import install_deep_eligibility_cache_version
     from .deep_selection_contract import install_deep_selection_contract
     from .deep_selection_guard import install_deep_selection_guard
+    from .discovery_stage import install_discovery_stage
     from .editorial_batch import install_editorial_batching
     from .efficiency import install_pipeline_optimizations
     from .evidence_repair import install_evidence_repair
@@ -55,6 +56,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_radar_taxonomy()
     install_quality_guards()
     install_coverage_policy()
+    # DiscoveryStage consumes the rolling backlog + coverage policy and creates at
+    # most one Agent task containing up to four independent gap-search lanes.
+    install_discovery_stage()
     install_release_family_aggregation()
     install_value_scoring()
     install_safe_efficiency()

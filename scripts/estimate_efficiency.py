@@ -28,7 +28,7 @@ def main() -> int:
     parser.add_argument("--writing-batch-size", type=int, default=4)
     parser.add_argument("--fact-check-batch-size", type=int, default=24)
     parser.add_argument("--search-before", type=int, default=18)
-    parser.add_argument("--search-after", type=int, default=4)
+    parser.add_argument("--search-after", type=int, default=1)
     args = parser.parse_args()
     result = estimate_task_reduction(
         candidates=args.candidates,
@@ -68,6 +68,7 @@ def main() -> int:
             "item_writing_tasks_after": writing_batches,
             "item_style_polish_tasks_after": style_polish_tasks,
             "fact_check_tasks_after": check_batches,
+            "agent_web_search_tasks_after": max(0, args.search_after),
             "tasks_after": batched_after,
             "task_reduction_ratio": round(0.0 if not before else (before - batched_after) / before, 4),
         }
