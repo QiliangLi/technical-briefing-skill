@@ -9,6 +9,10 @@ from .utils import now_iso, read_json, write_json
 
 TASK_TYPE = "illustrated_publication"
 MANIFEST_RELATIVE_PATH = Path("illustrations") / "manifest.json"
+IAN_STYLE_SKILL = "ian-xiaohei-illustrations"
+IAN_OVERLAY_PATH = Path("assets/persona/ian-qiliang/overlay.md")
+IAN_REFERENCE_MANIFEST_PATH = Path("assets/persona/ian-qiliang/reference-manifest.yaml")
+IAN_REFERENCE_KEYS = ("identity_anchor", "action_anchor", "wide_scene_anchor")
 
 
 def _is_remote_asset(value: str) -> bool:
@@ -130,6 +134,73 @@ def _host_execution_policy() -> dict[str, Any]:
     }
 
 
+def _repo_file(root: Path, value: str | Path, label: str) -> str:
+    """Return a verified repository-relative file path or fail closed."""
+
+    relative = Path(str(value))
+    if relative.is_absolute():
+        raise RuntimeError(f"{label} must be repository-relative: {relative}")
+    root_resolved = root.resolve()
+    target = (root / relative).resolve()
+    if target != root_resolved and root_resolved not in target.parents:
+        raise RuntimeError(f"{label} escapes the repository root: {relative}")
+    if not target.is_file():
+        raise RuntimeError(f"{label} does not exist: {relative}")
+    return relative.as_posix()
+
+
+def _ian_persona_contract(root: Path, visuals: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Load the sole active illustration style/persona contract and verify its anchors."""
+
+    import yaml
+
+    settings = dict(visuals or {})
+    style_skill = str(settings.get("illustration_style_skill") or IAN_STYLE_SKILL).strip()
+    if style_skill != IAN_STYLE_SKILL:
+        raise RuntimeError(
+            f"Illustrated publication supports only {IAN_STYLE_SKILL}; got {style_skill or '<empty>'}"
+        )
+
+    overlay_path = _repo_file(
+        root,
+        settings.get("persona_overlay") or IAN_OVERLAY_PATH,
+        "Ian persona overlay",
+    )
+    manifest_path = _repo_file(
+        root,
+        settings.get("persona_reference_manifest") or IAN_REFERENCE_MANIFEST_PATH,
+        "Ian persona reference manifest",
+    )
+    manifest = yaml.safe_load((root / manifest_path).read_text(encoding="utf-8")) or {}
+    if str(manifest.get("base_skill") or "").strip() != IAN_STYLE_SKILL:
+        raise RuntimeError(
+            f"Ian persona reference manifest must bind base_skill={IAN_STYLE_SKILL}"
+        )
+
+    references: dict[str, str] = {}
+    for key in IAN_REFERENCE_KEYS:
+        entry = manifest.get(key) or {}
+        reference_path = str(entry.get("path") or "").strip()
+        if not reference_path:
+            raise RuntimeError(f"Ian persona reference manifest is missing {key}.path")
+        references[key] = _repo_file(root, reference_path, f"Ian persona {key}")
+
+    return {
+        "illustration_style_skill": IAN_STYLE_SKILL,
+        "persona_overlay_path": overlay_path,
+        "persona_reference_manifest_path": manifest_path,
+        "persona_reference_paths": references,
+        "image_style_policy": (
+            "ian_only; Guizang is retained only for HTML/card layout and must not be used "
+            "as an image-generation or persona style"
+        ),
+        "persona_reference_policy": (
+            "reference-manifest anchors are authoritative; do not substitute a generic, "
+            "Guizang, or unreferenced character when an anchor is missing"
+        ),
+    }
+
+
 def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
     """Build illustration input only from the finalized immutable IssueDocument."""
 
@@ -153,6 +224,7 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
         for item in issue_data.get("items") or []
     ]
     visuals = dict(pipeline.config.settings.get("visuals") or {})
+    persona_contract = _ian_persona_contract(pipeline.root, visuals)
     return {
         "issue_id": issue["id"],
         "synthesis": issue_data.get("synthesis") or {},
@@ -162,9 +234,7 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
             "illustration_count_policy": "no_fixed_cap; create every distinct explanatory image that materially improves understanding, without decorative or near-duplicate filler",
             "persona_required_for_generated_images": True,
             "aspect_ratio": "1.9:1",
-            "persona_spec_path": "assets/persona/persona-spec.yaml",
-            "persona_reference_path": visuals.get("persona_reference", "assets/persona/reference.jpg"),
-            "approved_persona_asset_directories": ["pics/圆框形象", "pics/方框形象"],
+            **persona_contract,
             "output_directory": str((pipeline.run_dir / "illustrations").relative_to(pipeline.root)),
             "base_email_name": "email.html",
             "illustrated_email_name": "email-illustrated.html",
