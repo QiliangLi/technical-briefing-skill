@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -17,6 +16,10 @@ def _style_input(pipeline) -> dict[str, Any]:
         "SELECT * FROM brief_items WHERE run_id=? ORDER BY score DESC, id",
         (pipeline.run_id,),
     )
+    length = {
+        "min_chars": int(pipeline.config.settings.get("brief_item_min_chars", 180)),
+        "max_chars": int(pipeline.config.settings.get("brief_item_max_chars", 260)),
+    }
     items: list[dict[str, Any]] = []
     for row in rows:
         item = read_json(pipeline.root / row["json_path"], {})
@@ -29,6 +32,7 @@ def _style_input(pipeline) -> dict[str, Any]:
                     for key, value in item.items()
                     if key != "_provenance"
                 },
+                "length": length,
             }
         )
     return {
@@ -114,6 +118,19 @@ def install_issue_style_polish() -> None:
         if writing_unfinished:
             return
 
+        # Standalone item_writing tasks identify a pre-batching run. Keep its old
+        # resume semantics instead of adding a new issue-level rewrite after the fact.
+        standalone_old_run = self.db.fetchone(
+            "SELECT 1 FROM tasks WHERE run_id=? AND task_type='item_writing' LIMIT 1",
+            (self.run_id,),
+        )
+        batched_run = self.db.fetchone(
+            "SELECT 1 FROM tasks WHERE run_id=? AND task_type='item_writing_batch' LIMIT 1",
+            (self.run_id,),
+        )
+        if standalone_old_run and not batched_run:
+            return original_prepare_checks(self)
+
         item_count = self.db.fetchone(
             "SELECT COUNT(*) AS n FROM brief_items WHERE run_id=?",
             (self.run_id,),
@@ -192,16 +209,17 @@ def install_issue_style_polish() -> None:
             errors.append("item_style_polish must return exactly one result per input")
 
         inputs = {
-            str(row.get("brief_item_id") or ""): row.get("item") or {}
+            str(row.get("brief_item_id") or ""): row
             for row in expected_rows
         }
         item_schema = read_json(self.root / "schemas" / "brief-item.schema.json")
         validator = Draft202012Validator(item_schema)
         for index, result in enumerate(data.get("results", [])):
             brief_item_id = str(result.get("brief_item_id") or "")
-            original = inputs.get(brief_item_id)
-            if not original:
+            source_row = inputs.get(brief_item_id)
+            if not source_row:
                 continue
+            original = source_row.get("item") or {}
             reconstructed = dict(original)
             for field in STYLE_FIELDS:
                 reconstructed[field] = result.get(field)
@@ -213,20 +231,13 @@ def install_issue_style_polish() -> None:
                 f"item_style_polish result {index}: {error.message}"
                 for error in schema_errors[:5]
             )
-            length = self.db.fetchone(
-                "SELECT json_path FROM brief_items WHERE id=? AND run_id=?",
-                (brief_item_id, task["run_id"]),
-            )
-            if length:
-                settings = getattr(self, "config", None)
-            min_chars = 180
-            max_chars = 260
+            length = source_row.get("length") or {}
             errors.extend(
                 f"item_style_polish {brief_item_id}: {message}"
                 for message in brief_item_validation_errors(
                     reconstructed,
-                    min_chars=min_chars,
-                    max_chars=max_chars,
+                    min_chars=int(length.get("min_chars", 180)),
+                    max_chars=int(length.get("max_chars", 260)),
                 )
             )
         return errors
