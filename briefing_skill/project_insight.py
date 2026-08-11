@@ -36,7 +36,7 @@ def build_project_context_cards(
     config: ConfigBundle,
     topic_ids: Iterable[str],
 ) -> list[dict[str, Any]]:
-    """Build compact, configured project cards for only the topics present in an issue."""
+    """Build compact configured project cards only for topics present in the issue."""
 
     paths = Paths(root)
     cards: list[dict[str, Any]] = []
@@ -69,7 +69,7 @@ def build_project_context_cards(
 
 
 def enrich_issue_synthesis_input(root: Path, input_data: dict[str, Any]) -> dict[str, Any]:
-    """Attach project questions without creating a second Agent stage."""
+    """Attach project questions to the existing issue-synthesis Agent task."""
 
     payload = dict(input_data)
     config = ConfigBundle.load(Paths(root))
@@ -181,6 +181,8 @@ def project_insight_semantic_errors(
 
 
 def render_project_insight_email_block(issue: dict[str, Any]) -> str:
+    """Legacy renderer retained for archived callers; active publication does not call it."""
+
     insights = issue.get("synthesis", {}).get("project_insights") or []
     if not insights:
         return ""
@@ -283,13 +285,11 @@ def _project_insight_stats(db, root: Path, run_id: str) -> dict[str, Any]:
 
 
 def install_project_insight_layer() -> None:
-    """Add evidence-bound project implications to the existing issue-synthesis task."""
+    """Add Project Insight to Issue Synthesis without patching publication or validation."""
 
     from . import demo as demo_module
     from . import telemetry
-    from .emailer import EmailService
     from .pipeline import Pipeline
-    from .rendering import Renderer
     from .tasks import TaskService
 
     if getattr(Pipeline, "_project_insight_installed", False):
@@ -363,51 +363,6 @@ def install_project_insight_layer() -> None:
         return output
 
     demo_module._demo_output = demo_output
-
-    original_email_build = EmailService.build
-
-    def email_build(self, run_id: str, *args, **kwargs):
-        path = original_email_build(self, run_id, *args, **kwargs)
-        issue_row = self.db.fetchone("SELECT issue_json_path FROM issues WHERE run_id=?", (run_id,))
-        if not issue_row or not issue_row.get("issue_json_path"):
-            return path
-        issue = read_json(self.root / issue_row["issue_json_path"], {})
-        block = render_project_insight_email_block(issue)
-        if not block:
-            return path
-        text = path.read_text(encoding="utf-8")
-        marker = '<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-'
-        if marker not in text:
-            raise RuntimeError("Unable to place project insight block before topic sections")
-        path.write_text(text.replace(marker, block + marker, 1), encoding="utf-8")
-        return path
-
-    EmailService.build = email_build
-
-    original_validate = Renderer.validate
-
-    def validate(self, run_id: str):
-        report = original_validate(self, run_id)
-        issue_row = self.db.fetchone("SELECT issue_json_path,email_path FROM issues WHERE run_id=?", (run_id,))
-        if not issue_row or not issue_row.get("issue_json_path"):
-            return report
-        issue = read_json(self.root / issue_row["issue_json_path"], {})
-        insights = issue.get("synthesis", {}).get("project_insights") or []
-        if not insights:
-            return report
-        email_path = issue_row.get("email_path")
-        if not email_path:
-            report.setdefault("failures", []).append("Project insights exist but email output is missing")
-            return report
-        email_text = (self.root / email_path).read_text(encoding="utf-8")
-        marker = f'data-project-insight-count="{len(insights)}"'
-        if marker in email_text:
-            report.setdefault("passes", []).append("Project insights are exposed in the email")
-        else:
-            report.setdefault("failures", []).append("Project insights are not exposed in the email")
-        return report
-
-    Renderer.validate = validate
 
     original_run_stats = telemetry.run_stats
 
