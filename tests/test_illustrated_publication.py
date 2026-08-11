@@ -6,7 +6,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from jsonschema import Draft202012Validator
 
-from briefing_skill.illustrated_publication import render_illustrated_html
+from briefing_skill.illustrated_publication import _host_execution_policy, render_illustrated_html
 
 
 def _base_email() -> str:
@@ -162,3 +162,28 @@ def test_empty_manifest_keeps_readable_baseline_without_images(tmp_path: Path) -
     assert not soup.select('tr[data-reader-role="explanatory-illustration"]')
     assert soup.find("a", id="topic-tpn") is not None
     assert "本期判断" in soup.get_text(" ", strip=True)
+
+
+def test_host_execution_policy_routes_claude_code_through_codex_plugin() -> None:
+    policy = _host_execution_policy()
+
+    assert policy["codex"]["mode"] == "direct"
+    assert policy["claude_code"] == {
+        "mode": "delegate_via_codex_plugin_cc",
+        "plugin_repository": "openai/codex-plugin-cc",
+        "subagent_type": "codex:codex-rescue",
+        "routing_flags": ["--fresh", "--wait"],
+        "delegate_entire_task": True,
+        "same_checkout": True,
+        "fallback_only_after_bridge_failure": True,
+    }
+
+
+def test_prompt_does_not_treat_missing_native_claude_image_generation_as_fallback() -> None:
+    root = Path(__file__).resolve().parents[1]
+    prompt = (root / "prompts" / "illustrated-publication.md").read_text(encoding="utf-8")
+
+    assert "codex:codex-rescue" in prompt
+    assert "--fresh --wait" in prompt
+    assert "not** a reason to return `fallback_to_text`" in prompt
+    assert "delegate the **entire current `illustrated_publication` task once**" in prompt
