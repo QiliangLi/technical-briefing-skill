@@ -8,6 +8,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from .balanced_evidence import install_balanced_evidence
     from .cache_fastpath import install_fact_cache_fastpath
+    from .candidate_assessment import install_candidate_assessment
     from .cost_schema import install_cost_schema
     from .coverage_policy import install_coverage_policy
     from .deep_efficiency import install_deep_efficiency
@@ -100,6 +101,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # candidates that passed the deterministic eligibility contract.
     install_deep_eligibility_contract()
     install_deep_eligibility_demo()
+    # Relevance, Technology Value and Deep semantic signals are produced by the same
+    # Agent result and now have one persisted CandidateAssessment + one cache owner.
+    install_candidate_assessment()
     install_project_insight_layer()
     # Close the last deep-selection bypass after Technology Value has patched the
     # selector. Deep candidates must be assessed before high rule scores can compete.
