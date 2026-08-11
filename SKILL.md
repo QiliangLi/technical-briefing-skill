@@ -14,7 +14,7 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 ## 核心架构
 
 - Python负责确定性工作：当前采集、可恢复外部历史回填、过滤、去重、状态、预算、滚动专题池、保守的跨期relevance cache、多样性选择、Evidence Pack、定向Evidence Repair、跨期facts cache、事实任务会话分组、任务成本统计、渲染、邮件和归档。邮件默认通过本机已授权的`agently-cli`发送，SMTP仅作为显式备用后端。
-- 当前Agent负责智能工作：未命中relevance cache时的批量相关性与价值判断、未命中facts cache时的事实抽取、必要时一次定向facts修复、批量条目写作、批量事实校验、综合判断和一期一次的`illustrated_publication`。Codex宿主直接使用自身生图能力；Claude Code宿主在该任务中通过已安装的`openai/codex-plugin-cc`把整期生图委派给`codex:codex-rescue`子Agent。兼容的事实抽取可以复用同一Agent会话，但每篇来源的任务、Evidence Pack、输出、Schema、cache和repair始终独立。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
+- 当前Agent负责智能工作：未命中relevance cache时的批量相关性与价值判断、未命中facts cache时的事实抽取、必要时一次定向facts修复、批量条目草稿写作、一期一次的中文条目润色、按字符预算合并的批量事实校验、综合判断和一期一次的`illustrated_publication`。条目草稿阶段不加载写作Skill；全部草稿完成后`item_style_polish`对整期条目只调用一次`$human-writing`，随后Fact Check验证润色后的最终条目文本。`$humanizer`不再进入日报主链。Codex宿主直接使用自身生图能力；Claude Code宿主在该任务中通过已安装的`openai/codex-plugin-cc`把整期生图委派给`codex:codex-rescue`子Agent。兼容的事实抽取可以复用同一Agent会话，但每篇来源的任务、Evidence Pack、输出、Schema、cache和repair始终独立。外部历史分页、游标、时间截断和历史去重不属于Agent任务。
 - 重点专题走深度通道；Top4之外的相关A级内容走专题补充；AI Infra、Agent生态、KVCache生态、存储与介质等广度信息走Radar通道。
 - 同一GitHub项目在专题补充中的多条低价值release可以聚合显示，但不得把不同论文或Top4深度条目强行合并。
 - 不得在Python中绑定某家模型API。
@@ -140,8 +140,8 @@ python briefing.py send --confirm-send
 9. 每篇来源最多只允许一轮`fact_evidence_repair`。Python只能在首轮Evidence Pack未曝光的章节中按明确gap terms生成`evidence_repair_max_chars`限制的targeted supplement；repair Agent只读取结构化旧facts和这份supplement。没有明确术语命中时保持保守结论，不得退化为全文搜索；repair后仍缺失的信息保留在`limitations/evidence_gaps`，不得发起第二轮。
 10. facts cache只能复用稳定来源指纹与运行时抽取版本完全匹配的结果。零抓取复用仅用于明确版本arXiv、GitHub Release/Tag和DOI类强版本身份；普通可变网页必须重新验证。事实Prompt、Facts Schema和Evidence Repair Prompt变化会自动影响运行时版本；Evidence Pack算法发生实质改变时仍应更新`fact_extractor_version`。
 11. facts cache命中必须走同步fast path，不能再次生成需要Agent处理的事实抽取任务；存在未解决`evidence_gaps`的facts不得写入跨期cache。未命中cache的独立`fact_extraction`任务允许在**不修改任务图和证据量**的前提下复用执行会话：仅同topic+direction+项目判断卡+Prompt/Schema可分组，默认最多2篇且组内Evidence合计默认不超过40k字符；Evidence长度未知、超过预算、不兼容或任何隔离条件无法证明时必须单独运行。分组不得改变任何单篇输出、校验、cache、repair或fact check语义。
-12. 新运行的深度条目写作与事实校验必须使用小批次任务：默认最多4条`item_writing_batch`和4条`fact_check_batch`，同时受总输入字符预算限制。批处理只能摊薄Agent启动、Prompt和Skill加载成本；每个event/item必须保持独立ID、来源、Schema/语义校验、provenance和PASS/FAIL，禁止跨条目移动事实。旧run已经存在单条`item_writing`或`fact_check`任务时按旧任务继续恢复。
-13. `item_writing_batch`先逐条从各自facts形成初稿，再对整批只调用一次`$human-writing`和一次`$humanizer`；两个Skill不得改变任何事实、数字、条件、ID、score、日期或来源。
+12. 新运行的深度条目先使用最多4条的`item_writing_batch`独立形成事实受约束的草稿；所有草稿完成后只创建一个`item_style_polish`，对整期条目调用一次`$human-writing`。Fact Check只在该润色任务APPLIED后创建，并优先按`editorial_batch_max_input_chars`字符预算合并；`fact_check_batch_size`默认24只是安全上限，正常一期目标为1～2个`fact_check_batch`。每个event/item仍保持独立ID、来源、Schema/语义校验、provenance和PASS/FAIL，禁止跨条目移动事实。旧run已经存在单条`item_writing`或已有fact-check任务时按旧任务继续恢复。
+13. `$humanizer`不再进入日报主链。`item_writing_batch`不调用任何写作Skill；`item_style_polish`只允许修改标题和五个正文域，不得改变事实、数字、条件、因果强度、ID、score、日期、关键词或来源；Fact Check检查的必须是这份润色后的最终条目文本。`issue_synthesis`直接依据已通过Fact Check的核心条目生成综合判断，不再追加第二轮`$human-writing`/`$humanizer`，避免事实检查之后再次发生措辞漂移。
 14. 专题补充默认每专题最多8条、同项目最多2条；每条仅1～2句总结和原文链接，不参与本期综合判断。同一GitHub项目多条低优先级release可聚合为Release Family，必须保留每个原始链接。
 15. 完成facts抽取/必要的repair后，后续任务只读取结构化facts，不再读取全文。
 16. 最终综合判断只读取通过事实检查的核心深度解读，不读取专题补充和热点Radar。
@@ -209,13 +209,12 @@ AI HOT候选
 
 Follow Builders用于发现Builder观点、工程实践、访谈和官方博客线索；YeeKal AI Daily用于发现日报中的外部技术文章、项目和社区讨论。两者均保持B级、`discovery_only`，必须回到A级原始论文、官方文档、官方博客或项目仓库后才能进入重点信息。YeeKal日报日期只表示发现时间，不得冒充外部原始发布日期。
 
-处理`item_writing_batch`和`issue_synthesis`任务时，先根据结构化事实写初稿，再调用`$human-writing`调整自然中文，最后调用`$humanizer`审查机械AI句式。对于`item_writing_batch`，两个Skill整批各调用一次，但必须保持每条事实边界独立；两个Skill都不得增加事实、数字、因果关系或来源。`rebuild-existing`重选条目后必须重新完成`issue_synthesis`，不得自动拼接条目摘要。
+条目写作采用“批量草稿 → 整期中文润色 → Fact Check”的顺序：`item_writing_batch`只依据各自结构化facts形成草稿；所有草稿完成后，`item_style_polish`把整期条目放在同一个上下文中，只调用一次`$human-writing`消除跨条目的机械句式和机构腔；随后Fact Check逐条独立验证润色后的文字。`issue_synthesis`不再额外调用写作Skill。任何润色都不得增加事实、数字、因果关系或来源。
 
-本地未安装润色Skills时执行：
+本地未安装`human-writing`时执行：
 
 ```bash
 npx skills add https://github.com/KKKKhazix/human-writing --global --agent codex
-npx skills add https://github.com/blader/humanizer --global --agent codex
 ```
 
 ### 来源等级
@@ -362,6 +361,7 @@ email-illustrated.html
 - 每条深度解读五个正文域合计180～260字；
 - 每条深度解读至少一个A级来源；
 - 所有数字可追溯到Evidence Pack或targeted supplement中的定位信息，或其他明确的原始来源；
+- 所有详细条目在整期`item_style_polish`之后完成Fact Check，Fact Check验证的就是最终reader-facing条目文本；
 - 无重复事件或重复推送的专题补充；
 - 旧事件写明增量；
 - 项目判断与来源事实分开；
