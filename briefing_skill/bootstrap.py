@@ -23,6 +23,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .executor_usage import install_executor_usage_telemetry
     from .fact_cache_provenance import install_fact_cache_provenance
     from .fact_cache_text_normalization import install_fact_cache_source_normalization
+    from .fact_check_minimal_patch import install_minimal_fact_check_patches
     from .fact_stage import install_fact_stage
     from .final_reader_contract import install_final_reader_contract
     from .historical_backfill import install_historical_backfill
@@ -76,6 +77,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # issue-level pass invokes human-writing exactly once, then the polished text
     # enters fact-check batching. The old per-batch humanizer chain is removed.
     install_issue_style_polish()
+    # Fact Check verifies the polished reader text but cannot become a second writer:
+    # only explicit field-level factual patches are allowed, and polished prose must
+    # already satisfy the deterministic reader-writing contract.
+    install_minimal_fact_check_patches()
     # Install after the existing CLI extensions so the backfill parser preserves
     # commands such as `stats`, while the wrapped `run` gets a small auto budget.
     install_historical_backfill()
