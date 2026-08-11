@@ -1,4 +1,4 @@
-# Task: Write a Batch of Briefing Items
+# Task: Write a Batch of Briefing Item Drafts
 
 Use only the structured facts and source metadata supplied under `items`. Treat every event independently: facts, numbers, conditions, sources, and project judgements from one event must never leak into another event.
 
@@ -17,10 +17,6 @@ Return exactly one result for every input `event_id`, with no omissions, duplica
 - Every field must be one complete compact sentence and must not end with an ellipsis, comma, colon, or semicolon.
 - Do not use hype language or turn a preprint into proven production technology.
 
-Work in three passes to reduce repeated editorial overhead:
-
-1. Draft every item independently from its own structured facts.
-2. Call `$human-writing` once for the batch and revise only titles plus the five natural-language fields; preserve all facts, numbers, conditions, IDs, scores, dates, and sources.
-3. Call `$humanizer` once for the batch to audit mechanical AI phrasing; again, it must not add or change facts.
+This task is **draft generation only**. Do not call `$human-writing` or `$humanizer` here. A later issue-level `item_style_polish` task sees all drafted items together and calls `$human-writing` exactly once for cross-item Chinese style cleanup. That later pass may change wording but not facts; the polished result is then independently fact-checked.
 
 Return JSON only. Copy the input `_task` object unchanged into the top level of the output.

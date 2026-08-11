@@ -26,7 +26,7 @@ def main() -> int:
     parser.add_argument("--items-before", type=int, default=17)
     parser.add_argument("--item-budget", type=int, default=16)
     parser.add_argument("--writing-batch-size", type=int, default=4)
-    parser.add_argument("--fact-check-batch-size", type=int, default=4)
+    parser.add_argument("--fact-check-batch-size", type=int, default=24)
     parser.add_argument("--search-before", type=int, default=18)
     parser.add_argument("--search-after", type=int, default=4)
     args = parser.parse_args()
@@ -43,20 +43,30 @@ def main() -> int:
     )
 
     # The legacy estimator models one writing task plus one fact-check task per
-    # selected item. Replace only that editorial component with the new batches;
-    # relevance/search/fact-extraction assumptions remain unchanged.
+    # selected item. Replace that editorial component with small draft batches,
+    # one issue-level Chinese style task, and larger independent fact-check batches.
+    # Production fact-check batching also has a character cap, so real runs may use
+    # two checks even when the item-count estimate below fits in one.
     selected_items = min(max(0, args.items_before), max(0, args.item_budget))
     legacy_after = int(result["tasks_after"])
     legacy_editorial = selected_items * 2
     writing_batches = _ceil_div(selected_items, args.writing_batch_size)
+    style_polish_tasks = 1 if selected_items else 0
     check_batches = _ceil_div(selected_items, args.fact_check_batch_size)
-    batched_after = legacy_after - legacy_editorial + writing_batches + check_batches
+    batched_after = (
+        legacy_after
+        - legacy_editorial
+        + writing_batches
+        + style_polish_tasks
+        + check_batches
+    )
     before = int(result["tasks_before"])
 
     result.update(
         {
             "tasks_after_unbatched_editorial": legacy_after,
             "item_writing_tasks_after": writing_batches,
+            "item_style_polish_tasks_after": style_polish_tasks,
             "fact_check_tasks_after": check_batches,
             "tasks_after": batched_after,
             "task_reduction_ratio": round(0.0 if not before else (before - batched_after) / before, 4),
