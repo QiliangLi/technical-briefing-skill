@@ -36,6 +36,32 @@ This matches the successful workflow used by the historical illustrated briefing
 
 The image count is content-driven rather than quota-driven. A dense issue may need more than three images; a sparse issue may need fewer or none. The Agent must avoid decorative, redundant, or near-duplicate images, but there is no fixed upper bound.
 
+## Host-specific image generation
+
+The publication contract is host-independent; only the way the `illustrated_publication` task reaches an image-capable Codex runtime differs.
+
+### Codex host
+
+When the whole Skill is running in Codex, the Agent uses the current Codex image-generation capability directly. There is no delegation hop and no special setup in the briefing workflow.
+
+### Claude Code host
+
+The Claude Code models used for this workflow currently do not provide native image generation. That must **not** be interpreted as `image generation unavailable`.
+
+The expected Claude Code setup already has [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) installed. For `illustrated_publication`, Claude Code must:
+
+1. invoke the plugin's `codex:codex-rescue` **subagent** through the Claude Code `Agent` tool;
+2. delegate the entire current issue-level illustration task in one fresh foreground run (`--fresh --wait`), not one Codex task per image;
+3. forward the same task input, Prompt, Schema/result binding, persona references, output directory and expected result path;
+4. let Codex generate and QA all selected images in the same repository checkout and write the Schema-valid task result JSON itself;
+5. verify the produced task JSON/assets and then continue the ordinary `advance` flow.
+
+`codex:codex-rescue` is a subagent, not a Skill. Do not call `Skill(codex:codex-rescue)` and do not recursively wrap `/codex:rescue` inside another Skill. The plugin's rescue runtime is write-capable and uses the same local Codex installation/authentication and repository checkout.
+
+The reason for using a single foreground delegated task is important: image count remains content-driven, but delegation count does not scale with image count, and the main briefing pipeline cannot advance until the generated files and manifest exist.
+
+Only a genuine bridge failure (plugin unavailable, Codex unauthenticated, delegated run failure, or image QA failure) may trigger `fallback_to_text` on Claude Code. The absence of native Claude image generation by itself is never a fallback condition.
+
 ## Personal IP
 
 The personal visual identity remains the `技术侦察员` defined in `assets/persona/persona-spec.yaml`. Approved persona artwork under `pics/圆框形象/` and `pics/方框形象/` may be used as visual references.
@@ -63,6 +89,7 @@ Image failure is never a briefing failure:
 - the baseline `email.html` remains intact;
 - missing or failed image entries are skipped;
 - a generated image that does not include the required personal IP is not admitted to the illustrated artifact;
+- on Claude Code, failure means the Codex bridge/task actually failed, not merely that Claude lacks native image generation;
 - `email-illustrated.html` is still produced;
 - final validation continues to check the actual send artifact;
 - exact factual text remains owned by the fact-checked briefing, not by the image model.
