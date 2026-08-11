@@ -26,18 +26,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .fact_cache_text_normalization import install_fact_cache_source_normalization
     from .fact_check_minimal_patch import install_minimal_fact_check_patches
     from .fact_stage import install_fact_stage
-    from .final_reader_contract import install_final_reader_contract
     from .historical_backfill import install_historical_backfill
     from .illustrated_publication import install_illustrated_publication
     from .invalid_repair import install_invalid_targeted_repair
+    from .issue_stage import install_issue_stage
     from .issue_style_polish import install_issue_style_polish
     from .no_human_review import install_no_human_review_gate
     from .primary_fulltext_cache import install_primary_fulltext_cache
     from .project_insight import install_project_insight_layer
+    from .publication_stage import install_publication_stage
     from .quality_guard import install_quality_guards
     from .radar_signal_synthesis import install_radar_signal_synthesis
     from .radar_taxonomy import install_radar_taxonomy
-    from .reader_facing_quality import install_reader_facing_quality
     from .reader_writing_contract import install_reader_writing_contract
     from .release_family import install_release_family_aggregation
     from .relevance_efficiency import install_relevance_efficiency
@@ -46,111 +46,67 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .session_grouping import install_session_grouping
     from .technology_value import install_technology_value_assessment
     from .telemetry import install_task_telemetry
-    from .topic_appendix_render import install_topic_appendix_rendering
     from .topic_local_deep import install_topic_local_deep_policy
     from .value_scoring import install_value_scoring
 
     install_cost_schema()
     install_pipeline_optimizations()
-    # Install before coverage_policy so its prepare_relevance wrapper first
-    # materialises the rolling backlog and only then enters the cache fast path.
     install_relevance_efficiency()
     install_radar_taxonomy()
     install_quality_guards()
     install_coverage_policy()
     install_release_family_aggregation()
-    install_topic_appendix_rendering()
     install_value_scoring()
-    # This layer must precede deep-efficiency so its raw-fulltext cache becomes
-    # the underlying fetch path captured by the bounded Evidence wrapper.
     install_safe_efficiency()
-    # Extend the same raw-text reuse to discovery records that were deterministically
-    # promoted to an explicit immutable primary version while retaining source_id.
     install_primary_fulltext_cache()
-    # Deep efficiency owns Evidence construction only. Fact-cache ownership is V2
-    # below, so the old V1 read/write wrappers are no longer in the runtime chain.
+
+    # EvidenceStage: one canonical Balanced EvidenceBuilder, followed by V2 cache.
     install_deep_efficiency()
     install_task_telemetry()
     install_fact_cache_fastpath()
     install_evidence_repair()
+
+    # EditorialStage: explicit draft/check planners, one issue-level style pass, then
+    # verifier-only Fact Check with minimal factual patches.
     install_editorial_batching()
-    # Draft batches now only turn structured facts into per-item prose. One later
-    # issue-level pass invokes human-writing exactly once, then the polished text
-    # enters fact-check batching. The old per-batch humanizer chain is removed.
     install_issue_style_polish()
-    # Fact Check verifies the polished reader text but cannot become a second writer:
-    # only explicit field-level factual patches are allowed, and polished prose must
-    # already satisfy the deterministic reader-writing contract.
     install_minimal_fact_check_patches()
-    # Install after the existing CLI extensions so the backfill parser preserves
-    # commands such as `stats`, while the wrapped `run` gets a small auto budget.
+
     install_historical_backfill()
-    # Session grouping changes task-dispatch instructions and stats only.
     install_session_grouping()
-    # INVALID repair is last in the task-dispatch chain so repairable fact tasks are
-    # isolated from session grouping and receive the small sidecar path.
     install_invalid_targeted_repair()
-    # Preserve all quality-neutral efficiency counters before semantic quality layers.
     install_safe_efficiency_stats()
-    # Contract changes must invalidate both relevance and Technology Value cache keys,
-    # even when prompt/schema text happens to stay unchanged.
+
+    # AssessmentStage: one Agent result produces relevance + Technology Value +
+    # semantic Deep signals, then Python derives Deep eligibility and persists one
+    # CandidateAssessment. TopicLocalSelection is the final runtime selector.
     install_deep_eligibility_cache_version()
     install_technology_value_assessment()
-    # Deep admission is now derived by Python from structured topic fit + Technology
-    # Value. Install immediately after Technology Value so later selection only sees
-    # candidates that passed the deterministic eligibility contract.
     install_deep_eligibility_contract()
     install_deep_eligibility_demo()
-    # Relevance, Technology Value and Deep semantic signals are produced by the same
-    # Agent result and now have one persisted CandidateAssessment + one cache owner.
     install_candidate_assessment()
     install_project_insight_layer()
-    # Close the last deep-selection bypass after Technology Value has patched the
-    # selector. Deep candidates must be assessed before high rule scores can compete.
     install_deep_selection_guard()
-    # Product policy: every deep topic independently gets its own ranked Top4. This
-    # must install after the Technology Value guard so ranking semantics stay intact,
-    # while fetch failures refill from the same topic instead of another topic.
     install_topic_local_deep_policy()
-    # Fail closed around the product meaning of that Top4: only genuine Deep-tail
-    # candidates may enter the topic appendix, and final validation rechecks it.
     install_deep_selection_contract()
-    # Rebalance the same 18k first-read budget across context/mechanism/results/bounds.
-    # This must run after evidence-repair so cache versions include both policies.
+
+    # Balanced-evidence compatibility layer now contributes telemetry only.
     install_balanced_evidence()
-    # V2 is the only production Fact Cache. It binds exact source/evidence provenance
-    # and never falls back to the historical V1 table.
     install_fact_cache_provenance()
-    # Raw-fulltext cache entries are beneath FulltextService sanitization; normalize
-    # before reconstructing Evidence so V2 hashes the exact text Fact Extraction saw.
     install_fact_cache_source_normalization()
-    # Cache persistence belongs to Fact finalization: only FACTS_READY outputs without
-    # unresolved evidence gaps can be committed, including successful repair outputs.
     install_fact_stage()
-    # Reader-facing guards merge project impact into 本期判断 and remove internal metadata.
-    install_reader_facing_quality()
-    # Reuse the existing issue-synthesis Agent to turn broad Radar candidates into
-    # concrete technical signals.
+
+    # IssueStage and PublicationStage are explicit owners. Project Insight and Radar
+    # remain inside the single issue-synthesis Agent; publication assembly is structured
+    # before Jinja and final validation is mutation-free.
     install_radar_signal_synthesis()
-    # Reader-facing prose is a product contract, not a prompt preference: reject
-    # title/conclusion repetition, generic filler, and verbose/numeric-heavy judgements.
     install_reader_writing_contract()
-    # Final rendering is independently checked: no internal scores, no duplicate
-    # Deep/appendix/Radar sources, no half-width orphan cards, and no invalid prose.
-    install_final_reader_contract()
-    # The verified visual workflow is one issue-level publication pass, not one
-    # routing/generation task per card. It always preserves email.html and adds
-    # email-illustrated.html, with image failures degrading only the second artifact.
+    install_issue_stage()
+    install_publication_stage()
     install_illustrated_publication()
-    # Final validation now replaces the unused review/approve gate. Successful builds
-    # become READY_TO_SEND; failed builds become VALIDATION_FAILED. Send still needs
-    # explicit --confirm-send.
     install_no_human_review_gate()
-    # Install after every task-shaping wrapper so the outermost Host sees only the
-    # canonical bound envelope, including grouped Fact dispatch.
+
     install_execution_envelope_contract()
-    # Install last so `stats` sees every preceding telemetry wrapper. Executor usage
-    # remains optional; without imported transcripts the existing proxies still work.
     install_executor_usage_telemetry()
     from .cli import main as cli_main
 
