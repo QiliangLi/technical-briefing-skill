@@ -83,6 +83,8 @@ def _cache_identity(config, root, row: dict[str, Any]) -> tuple[str, str, str, s
 
 
 def store_technology_value_cache(config, db, root, candidate_id: str) -> bool:
+    """Historical compatibility writer; active runtime uses CandidateAssessment."""
+
     ensure_technology_value_schema(db)
     row = db.fetchone(
         """
@@ -127,6 +129,8 @@ def store_technology_value_cache(config, db, root, candidate_id: str) -> bool:
 
 
 def _apply_cached_technology_value(config, db, root, row: dict[str, Any]) -> None:
+    """Historical compatibility reader; active runtime uses CandidateAssessment."""
+
     ensure_technology_value_schema(db)
     fingerprint, topic_id, direction_id, version = _cache_identity(config, root, row)
     cache = db.fetchone(
@@ -155,7 +159,7 @@ def select_deep_budget_with_technology_value(
     rows: Iterable[dict[str, Any]],
     settings: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Use technology value only as a ranking signal; preserve existing diversity policy."""
+    """Historical helper preserving the old diversity semantics without runtime ownership."""
 
     from . import coverage_policy
 
@@ -171,7 +175,9 @@ def select_deep_budget_with_technology_value(
     selected, deferred = coverage_policy.select_diverse_deep_budget(prepared, settings)
     for row in [*selected, *deferred]:
         row["technology_selection_score"] = _number(row.get("relevance_score"))
-        row["relevance_score"] = originals.get(str(row.get("id") or ""), _number(row.get("relevance_score")))
+        row["relevance_score"] = originals.get(
+            str(row.get("id") or ""), _number(row.get("relevance_score"))
+        )
     return selected, deferred
 
 
@@ -232,10 +238,9 @@ def _technology_stats(db, run_id: str) -> dict[str, Any]:
 
 
 def install_technology_value_assessment() -> None:
-    """Install structural technology-value scoring without weakening existing relevance guards."""
+    """Install structural Technology Value assessment, not a competing selector."""
 
     from . import demo as demo_module
-    from . import efficiency
     from . import relevance_efficiency
     from . import telemetry
     from .db import Database
@@ -264,8 +269,6 @@ def install_technology_value_assessment() -> None:
 
     relevance_efficiency.apply_cached_relevance = apply_cached_relevance
 
-    # New relevance tasks are strict about the new assessment. Existing unfinished
-    # tasks were created without this metadata and remain schema-compatible.
     original_create = TaskService.create
 
     def create(self, *args, **kwargs):
@@ -306,8 +309,6 @@ def install_technology_value_assessment() -> None:
             store_technology_value_cache(self.config, self.db, self.root, candidate_id)
 
     Pipeline._apply_task = apply_task
-
-    efficiency.select_deep_budget = select_deep_budget_with_technology_value
 
     original_event_score = Scorer.event_score
 

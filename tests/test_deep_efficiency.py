@@ -16,7 +16,7 @@ from briefing_skill.tasks import TaskService
 from briefing_skill.utils import now_iso, write_json
 
 
-def test_evidence_pack_is_front_excerpt_for_initial_paper_understanding():
+def test_evidence_pack_is_balanced_first_read_for_initial_paper_understanding():
     filler = "Introduction explains the problem and mechanism in context. " * 160
     text = (
         "# Abstract\nA network-aware KV cache system reduces remote transfer overhead.\n\n"
@@ -27,12 +27,12 @@ def test_evidence_pack_is_front_excerpt_for_initial_paper_understanding():
     )
     pack = build_evidence_pack(text, {}, {}, max_chars=2200)
     assert len(pack) <= 2200
-    assert text.strip().startswith(pack)
+    assert "# Balanced Evidence Pack" in pack
     assert "# Abstract" in pack
     assert "# Introduction" in pack
     assert "network cost" in pack
-    assert "P99 latency falls by 31%" not in pack
-    assert "# Limitations" not in pack
+    assert "P99 latency falls by 31%" in pack
+    assert "# Limitations" in pack
 
 
 def _insert_raw_and_candidate(db: Database, run_id: str) -> dict:
@@ -181,6 +181,7 @@ def test_deep_efficiency_ignores_legacy_fact_cache_and_only_wraps_evidence(tmp_p
 
         assert manifest["fact_cache_hit"] is False
         assert manifest["fact_cache_eligible"] is False
+        assert manifest["evidence_strategy"] == "balanced-evidence-v2"
         assert "Fresh primary-source text" in (root / manifest["text_path"]).read_text(encoding="utf-8") if not Path(manifest["text_path"]).is_absolute() else Path(manifest["text_path"]).read_text(encoding="utf-8")
         assert TaskService.create is snapshots["create"][0]
         assert Pipeline._apply_task is snapshots["apply"][0]
