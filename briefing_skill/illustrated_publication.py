@@ -124,6 +124,31 @@ def build_illustrated_email(service, run_id: str, base_path: Path) -> Path:
     return path
 
 
+def _host_execution_policy() -> dict[str, Any]:
+    """Describe how the same illustration task is executed by supported hosts.
+
+    Host-specific image-generation routing belongs in the task contract, not in the
+    deterministic Python renderer. In particular, Claude Code must not treat its lack
+    of native image generation as a reason to skip the illustrated publication.
+    """
+
+    return {
+        "codex": {
+            "mode": "direct",
+            "instruction": "Use the current Codex host image-generation capability directly; do not add a delegation layer.",
+        },
+        "claude_code": {
+            "mode": "delegate_via_codex_plugin_cc",
+            "plugin_repository": "openai/codex-plugin-cc",
+            "subagent_type": "codex:codex-rescue",
+            "routing_flags": ["--fresh", "--wait"],
+            "delegate_entire_task": True,
+            "same_checkout": True,
+            "fallback_only_after_bridge_failure": True,
+        },
+    }
+
+
 def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
     rows = pipeline.db.fetchall(
         """
@@ -169,6 +194,7 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
             "output_directory": str((pipeline.run_dir / "illustrations").relative_to(pipeline.root)),
             "base_email_name": "email.html",
             "illustrated_email_name": "email-illustrated.html",
+            "host_execution_policy": _host_execution_policy(),
         },
     }
 
