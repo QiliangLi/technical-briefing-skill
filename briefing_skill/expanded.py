@@ -262,10 +262,6 @@ def rebuild_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_i
         prompt="issue-synthesis.md",
         schema="issue-synthesis.schema.json",
         priority=100,
-        metadata={
-            "required_skills": ["human-writing", "humanizer"],
-            "skill_mode": "chinese_technical_rewrite_then_ai_pattern_audit",
-        },
         replace_existing=True,
     )
     return {
