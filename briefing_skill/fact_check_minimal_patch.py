@@ -41,6 +41,12 @@ def apply_minimal_corrections(
     return patched
 
 
+def _reader_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Drop internal sidecars before validating the reader-facing item schema."""
+
+    return {key: value for key, value in item.items() if key != "_provenance"}
+
+
 def _patch_contract_errors(
     root,
     result: dict[str, Any],
@@ -58,21 +64,22 @@ def _patch_contract_errors(
     except ValueError as exc:
         return [str(exc)]
 
+    validated = _reader_item(patched)
     item_schema = read_json(root / "schemas" / "brief-item.schema.json")
     validator = Draft202012Validator(item_schema)
-    schema_errors = sorted(validator.iter_errors(patched), key=lambda error: list(error.path))
+    schema_errors = sorted(validator.iter_errors(validated), key=lambda error: list(error.path))
     errors.extend(f"patched item: {error.message}" for error in schema_errors[:5])
 
     length = check_input.get("length") or {}
     errors.extend(
         f"patched item: {message}"
         for message in brief_item_validation_errors(
-            patched,
+            validated,
             min_chars=int(length.get("min_chars", 180)),
             max_chars=int(length.get("max_chars", 260)),
         )
     )
-    errors.extend(f"patched item: {message}" for message in item_writing_contract_errors(patched))
+    errors.extend(f"patched item: {message}" for message in item_writing_contract_errors(validated))
     return errors
 
 
@@ -162,7 +169,7 @@ def install_minimal_fact_check_patches() -> None:
                     reconstructed[field] = result.get(field)
                 errors.extend(
                     f"item_style_polish {brief_item_id}: {message}"
-                    for message in item_writing_contract_errors(reconstructed)
+                    for message in item_writing_contract_errors(_reader_item(reconstructed))
                 )
 
         elif task.get("task_type") == TASK_TYPE:
