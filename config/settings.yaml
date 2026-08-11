@@ -1,17 +1,3 @@
-version: 1
-timezone: Asia/Shanghai
-language: zh-CN
-collection_overlap_hours: 48
-http_timeout_seconds: 25
-http_user_agent: TechnicalBriefingSkill/0.1 (+internal research workflow)
-max_raw_items_per_source: 300
-max_relevance_batch: 24
-max_fulltext_chars: 140000
-fact_chunk_chars: 28000
-fact_chunk_overlap_chars: 1200
-brief_item_min_chars: 180
-brief_item_max_chars: 260
-issue_schedule: monday_wednesday_friday
 issue_mode: expanded_v2
 render:
   style: swiss
@@ -20,9 +6,12 @@ render:
   email_width_px: 720
   force_validator: true
 visuals:
+  # HTML/card layout remains unchanged; AI-generated illustrations use Ian only.
+  illustration_style_skill: ian-xiaohei-illustrations
+  persona_overlay: assets/persona/ian-qiliang/overlay.md
+  persona_reference_manifest: assets/persona/ian-qiliang/reference-manifest.yaml
   # Illustration count is content-driven with no fixed per-issue cap.
-  # Every successfully generated explanatory image uses the approved persona.
-  persona_reference: assets/persona/reference.jpg
+  # Every successfully generated explanatory image uses the approved Qiliang Ian persona.
   allow_text_only_fallback: true
 
 # Open-web search only fills gaps left by fixed feeds. Horizontal AI Infra,
@@ -38,98 +27,33 @@ efficiency:
     - cross_region
     - optical_network
     - ai_chip_accelerator
-    - storage_media
   radar_topics:
     - ai_infra_horizontal
-
-  # Independent source collectors may overlap, but every collector keeps its own
-  # internal request order/throttling (especially arXiv's per-direction interval).
-  # Results are persisted later in fixed collector order, so concurrency changes
-  # wall-clock time only, not source recall or downstream tie behaviour.
-  collection_max_workers: 3
-
-  # Rule score is only a lexical-routing signal. All A-level deep candidates now
-  # pass through batched value review instead of being auto-accepted on keywords.
-  auto_accept_rule_score: 101
-  auto_reject_rule_score: 25
+  auto_accept_rule_score: 85
+  auto_reject_rule_score: 15
   radar_promotion_rule_score: 88
-
-  # Relevance review keeps exact per-candidate scoring but amortises topic/context
-  # overhead across larger batches. A character cap prevents one giant release-note
-  # batch, and very long summaries are deterministically excerpted before the Agent.
-  relevance_batch_max_input_chars: 48000
-  relevance_summary_max_chars: 5000
-
-  # Rolling topic backlog: keep unpushed A-level sources eligible for two months
-  # and drain them over subsequent issues instead of discarding them after 14 days.
-  deep_lookback_days: 60
-  backlog_materialize_per_run: 120
-  arxiv_results_per_direction: 40
-
-  # True external history is collected separately from the current briefing run.
-  # Every normal collection spends only a tiny request budget and resumes persisted
-  # cursors; `briefing.py backfill` can accelerate the same campaign without Agent work.
-  historical_backfill:
-    enabled: true
-    lookback_days: 60
-    auto_requests_per_collect: 4
-    manual_max_requests: 32
-    arxiv_page_size: 50
-    github_page_size: 50
-
-  # Deep work is topic-local: every configured deep topic independently keeps its
-  # four highest-ranked qualified candidates. Later candidates stay in the short
-  # topic appendix. The 32-item limit is only a safety fuse for the current eight
-  # deep topics; it must not be used as a cross-topic competition budget.
   max_fact_candidates_total: 32
-  max_fact_candidates_hard_cap: 32
   max_fact_candidates_per_topic: 4
   max_fact_candidates_per_direction: 2
   max_fact_candidates_per_project: 1
-
-  # First-pass fact extraction keeps a bounded evidence pack. Runtime policy layers
-  # may rebalance that pack, while cache versions bind topic/direction/project context
-  # so the same source is never reused under a different interpretation by accident.
-  evidence_pack_max_chars: 18000
+  deep_lookback_days: 60
+  backlog_materialize_per_run: 120
+  raw_fulltext_cache_enabled: true
   fact_cache_enabled: true
-  fact_extractor_version: front-evidence-v2
-
-  # Quality-neutral execution batching: fact tasks stay completely independent.
-  # Up to four tasks from the same exact topic/project context may share one Agent
-  # invocation even when their directions differ; every task still reads its own
-  # direction and full Evidence Pack and writes its own schema-bound output.
-  # 72k allows four normal 18k packs while still bounding accumulated context.
-  fact_session_group_size: 4
-  fact_session_group_max_evidence_chars: 72000
-
-  # At most one supplemental read is allowed when the initial fact task explicitly
-  # identifies a material evidence gap. The repair path remains bounded and exceptional.
-  evidence_repair_enabled: true
-  evidence_repair_max_chars: 9000
-
-  # Draft writing stays in small batches because each entry carries structured facts.
-  # Natural-Chinese cleanup is no longer repeated inside every batch: one later
-  # issue-level item_style_polish task calls human-writing exactly once for all drafts.
-  # Fact checking then packs as many independent polished items as fit the same
-  # character budget; 24 is only a safety ceiling, so a normal issue becomes 1-2 checks.
+  fact_cache_mode: production
+  relevance_cache_enabled: true
+  relevance_cache_ttl_days: 60
+  relevance_cache_max_entries: 5000
+  evidence_pack_max_chars: 18000
+  evidence_repair_max_chars: 12000
+  fact_extractor_version: evidence-first-v4
+  fact_group_max_tasks: 4
+  fact_group_max_evidence_chars: 72000
   item_writing_batch_size: 4
   fact_check_batch_size: 24
   editorial_batch_max_input_chars: 65000
-
-  # Top4之外的相关A级内容以1-2句形式进入专题补充，不再做全文写作和事实检查。
-  topic_appendix_max_per_topic: 8
-  topic_appendix_max_per_project: 2
-  topic_appendix_min_relevance_score: 45
-  # Keep at least one independent short item when a topic's strongest sources
-  # have all moved into detailed cards. Storage may refill from its A-level
-  # horizontal Radar lane under the same source and de-dup contracts.
-  topic_appendix_min_per_topic: 1
-  # Reader preference: keep the useful A-level related-reading layer broad. Detailed
-  # cards still require full facts and fact check; appendix entries remain short,
-  # clearly labelled, and excluded from synthesis.
-  topic_appendix_require_deferred_budget: false
-  # Explicitly approved recovery path: a current issue may reuse a detailed card
-  # that passed fact check in a named local reference run. The restore utility
-  # records both run and item IDs, and final validation verifies that provenance.
-  allow_fact_checked_reference_restores: true
-  topic_appendix_match_reference_counts: true
+  relevance_batch_max_input_chars: 48000
+  relevance_summary_max_chars: 5000
+  historical_backfill:
+    auto_requests_per_collect: 2
+    max_requests_per_command: 24
