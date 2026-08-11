@@ -1,9 +1,16 @@
-# Persona reference
+# Persona references
 
-Place an approved personal reference photo at:
+The active briefing illustration persona is the project-local Qiliang override for `ian-xiaohei-illustrations`.
+
+Authoritative files:
 
 ```text
-assets/persona/reference.jpg
+assets/persona/ian-qiliang/overlay.md
+assets/persona/ian-qiliang/reference-manifest.yaml
 ```
 
-The workflow can run without it. Without a reference image, generated visuals must use only a generic low-detail technical-scout character and must not claim facial likeness.
+`reference-manifest.yaml` points to the required identity, action, and wide-scene image anchors under `pics/`. The runtime validates that every required anchor exists before creating `illustrated_publication`.
+
+Do not add or rely on `assets/persona/reference.jpg` for new briefing illustrations. Do not substitute the retired Guizang persona or a generic technical-scout character when an Ian/Qiliang reference is missing; fail the image path explicitly and preserve the text-first briefing instead.
+
+The Guizang-derived HTML/card presentation remains independent from this image-generation contract and is intentionally unchanged.
