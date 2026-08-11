@@ -150,27 +150,20 @@ def _host_execution_policy() -> dict[str, Any]:
 
 
 def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
-    rows = pipeline.db.fetchall(
-        """
-        SELECT ii.position,ii.item_role,bi.id AS brief_item_id,bi.json_path,
-               e.topic_id,e.direction_id
-        FROM issue_items ii
-        JOIN brief_items bi ON bi.id=ii.brief_item_id
-        JOIN events e ON e.id=bi.event_id
-        WHERE ii.issue_id=?
-        ORDER BY ii.position
-        """,
-        (issue["id"],),
-    )
+    """Build illustration input only from the finalized immutable IssueDocument."""
+
+    issue_path = str(issue.get("issue_json_path") or "")
+    if not issue_path:
+        raise RuntimeError("Illustrated publication requires a finalized IssueDocument")
+    issue_data = read_json(pipeline.root / issue_path, {})
     items: list[dict[str, Any]] = []
-    for row in rows:
-        item = read_json(pipeline.root / row["json_path"], {})
+    for item in issue_data.get("items") or []:
         items.append(
             {
-                "brief_item_id": row["brief_item_id"],
-                "item_role": row.get("item_role") or "core",
-                "topic_id": row["topic_id"],
-                "direction_id": row["direction_id"],
+                "brief_item_id": item.get("brief_item_id"),
+                "item_role": item.get("item_role") or "core",
+                "topic_id": item.get("topic_id"),
+                "direction_id": item.get("direction_id"),
                 "title": item.get("title"),
                 "core_conclusion": item.get("core_conclusion"),
                 "mechanism": item.get("mechanism"),
@@ -182,9 +175,10 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
     visuals = dict(pipeline.config.settings.get("visuals") or {})
     return {
         "issue_id": issue["id"],
-        "synthesis": read_json(pipeline.root / issue["synthesis_path"], {}),
+        "synthesis": issue_data.get("synthesis") or {},
         "items": items,
         "constraints": {
+            "issue_document_is_immutable": True,
             "illustration_count_policy": "no_fixed_cap; create every distinct explanatory image that materially improves understanding, without decorative or near-duplicate filler",
             "persona_required_for_generated_images": True,
             "aspect_ratio": "1.9:1",
@@ -200,14 +194,13 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
 
 
 def install_illustrated_publication() -> None:
-    """Make the verified issue-level illustrated email a mandatory second artifact.
+    """Make illustration a publication enhancement after IssueDocument finalization.
 
-    This deliberately replaces the unverified per-item visual-routing execution path
-    for the active workflow. One Agent pass chooses every distinct explanatory image
-    that materially improves the issue, with no fixed numeric cap. Every generated
-    image must incorporate the approved personal technical-scout IP as a secondary,
-    professional participant. Rendering always preserves email.html and also writes
-    email-illustrated.html; failed image generation only removes images, never text.
+    The fact-checked IssueDocument is finalized first and therefore never depends on
+    image generation. One later issue-level Agent task consumes only that immutable
+    document and writes the illustration manifest. The text-first email remains the
+    baseline; the final send artifact is produced only after the illustration task has
+    either generated acceptable images or explicitly degraded to text.
     """
 
     from . import demo
@@ -230,7 +223,7 @@ def install_illustrated_publication() -> None:
 
     def prepare_illustrations(self) -> None:
         issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (self.run_id,))
-        if not issue or not issue.get("synthesis_path"):
+        if not issue or not issue.get("issue_json_path"):
             return
         if self.db.fetchone(
             "SELECT 1 FROM tasks WHERE run_id=? AND task_type=? AND entity_id=?",
@@ -249,42 +242,47 @@ def install_illustrated_publication() -> None:
         self.db.update_run(self.run_id, stage="AWAITING_ILLUSTRATIONS")
 
     # Supersede the old per-item materialisation/illustration-brief stage. The
-    # active publication contract is one issue-level pass, matching the workflow
-    # already validated in the committed illustrated briefing.
+    # active publication contract is one issue-level pass over the finalized issue.
     Pipeline._maybe_prepare_illustrations = prepare_illustrations
 
     original_finalize = Pipeline._maybe_finalize_issue
 
     def finalize_issue(self) -> None:
+        # Finalize the factual/text issue first. `illustrated_publication` is not a
+        # prerequisite for issue.json and can never block READY_FOR_RENDER.
+        original_finalize(self)
         issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (self.run_id,))
-        if issue and issue.get("synthesis_path"):
-            task = self.db.fetchone(
-                "SELECT * FROM tasks WHERE run_id=? AND task_type=? AND entity_id=?",
-                (self.run_id, TASK_TYPE, issue["id"]),
-            )
-            if not task:
-                self._maybe_prepare_illustrations()
-                return
-            if task.get("status") != "APPLIED":
-                return
-            manifest_path = self.run_dir / MANIFEST_RELATIVE_PATH
-            if not manifest_path.is_file():
-                return
-        return original_finalize(self)
+        if issue and issue.get("issue_json_path"):
+            self._maybe_prepare_illustrations()
 
     Pipeline._maybe_finalize_issue = finalize_issue
 
     original_build = EmailService.build
 
     def build(self, run_id: str, *args, **kwargs):
+        # Build the deterministic baseline first. If the visual task is still running,
+        # leave email.html available but do not promote any send artifact yet.
         base_path = original_build(self, run_id, *args, **kwargs)
-        illustrated_path = build_illustrated_email(self, run_id, base_path)
-        issue = self.db.fetchone("SELECT id FROM issues WHERE run_id=?", (run_id,))
-        if issue:
-            self.db.execute(
-                "UPDATE issues SET email_path=?,updated_at=? WHERE id=?",
-                (str(illustrated_path.relative_to(self.root)), now_iso(), issue["id"]),
+        issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
+        if not issue:
+            return base_path
+        task = self.db.fetchone(
+            "SELECT * FROM tasks WHERE run_id=? AND task_type=? AND entity_id=?",
+            (run_id, TASK_TYPE, issue["id"]),
+        )
+        if task and task.get("status") != "APPLIED":
+            raise RuntimeError(
+                "Baseline email.html was built, but illustrated publication is still pending; "
+                "complete the illustration task before final validation/send"
             )
+        if task and not (self.root / "workspace" / "runs" / run_id / MANIFEST_RELATIVE_PATH).is_file():
+            raise RuntimeError("Illustrated publication task was applied without illustrations/manifest.json")
+
+        illustrated_path = build_illustrated_email(self, run_id, base_path)
+        self.db.execute(
+            "UPDATE issues SET email_path=?,updated_at=? WHERE id=?",
+            (str(illustrated_path.relative_to(self.root)), now_iso(), issue["id"]),
+        )
         return illustrated_path
 
     EmailService.build = build
