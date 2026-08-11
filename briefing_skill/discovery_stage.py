@@ -40,31 +40,18 @@ def _preferred_domains(topic_id: str) -> list[str]:
 
 
 def plan_coverage_gap_searches(pipeline, *, max_queries: int = DEFAULT_MAX_GAP_LANES) -> list[dict[str, Any]]:
-    """Plan narrow uncovered lanes, but do not turn each lane into an Agent task."""
+    """Plan the same uncovered lanes as before, without creating one task per lane."""
 
     from . import coverage_policy, quality_guard
     from .freshness import freshness_limits
 
     coverage_policy.materialize_deep_backlog(pipeline.config, pipeline.db, pipeline.run_id)
-    policy = dict(pipeline.config.settings.get("efficiency") or {})
     limit = min(
         max(0, int(max_queries)),
         int(pipeline.config.settings.get("agent_web_search_max_queries", DEFAULT_MAX_GAP_LANES)),
     )
     if not limit:
         return []
-    deep_topics = set(
-        policy.get("deep_topics")
-        or (
-            "tpn",
-            "memory_dsa",
-            "dpu_inline",
-            "agent_acceleration",
-            "cross_region",
-            "optical_network",
-            "ai_chip_accelerator",
-        )
-    )
     raw_rows = pipeline.db.fetchall(
         """
         SELECT title,summary,topic_hint,direction_hint,source_level,discovery_only,
@@ -77,8 +64,7 @@ def plan_coverage_gap_searches(pipeline, *, max_queries: int = DEFAULT_MAX_GAP_L
     gaps = [
         (topic, direction)
         for topic, direction in pipeline.config.iter_directions()
-        if topic.get("id") in deep_topics
-        and not quality_guard.primary_direction_is_covered(
+        if not quality_guard.primary_direction_is_covered(
             raw_rows,
             topic["id"],
             direction,
