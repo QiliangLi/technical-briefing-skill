@@ -66,6 +66,38 @@ def _publication_quality_errors(service, run_id: str) -> list[str]:
     return errors
 
 
+def _accept_issue_level_illustrations(service, run_id: str, report: dict[str, Any]) -> None:
+    """Replace the old expanded-mode blanket image ban with the new image contract."""
+
+    legacy_failure = "Expanded email must not contain item images"
+    if legacy_failure not in (report.get("failures") or []):
+        return
+    issue = service.db.fetchone("SELECT email_path FROM issues WHERE run_id=?", (run_id,))
+    if not issue or not issue.get("email_path"):
+        return
+    path = service.root / issue["email_path"]
+    if not path.is_file():
+        return
+
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
+    images = soup.find_all("img")
+    if not images:
+        return
+    for image in images:
+        row = image.find_parent("tr", attrs={"data-reader-role": "explanatory-illustration"})
+        if row is None or str(row.get("data-persona-used") or "") != "1":
+            return
+
+    report["failures"] = [
+        failure for failure in report.get("failures") or [] if failure != legacy_failure
+    ]
+    report.setdefault("passes", []).append(
+        "Expanded publication contains only approved issue-level explanatory illustrations"
+    )
+
+
 def install_publication_stage() -> None:
     """Own structured publication assembly and keep final validation mutation-free."""
 
@@ -127,6 +159,7 @@ def install_publication_stage() -> None:
 
     def validate(self, run_id: str):
         report = original_validate(self, run_id)
+        _accept_issue_level_illustrations(self, run_id, report)
         failures = list(report.get("failures") or [])
         failures.extend(final_reader_contract.final_reader_contract_errors(self, run_id))
         failures.extend(_publication_quality_errors(self, run_id))
