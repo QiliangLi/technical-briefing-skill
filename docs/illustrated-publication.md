@@ -17,11 +17,12 @@ If image generation is unavailable or every image fails QA, `email-illustrated.h
 
 ## Verified issue-level workflow
 
-The factual/text issue is finalized before any issue-level illustration task is allowed to start. This makes `issue/issue.json` an immutable publication input rather than an output that waits on image generation:
+The factual/text issue is finalized and its baseline email is rendered before any issue-level illustration task starts. `issue/issue.json` is therefore an immutable publication input, and `email.html` is already available regardless of image-generation success:
 
 ```text
 fact-checked issue + issue synthesis
   -> finalize immutable issue/issue.json
+  -> render deterministic email.html baseline
   -> READY_FOR_RENDER
   -> illustrated_publication task (one pass per issue)
      -> read only the finalized IssueDocument
@@ -30,12 +31,11 @@ fact-checked issue + issue synthesis
      -> every generated image includes the approved personal technical-scout IP
      -> generate and QA images
      -> illustrations/manifest.json
-  -> render email.html baseline
   -> render email-illustrated.html from the exact baseline + manifest
   -> final reader validation on the actual send artifact
 ```
 
-The important dependency rule is that illustration generation may delay the final publication artifact, but it can never delay or rewrite `issue/issue.json`. If a caller asks to build while the illustration task is still pending, the deterministic baseline `email.html` may be written, but the run is not promoted to final validation/send until the illustration task has either produced a valid manifest or explicitly degraded to text.
+The important dependency rule is that illustration generation may delay the final enhanced publication artifact, but it can never delay or rewrite `issue/issue.json` or the baseline `email.html`. The run is promoted to final validation/send only after the illustration task has either produced a valid manifest or explicitly degraded to text.
 
 This matches the successful workflow used by the historical illustrated briefing: high-information-density diagrams are placed between issue-level judgement and selected topic sections instead of decorating individual cards without purpose.
 
@@ -63,7 +63,7 @@ The expected Claude Code setup already has [`openai/codex-plugin-cc`](https://gi
 
 `codex:codex-rescue` is a subagent, not a Skill. Do not call `Skill(codex:codex-rescue)` and do not recursively wrap `/codex:rescue` inside another Skill. The plugin's rescue runtime is write-capable and uses the same local Codex installation/authentication and repository checkout.
 
-The reason for using a single foreground delegated task is important: image count remains content-driven, but delegation count does not scale with image count. The factual IssueDocument is already complete before delegation starts; only the enhanced publication artifact waits for the image-capable task.
+The reason for using a single foreground delegated task is important: image count remains content-driven, but delegation count does not scale with image count. The factual IssueDocument and baseline email are already complete before delegation starts; only the enhanced publication artifact waits for the image-capable task.
 
 Only a genuine bridge failure (plugin unavailable, Codex unauthenticated, delegated run failure, or image QA failure) may trigger `fallback_to_text` on Claude Code. The absence of native Claude image generation by itself is never a fallback condition.
 
@@ -91,8 +91,7 @@ In particular, production should not create an Agent task for every detailed car
 
 Image failure is never a briefing-content failure:
 
-- the immutable `issue/issue.json` is already complete before image generation starts;
-- the baseline `email.html` remains intact;
+- the immutable `issue/issue.json` and baseline `email.html` are already complete before image generation starts;
 - missing or failed image entries are skipped;
 - a generated image that does not include the required personal IP is not admitted to the illustrated artifact;
 - on Claude Code, failure means the Codex bridge/task actually failed, not merely that Claude lacks native image generation;
