@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+import logging
+from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from .dedup import EventClusterer
+from .safe_efficiency import _annotate_event, _editorial_score_floor
 from .tasks import brief_item_validation_errors
-from .utils import now_iso, read_json, stable_hash, write_json
+from .utils import now_iso, read_json, source_url_is_resolved, stable_hash, write_json
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _policy(config) -> dict[str, Any]:
@@ -37,56 +43,6 @@ def _pack_batches(
     return batches
 
 
-def _capture_tasks(
-    task_service,
-    wanted_type: str,
-    producer: Callable[[], None],
-) -> list[dict[str, Any]]:
-    """Run an existing deterministic planner while capturing one task type."""
-
-    captured: list[dict[str, Any]] = []
-    bound_create = task_service.create
-    had_instance_override = "create" in task_service.__dict__
-    previous_override = task_service.__dict__.get("create")
-
-    def capture_create(
-        run_id: str,
-        task_type: str,
-        entity_id: str,
-        input_data: dict[str, Any],
-        **kwargs,
-    ):
-        if task_type == wanted_type:
-            captured.append(
-                {
-                    "run_id": run_id,
-                    "task_type": task_type,
-                    "entity_id": entity_id,
-                    "input_data": input_data,
-                    "priority": float(kwargs.get("priority") or 0),
-                    "metadata": dict(kwargs.get("metadata") or {}),
-                }
-            )
-            return {
-                "id": stable_hash(run_id, "captured", task_type, entity_id),
-                "run_id": run_id,
-                "task_type": task_type,
-                "entity_id": entity_id,
-                "status": "CAPTURED",
-            }
-        return bound_create(run_id, task_type, entity_id, input_data, **kwargs)
-
-    task_service.create = capture_create
-    try:
-        producer()
-    finally:
-        if had_instance_override:
-            task_service.create = previous_override
-        else:
-            del task_service.create
-    return captured
-
-
 def _id_set_errors(expected: list[str], actual: list[str], label: str) -> list[str]:
     errors: list[str] = []
     if len(actual) != len(set(actual)):
@@ -102,8 +58,143 @@ def _id_set_errors(expected: list[str], actual: list[str], label: str) -> list[s
     return errors
 
 
+def plan_item_writing_entries(pipeline) -> list[dict[str, Any]]:
+    """Build item-writing inputs directly from finalized Facts and persisted events.
+
+    This is the authoritative editorial planner for new runs. It deliberately does not
+    create temporary standalone `item_writing` tasks and then intercept TaskService.
+    """
+
+    unfinished = pipeline.db.fetchone(
+        """
+        SELECT COUNT(*) AS n FROM tasks
+        WHERE run_id=? AND task_type IN ('fact_extraction','fact_evidence_repair')
+          AND status IN ('PENDING','INVALID','COMPLETED')
+        """,
+        (pipeline.run_id,),
+    )["n"]
+    fact_count = pipeline.db.fetchone(
+        "SELECT COUNT(*) AS n FROM facts WHERE run_id=?",
+        (pipeline.run_id,),
+    )["n"]
+    if unfinished or not fact_count:
+        return []
+
+    clusters = EventClusterer(pipeline.db).persist(
+        pipeline.run_id,
+        EventClusterer(pipeline.db).cluster_run(pipeline.run_id),
+    )
+    floor = _editorial_score_floor(pipeline.config)
+    entries: list[dict[str, Any]] = []
+    for cluster in clusters:
+        members = cluster["members"]
+        facts = [read_json(pipeline.root / member["json_path"]) for member in members]
+        candidates = [
+            pipeline.db.fetchone("SELECT * FROM candidates WHERE id=?", (member["candidate_id"],))
+            for member in members
+        ]
+        raws = [
+            pipeline.db.fetchone(
+                "SELECT r.* FROM raw_items r JOIN candidates c ON c.raw_item_id=r.id WHERE c.id=?",
+                (member["candidate_id"],),
+            )
+            for member in members
+        ]
+        has_resolved_primary = any(
+            raw
+            and raw.get("source_level") == "A"
+            and source_url_is_resolved(raw.get("original_url") or raw.get("aihot_url"))
+            and bool(fact.get("primary_source_resolved"))
+            for fact, raw in zip(facts, raws)
+        )
+        if not has_resolved_primary:
+            LOGGER.info(
+                "Skipping editorial draft for event %s without a resolved primary A-level source",
+                cluster["event_id"],
+            )
+            continue
+
+        score = pipeline.scorer.event_score(facts, candidates, raws)
+        pipeline.db.execute("UPDATE events SET score=? WHERE id=?", (score, cluster["event_id"]))
+        if float(score) < floor:
+            _annotate_event(
+                pipeline.db,
+                str(cluster["event_id"]),
+                editorial_deferred=True,
+                editorial_deferred_reason="deterministic score below minimum selectable issue role",
+                editorial_score=float(score),
+                editorial_score_floor=float(floor),
+            )
+            continue
+
+        payload = {
+            "event_id": cluster["event_id"],
+            "topic": pipeline.config.topic(cluster["topic_id"]),
+            "direction": pipeline.config.direction(cluster["topic_id"], cluster["direction_id"]),
+            "score": score,
+            "facts": facts,
+            "sources": [
+                {
+                    "title": raw["title"],
+                    "url": raw["original_url"] or raw["aihot_url"],
+                    "source_level": raw["source_level"],
+                    "discovery_source": raw["discovery_source"],
+                    "published_at": raw["published_at"],
+                }
+                for raw in raws
+                if raw
+            ],
+            "length": {
+                "min_chars": pipeline.config.settings.get("brief_item_min_chars", 300),
+                "max_chars": pipeline.config.settings.get("brief_item_max_chars", 450),
+            },
+        }
+        entries.append({"payload": payload, "priority": float(score)})
+
+    entries.sort(key=lambda row: (-row["priority"], str(row["payload"]["event_id"])))
+    return entries
+
+
+def plan_fact_check_entries(pipeline) -> list[dict[str, Any]]:
+    """Build Fact Check inputs directly from persisted polished brief items."""
+
+    entries: list[dict[str, Any]] = []
+    items = pipeline.db.fetchall(
+        "SELECT * FROM brief_items WHERE run_id=? AND fact_check_status='PENDING'",
+        (pipeline.run_id,),
+    )
+    for item in items:
+        event_members = pipeline.db.fetchall(
+            """
+            SELECT f.json_path FROM event_members em
+            JOIN facts f ON f.candidate_id=em.candidate_id AND f.run_id=em.run_id
+            WHERE em.event_id=? AND em.run_id=?
+            """,
+            (item["event_id"], pipeline.run_id),
+        )
+        payload = {
+            "brief_item_id": item["id"],
+            "brief_item": read_json(pipeline.root / item["json_path"]),
+            "facts": [read_json(pipeline.root / row["json_path"]) for row in event_members],
+            "length": {
+                "min_chars": pipeline.config.settings.get("brief_item_min_chars", 300),
+                "max_chars": pipeline.config.settings.get("brief_item_max_chars", 450),
+            },
+            "rules": [
+                "All numbers must be supported by facts.",
+                "Baseline and experimental conditions must not be omitted when material.",
+                "Project inference must be labelled as project judgement, not source fact.",
+                "AI HOT summaries cannot be the sole evidence.",
+                "Every field must be a complete sentence without ellipsis or dangling punctuation.",
+            ],
+        }
+        entries.append({"payload": payload, "priority": float(item["score"]) + 5})
+    entries.sort(key=lambda row: (-row["priority"], str(row["payload"]["brief_item_id"])))
+    return entries
+
+
 def install_editorial_batching() -> None:
-    """Batch writing and independent fact checks while preserving per-item gates."""
+    """Install an explicit batch planner for drafting and independent Fact Checks."""
 
     from . import demo as demo_module
     from .pipeline import Pipeline
@@ -132,24 +223,12 @@ def install_editorial_batching() -> None:
         ):
             return
 
-        captured = _capture_tasks(
-            self.tasks,
-            "item_writing",
-            lambda: original_prepare_items(self),
-        )
-        if not captured:
+        entries = plan_item_writing_entries(self)
+        if not entries:
             return
-
         policy = _policy(self.config)
         batch_size = max(1, int(policy.get("item_writing_batch_size", 4)))
         char_limit = max(12000, int(policy.get("editorial_batch_max_input_chars", 65000)))
-        entries = [
-            {
-                "payload": {"event_id": row["entity_id"], **row["input_data"]},
-                "priority": row["priority"],
-            }
-            for row in sorted(captured, key=lambda row: (-row["priority"], row["entity_id"]))
-        ]
         for index, batch in enumerate(
             _pack_batches(entries, max_items=batch_size, max_chars=char_limit),
             1,
@@ -171,10 +250,6 @@ def install_editorial_batching() -> None:
                 prompt="item-writing-batch.md",
                 schema="item-writing-batch.schema.json",
                 priority=max(row["priority"] for row in batch),
-                metadata={
-                    "required_skills": ["human-writing", "humanizer"],
-                    "skill_mode": "batch_chinese_technical_rewrite_then_ai_pattern_audit",
-                },
             )
         self.db.update_run(self.run_id, stage="AWAITING_ITEMS")
 
@@ -200,24 +275,19 @@ def install_editorial_batching() -> None:
         ):
             return
 
-        captured = _capture_tasks(
-            self.tasks,
-            "fact_check",
-            lambda: original_prepare_checks(self),
-        )
-        if not captured:
+        item_count = self.db.fetchone(
+            "SELECT COUNT(*) AS n FROM brief_items WHERE run_id=?",
+            (self.run_id,),
+        )["n"]
+        if not item_count:
+            return
+        entries = plan_fact_check_entries(self)
+        if not entries:
             return
 
         policy = _policy(self.config)
         batch_size = max(1, int(policy.get("fact_check_batch_size", 4)))
         char_limit = max(12000, int(policy.get("editorial_batch_max_input_chars", 65000)))
-        entries = [
-            {
-                "payload": {"brief_item_id": row["entity_id"], **row["input_data"]},
-                "priority": row["priority"],
-            }
-            for row in sorted(captured, key=lambda row: (-row["priority"], row["entity_id"]))
-        ]
         for index, batch in enumerate(
             _pack_batches(entries, max_items=batch_size, max_chars=char_limit),
             1,
@@ -273,9 +343,7 @@ def install_editorial_batching() -> None:
                             "task_id": task["id"],
                             "event_id": event_id,
                             "batch_id": task_input.get("batch_id"),
-                            "source_urls": [
-                                source.get("url") for source in source_input.get("sources", [])
-                            ],
+                            "source_urls": [source.get("url") for source in source_input.get("sources", [])],
                         },
                     },
                 )
@@ -300,6 +368,8 @@ def install_editorial_batching() -> None:
             return
 
         if task["task_type"] == "fact_check_batch":
+            # Legacy batch results are kept for resumability. New runs are intercepted
+            # by fact_check_minimal_patch and never grant whole-item rewrite authority.
             output = self.tasks.read_result(task)
             for result in output.get("results", []):
                 brief_item_id = str(result.get("brief_item_id") or "")
@@ -380,15 +450,11 @@ def install_editorial_batching() -> None:
                 }
                 errors.extend(
                     f"fact_check_batch {brief_item_id}: {message}"
-                    for message in original_semantic_errors(
-                        self, pseudo_task, check_input, pseudo_output
-                    )
+                    for message in original_semantic_errors(self, pseudo_task, check_input, pseudo_output)
                 )
                 corrected = result.get("corrected_item")
                 if isinstance(corrected, dict):
-                    schema_errors = sorted(
-                        validator.iter_errors(corrected), key=lambda error: list(error.path)
-                    )
+                    schema_errors = sorted(validator.iter_errors(corrected), key=lambda error: list(error.path))
                     errors.extend(
                         f"fact_check_batch result {index} corrected_item: {error.message}"
                         for error in schema_errors[:5]
@@ -408,20 +474,14 @@ def install_editorial_batching() -> None:
         if task_type == "item_writing_batch":
             return {
                 "results": [
-                    {
-                        "event_id": row["event_id"],
-                        "item": original_demo_output("item_writing", row),
-                    }
+                    {"event_id": row["event_id"], "item": original_demo_output("item_writing", row)}
                     for row in data.get("items", [])
                 ]
             }
         if task_type == "fact_check_batch":
             return {
                 "results": [
-                    {
-                        "brief_item_id": row["brief_item_id"],
-                        **original_demo_output("fact_check", row),
-                    }
+                    {"brief_item_id": row["brief_item_id"], **original_demo_output("fact_check", row)}
                     for row in data.get("checks", [])
                 ]
             }
