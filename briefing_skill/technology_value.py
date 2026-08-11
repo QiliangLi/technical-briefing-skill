@@ -159,11 +159,26 @@ def select_deep_budget_with_technology_value(
     rows: Iterable[dict[str, Any]],
     settings: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Compatibility helper; TopicLocalSelection is the active runtime selector."""
+    """Historical helper preserving the old diversity semantics without runtime ownership."""
 
-    from .topic_local_deep import select_topic_local_deep_budget
+    from . import coverage_policy
 
-    return select_topic_local_deep_budget(rows, settings)
+    prepared: list[dict[str, Any]] = []
+    originals: dict[str, float] = {}
+    for source in rows:
+        row = dict(source)
+        row_id = str(row.get("id") or "")
+        originals[row_id] = _number(row.get("relevance_score"))
+        row["relevance_score"] = technology_selection_score(row)
+        prepared.append(row)
+
+    selected, deferred = coverage_policy.select_diverse_deep_budget(prepared, settings)
+    for row in [*selected, *deferred]:
+        row["technology_selection_score"] = _number(row.get("relevance_score"))
+        row["relevance_score"] = originals.get(
+            str(row.get("id") or ""), _number(row.get("relevance_score"))
+        )
+    return selected, deferred
 
 
 def technology_value_semantic_errors(task: dict[str, Any], data: dict[str, Any]) -> list[str]:
