@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from bs4 import BeautifulSoup
 from jsonschema import Draft202012Validator
 
-from briefing_skill.illustrated_publication import _host_execution_policy, render_illustrated_html
+from briefing_skill.illustrated_publication import (
+    _host_execution_policy,
+    _illustration_input,
+    render_illustrated_html,
+)
+from briefing_skill.utils import write_json
 
 
 def _base_email() -> str:
@@ -162,6 +168,42 @@ def test_empty_manifest_keeps_readable_baseline_without_images(tmp_path: Path) -
     assert not soup.select('tr[data-reader-role="explanatory-illustration"]')
     assert soup.find("a", id="topic-tpn") is not None
     assert "本期判断" in soup.get_text(" ", strip=True)
+
+
+def test_illustration_input_reads_only_finalized_issue_document(tmp_path: Path) -> None:
+    issue_path = tmp_path / "workspace" / "runs" / "demo" / "issue" / "issue.json"
+    issue_data = {
+        "synthesis": {"headline": "immutable synthesis"},
+        "items": [
+            {
+                "brief_item_id": "item-1",
+                "item_role": "core",
+                "topic_id": "tpn",
+                "direction_id": "kv_transfer",
+                "title": "Final title",
+                "core_conclusion": "Final conclusion.",
+                "mechanism": "Final mechanism.",
+                "result": "Final result.",
+                "boundary": "Final boundary.",
+                "project_relevance": "Final relevance.",
+            }
+        ],
+    }
+    write_json(issue_path, issue_data)
+    pipeline = SimpleNamespace(
+        root=tmp_path,
+        run_dir=tmp_path / "workspace" / "runs" / "demo",
+        config=SimpleNamespace(settings={"visuals": {}}),
+    )
+
+    payload = _illustration_input(
+        pipeline,
+        {"id": "issue-1", "issue_json_path": str(issue_path.relative_to(tmp_path))},
+    )
+
+    assert payload["synthesis"] == {"headline": "immutable synthesis"}
+    assert payload["items"][0]["title"] == "Final title"
+    assert payload["constraints"]["issue_document_is_immutable"] is True
 
 
 def test_host_execution_policy_routes_claude_code_through_codex_plugin() -> None:
