@@ -186,4 +186,4 @@ def test_prompt_does_not_treat_missing_native_claude_image_generation_as_fallbac
     assert "codex:codex-rescue" in prompt
     assert "--fresh --wait" in prompt
     assert "not** a reason to return `fallback_to_text`" in prompt
-    assert "delegate the **entire current `illustrated_publication` task once**" in prompt
+    assert "Delegate the **entire current `illustrated_publication` task once**" in prompt
