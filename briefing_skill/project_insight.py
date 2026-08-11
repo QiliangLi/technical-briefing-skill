@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import json
-import re
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -16,8 +15,6 @@ PROJECT_EFFECTS = ("supports", "challenges", "narrows", "opens")
 CONFIDENCE_LEVELS = ("high", "medium", "low")
 MAX_INSIGHTS = 4
 MAX_CONTEXT_CHARS = 3200
-COMPLETE_ENDING_RE = re.compile(r"[。！？.!?](?:[”’\"）)\]]*)$")
-INCOMPLETE_ENDING_RE = re.compile(r"(?:…|\.\.\.|[，,:：;；、])(?:[”’\"）)\]]*)$")
 
 
 def _ordered_unique(values: Iterable[str]) -> list[str]:
@@ -36,7 +33,7 @@ def build_project_context_cards(
     config: ConfigBundle,
     topic_ids: Iterable[str],
 ) -> list[dict[str, Any]]:
-    """Build compact, configured project cards for only the topics present in an issue."""
+    """Build compact configured project cards only for topics present in the issue."""
 
     paths = Paths(root)
     cards: list[dict[str, Any]] = []
@@ -69,7 +66,7 @@ def build_project_context_cards(
 
 
 def enrich_issue_synthesis_input(root: Path, input_data: dict[str, Any]) -> dict[str, Any]:
-    """Attach project questions without creating a second Agent stage."""
+    """Attach project questions to the existing issue-synthesis Agent task."""
 
     payload = dict(input_data)
     config = ConfigBundle.load(Paths(root))
@@ -96,7 +93,9 @@ def _task_metadata(task: dict[str, Any]) -> dict[str, Any]:
 
 def _complete_sentence(value: Any) -> bool:
     text = " ".join(str(value or "").split())
-    return bool(text) and not INCOMPLETE_ENDING_RE.search(text) and bool(COMPLETE_ENDING_RE.search(text))
+    if not text or text.endswith(("…", "...", "，", ",", "：", ":", "；", ";", "、")):
+        return False
+    return text.endswith(("。", "！", "？", ".", "!", "?", "”", "’", '"', "）", ")", "]"))
 
 
 def project_insight_semantic_errors(
@@ -181,10 +180,16 @@ def project_insight_semantic_errors(
 
 
 def render_project_insight_email_block(issue: dict[str, Any]) -> str:
+    """Legacy renderer kept for archived callers; active publication does not call it.
+
+    Project Insight is an internal structured synthesis signal. Reader-facing material
+    implications are folded into the ordinary `本期判断` judgements instead of creating
+    a second, partially overlapping section.
+    """
+
     insights = issue.get("synthesis", {}).get("project_insights") or []
     if not insights:
         return ""
-
     core_items = issue.get("core_items") or [
         item for item in issue.get("items", []) if item.get("item_role", "core") == "core"
     ]
@@ -193,67 +198,21 @@ def render_project_insight_email_block(issue: dict[str, Any]) -> str:
         for item in core_items
         if item.get("brief_item_id")
     }
-    effect_labels = {
-        "supports": "加强判断",
-        "challenges": "挑战判断",
-        "narrows": "收窄边界",
-        "opens": "打开新方向",
-    }
-    confidence_labels = {"high": "高置信", "medium": "中置信", "low": "低置信"}
     rows: list[str] = []
     for index, insight in enumerate(insights, 1):
-        refs: list[str] = []
+        refs = []
         for item_id in insight.get("evidence_item_ids") or []:
             item = items_by_id.get(str(item_id))
             if not item:
                 continue
             anchor = html.escape(str(item.get("anchor_id") or f"item-{item_id}"), quote=True)
-            title = html.escape(str(item.get("title") or item_id))
-            refs.append(f'<a href="#{anchor}" style="color:#002fa7;text-decoration:none">{title}</a>')
-        refs_html = " · ".join(refs)
-        meta = " · ".join(
-            part
-            for part in (
-                str(insight.get("topic_name") or ""),
-                effect_labels.get(str(insight.get("effect") or ""), str(insight.get("effect") or "")),
-                confidence_labels.get(
-                    str(insight.get("confidence") or ""), str(insight.get("confidence") or "")
-                ),
-            )
-            if part
-        )
+            refs.append(f'<a href="#{anchor}">{html.escape(str(item.get("title") or item_id))}</a>')
         rows.append(
-            """
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" data-project-insight-ref-count="{ref_count}" style="border-top:1px solid #c8c8c2"><tr>
-    <td width="30" valign="top" style="padding:10px 0;color:#002fa7;font:700 12px 'Microsoft YaHei','微软雅黑',Arial,sans-serif">{index:02d}</td>
-    <td style="padding:10px 0;font-size:13px;line-height:1.5;color:#222">
-      <div style="font-size:10px;letter-spacing:.4px;color:#777;font-weight:700;margin-bottom:3px">{meta}</div>
-      <div style="font-weight:700;margin-bottom:4px">项目问题：{question}</div>
-      <div>{insight}</div>
-      <div style="margin-top:4px;color:#444"><b>下一步：</b>{next_action}</div>
-      {refs}
-    </td>
-  </tr></table>""".format(
-                ref_count=len(refs),
-                index=index,
-                meta=html.escape(meta),
-                question=html.escape(str(insight.get("project_question") or "")),
-                insight=html.escape(str(insight.get("insight") or "")),
-                next_action=html.escape(str(insight.get("next_action") or "")),
-                refs=(
-                    f'<div style="margin-top:5px;font-size:11px;line-height:1.5;color:#777">证据解读：{refs_html}</div>'
-                    if refs_html
-                    else ""
-                ),
-            )
+            f'<div data-project-insight-legacy="1"><b>{index:02d}</b> '
+            f'{html.escape(str(insight.get("insight") or ""))} '
+            f'{" · ".join(refs)}</div>'
         )
-    return (
-        f'<tr><td class="pad-x" data-project-insight-count="{len(insights)}" '
-        'style="padding:10px 28px 10px">'
-        '<div style="font-size:11px;letter-spacing:1.4px;font-family:\'Microsoft YaHei\',\'微软雅黑\',Arial,sans-serif;color:#002fa7;font-weight:bold;margin-bottom:5px">项目影响</div>'
-        + "".join(rows)
-        + "</td></tr>\n"
-    )
+    return f'<div data-project-insight-count="{len(insights)}">' + "".join(rows) + "</div>"
 
 
 def _project_insight_stats(db, root: Path, run_id: str) -> dict[str, Any]:
@@ -283,13 +242,11 @@ def _project_insight_stats(db, root: Path, run_id: str) -> dict[str, Any]:
 
 
 def install_project_insight_layer() -> None:
-    """Add evidence-bound project implications to the existing issue-synthesis task."""
+    """Add Project Insight to issue synthesis without patching publication or validation."""
 
     from . import demo as demo_module
     from . import telemetry
-    from .emailer import EmailService
     from .pipeline import Pipeline
-    from .rendering import Renderer
     from .tasks import TaskService
 
     if getattr(Pipeline, "_project_insight_installed", False):
@@ -363,51 +320,6 @@ def install_project_insight_layer() -> None:
         return output
 
     demo_module._demo_output = demo_output
-
-    original_email_build = EmailService.build
-
-    def email_build(self, run_id: str, *args, **kwargs):
-        path = original_email_build(self, run_id, *args, **kwargs)
-        issue_row = self.db.fetchone("SELECT issue_json_path FROM issues WHERE run_id=?", (run_id,))
-        if not issue_row or not issue_row.get("issue_json_path"):
-            return path
-        issue = read_json(self.root / issue_row["issue_json_path"], {})
-        block = render_project_insight_email_block(issue)
-        if not block:
-            return path
-        text = path.read_text(encoding="utf-8")
-        marker = '<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-'
-        if marker not in text:
-            raise RuntimeError("Unable to place project insight block before topic sections")
-        path.write_text(text.replace(marker, block + marker, 1), encoding="utf-8")
-        return path
-
-    EmailService.build = email_build
-
-    original_validate = Renderer.validate
-
-    def validate(self, run_id: str):
-        report = original_validate(self, run_id)
-        issue_row = self.db.fetchone("SELECT issue_json_path,email_path FROM issues WHERE run_id=?", (run_id,))
-        if not issue_row or not issue_row.get("issue_json_path"):
-            return report
-        issue = read_json(self.root / issue_row["issue_json_path"], {})
-        insights = issue.get("synthesis", {}).get("project_insights") or []
-        if not insights:
-            return report
-        email_path = issue_row.get("email_path")
-        if not email_path:
-            report.setdefault("failures", []).append("Project insights exist but email output is missing")
-            return report
-        email_text = (self.root / email_path).read_text(encoding="utf-8")
-        marker = f'data-project-insight-count="{len(insights)}"'
-        if marker in email_text:
-            report.setdefault("passes", []).append("Project insights are exposed in the email")
-        else:
-            report.setdefault("failures", []).append("Project insights are not exposed in the email")
-        return report
-
-    Renderer.validate = validate
 
     original_run_stats = telemetry.run_stats
 
