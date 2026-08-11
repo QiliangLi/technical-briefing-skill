@@ -28,6 +28,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .historical_backfill import install_historical_backfill
     from .illustrated_publication import install_illustrated_publication
     from .invalid_repair import install_invalid_targeted_repair
+    from .issue_style_polish import install_issue_style_polish
     from .no_human_review import install_no_human_review_gate
     from .primary_fulltext_cache import install_primary_fulltext_cache
     from .project_insight import install_project_insight_layer
@@ -71,6 +72,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_fact_cache_fastpath()
     install_evidence_repair()
     install_editorial_batching()
+    # Draft batches now only turn structured facts into per-item prose. One later
+    # issue-level pass invokes human-writing exactly once, then the polished text
+    # enters fact-check batching. The old per-batch humanizer chain is removed.
+    install_issue_style_polish()
     # Install after the existing CLI extensions so the backfill parser preserves
     # commands such as `stats`, while the wrapped `run` gets a small auto budget.
     install_historical_backfill()
