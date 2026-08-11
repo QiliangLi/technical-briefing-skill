@@ -11,6 +11,14 @@ L1_PRE_LEVEL = "l1_hash_pre_fetch"
 L1_POST_LEVEL = "l1_hash_post_fetch"
 
 
+def immutable_source_key(raw: dict[str, Any]) -> str | None:
+    """Return a key only for sources whose exact version is provably immutable."""
+
+    from .safe_efficiency import exact_primary_version_key
+
+    return exact_primary_version_key(raw)
+
+
 def lookup_immutable_fact_cache(
     db,
     root: Path,
@@ -159,7 +167,6 @@ def install_two_level_fact_cache() -> None:
     from .fact_cache_provenance import _source_content_hash, execution_mode
     from .fulltext import FulltextService
     from .pipeline import Pipeline
-    from .safe_efficiency import exact_primary_version_key
 
     if getattr(Pipeline, "_two_level_fact_cache_installed", False):
         return
@@ -191,7 +198,7 @@ def install_two_level_fact_cache() -> None:
         eligible = enabled and _cache_eligible(raw) and bool(topic_id and direction_id)
 
         # L0: only a provably immutable exact source version may bypass source I/O.
-        immutable_key = exact_primary_version_key(raw) if eligible else None
+        immutable_key = immutable_source_key(raw) if eligible else None
         if immutable_key:
             hit = lookup_immutable_fact_cache(
                 self.db,
