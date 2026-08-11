@@ -39,6 +39,14 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, review, 
 
    没有参考照片时，不得声称还原本人面部，只能使用通用低细节技术侦察员。
 
+### Ian 风格的项目级人物覆盖
+
+在本项目中调用 `ian-xiaohei-illustrations` 生成正文插画时，必须先读取
+`assets/persona/ian-qiliang/overlay.md`。Ian Skill 的风格 DNA、构图模式、原创隐喻、
+提示词结构和 QA 规则保持原样，只把默认“小黑”角色替换为该覆盖文件定义的
+Qiliang 手绘形象。不得修改用户级或插件目录中的 Ian Skill，也不得把人物当头像、
+水印或角落装饰；人物必须承担解释本期技术判断的核心动作。
+
 3. 先运行离线样例：
 
    ```bash
