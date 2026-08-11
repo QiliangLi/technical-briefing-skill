@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .utils import now_iso
+from .utils import now_iso, read_json
 
 
 ASSESSMENT_COLUMNS = {
@@ -115,6 +115,9 @@ def persist_candidate_assessment(config, db, root, candidate_id: str, *, provena
     assessment = _assessment_payload(row)
     now = now_iso()
 
+    # Only cache-eligible sources have a relevance_cache row. For those sources this
+    # single update owns every semantic signal produced by the relevance Agent plus the
+    # Python-derived Deep decision. Non-cacheable sources still get a per-run assessment.
     db.execute(
         """
         UPDATE relevance_cache SET
@@ -240,10 +243,9 @@ def install_candidate_assessment() -> None:
         ensure_candidate_assessment_schema(self)
 
     Database.init = db_init
-    ensure_candidate_assessment_schema
 
-    # The old component caches remain as readable historical tables/functions, but new
-    # runtime writes are owned by the final CandidateAssessment commit below.
+    # Historical component tables/functions remain readable for old runs/tests, but
+    # active runtime reads/writes are owned by the unified relevance_cache record.
     technology_value.store_technology_value_cache = lambda *_args, **_kwargs: True
     deep_eligibility.store_deep_eligibility_cache = lambda *_args, **_kwargs: None
     technology_value._apply_cached_technology_value = lambda *_args, **_kwargs: None
@@ -271,8 +273,6 @@ def install_candidate_assessment() -> None:
                 persist_candidate_assessment(
                     self.config, self.db, self.root, candidate_id, provenance="agent_relevance_batch"
                 )
-
-    from .utils import read_json
 
     Pipeline._apply_task = apply_task
     Pipeline._candidate_assessment_installed = True
