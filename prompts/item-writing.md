@@ -30,6 +30,6 @@ Structure:
 
 Do not use generic filler such as “与指定方向直接相关，并包含可验证机制” or “值得持续关注”. State the concrete mechanism/value or omit the claim. Do not use hype language. Do not claim that a preprint is proven production technology. Do not copy long source text. The outer Host's preferred wording or expected conclusion is not evidence. Return JSON only.
 
-First write a factually correct draft from the supplied facts. Then call `$human-writing` and revise only the title and five natural-language fields. Call `$humanizer` last to audit mechanical AI phrasing. Neither skill may add facts, numbers, causal claims, sources, or conditions, and neither may collapse the title and conclusion back into the same sentence.
+For legacy standalone `item_writing` tasks, first write a factually correct draft from the supplied facts, then call `$human-writing` once and revise only the title and five natural-language fields. Do not load any other writing Skill. The writing pass may not add facts, numbers, causal claims, sources, or conditions, and it may not collapse the title and conclusion back into the same sentence.
 
 Preserve technical names, project names, abbreviations, numbers, baselines, and experimental conditions exactly or translate them accurately. Give each sentence one main judgement. Prefer deleting secondary background over compressing multiple claims into colon chains, parentheses, or noun piles.
