@@ -15,6 +15,7 @@ def install_fact_cache_source_normalization() -> None:
     from .fulltext import FulltextService
 
     if getattr(fact_cache_provenance, "_source_normalization_installed", False):
+        install_two_level_fact_cache()
         return
     original_cached_fulltext = fact_cache_provenance._cached_fulltext
 
