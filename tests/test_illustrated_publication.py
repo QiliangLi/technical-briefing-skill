@@ -167,8 +167,10 @@ def test_renderer_accepts_more_than_three_generated_persona_images(tmp_path: Pat
     assert all(node["data-persona-used"] == "1" for node in illustrations)
     assert all(node.get("data-illustration-slot") for node in illustrations)
     for node in illustrations:
-        assert node.find_previous_sibling("tr").get("data-reader-role") != "explanatory-illustration"
-        assert node.find_next_sibling("tr").get("data-reader-role") != "explanatory-illustration"
+        previous = node.find_previous_sibling("tr")
+        next_row = node.find_next_sibling("tr")
+        assert previous is None or previous.get("data-reader-role") != "explanatory-illustration"
+        assert next_row is None or next_row.get("data-reader-role") != "explanatory-illustration"
 
 
 def test_schema_has_no_image_count_cap_and_requires_persona_for_generated_images() -> None:
