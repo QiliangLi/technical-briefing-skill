@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
+from .business_time import briefing_date
 from .expanded import normalise_legacy_item, select_expanded_rows
 from .tasks import synthesis_item_payload
 from .utils import now_iso, read_json, stable_hash, write_json
@@ -49,7 +48,7 @@ def _selected_issue_rows(pipeline) -> list[dict]:
             pipeline.root,
             pipeline.config,
             rows,
-            reference_date=datetime.now(timezone.utc).date().isoformat(),
+            reference_date=briefing_date(pipeline.config).isoformat(),
         )
         return selected
 
@@ -115,7 +114,7 @@ def install_issue_stage() -> None:
             return
 
         issue_id = stable_hash("issue", self.run_id)
-        now = datetime.now(timezone.utc)
+        business_date = briefing_date(self.config).isoformat()
         with self.db.connect() as conn:
             conn.execute(
                 """
@@ -126,8 +125,8 @@ def install_issue_stage() -> None:
                     issue_id,
                     self.run_id,
                     "DRAFT",
-                    now.date().isoformat(),
-                    now.date().isoformat(),
+                    business_date,
+                    business_date,
                     now_iso(),
                     now_iso(),
                 ),
