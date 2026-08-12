@@ -27,6 +27,14 @@ def _base_email() -> str:
 </table></body></html>"""
 
 
+def _published_url(index: int) -> str:
+    return (
+        "https://raw.githubusercontent.com/QiliangLi/technical-briefing-skill/"
+        + "a" * 40
+        + f"/published-assets/demo/image-{index}.png"
+    )
+
+
 def _generated(index: int, path: Path, *, placement: str = "after_judgements", topic_id: str | None = None, persona_used: bool = True) -> dict:
     return {
         "concept_name": f"解释图{index}",
@@ -34,6 +42,7 @@ def _generated(index: int, path: Path, *, placement: str = "after_judgements", t
         "placement": placement,
         "topic_id": topic_id,
         "generated_asset_path": str(path),
+        "published_asset_url": _published_url(index),
         "alt": f"解释图{index}",
         "caption": f"解释第{index}个独立技术概念。",
         "persona_used": persona_used,
@@ -89,6 +98,7 @@ def test_issue_level_illustrations_use_stable_publication_placements(tmp_path: P
                 "placement": "after_judgements",
                 "topic_id": None,
                 "generated_asset_path": str(first),
+                "published_asset_url": _published_url(1),
                 "alt": "全局取数决策图",
                 "caption": "比较传输、重算与就地计算。",
                 "persona_used": True,
@@ -100,6 +110,7 @@ def test_issue_level_illustrations_use_stable_publication_placements(tmp_path: P
                 "placement": "before_topic",
                 "topic_id": "agent_acceleration",
                 "generated_asset_path": str(second),
+                "published_asset_url": _published_url(2),
                 "alt": "Agent检索路径图",
                 "caption": "结构索引压缩重复探索。",
                 "persona_used": True,
@@ -111,6 +122,7 @@ def test_issue_level_illustrations_use_stable_publication_placements(tmp_path: P
                 "placement": "before_topic",
                 "topic_id": "tpn",
                 "generated_asset_path": None,
+                "published_asset_url": None,
                 "alt": "",
                 "caption": "",
                 "persona_used": False,
@@ -164,7 +176,8 @@ def test_schema_has_no_image_count_cap_and_requires_persona_for_generated_images
                 "status": "generated",
                 "placement": "after_judgements",
                 "topic_id": None,
-                "generated_asset_path": f"workspace/runs/demo/illustrations/{index}.png",
+                "generated_asset_path": f"published-assets/demo/{index}.png",
+                "published_asset_url": _published_url(index),
                 "alt": "技术解释图",
                 "caption": "解释独立技术机制。",
                 "persona_used": True,
@@ -179,6 +192,12 @@ def test_schema_has_no_image_count_cap_and_requires_persona_for_generated_images
     invalid = json.loads(json.dumps(five_generated, ensure_ascii=False))
     invalid["illustrations"][0]["persona_used"] = False
     assert list(validator.iter_errors(invalid))
+
+    invalid_url = json.loads(json.dumps(five_generated, ensure_ascii=False))
+    invalid_url["illustrations"][0]["published_asset_url"] = (
+        "https://raw.githubusercontent.com/QiliangLi/technical-briefing-skill/main/image.png"
+    )
+    assert list(validator.iter_errors(invalid_url))
 
 
 def test_renderer_skips_generated_image_without_required_persona(tmp_path: Path) -> None:
