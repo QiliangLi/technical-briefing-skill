@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any
 
 from .adapters.base import CollectedItem
+from .business_time import briefing_date
 from .collection import CollectionService
 from .utils import read_json, stable_hash
 
@@ -78,7 +79,7 @@ def plan_coverage_gap_searches(pipeline, *, max_queries: int = DEFAULT_MAX_GAP_L
         )
     )
     max_age_days = freshness_limits(pipeline.config)["absolute"]
-    date_to = datetime.now(timezone.utc).date()
+    date_to = briefing_date(pipeline.config)
     date_from = date_to - timedelta(days=max_age_days)
     searches: list[dict[str, Any]] = []
     for topic, direction in gaps:
