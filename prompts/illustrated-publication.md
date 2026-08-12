@@ -20,7 +20,7 @@ Use the current Codex host image-generation capability directly. Do not add an e
 Claude Code not having native image generation is **not** a reason to return `fallback_to_text`. Use the installed `openai/codex-plugin-cc` bridge:
 
 1. Invoke the `codex:codex-rescue` subagent with the Agent tool.
-2. Delegate the **entire** current `illustrated_publication` task once, using a fresh foreground run (`--fresh --wait`).
+2. Delegate the **entire current `illustrated_publication` task once**, using a fresh foreground run (`--fresh --wait`).
 3. Forward the task input, prompt/schema/result binding, output directory, Ian style/persona paths, and expected output path.
 4. Codex generates and QA-checks all selected images in the same checkout and writes the final Schema-valid result.
 5. Claude Code verifies the output JSON and referenced assets, then resumes the normal pipeline.
@@ -36,8 +36,8 @@ All generated briefing illustrations use exactly one image-generation style/pers
 2. Read that Skill's style DNA, composition patterns, prompt template, and QA rules.
 3. Read `constraints.persona_overlay_path`; it replaces only Ian's recurring character with the project Qiliang character.
 4. Read `constraints.persona_reference_manifest_path` and the exact files in `constraints.persona_reference_paths`.
-5. Do not use Guizang Material Illustration, the retired Guizang persona, `assets/persona/reference.jpg`, or a generic substitute for image generation.
-6. Guizang remains relevant only to HTML/card presentation.
+5. Do **not** use Guizang Material Illustration, the retired Guizang persona, `assets/persona/reference.jpg`, or a generic substitute for image generation.
+6. Guizang remains relevant only to the existing HTML/card presentation contract. It must not influence generated-image style or persona.
 7. If the Ian Skill or required Qiliang references are genuinely unavailable, return `fallback_to_text` instead of silently changing style/persona.
 
 ## Selection
