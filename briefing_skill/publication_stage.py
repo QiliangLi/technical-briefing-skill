@@ -98,6 +98,25 @@ def _accept_issue_level_illustrations(service, run_id: str, report: dict[str, An
     )
 
 
+def _structured_provenance_errors(service, run_id: str) -> list[str]:
+    from .publication_manifest import (
+        illustration_provenance_errors,
+        publication_provenance_errors,
+    )
+
+    issue = service.db.fetchone("SELECT email_path FROM issues WHERE run_id=?", (run_id,))
+    if not issue or not issue.get("email_path"):
+        return ["Structured provenance requires a persisted email artifact"]
+    path = service.root / issue["email_path"]
+    if not path.is_file():
+        return ["Structured provenance cannot read the persisted email artifact"]
+    html = path.read_text(encoding="utf-8")
+    return [
+        *publication_provenance_errors(service.root, run_id, html),
+        *illustration_provenance_errors(service.root, run_id, html),
+    ]
+
+
 def install_publication_stage() -> None:
     """Own structured publication assembly and keep final validation mutation-free."""
 
@@ -106,6 +125,7 @@ def install_publication_stage() -> None:
     from . import reader_facing_quality
     from .emailer import EmailService
     from .pipeline import Pipeline
+    from .publication_manifest import finalize_radar_groups, write_publication_manifest
     from .rendering import Renderer
 
     if getattr(Pipeline, "_publication_stage_installed", False):
@@ -134,7 +154,9 @@ def install_publication_stage() -> None:
 
     EmailService._topic_groups = topic_groups
 
-    # Radar de-duplication is an assembly policy: filter before Jinja, not after HTML.
+    # Radar finalization happens after Deep + Appendix are fixed. First remove source
+    # collisions, then refill only from this run's reserve candidates and persist the
+    # exact structured publication manifest before Jinja renders the email.
     original_aihot_groups = EmailService._aihot_groups
 
     def aihot_groups(self, issue_date=None, *, issue_id=None, issue_data=None):
@@ -144,17 +166,27 @@ def install_publication_stage() -> None:
             issue_id=issue_id,
             issue_data=issue_data,
         )
-        return final_reader_contract.filter_final_radar_groups(
+        filtered = final_reader_contract.filter_final_radar_groups(
             self,
             groups,
             issue_id=str(issue_id) if issue_id else None,
             issue_data=issue_data,
         )
+        if not issue_data:
+            return filtered
+        final_groups, contract = finalize_radar_groups(
+            self,
+            filtered,
+            issue_id=str(issue_id) if issue_id else None,
+            issue_data=issue_data,
+        )
+        write_publication_manifest(self, issue_data, final_groups, contract)
+        return final_groups
 
     EmailService._aihot_groups = aihot_groups
 
     # Validation is now a pure observer. It may fail the release, but it never rewrites
-    # the issue, Radar set, template output, card widths, or source-title markup.
+    # the issue, Radar set, template output, card widths, source-title markup, or manifest.
     original_validate = Renderer.validate
 
     def validate(self, run_id: str):
@@ -163,6 +195,7 @@ def install_publication_stage() -> None:
         failures = list(report.get("failures") or [])
         failures.extend(final_reader_contract.final_reader_contract_errors(self, run_id))
         failures.extend(_publication_quality_errors(self, run_id))
+        failures.extend(_structured_provenance_errors(self, run_id))
         report["failures"] = list(dict.fromkeys(failures))
         report["warnings"] = list(dict.fromkeys(report.get("warnings") or []))
         if report["failures"]:
@@ -170,6 +203,9 @@ def install_publication_stage() -> None:
         else:
             report.setdefault("passes", []).append(
                 "Final publication satisfies structured selection, writing, layout, source and Radar contracts"
+            )
+            report.setdefault("passes", []).append(
+                "Final HTML exactly matches the structured Deep/Appendix/Radar/illustration provenance"
             )
             report.setdefault("passes", []).append(
                 "Project impact is merged into 本期判断 and internal selection metadata is hidden"
