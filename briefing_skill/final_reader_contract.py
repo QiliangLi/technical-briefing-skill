@@ -285,9 +285,33 @@ def html_reader_contract_errors(email_html: str) -> list[str]:
     appendix_urls: set[str] = set()
     for row in soup.select('tr[data-topic-appendix="1"]'):
         appendix_urls |= _links(row)
+    radar_cards = soup.select('[data-reader-role="radar-card"]')
     radar_urls: set[str] = set()
-    for card in soup.select('[data-reader-role="radar-card"]'):
+    for card in radar_cards:
         radar_urls |= _links(card)
+        if not any(
+            str(row.get("data-reader-row") or "") == "radar-row"
+            for row in card.find_parents("tr")
+        ):
+            errors.append("Every Radar card must belong to a structured Radar row")
+
+    radar_categories: list[str] = []
+    for row in soup.select('tr[data-reader-row="radar-row"]'):
+        cards = row.select('[data-reader-role="radar-card"]')
+        if len(cards) > 2:
+            errors.append("A Radar row may contain at most two category cards")
+        if len(cards) == 1 and str(cards[0].get("width") or "") != "100%":
+            errors.append("A single Radar category card in a row must render at 100% width")
+        for card in cards:
+            category = str(card.get("data-radar-category") or "").strip()
+            if not category:
+                errors.append("Every Radar card must identify one category")
+            else:
+                radar_categories.append(category)
+            if len(card.select('[data-reader-role="radar-item"]')) > 2:
+                errors.append("A Radar category card may contain at most two signals")
+    if len(radar_categories) != len(set(radar_categories)):
+        errors.append("Radar signals from the same category must share one category card")
 
     if deep_urls & appendix_urls:
         errors.append("Deep and topic appendix reuse the same reader-facing source URL")

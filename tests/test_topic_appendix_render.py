@@ -95,3 +95,41 @@ def test_structured_appendix_keeps_release_family_links_and_label():
     assert "2项合并" in rendered
     assert ">v2</a>" in rendered
     assert ">v1</a>" in rendered
+
+
+def test_radar_groups_render_as_two_column_category_cards():
+    root = Path(__file__).resolve().parents[1]
+    env = Environment(
+        loader=FileSystemLoader(root / "templates"),
+        autoescape=select_autoescape(["html", "xml"]),
+    )
+    rendered = env.get_template("email.html").render(
+        issue={"synthesis": {"headline": "headline"}, "date_to": "2026-08-10"},
+        subject="briefing",
+        footer="footer",
+        topic_groups=[],
+        judgement_refs=[],
+        aihot_groups=[
+            {
+                "name": "AI Infra",
+                "items": [
+                    {"title": "A", "summary": "SA", "url": "https://example.com/a", "published_at": "2026-08-10", "source_name": "A"},
+                    {"title": "B", "summary": "SB", "url": "https://example.com/b", "published_at": "2026-08-09", "source_name": "B"},
+                ],
+            },
+            {
+                "name": "Agent生态",
+                "items": [
+                    {"title": "C", "summary": "SC", "url": "https://example.com/c", "published_at": "2026-08-08", "source_name": "C"},
+                ],
+            },
+        ],
+        aihot_count=3,
+    )
+
+    assert rendered.count('data-reader-row="radar-row"') == 1
+    assert rendered.count('data-reader-role="radar-card"') == 2
+    assert rendered.count('data-reader-role="radar-item"') == 3
+    assert rendered.count('width="50%"') >= 2
+    assert rendered.count('data-radar-category="AI Infra"') == 1
+    assert rendered.count('data-radar-category="Agent生态"') == 1

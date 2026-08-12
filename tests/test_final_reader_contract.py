@@ -196,8 +196,83 @@ def test_clean_final_html_passes_layout_score_and_url_contracts():
         <a href="https://example.com/deep">Deep</a>
       </td></tr>
       <tr data-topic-appendix="1"><td><a href="https://example.com/appendix">Appendix</a></td></tr>
-      <tr><td data-reader-role="radar-card"><a href="https://example.com/radar">Radar</a></td></tr>
+      <tr data-reader-row="radar-row"><td width="100%" data-reader-role="radar-card" data-radar-category="AI Infra"><a href="https://example.com/radar">Radar</a></td></tr>
     </table>
     """
 
     assert html_reader_contract_errors(html) == []
+
+
+def test_radar_rejects_scattered_duplicate_category_cards():
+    html = """
+    <table>
+      <tr data-reader-row="radar-row">
+        <td width="50%" data-reader-role="radar-card" data-radar-category="AI Infra">
+          <a href="https://example.com/a">A</a>
+        </td>
+        <td width="50%" data-reader-role="radar-card" data-radar-category="Agent生态">
+          <a href="https://example.com/b">B</a>
+        </td>
+      </tr>
+      <tr data-reader-row="radar-row">
+        <td width="100%" data-reader-role="radar-card" data-radar-category="AI Infra">
+          <a href="https://example.com/c">C</a>
+        </td>
+      </tr>
+    </table>
+    """
+
+    errors = html_reader_contract_errors(html)
+
+    assert any("same category" in error for error in errors)
+
+
+def test_radar_rejects_cards_inserted_outside_structured_rows():
+    html = """
+    <table>
+      <tr><td width="100%" data-reader-role="radar-card">
+        <a href="https://example.com/a">A</a>
+      </td></tr>
+    </table>
+    """
+
+    errors = html_reader_contract_errors(html)
+
+    assert any("structured Radar row" in error for error in errors)
+
+
+def test_grouped_two_column_radar_passes_layout_contract():
+    html = """
+    <table>
+      <tr data-reader-row="radar-row">
+        <td width="50%" data-reader-role="radar-card" data-radar-category="AI Infra">
+          <a href="https://example.com/a">A</a>
+          <a href="https://example.com/b">B</a>
+        </td>
+        <td width="50%" data-reader-role="radar-card" data-radar-category="Agent生态">
+          <a href="https://example.com/c">C</a>
+          <a href="https://example.com/d">D</a>
+        </td>
+      </tr>
+    </table>
+    """
+
+    assert html_reader_contract_errors(html) == []
+
+
+def test_radar_rejects_more_than_two_signals_in_one_category():
+    html = """
+    <table>
+      <tr data-reader-row="radar-row">
+        <td width="100%" data-reader-role="radar-card" data-radar-category="AI Infra">
+          <div data-reader-role="radar-item"><a href="https://example.com/a">A</a></div>
+          <div data-reader-role="radar-item"><a href="https://example.com/b">B</a></div>
+          <div data-reader-role="radar-item"><a href="https://example.com/c">C</a></div>
+        </td>
+      </tr>
+    </table>
+    """
+
+    errors = html_reader_contract_errors(html)
+
+    assert any("at most two signals" in error for error in errors)
