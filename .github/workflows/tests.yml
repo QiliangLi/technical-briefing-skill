@@ -5,12 +5,29 @@ on:
   push:
     branches:
       - agent/dual-channel-radar
+      - main
 
 jobs:
   pytest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Repository hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked_runs="$(git ls-files workspace/runs | grep -v '^workspace/runs/.gitkeep$' || true)"
+          if [[ -n "$tracked_runs" ]]; then
+            echo 'Generated workspace/runs artifacts must never be committed:' >&2
+            printf '%s\n' "$tracked_runs" >&2
+            exit 1
+          fi
+          forbidden_paths="$(git ls-files | grep -E '(^|/)agently-send-pending\.json$|(^|/)[^/]*session[^/]*\.jsonl$' || true)"
+          if [[ -n "$forbidden_paths" ]]; then
+            echo 'Token-bearing send state or raw session transcripts must never be committed:' >&2
+            printf '%s\n' "$forbidden_paths" >&2
+            exit 1
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
