@@ -37,6 +37,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .primary_fulltext_cache import install_primary_fulltext_cache
     from .project_insight import install_project_insight_layer
     from .publication_history import install_publication_history
+    from .publication_history_runtime import install_publication_history_runtime
     from .publication_stage import install_publication_stage
     from .quality_guard import install_quality_guards
     from .radar_signal_synthesis import install_radar_signal_synthesis
@@ -115,6 +116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_no_human_review_gate()
     # Delivery history is installed last so there is exactly one canonical SENT owner.
     install_publication_history()
+    install_publication_history_runtime()
 
     install_execution_envelope_contract()
     install_executor_usage_telemetry()
