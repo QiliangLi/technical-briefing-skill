@@ -1,0 +1,61 @@
+{
+  "title": "PhyAI: Real-Time Physical AI at the Edge, Scalable Rollouts in the Cloud",
+  "event_hint": "PhyAI: a unified Physical AI inference runtime (single codebase) that runs VLA models (pi0, pi0.5, GR00T N1.7, MiniCPM-Robot) and world-action models (Cosmos3) across onboard/edge/cloud via model adapters, with a control-time Roofline diagnostic.",
+  "problem": "Physical AI policies need inference across their lifecycle (evaluation, cloud RL rollout, edge serving, onboard deployment) that share the same checkpoint and action semantics but typically rely on separate, independently optimized inference programs. Behavior validated in one setting does not carry to another, and each path must be optimized separately. Existing systems (FlashRT, vla.cpp, realtime-vla, vLLM, SGLang) cover only parts of the problem or do not represent reusable multimodal conditions, iterative action solvers, evolving world latents, or CFG branches.",
+  "mechanism": "PhyAI separates model-specific logic (conditioning, solver state, reusable tensors, scheduling, action conversion) into model adapters while the shared runtime provides graph replay, optimized kernels, memory/cache management, quantization, communication, and parallel execution. This lets pi0.5 reuse its single-GPU runner for data-parallel execution, while Cosmos3 combines tensor parallelism with CFG parallelism. The adapter interface allowed adding MiniCPM-Robot on the day of its release. A novel control-time Roofline distinguishes inference-bound from environment-bound control: under ideal overlap, control period = max(L_inference, L_env).",
+  "evidence": [
+    {
+      "claim": "PhyAI achieves 1.40x-4.65x speedups over the official implementations across 11 measured model-device pairs: pi0 (2.64x Thor / 4.05x RTX 5090), pi0.5 (1.67x Thor / 1.82x RTX 5090), GR00T N1.7 (1.40x Thor / 2.28x RTX 5090 / 4.31x A40), MiniCPM-Robot (2.78x Thor / 2.02x RTX 5090 / 4.65x H100).",
+      "value": "1.40x-4.65x over official paths",
+      "baseline": "official implementations of pi0, pi0.5, GR00T N1.7, MiniCPM-Robot",
+      "condition": "single-request latency, multiple devices",
+      "source_locator": "Evidence locator: PDF Page 11 - Table 5"
+    },
+    {
+      "claim": "On Cosmos3-Nano-Policy-DROID, PhyAI reduces latency from 2.46s to 1.18s on eight H20 GPUs (CFG=2, TP=4), a 2.08x speedup.",
+      "value": "2.46s -> 1.18s (2.08x)",
+      "baseline": "official Cosmos3 path",
+      "condition": "8x H20 GPUs, CFG=2, TP=4",
+      "source_locator": "Evidence locator: PDF Page 11 - Table 5; PDF Page 1 - Figure 1c"
+    },
+    {
+      "claim": "Phase profiling (Hopper-series GPU): at batch size 1, the pi0.5 action expert accounts for 8.8% of estimated FLOPs but 57.2% of profiled latency; at batch size 32 its share drops to 13.5%, throughput reaches ~100 samples/s, and the full batch takes ~320ms.",
+      "value": "8.8% FLOPs / 57.2% latency (B=1)",
+      "baseline": null,
+      "condition": "Hopper-series GPU, pi0.5, B=1 vs B=32",
+      "source_locator": "Evidence locator: PDF Page 3 - phase profiles"
+    },
+    {
+      "claim": "Control-time Roofline analysis: measured pi0.5 points on four LIBERO suites are environment-bound (inference already shorter than simulator environment execution), while Cosmos3 remains inference-bound; Cosmos3 gains only 14.3% throughput as batch size increases from 1 to 16.",
+      "value": "pi0.5 env-bound; Cosmos3 inference-bound",
+      "baseline": null,
+      "condition": "four LIBERO suites; Cosmos3 B=1->16",
+      "source_locator": "Evidence locator: PDF Page 2-3 - Control-time Roofline"
+    },
+    {
+      "claim": "Simulated integrated RL rollout (8x A100 GPUs, batch 40, 41 policy-inference calls/RL step): inference share of step time drops from 53.1% (baseline) to 36.2% (PhyAI), a 31.8% relative reduction, corresponding to ~26.5% rollout-step latency reduction and ~1.36x higher training throughput.",
+      "value": "53.1% -> 36.2% inference share; ~1.36x training throughput",
+      "baseline": "baseline inference backend",
+      "condition": "simulated RL rollout, 8x A100, non-inference time held fixed",
+      "source_locator": "Evidence locator: PDF Page 3 - RL rollout simulation"
+    }
+  ],
+  "evaluation_context": "Unified runtime evaluated across devices: Jetson Thor, RTX 5090, A40, H100, 8x H20, 8x A100. Models: pi0, pi0.5, GR00T N1.7, MiniCPM-Robot, Cosmos3-Nano-Policy-DROID, Cosmos3-Edge, MiniCPM-Track. Profiles use PyTorch 2.11.0 and CUDA 13.0. Baselines: official implementations; specialized runtimes (FlashRT, realtime-vla, vla.cpp) compared where available (FlashRT uses FP8, not precision-matched). Metrics: single-request latency, phase FLOPs/latency share, throughput (samples/s), control-time margin. Code/benchmarks at github.com/mingti-org/phyai.",
+  "limitations": "Speedups are relative to official paths, not always the fastest specialized runtime - FlashRT is faster than PhyAI for pi0.5 on RTX 5090 and for GR00T on Thor/RTX 5090/A40; PI0 FlashRT measurements use FP8 (not precision-matched). The control-time Roofline data on LIBERO do not quantify how much action-window margin can be traded for model size or cheaper hardware (authors flag this as future work). RL rollout results are simulated with non-inference time held fixed, not a full end-to-end RL training run. No production deployment scale, cost, or task-success-vs-latency on physical robots is reported in the visible evidence.",
+  "project_relevance": "PhyAI is a serving-runtime unification for embodied/VLA inference across edge and cloud, relevant to AI infra efficiency for Physical AI and agent execution. The control-time Roofline is a concrete diagnostic for deciding when further inference optimization matters. For the project card it provides verifiable latency/throughput mechanisms and multi-device evidence; it fits the horizontal Agent-ecosystem/AI-Infra radar rather than the seven deep topics, and is a research runtime, not a production deployment.",
+  "primary_source_resolved": true,
+  "quality_score": 80,
+  "source_notes": [
+    "arXiv preprint 2608.03682v2 (4 Aug 2026), FETCHED primary source; authors from BUPT, Nanjing U, Peking U, Tsinghua, MingTi, ModelBest; code at github.com/mingti-org/phyai.",
+    "Speedups are vs official implementations; specialized runtimes (FlashRT, realtime-vla) are sometimes faster and are not always precision-matched (FlashRT uses FP8).",
+    "RL rollout throughput gain (1.36x) is from a simulation with non-inference time held fixed, not a measured end-to-end training run."
+  ],
+  "evidence_gaps": [],
+  "_provenance": {
+    "task_id": "b4d09830d0bd6500755474c4",
+    "candidate_id": "cf4665bb36d5a27bb47d17c8",
+    "source_title": "PhyAI: Real-Time Physical AI at the Edge, Scalable Rollouts in the Cloud",
+    "source_url": "https://arxiv.org/abs/2608.03682v2",
+    "document_id": "7af702bbb3a9e028f9615c26"
+  }
+}

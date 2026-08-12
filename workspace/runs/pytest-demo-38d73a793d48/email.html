@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>AI语义Fabric技术情报（公测版）｜2026-08-09</title>
+<style>
+    @media only screen and (max-width:620px) {
+      .mail-shell { width:100% !important; }
+      .pad-x { padding-left:18px !important; padding-right:18px !important; }
+      .stack-col { display:block !important; width:100% !important; box-sizing:border-box !important; }
+      .card-gap { padding-right:0 !important; padding-left:0 !important; padding-bottom:10px !important; }
+      .topic-nav a { display:inline-block !important; margin-bottom:6px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;background:#e9e9e5;color:#151515;font-family:'Microsoft YaHei','微软雅黑',Arial,sans-serif;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">本期离线样例验证了Agent加速与KVCache网络调度可以进入同一条可追溯工作流。</div>
+<table border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#e9e9e5" width="100%"><tr><td align="center">
+<table border="0" cellpadding="0" cellspacing="0" class="mail-shell" role="presentation" style="width:100%;max-width:720px;background:#f8f8f5;margin:16px auto" width="720">
+<tr><td class="pad-x" style="padding:24px 28px 20px;border-bottom:3px solid #002fa7">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col" valign="top">
+<div style="font-size:11px;letter-spacing:1.6px;font-family:'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;font-weight:bold">TECHNICAL BRIEFING</div>
+<h1 style="font-size:28px;line-height:1.15;font-weight:600;margin:8px 0 7px">AI语义Fabric技术情报（公测版）</h1>
+<div style="font-size:13px;line-height:1.4;color:#666">2026-08-09</div>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x topic-nav" style="padding:12px 28px 10px;background:#f0f1ed;border-bottom:1px solid #d5d5cf;font-size:12px;line-height:1.8">
+<b style="color:#555;margin-right:8px">专题导航</b>
+<a href="#topic-tpn" style="color:#002fa7;text-decoration:none;margin-right:12px">状态感知网络、TPN（10）</a><a href="#topic-memory_dsa" style="color:#002fa7;text-decoration:none;margin-right:12px">内存语义、DSA卸载（2）</a><a href="#topic-dpu_inline" style="color:#002fa7;text-decoration:none;margin-right:12px">DPU随路卸载（1）</a><a href="#topic-agent_acceleration" style="color:#002fa7;text-decoration:none;margin-right:12px">Agent语义加速（12）</a><a href="#topic-cross_region" style="color:#002fa7;text-decoration:none;margin-right:12px">跨域传输（6）</a><a href="#topic-ai_chip_accelerator" style="color:#002fa7;text-decoration:none;margin-right:12px">AI芯片与加速器（1）</a><a href="#topic-storage_media" style="color:#002fa7;text-decoration:none;margin-right:12px">存储介质与器件（3）</a><a href="#topic-ai_infra_horizontal" style="color:#002fa7;text-decoration:none;margin-right:12px">AI Infra横向动态（3）</a>
+</td></tr>
+<tr><td class="pad-x" style="padding:18px 28px 8px">
+<div style="font-size:11px;letter-spacing:1.4px;font-family:'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;font-weight:bold;margin-bottom:5px">本期判断</div>
+<table cellpadding="0" cellspacing="0" data-judgement-ref-count="4" data-reader-role="judgement" role="presentation" style="border-top:1px solid #c8c8c2" width="100%"><tr>
+<td style="padding:9px 0;color:#002fa7;font:700 12px 'Microsoft YaHei','微软雅黑',Arial,sans-serif" valign="top" width="30">01</td>
+<td style="padding:9px 0;font-size:14px;line-height:1.45;color:#222">
+<div style="font-weight:700;margin-bottom:3px">状态要进入执行链</div>
+<div>Agent检索状态和KVCache位置只有进入工具选择、网络带宽与队列调度，才可能转化为可验证的系统收益。</div>
+<div style="margin-top:5px;font-size:11px;line-height:1.5;color:#777">相关解读：<a href="#item-0450ff597d183304cf08fb4d" style="color:#002fa7;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a> · <a href="#item-c61f28a0d2e96a69275d7bda" style="color:#002fa7;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a> · <a href="#item-34f913847607dc43ecaab2b9" style="color:#002fa7;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a> · <a href="#item-6193f763853db9bdd7edb0c8" style="color:#002fa7;text-decoration:none">CodeGraph先定位再读取，减少代码Agent重复探索</a></div>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-tpn"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">状态感知网络、TPN</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">10 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-0450ff597d183304cf08fb4d" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://example.com/kv-network-paper" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：KV cache aware scheduler coordinates prefill decode network bandwidth</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://example.com/kv-network-paper" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-ac37002e7875cde9af7a331b" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://www.alibabagroup.com/document-2016703577908576256" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：Alibaba Cloud Unveils Agent-Native Innovations at WAIC</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://www.alibabagroup.com/document-2016703577908576256" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0" valign="top" width="100%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-29dfd07d5cb8b2323f98d20e" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2607.08565v1" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：SMetric: Rethink LLM Scheduling for Serving Agents with Balanced Session-centric Scheduling</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2607.08565v1" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr data-topic-appendix="1"><td class="pad-x" style="padding:0 28px 12px"><table cellpadding="0" cellspacing="0" role="presentation" style="background:#f3f4f1;border-left:3px solid #8a8a82" width="100%"><tr><td style="padding:10px 12px"><div style="font:700 11px Microsoft YaHei,Arial,sans-serif;color:#555;margin-bottom:2px">状态感知网络、TPN · 其他相关进展</div><div style="font-size:10px;line-height:1.4;color:#888;margin-bottom:3px">以下为详细卡之外、已判定相关且具有A级原始来源的内容，仅作速览，不参与本期综合判断。</div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2608.06007v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">TensorCast: The Missing Tensor Management Layer in Large Language Model Infrastructure</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">Modern LLM infrastructure increasingly manages tensors not only as computation data, but also as persistent states shared across distributed components. Existing systems optimize individual tensor management tasks, such as model weight loading, KV cache management, and checkpoint synchronization, by deeply integrating task-specific mechanisms with execution engines, networks, or storage backends. However, this specialization creates isolated silos that hinder the reuse and composition of tensor management strategies across evolving LLM workloads. In this paper, we identify tensor lifecycle management as a missing abstraction layer in LLM infrastructure and propose Tensor-as-a-Service (TaaS), which decouples tensor state management from computation logic. We design and build TensorCast, a distributed tensor management layer that provides first-class tensor abstractions, programmable lifecycle primitives, and a runtime that separates tensor management policies from execution mechanisms. This enables developers to write tensor management programs using TensorCast APIs while transparently leveraging distributed execution and data movement. We integrate TensorCast with vLLM and SGLang and evaluate it across diverse tensor lifecycle workloads, including model weight materialization, weight synchronization, KV cache management, and programmable request routing. Our results show that TensorCast achieves competitive performance with specialized tensor management systems while enabling new cross-component optimization policies. A programmable policy implemented with TensorCast improves median TTFT by up to 93.2% under highly concurrent multi-turn agent workloads.</div><div style="font-size:10px;color:#888;margin-top:3px">2026-08-06 · 阅读原文：<a href="https://arxiv.org/abs/2608.06007v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2607.02043v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Towards Load-Aware Prefill Deflection for Disaggregated LLM Serving</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">该工作发现 Prefill 执行仅占 P95 TTFT 的 2-23%，排队和跨节点 KV 传输占其余部分，并提出预填充偏转调度器消除跨节点 KV 传输，在 vLLM 上将 P95 TTFT 降低 81%。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-07-02 · 阅读原文：<a href="https://arxiv.org/abs/2607.02043v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2607.10987v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">[AAFLOW+] Stateful Operator Abstraction with Zero-Copy Distributed KV Cache Orchestration for Multi-Agent Workflows</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">AAFLOW+ 将 KV 缓存提升为分布式一等公民对象，提供传输/分叉/组合/驱逐算子和零拷贝执行运行时，证明 KV 传输在中等以上带宽网络上优于重新计算，TTFT 降低 50.2 倍。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-07-13 · 阅读原文：<a href="https://arxiv.org/abs/2607.10987v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2607.00466v2" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">ELDR: Expert-Locality-Aware Decode Routing for PD-Disaggregated MoE Serving</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">ELDR 利用 Prefill 专家激活构建专家签名并做 PD 解耦 MoE 服务的感知路由，签名缓存与 KV 缓存在块粒度共索引，40 GPU 部署中中位 TPOT 降低 5.9-13.9%。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-07-01 · 阅读原文：<a href="https://arxiv.org/abs/2607.00466v2" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2606.15177v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Coordinated Scheduling for MoE LLM Serving</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">Gimbal 使用在线 KV 缓存使用量、队列压力和 MoE 专家压力等信号做跨层协调调度，并结合源感知通信做专家放置，TTFT 降低 42.9%、TPOT 降低 33.3%。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-06-13 · 阅读原文：<a href="https://arxiv.org/abs/2606.15177v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2606.16135v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">SwiftCache: Efficient LLM Serving for Multi-turn Conversations with Heterogeneous KV Cache Sharing</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">SwiftCache 让异构模型在服务器内通过 NVLink 共享空闲 GPU 内存和带宽做跨模型 KV 缓存共享，避免慢速 PCIe 传输，P99 TTFT 降低 69%，最大上下文长度扩展 3.98 倍。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-06-15 · 阅读原文：<a href="https://arxiv.org/abs/2606.16135v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2608.01526v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">An Internet for the KV Cache: Rethinking Classical Infrastructure Boundaries in the LLM Inference Age</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">该论文提出 KV 缓存互联网愿景，将网络视为主动分发渠道，由带宽、延迟和定价决定 KV 缓存的存储与重算决策，为 TPN 的跨数据中心 KV 管理提供设计框架。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-08-02 · 阅读原文：<a href="https://arxiv.org/abs/2608.01526v1" style="color:#002fa7">arXiv</a></div></div></td></tr></table></td></tr><tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-memory_dsa"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">内存语义、DSA卸载</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">2 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-92c43a5bce431fc6a45cb157" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2606.12556" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：ITME: Inference Tiered Memory Expansion with Disaggregated CXL-Hybrid Memories</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2606.12556" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-7094518935e5a11e558c0237" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2606.19746v1" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：SAC: Disaggregated KV Cache System for Sparse Attention LLMs with CXL</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2606.19746v1" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-dpu_inline"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">DPU随路卸载</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">1 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0" valign="top" width="100%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-96c13118ecef9dd8ac915463" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://developer.nvidia.com/blog/scaling-agentic-ai-factories-through-extreme-co-design-with-nvidia-bluefield/" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：Scaling Agentic AI Factories Through Extreme Co-Design with NVIDIA BlueField</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://developer.nvidia.com/blog/scaling-agentic-ai-factories-through-extreme-co-design-with-nvidia-bluefield/" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-agent_acceleration"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">Agent语义加速</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">12 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-6193f763853db9bdd7edb0c8" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://example.com/codegraph-paper" style="color:#151515;text-decoration:none">CodeGraph先定位再读取，减少代码Agent重复探索</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：CodeGraph reduces repeated repository exploration for coding agents</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://example.com/codegraph-paper" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-2797ad357c484a7331b80580" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.06057v1" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：When History Lies: Evaluating and Improving Tool Use under Misleading Multi-Turn Histories</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.06057v1" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-f68972aa3660299c5b643b35" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.06197v1" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：EnvACE: Internalizing Environment Dynamics via World Rehearsal for Agentic Reinforcement Learning</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.06197v1" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-391d02e4f232e11c3cb4d82c" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.05886v1" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：CodeGrep: An RL-Trained Retrieval Agent for LLM Coding Agents</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.05886v1" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr data-topic-appendix="1"><td class="pad-x" style="padding:0 28px 12px"><table cellpadding="0" cellspacing="0" role="presentation" style="background:#f3f4f1;border-left:3px solid #8a8a82" width="100%"><tr><td style="padding:10px 12px"><div style="font:700 11px Microsoft YaHei,Arial,sans-serif;color:#555;margin-bottom:2px">Agent语义加速 · 其他相关进展</div><div style="font-size:10px;line-height:1.4;color:#888;margin-bottom:3px">以下为详细卡之外、已判定相关且具有A级原始来源的内容，仅作速览，不参与本期综合判断。</div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2606.22417v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Code Isn't Memory: A Structural Codebase Index Inside a Coding Agent</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">在固定编码Agent内消融结构化代码库索引，SWE-PolyBench/SWE-bench Pro上产生统计显著的定位与解决率提升，每解成本低于agentic grep且无成本惩罚。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-06-21 · 阅读原文：<a href="https://arxiv.org/abs/2606.22417v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2608.01507v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Deep Agentic Search for Repository-Level Code Question Answering: An Empirical Study</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">仓库级代码问答中语义搜索与深度Agent搜索的对比研究，语义搜索65.2%正确率vs深度搜索46.2%且成本减半，揭示41.8%失败发生在子Agent交接。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-08-02 · 阅读原文：<a href="https://arxiv.org/abs/2608.01507v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2608.00218v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">A Few Neurons Reveal When LLMs Misuse Tools: Sparse Detection and Selective Steering for Reliable Tool Use</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">PRISMS 发现少量 MLP 神经元即可检测 Agent 工具调用失败（无效参数、过度调用、遗漏调用），通过稀疏探针和激活引导将过度调用降低 80%、工具准确率提升 14.2 个百分点。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-07-31 · 阅读原文：<a href="https://arxiv.org/abs/2608.00218v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2607.13285v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Harness Handbook: Making Evolving Agent Harnesses Readable,Navigable, and Editable</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">行为中心表示通过静态分析和LLM从harness代码库自动合成，渐进式披露引导Agent定位实现细节，减少planner token且改善行为定位。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-07-14 · 阅读原文：<a href="https://arxiv.org/abs/2607.13285v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2608.01347v3" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Same Task, Different Work: Prompt-Induced Waste in Coding Agents</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">预注册基准量化提示词诱导的编码Agent浪费，4644次运行揭示冗余验证使工具调用增加2.5倍、耗时3倍且无成功率提升。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-08-02 · 阅读原文：<a href="https://arxiv.org/abs/2608.01347v3" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2607.11308v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">FlowArk: Boosting Agentic Data-flow Analysis for Android Apps via Context-Aware Knowledge Reuse</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">批量Agent数据流分析的知识复用系统，将已完成分析蒸馏为可匹配知识条目注入后续Agent，端到端API成本降低26.83%且质量不降。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-07-13 · 阅读原文：<a href="https://arxiv.org/abs/2607.11308v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2608.02645v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Verified Tool Calls Improve LLM Agent Reliability Under Non-Atomic Failures</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">验证感知工具包装器通过后置条件验证、重试前验证和幂等键减少重复操作与冗余工具执行，直接降低Agent工具链浪费。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-07-31 · 阅读原文：<a href="https://arxiv.org/abs/2608.02645v1" style="color:#002fa7">arXiv</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2607.28815v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Preventing Premature Commitment in Coding Agents with an Evidence-Conditioned Execution Layer</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">证据条件执行层在Agent修改代码前强制收集仓库证据，SWE-bench Pass@1提升4.8-11.8pp且token消耗降低12.1%。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-07-30 · 阅读原文：<a href="https://arxiv.org/abs/2607.28815v1" style="color:#002fa7">arXiv</a></div></div></td></tr></table></td></tr><tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-cross_region"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">跨域传输</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">6 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-9f230b6f63605d08a04e392a" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.06033v1" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：ASGE-RR: Agentic Service Graph Embedding with Revisable Reservations for Dynamic AI-Agent Calls</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.06033v1" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-bd8b4d3ead37a253762c7c6c" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.02508" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：RoMeRL: Balancing Feedback Coverage and the Memory-Reward Trap in Self-Evolving Agent Memory via Reduced-Order Utility States</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.02508" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-157fb6cbabdb8e25df3490ad" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2607.28979" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：Mixture-of-Translators: Translating KV Caches Across Heterogeneous Large Language Models</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2607.28979" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-0196eeacee2bf4ce95c5eda0" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2607.26637" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：Filesystem-Based Memory for LLM Agents: Organization, Evolution, and Sustainability</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2607.26637" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr data-topic-appendix="1"><td class="pad-x" style="padding:0 28px 12px"><table cellpadding="0" cellspacing="0" role="presentation" style="background:#f3f4f1;border-left:3px solid #8a8a82" width="100%"><tr><td style="padding:10px 12px"><div style="font:700 11px Microsoft YaHei,Arial,sans-serif;color:#555;margin-bottom:2px">跨域传输 · 其他相关进展</div><div style="font-size:10px;line-height:1.4;color:#888;margin-bottom:3px">以下为详细卡之外、已判定相关且具有A级原始来源的内容，仅作速览，不参与本期综合判断。</div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.0" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">LMCache/LMCache：近期 2 项相关更新</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">LMCache v0.5.0 新增 P2P KV Cache 传输支持，引入传输通道抽象、RPC 查找接口和 L2 适配器运行时注册，实现 LMCache 实例间直接 KV 缓存查找与迁移，是跨实例远程状态访问的具体落地机制。 LMCache v0.4.7 引入多进程协调器骨干、SHM 数据传输路径、全局 CacheBlend 指纹目录、L2 配额/驱逐和统一多层块 KV 传输原语，是分布式 KV 缓存传输系统的实质性版本。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-06-23 · 2项合并 · 阅读原文：<a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.0" style="color:#002fa7">2026-06-23</a> · <a href="https://github.com/LMCache/LMCache/releases/tag/v0.4.7" style="color:#002fa7">2026-06-13</a></div></div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2607.23054v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Through the Bottleneck: How Multi-head Latent Attention Separates Content from Position in Language Models</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">首次对 MLA 的 KV 压缩瓶颈做机制可解释性分析，发现其分离内容与位置信息并存在语义汇聚层；有助于理解 KV 压缩特性，但核心贡献是模型内部机制分析而非跨域传输。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-07-25 · 阅读原文：<a href="https://arxiv.org/abs/2607.23054v1" style="color:#002fa7">arXiv</a></div></div></td></tr></table></td></tr><tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-ai_chip_accelerator"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">AI芯片与加速器</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">1 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr data-topic-appendix="1"><td class="pad-x" style="padding:0 28px 12px"><table cellpadding="0" cellspacing="0" role="presentation" style="background:#f3f4f1;border-left:3px solid #8a8a82" width="100%"><tr><td style="padding:10px 12px"><div style="font:700 11px Microsoft YaHei,Arial,sans-serif;color:#555;margin-bottom:2px">AI芯片与加速器 · 其他相关进展</div><div style="font-size:10px;line-height:1.4;color:#888;margin-bottom:3px">以下为详细卡之外、已判定相关且具有A级原始来源的内容，仅作速览，不参与本期综合判断。</div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://arxiv.org/abs/2606.25453v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">EmuGEMM: Fused Tensor Core Kernels for Precision Emulation in Matrix Multiplication</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">提出面向Hopper和Blackwell GPU的融合Tensor Core整数内核EmuGEMM，利用Ozaki方案从低精度Tensor Core重构高精度GEMM，在Hopper上达到INT8峰值83%、Blackwell上81%。深度表征了Tensor Core执行特性但属软件内核而非硬件架构变更。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-06-24 · 阅读原文：<a href="https://arxiv.org/abs/2606.25453v1" style="color:#002fa7">arXiv</a></div></div></td></tr></table></td></tr><tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-storage_media"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">存储介质与器件</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">3 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-c61f28a0d2e96a69275d7bda" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://www.sandisk.com/company/newsroom/press-releases/2026/2026-08-04-new-3d-flash-memory-technology-from-kioxia-and-sandisk-qlc-nand" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：Kioxia and SanDisk 10th-Gen 332-Layer QLC NAND Achieves Industry's Highest Bit Density</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://www.sandisk.com/company/newsroom/press-releases/2026/2026-08-04-new-3d-flash-memory-technology-from-kioxia-and-sandisk-qlc-nand" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-f6e27b4584a9b56bc480b291" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://news.skhynix.com/en/hbf-at-fms-2026/" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：SK hynix Unveils First HBF Standard Specifications with SanDisk at FMS 2026</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://news.skhynix.com/en/hbf-at-fms-2026/" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr data-topic-appendix="1"><td class="pad-x" style="padding:0 28px 12px"><table cellpadding="0" cellspacing="0" role="presentation" style="background:#f3f4f1;border-left:3px solid #8a8a82" width="100%"><tr><td style="padding:10px 12px"><div style="font:700 11px Microsoft YaHei,Arial,sans-serif;color:#555;margin-bottom:2px">存储介质与器件 · 其他相关进展</div><div style="font-size:10px;line-height:1.4;color:#888;margin-bottom:3px">以下为详细卡之外、已判定相关且具有A级原始来源的内容，仅作速览，不参与本期综合判断。</div><div style="padding:7px 0;border-top:1px solid #deded8"><a href="https://news.skhynix.com/en/fms-2026" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">SK hynix at FMS 2026: V10 375-layer 4D NAND and Next-Generation Memory Architecture for AI</a><div style="font-size:11px;line-height:1.45;color:#666;margin-top:3px">SK hynix在FMS 2026首次公开展示第十代V10 375层4D NAND晶圆与在研产品，性能功耗比相较上一代提升约2.5倍，面向AI时代的高密度、高带宽闪存需求。</div><div style="font-size:10px;color:#888;margin-top:3px">2026-08-07 · 阅读原文：<a href="https://news.skhynix.com/en/fms-2026" style="color:#002fa7">SK hynix</a></div></div></td></tr></table></td></tr><tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-ai_infra_horizontal"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">AI Infra横向动态</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">3 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-34f913847607dc43ecaab2b9" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2607.21985v1" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：Unified Static-Dynamic Pruning for Efficient LLM Inference</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2607.21985v1" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-77ecf393987d3ee4500fe7a8" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2607.24260v1" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：KAP: Bridging the Knowledge Selection-Runtime Consumption Gap in LLM Systems</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2607.24260v1" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr data-reader-row="deep-row"><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="deep-card" style="padding:0" valign="top" width="100%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-c610c3180de068e388ceb000" style="padding:12px 13px 11px">
+<div data-reader-meta="1" style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">流程演示 · 2026-08-09</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2607.28848v1" style="color:#151515;text-decoration:none">KVCache状态进入网络调度，缩短推理通信关键路径</a></h2><div data-source-title="1" style="font-size:10px;line-height:1.35;color:#777;margin:-2px 0 7px">论文/来源：DeltaServe: Host-Agnostic Co-Serving of Inference and Fine-Tuning for LLMs</div>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">该离线样例验证了结构化事实可以稳定生成紧凑技术简报条目，并完整保留来源、机制和边界信息。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 流程先逐篇抽取事实，再按事件聚类、写作和事实检查，避免后续任务反复读取全文。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 样例成功贯通采集、去重、写作、校验和邮件生成，但不提供真实性能数字。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> 全部内容来自离线夹具，不能用于判断真实系统收益或生产可用性。</div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于检查端到端工作流；正式运行仍需替换为近期一手来源并核验基线条件。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2607.28848v1" style="color:#002fa7">Offline Fixture</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:20px 28px 6px">
+<div style="border-top:3px solid #111;padding-top:10px">
+<span style="font-size:19px;font-weight:700">热点雷达</span>
+<div style="font-size:11px;line-height:1.45;color:#777;margin-top:3px">以下为近7天跨领域热点线索，未经本简报深度核验，不参与本期判断与证据评分。</div>
+</div>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px"><table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" data-reader-role="radar-card" style="padding:0" valign="top" width="100%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#f0f0ed;border-top:3px solid #002fa7" width="100%"><tr><td style="padding:10px 12px">
+<div style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;margin-bottom:6px">AI Infra</div>
+<div style="padding:0">
+<a href="https://arxiv.org/abs/2608.06088v1" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">IcFuzz: Fuzzing Isaac Sim with Semantic Stage Guidance and Multi-level Mutation出现值得继续观察的技术变化</a>
+<div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">该信号来自本期轻量候选摘要，用于验证Radar聚合链路；正式运行应提炼具体变化、机制与影响，而不是复述筛选理由。</div>
+<div style="font-size:10px;color:#888;margin-top:3px">2026-08-06 · 阅读原文：<a href="https://arxiv.org/abs/2608.06088v1" style="color:#002fa7">arXiv</a></div>
+</div>
+</td></tr></table>
+</td>
+</tr></table></td></tr>
+<tr><td class="pad-x" style="padding:20px 28px;color:#777;font-size:11px;line-height:1.5;border-top:1px solid #c8c8c2">本简报由自动化信息采集、事实核验与规则校验流程生成。技术数据请以原始论文、官方文档或项目仓库为准。</td></tr>
+</table></td></tr></table>
+</body></html>

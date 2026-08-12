@@ -1,0 +1,866 @@
+{
+  "_task": {
+    "id": "655f803733154aa8ac9b1dda",
+    "type": "fact_check_batch",
+    "entity_id": "8152231663351e0aa3f895b4",
+    "input_digest": "c298d740e606bf43efe1519df5fc5e79",
+    "contract_version": 2,
+    "prompt_digest": "da04d8a08c8cbf4a2992307ff4d3f793",
+    "schema_digest": "a9e6b1edbed2aff9dfe24494afe9a731",
+    "context_digests": {},
+    "execution_envelope_digest": "1db27e90e2381f7f85bdb275aff7d831"
+  },
+  "batch_id": "fact-check-4",
+  "checks": [
+    {
+      "brief_item_id": "cec3c4b05a9a9ec0b568ed2a",
+      "brief_item": {
+        "title": "DeltaServe：满足推理SLO前提下把LoRA微调折叠进推理引擎",
+        "type": "深度解读",
+        "topic_name": "AI Infra横向动态",
+        "direction_name": "推理服务、运行时与编译优化",
+        "published_at": "2026-07-30T21:20:21Z",
+        "importance": "值得关注",
+        "core_conclusion": "LLM推理按峰值配额使GPU常闲置约40%，DeltaServe把LoRA微调折叠进现有推理引擎，在满足SLO前提下回收空闲算力。",
+        "mechanism": "利用推理Prefill与LoRA前向的共享结构仅在有余量时准入微调，请求到来即中断微调专用步。",
+        "result": "Nutanix生产trace上微调吞吐比LLMStation高2.9倍且SLO百分之百达标。",
+        "boundary": "收益依赖推理负载低于峰值，峰值流量时无可回收余量。",
+        "project_relevance": "为推理集群空闲算力复用提供生产级证据，可评估微调与推理混部的工程可行性。",
+        "keywords": [
+          "推理微调混部",
+          "LoRA",
+          "GPU利用率",
+          "SLO调度",
+          "vLLM"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2607.28848v1",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-07-30T21:20:21Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 76.9,
+        "_provenance": {
+          "task_id": "ad72fe34c2807390a244256b",
+          "event_id": "abe427001f1b8b8236b3bb3b",
+          "batch_id": "writing-5",
+          "source_urls": [
+            "https://arxiv.org/abs/2607.28848v1"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "DeltaServe: Host-Agnostic Co-Serving of Inference and Fine-Tuning for LLMs",
+          "event_hint": "DeltaServe: a host-agnostic co-serving design that folds LoRA fine-tuning into an existing LLM inference engine (vLLM, SGLang, S-LoRA) under SLO control, harvesting idle GPU compute observed in production inference traces.",
+          "problem": "LLM serving is provisioned for peak load to meet latency SLOs, leaving GPU compute idle when traffic is below peak. A representative Nutanix production co-pilot coding trace shows average load ~60% of provisioned capacity (40% GPU unused) over six months of traces. Prior inference-pipeline optimizations (Splitwise, Orca) raise efficiency under a fixed request stream but do not recover idle GPU cycles when the request stream itself falls below peak.",
+          "mechanism": "DeltaServe integrates with existing inference engines through a compact hook interface requiring only multi-LoRA batching support. It exploits the shared execution structure of inference prefill and LoRA fine-tuning forward passes, admits fine-tuning only when sufficient inference headroom exists (forward batch co-serving), and interrupts fine-tuning-only steps when inference requests arrive. An SLO-aware scheduler is driven by a CUDA-graph-aware latency model calibrated offline and refined online; mixed batches are priced with eager-mode coefficients because activation hooks require leaving CUDA-graph replay.",
+          "evidence": [
+            {
+              "claim": "On a Nutanix production trace, DeltaServe on vLLM delivers 2.9x higher fine-tuning throughput than LLMStation at 100% inference SLO compliance, versus 85% for LLMStation; it also achieves 39% higher fine-tuning throughput than vLLM+torchtune using no additional hardware with full SLO compliance.",
+              "value": "2.9x vs LLMStation; 39% vs vLLM+torchtune",
+              "baseline": "LLMStation (85% SLO); vLLM+torchtune (100% SLO)",
+              "condition": "Nutanix production trace, 4-GPU deployment",
+              "source_locator": "Evidence locator: PDF Page 1 - Abstract; PDF Page 10 - Figure 5"
+            },
+            {
+              "claim": "Nutanix production inference workload trace (co-pilot coding service) shows average load ~60.6% of provisioned capacity with ~40% GPU unused, persisting across six months of collected traces.",
+              "value": "60.6% avg load; ~40% GPU unused",
+              "baseline": "provisioned peak capacity",
+              "condition": "20-minute representative window, 6-month trace",
+              "source_locator": "Evidence locator: PDF Page 1 - Figure 1 / Introduction"
+            },
+            {
+              "claim": "End-to-end 4-GPU comparison (Nutanix trace): DeltaServe-vLLM fine-tuning avg 1418 tok/s (SLO 100%), LLMStation 489 tok/s (SLO 85.5%), vLLM+torchtune 1014 tok/s (SLO 100%); burst-dense LLMStation SLO drops to 83.3%.",
+              "value": "1418 vs 489 vs 1014 tok/s",
+              "baseline": "LLMStation, vLLM+torchtune",
+              "condition": "Nutanix trace, burst-light, burst-dense, 4-GPU",
+              "source_locator": "Evidence locator: PDF Page 10 - Figure 5"
+            },
+            {
+              "claim": "Ablation on single RTX 5090: forward batch co-serving raises fine-tuning throughput from 507 to 934 tok/s (+84%) over idle-only admission while preserving SLO; fine-tuning-only step interruption limits 5% tail latency overhead to 8% (vs 27% with interruption disabled), at only ~2% throughput cost.",
+              "value": "507->934 tok/s; 8% vs 27% tail overhead",
+              "baseline": "DeltaServe-Temp (no forward co-serving); DeltaServe-No-INTR",
+              "condition": "single RTX 5090, scaled Nutanix trace 600-800s window",
+              "source_locator": "Evidence locator: PDF Page 12 - 4.4 Ablation, Figures 7 & 8"
+            },
+            {
+              "claim": "DeltaServe integrates with vLLM, SGLang, and S-LoRA via a compact hook interface requiring only multi-LoRA batching support; the SLO-aware scheduler uses a CUDA-graph-aware latency model calibrated offline and refined online.",
+              "value": "vLLM, SGLang, S-LoRA",
+              "baseline": null,
+              "condition": "host-agnostic hook interface",
+              "source_locator": "Evidence locator: PDF Page 1 - Abstract; PDF Page 8 - Estimator calibration"
+            }
+          ],
+          "evaluation_context": "Evaluated on a real Nutanix production inference trace (co-pilot coding service, 6 months collected, average load ~60.6%), plus burst-light and burst-dense synthetic traces. Main end-to-end deployment is 4 GPUs (model/hardware spec not fully exposed in visible evidence); ablations on single RTX 5090. Baselines: LLMStation, vLLM+torchtune, bare vLLM. Metrics: fine-tuning throughput (tok/s), per-request end-to-end latency, SLO satisfaction rate (TTFT/TPOT against 95% target). Integrated with vLLM, SGLang, S-LoRA.",
+          "limitations": "Specific GPU model and count for the main 4-GPU end-to-end comparison is not named in the visible evidence (ablations name RTX 5090). The model(s) served and LoRA rank used in the production-trace experiments are not exposed in the visible evidence. Co-serving benefit depends on inference load profile - under sustained peak traffic there is no idle headroom to harvest. Mixed-batch admission requires leaving CUDA-graph replay (eager mode), so some inference latency overhead is inherent when forward co-serving is enabled.",
+          "project_relevance": "DeltaServe directly addresses AI infra efficiency by converting idle inference GPU compute into fine-tuning throughput under SLO control, with a real production trace and explicit SLO compliance numbers. It is a serving-runtime/co-scheduling contribution relevant to GPU utilization and cost. For the project card it provides verifiable system mechanisms and production-scale evidence (Nutanix trace), fitting the horizontal AI-Infra radar rather than a single deep topic.",
+          "primary_source_resolved": true,
+          "quality_score": 84,
+          "source_notes": [
+            "arXiv preprint 2607.28848v1 (30 Jul 2026), FETCHED primary source; authors from McGill, MBZUAI, Nutanix.",
+            "Production trace is explicitly from Nutanix (the discovery summary's 'Company X' is Nutanix per the evidence).",
+            "Baselines explicitly named: LLMStation, vLLM+torchtune, bare vLLM; integrated hosts: vLLM, SGLang, S-LoRA."
+          ],
+          "evidence_gaps": [],
+          "_provenance": {
+            "task_id": "ec422a0685fe356471c5d12a",
+            "candidate_id": "125476cd874d7026622611c2",
+            "source_title": "DeltaServe: Host-Agnostic Co-Serving of Inference and Fine-Tuning for LLMs",
+            "source_url": "https://arxiv.org/abs/2607.28848v1",
+            "document_id": "c53d6c6437420cff8699d5aa"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "969e93f3ab4985792fcbb329",
+      "brief_item": {
+        "title": "MADAR：废除随机访问与程序计数让全部状态在环上旋转",
+        "type": "深度解读",
+        "topic_name": "AI芯片与加速器",
+        "direction_name": "芯片内存接口、数据搬移与软硬件协同",
+        "published_at": "2026-06-14T01:31:27Z",
+        "importance": "值得关注",
+        "core_conclusion": "现代处理器九成能耗耗在寻址而非运算，MADAR提出废除随机访问与程序计数，让全部状态在编译期调度的环上旋转。",
+        "mechanism": "用周期递增的环替代缓存层级，固定计算站在指令扫过时执行且代码数据共环流转。",
+        "result": "一阶能耗模型下8x8矩阵向量乘为86 pJ每MAC，MAC交叉点63 pJ每指令低于70 pJ基线。",
+        "boundary": "仅有RTL与一阶模型无流片或综合对比，数据依赖访存需付半圈会合代价。",
+        "project_relevance": "以旋转代寻址的机制值得记录，但须等综合对比才能判断是否真比静止便宜。",
+        "keywords": [
+          "无地址处理器",
+          "旋转计算",
+          "编译期调度",
+          "数据搬移",
+          "能耗模型"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2606.15535v1",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-06-14T01:31:27Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 76.7,
+        "_provenance": {
+          "task_id": "ad72fe34c2807390a244256b",
+          "event_id": "9dd57330a5c72f1064d7a1fe",
+          "batch_id": "writing-5",
+          "source_urls": [
+            "https://arxiv.org/abs/2606.15535v1"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "MADAR: An Address-Free Processor",
+          "event_hint": "MADAR: a proposed address-free processor architecture that abolishes random-access storage and the program counter, replacing them with a single primitive (rotation): all state circulates in a compile-time-scheduled hierarchy of rings of increasing period, with fixed compute stations executing instructions when they sweep past their operands; validated only via a cycle-accurate RTL implementation and a first-order energy model (Horowitz 45nm per-event energies, in-order 70 pJ/instruction baseline), with no silicon or synthesis-based comparison.",
+          "problem": "In a modern processor, computing (arithmetic) is the cheap part; most area and energy go to addressing — moving operands to/from a register file and cache, and running the tags, ports, miss queues, and bypass networks that find a value where it was left. A cited detailed energy measurement of a general-purpose processor running a video encoder reports functional units consumed under 6% of total energy, with >90% being overhead relative to the operations actually performed, and instruction supply alone roughly a third of core energy. The tension: the datapath streams operands through functional units, but the memory system forces every value to rest at a fixed address so it can be found again on demand, requiring register files with many ports, caches with tag arrays/MSHRs, memory arbiters, load-store queues, and operand-bypass networks.",
+          "mechanism": "MADAR replaces the von Neumann primitives (random-access store + program counter) with a single primitive: rotation. Four conjoined properties: (a) Circulating storage — the only storage is a set of rings R0..Rn, each a circular sequence of slots advancing one slot per clock, with geometrically increasing periods (representative values 16, 256, 4K, 64K slots); small fast rings are literal shift registers, large slow rings are single-port SRAM banks read/written through a rotating pointer (sequential, portless access with no address decode/tags/arbitration/multi-porting). (b) Co-circulating code and data — every slot holds one packet (64-bit payload + kind tag, or opcode + operand refs + destination + predicate); instructions and data ride in the same slots. (c) Distributed collision execution — fixed compute stations (ALU, multiplier, steer, transfer, I/O); an instruction executes when it sweeps past a station of its class, with operands named by rotational offset within a window W=8 slots ahead; no queue, no scheduler, no dynamic matching, no scoreboard (arrival is the schedule). (d) Compiler-scheduled period hierarchy — a hierarchy of rings of increasing period replaces the cache hierarchy; transfer stations bridge adjacent rings on a compile-time schedule, doing by rotation what a cache does by tags, with no reactive misses. A constructive backtracking scheduler emits programs cross-checked slot-for-slot against the Verilator cycle-accurate model; it computes a correct seating, not the minimal-energy one. A rendezvous station handles values the schedule cannot pre-place, at ~half a rotation of latency.",
+          "evidence": [
+            {
+              "claim": "First-order energy model parameters (Section 7): per-event figures are Horowitz's 45nm values — a 64-bit add at 0.2 pJ, a multiply at 12.4 pJ, an 8 KB SRAM access at 10 pJ. The slot-advance cost is priced three ways: a conservative register-file proxy (6 pJ, upper bound on a true shift), a realistic flip-flop toggle (1 pJ), and the SRAM access (10 pJ) for large rings swept by a rotating pointer. The baseline is a simple in-order core at 70 pJ per instruction (Horowitz's figure for a programmable processor's per-instruction overhead, consistent with measured embedded cores). Rotation is clock-gated: on a shift-register ring only slots whose contents change dissipate a word-shift each cycle; a large SRAM ring advances its pointer at one read + one write per cycle.",
+              "value": "add 0.2 pJ; multiply 12.4 pJ; 8KB SRAM access 10 pJ; slot-advance 6/1/10 pJ; in-order baseline 70 pJ/instr (45nm Horowitz)",
+              "baseline": "simple in-order core at 70 pJ/instruction",
+              "condition": "first-order energy model, 45nm Horowitz per-event figures, clock-gated rotation",
+              "source_locator": "PDF Page 7 (Section 7 Cost Model, Energies paragraph)"
+            },
+            {
+              "claim": "Energy crossover per kernel (Table 6): the baseline cost-per-instruction at which the in-order core and MADAR consume equal energy, rotation clock-gated, each ring priced at its realization. Below the 70 pJ in-order baseline, MADAR wins. Counted-sum crossover 26 pJ/instr (wins), FIR tap 30 pJ/instr (wins), multiply-accumulate 63 pJ/instr (wins); degree-2 polynomial 126 pJ/instr (loses), degree-5 polynomial 161 pJ/instr (loses, 3 relays), 12-deep accumulation 205 pJ/instr (loses, 5 relays). Loop and MAC kernels win on short rings; polynomial and accumulation chains pushed onto longer rings lose to rotation.",
+              "value": "counted-sum 26, FIR 30, MAC 63 pJ/instr crossover (win); deg-2 poly 126, deg-5 poly 161, 12-deep accum 205 pJ/instr crossover (lose)",
+              "baseline": "70 pJ/instruction in-order core",
+              "condition": "clock-gated rotation, ring-period-dependent pricing, 6 kernels",
+              "source_locator": "PDF Page 7 (Section 7, Table 6)"
+            },
+            {
+              "claim": "Streaming AI dense-core result (Section 9): an 8x8 matrix-vector product costs 86 pJ per multiply-accumulate on MADAR (first-order model), below both the fused tile and a lone streaming inner product, and it is the only dataflow that improves on the inner product in isolation; the period hierarchy is where dense-kernel operand reuse wants to live. Validated on the cycle-accurate model and, for the inner product and fused tile, cross-checked against the RTL implementation; the reuse comparison is priced on the first-order model.",
+              "value": "8x8 matmul-vector 86 pJ/MAC (first-order); only dataflow improving on lone inner product",
+              "baseline": "lone streaming inner product; fused tile",
+              "condition": "first-order energy model, 8x8 matmul-vector, cycle-accurate + RTL cross-check for primitives",
+              "source_locator": "PDF Page 9 (Section 9 Scope paragraph)"
+            },
+            {
+              "claim": "Scheduler validation (Table 5, Section 6): the constructive scheduler places 8 kernels (MAC, degree-2/5 polynomial, counted sum, FIR tap, 12-deep accumulation, two-stage pipeline, 8-wide fan-out) from their dataflow with no hand placement; each compiled program is emitted as an RTL testbench whose final ring state is compared slot-for-slot against the Verilator cycle-accurate model, and all agree. The scheduler computes a correct seating, not the minimal-energy one; the two-stage kernel is placed across two rings with one scheduled inter-ring transfer, and the fan-out kernel declared on a 16-slot ring too small to hold it is demoted to a 64-slot ring.",
+              "value": "8 kernels placed with no hand placement; all agree slot-for-slot vs Verilator model; scheduler exact within scope but not minimal-energy",
+              "baseline": "Verilator cycle-accurate RTL model",
+              "condition": "8 representative kernels; backtracking placer",
+              "source_locator": "PDF Page 7 (Section 6, Table 5)"
+            },
+            {
+              "claim": "Authors' explicit open question and scope limits (Section 9): the decisive open question is whether motion is cheaper than stillness — the design rationale argues deleting addressing machinery should save more than rotation costs, but that is an argument; ONLY a synthesis-based comparison can settle it, and that is the evaluation this paper motivates and does NOT replace. MADAR is fast only where data movement is statically known; data-dependent accesses pay the half-rotation rendezvous cost, expensive on long rings. Systems limits: no program counter and all state in flight means no natural primitive for saving a context, so preemptive multiprogramming, precise interrupts, and protection boundaries are genuinely hard and unaddressed; subroutine linkage is by inlining calls into a single parked kernel. Softmax/normalization/activation need stations beyond the present adder/multiplier or polynomial approximation; the backtracking placer is too slow for large tiles.",
+              "value": "open question: motion vs stillness (only synthesis can settle); data-dependent access pays half-rotation; no context-save/interrupts/protection; placer too slow for large tiles",
+              "baseline": "n/a (authors' self-assessed scope)",
+              "condition": "single-program, statically schedulable regime",
+              "source_locator": "PDF Page 9 (Section 9 Discussion, Limitations and Applicability)"
+            }
+          ],
+          "evaluation_context": "Implementation: cycle-accurate Verilator RTL model of the MADAR execution engine; a constructive backtracking scheduler emits programs cross-checked slot-for-slot against the RTL (8 representative kernels, all agree). Pricing: a deliberately transparent first-order energy model using Horowitz 45nm per-event energies (64-bit add 0.2 pJ, multiply 12.4 pJ, 8KB SRAM access 10 pJ), slot-advance priced at 6 pJ (register-file proxy upper bound) / 1 pJ (flip-flop toggle) / 10 pJ (SRAM access for large rings), against a simple in-order baseline of 70 pJ/instruction. Rotation is clock-gated (only changed slots dissipate on shift-register rings; SRAM rings advance pointer at 1 read + 1 write/cycle). Representative ring periods: 16/256/4K/64K slots; operand window W=8; packet = 64-bit payload + 2-bit kind + 3-bit opcode + 4-bit src_a/src_b/dst. Case study: MAC, dot product, streaming inner product, 8x8 matmul-vector tile (86 pJ/MAC, first-order), validated against the cycle-accurate model and RTL-cross-checked for primitives. NO silicon, tape-out, FPGA prototype, hardware benchmark, synthesized netlist, process-node/area estimate, or matched synthesized baseline of a conventional machine.",
+          "limitations": "The supplement confirms the first-order energy model's parameters (Horowitz 45nm per-event energies, 70 pJ/instruction in-order baseline, clock-gated rotation) and exposes per-kernel crossover numbers (MAC 63 pJ/instr crossover wins; polynomial/accumulation chains on longer rings lose, up to 205 pJ/instr) plus the 8x8 matmul-vector at 86 pJ/MAC (first-order). However, the authors explicitly state these are stand-in figures and the robust result is the crossover, not absolute joules; the baseline is a single published per-instruction number (70 pJ), not a matched implementation measured on the same flow. The decisive open question — whether motion is cheaper than stillness — can only be settled by a synthesis-based comparison of both machines through one flow, which is the evaluation this model motivates and does NOT replace. So the substantive part of the recorded gap (absolute pJ/MAC, TOPS/MACs-per-second, area, process node, matched synthesized baseline) remains UNRESOLVED by design. Additional intrinsic limits: MADAR is fast only where data movement is statically known (data-dependent access pays a half-rotation rendezvous cost, expensive on long rings); no natural context-save primitive, so preemptive multiprogramming, precise interrupts, and protection boundaries are unaddressed; subroutine linkage is by inlining into a single parked kernel; softmax/normalization/activation need stations beyond the present adder/multiplier or polynomial approximation; the backtracking placer is too slow for large tiles. No HBM/HBF/interconnect/package data; no TOPS/TFLOPS; single-author affiliation (Illumina, a genomics company).",
+          "project_relevance": "Tangentially relevant to the AI-chip-accelerator card: MADAR proposes a genuinely novel architectural mechanism (abolish addresses; all state circulates in compile-time-scheduled rings; distributed collision execution; period hierarchy replaces caches) whose stated payoff is clearest for AI acceleration — an 8x8 matmul-vector costs 86 pJ/MAC in the first-order model and the MAC crossover (63 pJ/instr) wins against the 70 pJ/instruction in-order baseline on short rings, with operand reuse routed through the period hierarchy. It targets the data-movement/addressing overhead bottleneck directly (the card's first judgment). However, it fails the card's primary evidence bar: no silicon, no pre-silicon validation against a matched synthesized baseline, no measured throughput/latency/absolute-energy, no HBM/interconnect/package data; the crossover numbers are first-order stand-ins that the authors themselves say only a synthesis-based comparison can settle. For the project this is an idea-stage design point worth noting for its mechanism (rotation as memory hierarchy, exact scheduling without reactive memory, clock-gated rotation), not a deployable or benchmarkable AI accelerator result.",
+          "primary_source_resolved": true,
+          "quality_score": 52,
+          "evidence_gaps": [
+            {
+              "question": "Are there any absolute energy-per-operation (pJ/MAC), throughput (TOPS or MACs/s), area, or process-node numbers for MADAR beyond the first-order model, and what is the matched synthesized baseline used for the crossover claim?",
+              "terms": [
+                "energy per operation",
+                "pJ",
+                "TOPS",
+                "synthesized netlist",
+                "crossover",
+                "process node",
+                "area"
+              ]
+            }
+          ],
+          "_provenance": {
+            "task_id": "5e74b2c7c015b48af2f536d6",
+            "candidate_id": "46d66925dc71a877c7f56496",
+            "source_title": "MADAR: An Address-Free Processor",
+            "source_url": "https://arxiv.org/abs/2606.15535v1",
+            "document_id": "9ada48f91d67be0b532e3e05",
+            "repair_of_task_id": "840d9e41b85653f992edcf37"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "70950d013d4193c2103b6b35",
+      "brief_item": {
+        "title": "ReMP：秒级切换TP或PP并行拓扑并保留KV缓存的运行时",
+        "type": "深度解读",
+        "topic_name": "跨域传输",
+        "direction_name": "KVCache跨域迁移与远程访问",
+        "published_at": "2026-06-17T06:36:40Z",
+        "importance": "值得关注",
+        "core_conclusion": "LLM推理把TP或PP当静态配置，致切换需重启且丢KV缓存，ReMP把并行拓扑与运行态解耦，在秒级完成切换并保留缓存。",
+        "mechanism": "解耦权重KV缓存与通信组到拓扑，用二维KV迁移在TP或PP变化时保留可复用缓存并复用worker。",
+        "result": "7B到70B模型多数切换在1到7秒内完成，比重启快数十到超百倍。",
+        "boundary": "KV迁移为节点内跨GPU非跨地域，服务性能数值细节部分未公开。",
+        "project_relevance": "为动态负载下TP或PP自适应切换提供低停机证据，可评估推理集群弹性调度的可行性。",
+        "keywords": [
+          "并行拓扑重配",
+          "KV缓存迁移",
+          "vLLM",
+          "低停机",
+          "TP或PP"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2606.18741v1",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-06-17T06:36:40Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 75.5,
+        "_provenance": {
+          "task_id": "62bab5fd599d4dfc65428fbb",
+          "event_id": "31bdc1db01214b96ce7b0eb0",
+          "batch_id": "writing-6",
+          "source_urls": [
+            "https://arxiv.org/abs/2606.18741v1"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "ReMP: Low-Downtime Runtime Model-Parallelism Reconfiguration for LLM Serving",
+          "event_hint": "ReMP: a runtime model-parallelism (TP/PP) reconfiguration framework for LLM serving that switches topology in seconds without full service restart, preserving KV cache via two-dimensional migration; implemented on vLLM V1.",
+          "problem": "LLM serving systems treat TP/PP topology as a static pre-deployment config. Switching topology currently requires restarting the service, causing several minutes of service interruption, KV cache loss, and prohibitive recomputation overhead. This conflicts with dynamically changing workloads (real service token-usage traces vary substantially across the day), where different traffic regimes demand different optimal TP/PP configs.",
+          "mechanism": "ReMP decouples model-parallel topology from runtime state so weights, KV cache, workers, communication groups, and scheduler metadata are not permanently bound to a topology. Three techniques: (1) decoupling topology from runtime state to avoid full reconstruction; (2) a two-dimensional KV cache migration mechanism that preserves reusable cache states across TP/PP changes; (3) end-to-end online reconfiguration via shared-memory model reloading, prebuilt parallel-state snapshots, and worker reuse. For serving, ReMP probes representative TP/PP configs under current load and continues with the best-performing one.",
+          "evidence": [
+            {
+              "claim": "ReMP completes most topology switches within 1-7 seconds on models from 7B to 70B parameters, achieving speedups of tens to over a hundred times compared to the restart approach.",
+              "value": "1-7s; tens to >100x vs restart",
+              "baseline": "restart-based switching",
+              "condition": "abstract headline; H100 and RTX 5090 8-GPU platforms",
+              "source_locator": "Evidence locator: PDF Page 1 - Abstract"
+            },
+            {
+              "claim": "On H100 (8x NVIDIA H100): Llama2-7B switches in ~1-2s across transitions; Qwen3-30B-A3B and DeepSeek-R1-Distill-Qwen-32B switch in ~2-3s for most transitions; even Llama2-70B completes within several seconds (e.g., end-to-end switch times shown as ~3.9-7.4s depending on transition).",
+              "value": "~1-2s (7B); ~2-3s (30-32B); several s (70B)",
+              "baseline": "restart-based switching",
+              "condition": "8x H100 platform, per-transition end-to-end time",
+              "source_locator": "Evidence locator: PDF Page 9 - 4.2.1 End-to-end Reconfiguration Time"
+            },
+            {
+              "claim": "ReMP speedup over restart reaches tens to >100x; the end-to-end switching-time figure (H100) shows per-transition speedups in the ~30-110x range across Llama2-7B/70B, Qwen3-30B-A3B, DeepSeek-R1-Distill-Qwen-32B transitions.",
+              "value": "~30-110x (H100 figure)",
+              "baseline": "restart-based switching",
+              "condition": "H100 8-GPU platform, multiple model transitions",
+              "source_locator": "Evidence locator: PDF Page 10 - ReMP End-to-end Switching Time figure"
+            },
+            {
+              "claim": "Evaluation hardware: two 8-GPU platforms - (1) 8x NVIDIA H100, AMD EPYC 7R13, 2TB host memory; (2) 8x NVIDIA RTX 5090, Intel Xeon Gold 6530, 960GB host memory. Implemented on vLLM V1; Llama2-70B excluded on RTX 5090 due to GPU memory limits.",
+              "value": "8x H100; 8x RTX 5090; vLLM V1",
+              "baseline": null,
+              "condition": "experimental setup",
+              "source_locator": "Evidence locator: PDF Page 9 - 4.1 Experimental Setup"
+            },
+            {
+              "claim": "Models: Llama2-7B (dense, 32 layers, 32 KV heads), Llama2-70B (dense, 80 layers, 8 KV heads), DeepSeek-R1-Distill-Qwen-32B (dense, 64 layers, 8 KV heads), Qwen3-30B-A3B (MoE, 30.5B params / 3.3B active, 48 layers, 4 KV heads); workloads use BurstGPT-derived traces; baselines: restart-based (reconfig cost) and fixed TP/PP (serving performance).",
+              "value": "7B-70B dense + MoE; BurstGPT traces",
+              "baseline": "restart-based; fixed TP/PP configs",
+              "condition": "Table 2 model configs; BurstGPT traces",
+              "source_locator": "Evidence locator: PDF Page 10 - Table 2; PDF Page 9 - Workloads/Baselines"
+            }
+          ],
+          "evaluation_context": "Evaluated on two 8-GPU platforms (8x H100 / 2TB host; 8x RTX 5090 / 960GB host), implemented on vLLM V1. Models: Llama2-7B, Llama2-70B, DeepSeek-R1-Distill-Qwen-32B, Qwen3-30B-A3B (MoE). Workloads: BurstGPT-derived request traces replayed under different request pressure. Baselines: restart-based switching (reconfig cost) and fixed TP/PP configurations (serving performance). Metrics: switching time, speedup over restart, internal switching-time breakdown (model loading from shared weight store + KV cache transfer), and serving throughput/latency (TTFT, TPOT, output throughput).",
+          "limitations": "Visible evidence emphasizes reconfiguration-cost (switching time and speedup vs restart) with per-transition numbers; the detailed serving-performance figures (TTFT/TPOT/throughput improvements over fixed configs under dynamic load) are summarized in text but their exact numeric gains are in figures not fully exposed in the Evidence Pack. Cross-region/WAN migration is not the focus - the two-dimensional KV cache migration is across GPUs within an 8-GPU node during TP/PP reconfiguration, not across geographic regions. RTX 5090 platform results are mentioned as showing a similar trend but Llama2-70B is excluded there. Production deployment scale beyond the two test platforms is not reported.",
+          "project_relevance": "ReMP is primarily an LLM serving / model-parallelism reconfiguration contribution, with KV cache migration as an intra-node (cross-GPU) mechanism rather than cross-region WAN transfer. It is relevant to the cross-region topic only in the narrow sense of KV cache migration/preservation during topology changes; its main value is AI-infra serving adaptivity. For the project card it provides concrete reconfiguration-cost evidence (seconds, tens-to-100x vs restart) but does not address WAN RTT, cross-region hit rate, or P95 under geographic distribution.",
+          "primary_source_resolved": true,
+          "quality_score": 78,
+          "source_notes": [
+            "arXiv preprint 2606.18741v1 (17 Jun 2026), FETCHED primary source; authors from ICT CAS, Zhejiang Lab, Infinigence AI.",
+            "Implemented on vLLM V1; hardware 8x H100 and 8x RTX 5090; models Llama2-7B/70B, DeepSeek-R1-Distill-Qwen-32B, Qwen3-30B-A3B.",
+            "KV cache migration is intra-node (across GPUs) during TP/PP reconfiguration, not cross-region/WAN; serving-performance numeric gains are summarized but detailed figures are partly unexposed."
+          ],
+          "evidence_gaps": [],
+          "_provenance": {
+            "task_id": "d61a8a1a2fc21a110f9285be",
+            "candidate_id": "af3cc384547234ef81d1c0e8",
+            "source_title": "ReMP: Low-Downtime Runtime Model-Parallelism Reconfiguration for LLM Serving",
+            "source_url": "https://arxiv.org/abs/2606.18741v1",
+            "document_id": "27264d9ea6a52f2b4ae43441"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "e0f15a586bf785daa7a863e2",
+      "brief_item": {
+        "title": "阿里云WAIC发布Agent原生云套件与TokenWorks推理平台",
+        "type": "深度解读",
+        "topic_name": "状态感知网络、TPN",
+        "direction_name": "TPN直接进展",
+        "published_at": "2026-07-20",
+        "importance": "值得关注",
+        "core_conclusion": "企业需要托管治理环境来构建部署和运维自主Agent，阿里云发布Agent原生云套件与TokenWorks推理平台抢占这一层。",
+        "mechanism": "TokenWorks把请求路由推理执行算力复用与调度整合为一，Agent套件跨生命周期编排工作流。",
+        "result": "真武芯片累计出货56万片服务400余家客户20余行业，未见TTFT或吞吐实测。",
+        "boundary": "产品发布叙事无网络层TPN机制或量化Token性能指标。",
+        "project_relevance": "TokenWorks统一调度值得跟踪，但须等TPN网络层机制与量化数据再判断。",
+        "keywords": [
+          "Agent原生云",
+          "TokenWorks",
+          "PAI-EAS",
+          "真武芯片",
+          "阿里云"
+        ],
+        "sources": [
+          {
+            "publisher": "Alibaba Group",
+            "url": "https://www.alibabagroup.com/document-2016703577908576256",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-07-20"
+          }
+        ],
+        "discovered_via": "Agent Web Search",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 75.3,
+        "_provenance": {
+          "task_id": "62bab5fd599d4dfc65428fbb",
+          "event_id": "696082010d862daa3b319e37",
+          "batch_id": "writing-6",
+          "source_urls": [
+            "https://www.alibabagroup.com/document-2016703577908576256"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "Alibaba Cloud Unveils Agent-Native Innovations at WAIC",
+          "event_hint": "Alibaba Cloud announced an Agent-Native Cloud suite (AgentRun, AgentLoop, AgentTeams), TokenWorks PaaS inference platform, T-Head SAIL open-source stack, and wearable AI devices at WAIC 2026.",
+          "problem": "Enterprises need managed, governed environments to build, deploy and operate autonomous AI agents and to run large-model inference efficiently at scale.",
+          "mechanism": "Alibaba Cloud positions a full-stack AI ecosystem spanning chip, infrastructure, platform and application layers, moving from AI-native to Agent-native architecture. At the platform layer, PAI TokenWorks (used via PAI-EAS / Elastic AI Service) integrates request routing, inference execution, compute reuse and scheduling into a unified system to improve inference performance, cost and reliability. The Agent-Native Cloud suite manages, optimizes and orchestrates multi-agent workflows across the lifecycle.",
+          "evidence": [
+            {
+              "claim": "Alibaba Cloud launched an Agent-Native Cloud suite consisting of AgentRun, AgentLoop and AgentTeams to support the full lifecycle of enterprise-grade AI agents with built-in governance.",
+              "value": "AgentRun, AgentLoop, AgentTeams",
+              "baseline": null,
+              "condition": "announced at WAIC 2026",
+              "source_locator": "Evidence locator: 云基础设施：从 AI 原生到 Agent 原生"
+            },
+            {
+              "claim": "PAI TokenWorks, available through PAI-EAS (Elastic AI Service), integrates request routing, inference execution, compute reuse and scheduling into a unified system to improve LLM inference performance, cost and reliability.",
+              "value": "TokenWorks via PAI-EAS",
+              "baseline": null,
+              "condition": "platform-layer inference service",
+              "source_locator": "Evidence locator: 云基础设施：从 AI 原生到 Agent 原生"
+            },
+            {
+              "claim": "T-Head (Pingtouge) open-sourced its AI software stack SAIL, covering OS layer, SDK layer and interface layer, built for the Zhenwu (真武) series AI chips; as of April 2026 Zhenwu cumulative shipments reached 560,000 chips serving 400+ customers across 20+ industries.",
+              "value": "560,000 chips; 400+ customers; 20+ industries",
+              "baseline": null,
+              "condition": "cumulative shipments as of April 2026",
+              "source_locator": "Evidence locator: 开源人工智能基础设施"
+            },
+            {
+              "claim": "Alibaba released Qwen 3.8-Max-Preview with 2.4 trillion parameters on July 19 via Token Plan, Qoder and QoderWork; initial testing ranked it second only to Fable 5; Qwen 3.8-Max open weights were announced as forthcoming.",
+              "value": "2.4 trillion parameters",
+              "baseline": "Fable 5 (ranked above it in initial testing)",
+              "condition": "initial tests, not full benchmark",
+              "source_locator": "Evidence locator: 阿里云在WAIC上发布智能体原生创新成果"
+            },
+            {
+              "claim": "Miaowu (秒悟) AI dev tool launched a team edition with unified billing, quota allocation, team management and asset sharing; off-peak pricing can cut token cost to 20% of the standard price during designated periods.",
+              "value": "20% of standard token price",
+              "baseline": "standard token price",
+              "condition": "off-peak designated periods only",
+              "source_locator": "Evidence locator: AI 开发工具秒悟推出团队版"
+            }
+          ],
+          "evaluation_context": "Vendor announcement from WAIC 2026 (Alibaba Group primary source). No TTFT, TPOT, token throughput, KVCache transfer volume, network utilization, or end-to-end P95 metrics are exposed. No workload scale, hardware platform, or independent benchmark accompanies the inference-platform claims.",
+          "limitations": "The visible Evidence Pack does not describe TPN (Token Performance Network) network-layer mechanisms, KVCache-aware scheduling, or any quantitative TTFT/TPOT/network metrics despite the source being routed to the TPN topic. The discovery summary's claim that Alibaba Cloud 'introduced TPN at the network layer' within this full-stack refresh is not supported by the visible evidence text and was not recorded as fact. Qwen 3.8-Max-Preview comparison to Fable 5 is based on unspecified 'initial tests', not a disclosed benchmark suite.",
+          "project_relevance": "TokenWorks' unified routing/scheduling and the Agent-Native suite are relevant to inference-serving efficiency, but the visible evidence does not confirm a network-side, KVCache-aware mechanism that would qualify as TPN per the project card. Network-layer specifics (state-aware scheduling, cross-node KVCache transfer reduction) would be needed to assess TPN relevance.",
+          "primary_source_resolved": true,
+          "quality_score": 38,
+          "source_notes": [
+            "Source is an Alibaba Group official announcement (vendor primary) fetched as FETCHED; content is product-launch narrative, not measured systems results.",
+            "The source was routed to TPN topic/direction but the visible Evidence Pack contains no TPN-specific network mechanism or quantitative Token performance metrics."
+          ],
+          "evidence_gaps": [
+            {
+              "question": "Does the source describe TPN (Token Performance Network) network-layer mechanisms, KVCache-aware scheduling, or cross-node bandwidth scheduling, and with what quantitative TTFT/TPOT/network utilization results?",
+              "terms": [
+                "Token Performance Network",
+                "TPN",
+                "network layer",
+                "KVCache",
+                "TTFT",
+                "token throughput"
+              ]
+            }
+          ],
+          "_provenance": {
+            "task_id": "382ac2a2097dd40c4c58e737",
+            "candidate_id": "a5fbb2ebce5f0d98bf38044e",
+            "source_title": "Alibaba Cloud Unveils Agent-Native Innovations at WAIC",
+            "source_url": "https://www.alibabagroup.com/document-2016703577908576256",
+            "document_id": "974c2126ae9e3f960640c7f8"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "e9229db98aec7dd4f43bc655",
+      "brief_item": {
+        "title": "LMCache v0.5.0：加入实例间P2P KV传输与CacheBlend分段前缀检索",
+        "type": "深度解读",
+        "topic_name": "跨域传输",
+        "direction_name": "压缩、增量传输、预取与放置",
+        "published_at": "2026-06-23T18:13:03Z",
+        "importance": "值得关注",
+        "core_conclusion": "多LMCache实例间KV复用此前缺直连路径，v0.5.0加入P2P传输与CacheBlend分段前缀检索，以支撑分布式复用。",
+        "mechanism": "新增P2P适配器与RPC查找锁接口实现实例间直连KV传输，配非对称序列化与预取滑窗。",
+        "result": "发布说明为特性清单含SGLang XPU与Aerospike等新后端，无任何量化基准。",
+        "boundary": "P2P传输未指明是本地Fabric机架还是WAN且无性能数据。",
+        "project_relevance": "确认分布式KV搬运与放置能力已存在，宜入KVCache生态Radar而非深读。",
+        "keywords": [
+          "LMCache",
+          "P2P KV传输",
+          "CacheBlend",
+          "分段前缀",
+          "分布式缓存"
+        ],
+        "sources": [
+          {
+            "publisher": "GitHub",
+            "url": "https://github.com/LMCache/LMCache/releases/tag/v0.5.0",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-06-23T18:13:03Z"
+          }
+        ],
+        "discovered_via": "GitHub Release",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 74.7,
+        "_provenance": {
+          "task_id": "62bab5fd599d4dfc65428fbb",
+          "event_id": "76c83167daea48ccbe8820a1",
+          "batch_id": "writing-6",
+          "source_urls": [
+            "https://github.com/LMCache/LMCache/releases/tag/v0.5.0"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "LMCache/LMCache v0.5.0",
+          "event_hint": "LMCache v0.5.0 release: adds Peer-to-Peer (P2P) KV cache transfer between LMCache instances in multiprocess (MP) mode, plus CacheBlend, prefetch sliding-window, asymmetric serde, and new L2 backends/connectors.",
+          "problem": "KV cache reuse across multiple LMCache serving instances previously required indirect paths; MP-mode deployments needed a way to look up and transfer KV cache directly between instances, and existing transfer/prefetch/serde mechanisms lacked the flexibility (asymmetric precision, sliding-window prefetch, segmented-prefix retrieval) for efficient distributed reuse.",
+          "mechanism": "v0.5.0 introduces a P2P adapter and transfer-channel abstraction for MP mode, with a new RPC interface for P2P lookup and lock, enabling direct KV cache lookup and transfer between LMCache instances. The MP coordinator gains P2P info and runtime registration/deregistration of L2 adapters. Supporting features: asymmetric serde (e.g., FP16 Key with FP8 Value), Device-DAX hybrid L1 overflow, DeviceIPCWrapper for device-agnostic KV-cache IPC, CacheBlend segmented-prefix retrieval with coordinator knobs and observability span (cb.coordinator_match), prefetch sliding window (1/N) with a blocking WAIT_PREFETCH_STATUS to avoid busy-polling, and new backends/connectors (SGLang XPU, native Aerospike L2, MUSA stage-2).",
+          "evidence": [
+            {
+              "claim": "v0.5.0 introduces full P2P support for multiprocess (MP) mode: a P2P adapter (#3740), transfer-channel abstraction for MP mode (#3712), a new RPC interface for P2P lookup and lock (#3728), P2P info into the MP coordinator (#3706), and runtime registration/deregistration of L2 adapters (#3743).",
+              "value": "P2P adapter + RPC lookup/lock",
+              "baseline": "prior LMCache releases (no direct P2P transfer)",
+              "condition": "MP mode between LMCache instances",
+              "source_locator": "Evidence locator: Peer-to-Peer (P2P) KV Cache Transfer"
+            },
+            {
+              "claim": "CacheBlend additions: fault-inject L2 adapter + segmented-prefix retrieval path (#3697), coordinator knobs exposed as CLI flags (#3731), global CacheBlend token matching optimization (#3708), and an observability span cb.coordinator_match (#3711).",
+              "value": "segmented-prefix retrieval; cb.coordinator_match",
+              "baseline": null,
+              "condition": "CacheBlend coordinator path",
+              "source_locator": "Evidence locator: CacheBlend"
+            },
+            {
+              "claim": "Asymmetric serde support is added (e.g., FP16 Key with FP8 Value) (#3277), enabling different precisions for K and V in MP mode.",
+              "value": "FP16 Key / FP8 Value",
+              "baseline": "symmetric (same precision K and V)",
+              "condition": "MP mode",
+              "source_locator": "Evidence locator: Multiprocess (MP) Mode"
+            },
+            {
+              "claim": "Prefetch & Performance: a blocking WAIT_PREFETCH_STATUS avoids busy-polling the lookup wait (#3704), and a prefetch sliding window (1/N) adds bitmap operations (#3745).",
+              "value": "WAIT_PREFETCH_STATUS; sliding window 1/N",
+              "baseline": "busy-polling lookup wait",
+              "condition": "prefetch path",
+              "source_locator": "Evidence locator: Prefetch & Performance"
+            },
+            {
+              "claim": "New backends/connectors: SGLang XPU connectors for KV cache transfer (#3121), optional native Aerospike L2 backend via BUILD_AEROSPIKE (#3458), Stage-2 MUSA support with optional native in-process transfer (#3580), nixl_storage presence_cache_only option (#3587); plus multi-LMCache-server deployment with vLLM (#3248).",
+              "value": "SGLang XPU; Aerospike L2; MUSA; multi-server vLLM",
+              "baseline": null,
+              "condition": "L2 backends / connectors",
+              "source_locator": "Evidence locator: Backends & Connectors; Multiprocess (MP) Mode"
+            }
+          ],
+          "evaluation_context": "GitHub release notes (LMCache v0.5.0, published 2026-06-23, full changelog v0.4.7...v0.5.0). The evidence is a feature/release-notes enumeration referencing PR numbers; it describes mechanisms and integrations (vLLM, SGLang) but contains no quantitative benchmarks - no WAN RTT, transferred bytes, cache hit rate, P95 latency, compression ratio, or consistency overhead numbers are present.",
+          "limitations": "This is a software release notes source, not a benchmark study. No quantitative performance, hit-rate, transfer-volume, or latency measurements are included in the visible evidence; all claims are feature descriptions tied to PR numbers. Cross-region/WAN behavior is not characterized - P2P transfer is between LMCache instances (MP mode) and the evidence does not specify whether it targets local fabric, rack, or WAN. Worker-adapter liveness hygiene is introduced in two parts but its measured effect is not quantified.",
+          "project_relevance": "LMCache v0.5.0 is directly relevant to the cross-region/KVCache-transfer topic: P2P KV cache transfer, CacheBlend segmented-prefix reuse, prefetch sliding window, and asymmetric serde are concrete mechanisms for distributed KV-cache movement and placement. For the project card it is a release (engineering artifact) confirming capability exists, but it provides no quantitative WAN RTT/hit-rate/P95 evidence to judge cross-region deployment value; it is better suited to the KVCache-ecosystem radar than to a deep quantitative briefing.",
+          "primary_source_resolved": true,
+          "quality_score": 55,
+          "source_notes": [
+            "GitHub release LMCache/LMCache v0.5.0 (23 Jun 2026), FETCHED primary source; full changelog v0.4.7...v0.5.0.",
+            "Evidence is release-notes feature list with PR references; no benchmark numbers (hit rate, latency, transfer bytes) are present.",
+            "P2P transfer is between LMCache instances in MP mode; the evidence does not specify WAN vs local-fabric scope."
+          ],
+          "evidence_gaps": [],
+          "_provenance": {
+            "task_id": "1abd20a63780d89a84bc18fd",
+            "candidate_id": "5bbca3a6cac8e236bf126671",
+            "source_title": "LMCache/LMCache v0.5.0",
+            "source_url": "https://github.com/LMCache/LMCache/releases/tag/v0.5.0",
+            "document_id": "f402ea08310d1e60b46800c7"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "0c9ab1f6f4a0f07697704d43",
+      "brief_item": {
+        "title": "SPDP：Tiled-CBC格式把静态与动态剪枝正交叠加加速LLM解码",
+        "type": "深度解读",
+        "topic_name": "AI Infra横向动态",
+        "direction_name": "推理服务、运行时与编译优化",
+        "published_at": "2026-07-24T05:19:41Z",
+        "importance": "值得关注",
+        "core_conclusion": "LLM解码受内存带宽限制，而静态与动态剪枝此前难以组合，SPDP用Tiled-CBC格式与双内核把两者正交叠加。",
+        "mechanism": "以列优先位图压缩格式编码静态剪枝权重，配解码与Prefill双内核按激活稀疏跳过。",
+        "result": "相对SpInfer内核平均加速1.24到1.37倍，端到端TPOT约1.34倍且困惑度更低。",
+        "boundary": "端到端增益受非稀疏部分Amdahl限制，无连续批处理或瓦级功耗实测。",
+        "project_relevance": "为稀疏解码提供可组合的格式内核协同，可评估对推理吞吐与能效的提升。",
+        "keywords": [
+          "静态动态剪枝",
+          "稀疏推理",
+          "Tiled-CBC",
+          "GPU内核",
+          "LLM解码"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2607.21985v2",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-07-24T05:19:41Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 73.6,
+        "_provenance": {
+          "task_id": "62bab5fd599d4dfc65428fbb",
+          "event_id": "cd9c9c7c46943c9126bf3696",
+          "batch_id": "writing-6",
+          "source_urls": [
+            "https://arxiv.org/abs/2607.21985v2"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "Unified Static-Dynamic Pruning for Efficient LLM Inference",
+          "event_hint": "SPDP: a unified sparse-inference framework integrating unstructured static weight pruning with input-adaptive dynamic pruning via a Tiled-CBC format and dual GPU kernels (spMspV decode + Tensor-Core SpMM prefill), published at PVLDB 19(11) 2026.",
+          "problem": "Autoregressive LLM decoding is dominated by memory-bandwidth-bound, low-compute-intensity kernels. Static pruning (SP) permanently removes weights but lacks adaptivity; dynamic pruning (DP) adapts to input sparsity but introduces runtime irregularity. Existing systems (Flash-LLM, SpInfer) rely only on static sparsity, forfeiting input-adaptive redundancy. The two paradigms were not directly composable: SP kernels are row-major SpMM-optimized while DP induces column-wise spMspV workloads, disrupting coalesced access and Tensor Core utilization.",
+          "mechanism": "SPDP co-designs the Tiled-Column-wise Bitmap Compressed (Tiled-CBC) format that encodes statically pruned weights in column-major micro-tiles aligned with DP activation sparsity. Two kernels: (1) a CUDA-core spMspV kernel with Hybrid Activation-aware Dynamic Shared-Memory Bitmap Decoding (HAD-SMBD) for fine-grained runtime activation skipping during decode; (2) a Tensor-Core SpMM kernel for prefill using the same format via shared-memory layout alignment. SP and DP act on orthogonal dimensions (SP prunes weights across rows, DP skips activations across columns), so their sparsity patterns multiply effective sparsity.",
+          "evidence": [
+            {
+              "claim": "SPDP achieves 1.24x-1.37x average kernel speedup (up to 2.51x) over state-of-the-art sparse frameworks such as SpInfer on inference-optimized GPUs, while matching perplexity with up to 25% higher sparsity.",
+              "value": "1.24x-1.37x avg (up to 2.51x); +25% sparsity at matched perplexity",
+              "baseline": "SpInfer (and cuBLAS dense)",
+              "condition": "kernel-level, A10G/L4/L40S GPUs",
+              "source_locator": "Evidence locator: PDF Page 1 - Abstract; PDF Page 10 - Figure 8"
+            },
+            {
+              "claim": "Kernel-level (A10G): SPDP-spMspV averages 1.88x over cuBLAS and 1.24x over SpInfer (max 3.32x / 1.70x); on L4, averages 2.11x over cuBLAS and 1.37x over SpInfer (max 3.52x / 2.52x).",
+              "value": "1.24x (A10G) / 1.37x (L4) vs SpInfer",
+              "baseline": "cuBLAS_TC, SpInfer",
+              "condition": "LLM projection matrix shapes, 30-50% SP/DP",
+              "source_locator": "Evidence locator: PDF Page 10 - Figure 8"
+            },
+            {
+              "claim": "End-to-end (LLaMA-2-7B): SPDP achieves average 1.34x TPOT speedup over SpInfer at comparable moderate sparsity while maintaining lower perplexity (under 5.4); perplexity diverges sharply beyond 70% static sparsity.",
+              "value": "~1.34x TPOT speedup; PPL < 5.4",
+              "baseline": "SpInfer (Wanda-based SP)",
+              "condition": "LLaMA-2-7B-hf, A10G/L4/L40S, end-to-end decode",
+              "source_locator": "Evidence locator: PDF Page 11 - 5.5 End-to-end"
+            },
+            {
+              "claim": "Hardware profiling (A10G, (DP,SP)=(30%,30%)): SPDP-spMspV attains the highest SM busy (66.0%) vs SpInfer 30% (48.0%) and SpInfer 50% (38.2%), lowest bank conflicts (74 vs 3817/449), with comparable Max bandwidth (87.3% vs 84.4-87.4%).",
+              "value": "SM busy 66.0%; bank conflicts 74",
+              "baseline": "SpInfer(30%): 48.0%/3817; SpInfer(50%): 38.2%/449",
+              "condition": "A10G, (DP,SP)=(30%,30%) vs matched/mixed sparsity",
+              "source_locator": "Evidence locator: PDF Page 11 - Figure 9"
+            },
+            {
+              "claim": "Evaluation uses LLM projection matrix shapes from OPT (13B-175B), LLaMA-2 (7B-70B), LLaMA-3 (8B,70B), Qwen (7B,14B), Qwen2 (7B,72B), Mixtral-8x7B MoE, Phi-2/3, gpt-oss (20B,120B); baselines: cuBLAS, cuSPARSE, Sputnik, SparTA, Flash-LLM, SpInfer.",
+              "value": "OPT/LLaMA/Qwen/Mixtral/Phi/gpt-oss shapes",
+              "baseline": "cuBLAS, cuSPARSE, Sputnik, SparTA, Flash-LLM, SpInfer",
+              "condition": "30-50% practical sparsity range",
+              "source_locator": "Evidence locator: PDF Page 10 - LLM projection matrix"
+            }
+          ],
+          "evaluation_context": "Kernel-level and end-to-end evaluation on inference-optimized GPUs: NVIDIA A10G, L4, L40S. Workloads: LLM projection matrix shapes from major architectures (OPT 13B-175B, LLaMA-2 7B-70B, LLaMA-3 8B/70B, Qwen 7B/14B, Qwen2 7B/72B, Mixtral-8x7B MoE, Phi-2/3, gpt-oss 20B/120B). Practical sparsity range 30-50% for both SP and DP. End-to-end model: LLaMA-2-7B-hf. Baselines: cuBLAS (dense), cuSPARSE, Sputnik, SparTA, Flash-LLM, SpInfer. Metrics: kernel TFLOP/s, TPOT, perplexity, SM busy, Max bandwidth, bank conflicts. Source code at github.com/AIDASLab/SPDP.",
+          "limitations": "End-to-end gains are modest (Amdahl-style ceiling) because many decode components (attention, normalization) are not sparsity-sensitive and decoding is memory-bound. Quantization and unstructured sparsity do not provide multiplicative compression in practice (low-bit precision reduces only Values; bitmap/colinfo/tileoffset metadata remain). SPDP targets moderate-sparsity LLM decode; on extremely sparse matrices (e.g., SuiteSparse) existing works may be superior. No production deployment scale, power-in-watts, or serving-end-to-end (continuous batching) latency numbers are in the visible evidence; energy-efficiency claims are qualitative ('meaningfully decreases data movement').",
+          "project_relevance": "SPDP is a GPU kernel/format co-design for sparse LLM inference, directly relevant to serving-runtime/compiler optimization and decode memory-bandwidth bottlenecks. It offers a concrete mechanism (unified static-dynamic pruning with Tiled-CBC) for improving decode throughput and performance-per-watt. For the project card it is a research system with kernel and end-to-end (LLaMA-2-7B) results on inference GPUs, not a production deployment.",
+          "primary_source_resolved": true,
+          "quality_score": 80,
+          "source_notes": [
+            "PVLDB 19(11): 2950-2963, 2026 (arXiv 2607.21985v2, 24 Jul 2026), FETCHED primary source; authors from Seoul National University; code at github.com/AIDASLab/SPDP.",
+            "Baselines explicitly named: cuBLAS, cuSPARSE, Sputnik, SparTA, Flash-LLM, SpInfer; GPUs: A10G, L4, L40S.",
+            "End-to-end model is LLaMA-2-7B-hf; performance-per-watt/energy claims are qualitative, not watt-measured."
+          ],
+          "evidence_gaps": [],
+          "_provenance": {
+            "task_id": "13248fd84c394782ae1cb26b",
+            "candidate_id": "500e309fc8771655e8e44cd0",
+            "source_title": "Unified Static-Dynamic Pruning for Efficient LLM Inference",
+            "source_url": "https://arxiv.org/abs/2607.21985v2",
+            "document_id": "e2b0d2068bf7c3ce84ead6b5"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "88c34bb00497462fe81a58c6",
+      "brief_item": {
+        "title": "PhyAI：统一运行时加模型适配器把物理AI推理跨边端云统一",
+        "type": "深度解读",
+        "topic_name": "AI Infra横向动态",
+        "direction_name": "推理服务、运行时与编译优化",
+        "published_at": "2026-08-04T13:53:48Z",
+        "importance": "值得关注",
+        "core_conclusion": "物理AI策略跨边端云需同一checkpoint，但各自推理程序致行为难迁移，PhyAI用统一运行时加模型适配器覆盖评估推理与RL回放。",
+        "mechanism": "把模型逻辑拆入适配器，共享运行时提供图回放内核与量化通信，用控制时间Roofline区分受限来源。",
+        "result": "相对官方实现在11个模型设备对上加速1.40到4.65倍，RL回放训练吞吐约1.36倍。",
+        "boundary": "加速相对官方路径而非最快专用运行时，RL回放为非推理时间固定的模拟。",
+        "project_relevance": "控制时间Roofline为判断何时该再优化推理提供诊断，可评估对边端部署的指导价值。",
+        "keywords": [
+          "物理AI运行时",
+          "VLA推理",
+          "控制时间Roofline",
+          "模型适配器",
+          "边端云统一"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2608.03682v2",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-08-04T13:53:48Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 72.6,
+        "_provenance": {
+          "task_id": "e47ce4931469c4382b9367ea",
+          "event_id": "92b41af957011cc2539f4b77",
+          "batch_id": "writing-7",
+          "source_urls": [
+            "https://arxiv.org/abs/2608.03682v2"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "PhyAI: Real-Time Physical AI at the Edge, Scalable Rollouts in the Cloud",
+          "event_hint": "PhyAI: a unified Physical AI inference runtime (single codebase) that runs VLA models (pi0, pi0.5, GR00T N1.7, MiniCPM-Robot) and world-action models (Cosmos3) across onboard/edge/cloud via model adapters, with a control-time Roofline diagnostic.",
+          "problem": "Physical AI policies need inference across their lifecycle (evaluation, cloud RL rollout, edge serving, onboard deployment) that share the same checkpoint and action semantics but typically rely on separate, independently optimized inference programs. Behavior validated in one setting does not carry to another, and each path must be optimized separately. Existing systems (FlashRT, vla.cpp, realtime-vla, vLLM, SGLang) cover only parts of the problem or do not represent reusable multimodal conditions, iterative action solvers, evolving world latents, or CFG branches.",
+          "mechanism": "PhyAI separates model-specific logic (conditioning, solver state, reusable tensors, scheduling, action conversion) into model adapters while the shared runtime provides graph replay, optimized kernels, memory/cache management, quantization, communication, and parallel execution. This lets pi0.5 reuse its single-GPU runner for data-parallel execution, while Cosmos3 combines tensor parallelism with CFG parallelism. The adapter interface allowed adding MiniCPM-Robot on the day of its release. A novel control-time Roofline distinguishes inference-bound from environment-bound control: under ideal overlap, control period = max(L_inference, L_env).",
+          "evidence": [
+            {
+              "claim": "PhyAI achieves 1.40x-4.65x speedups over the official implementations across 11 measured model-device pairs: pi0 (2.64x Thor / 4.05x RTX 5090), pi0.5 (1.67x Thor / 1.82x RTX 5090), GR00T N1.7 (1.40x Thor / 2.28x RTX 5090 / 4.31x A40), MiniCPM-Robot (2.78x Thor / 2.02x RTX 5090 / 4.65x H100).",
+              "value": "1.40x-4.65x over official paths",
+              "baseline": "official implementations of pi0, pi0.5, GR00T N1.7, MiniCPM-Robot",
+              "condition": "single-request latency, multiple devices",
+              "source_locator": "Evidence locator: PDF Page 11 - Table 5"
+            },
+            {
+              "claim": "On Cosmos3-Nano-Policy-DROID, PhyAI reduces latency from 2.46s to 1.18s on eight H20 GPUs (CFG=2, TP=4), a 2.08x speedup.",
+              "value": "2.46s -> 1.18s (2.08x)",
+              "baseline": "official Cosmos3 path",
+              "condition": "8x H20 GPUs, CFG=2, TP=4",
+              "source_locator": "Evidence locator: PDF Page 11 - Table 5; PDF Page 1 - Figure 1c"
+            },
+            {
+              "claim": "Phase profiling (Hopper-series GPU): at batch size 1, the pi0.5 action expert accounts for 8.8% of estimated FLOPs but 57.2% of profiled latency; at batch size 32 its share drops to 13.5%, throughput reaches ~100 samples/s, and the full batch takes ~320ms.",
+              "value": "8.8% FLOPs / 57.2% latency (B=1)",
+              "baseline": null,
+              "condition": "Hopper-series GPU, pi0.5, B=1 vs B=32",
+              "source_locator": "Evidence locator: PDF Page 3 - phase profiles"
+            },
+            {
+              "claim": "Control-time Roofline analysis: measured pi0.5 points on four LIBERO suites are environment-bound (inference already shorter than simulator environment execution), while Cosmos3 remains inference-bound; Cosmos3 gains only 14.3% throughput as batch size increases from 1 to 16.",
+              "value": "pi0.5 env-bound; Cosmos3 inference-bound",
+              "baseline": null,
+              "condition": "four LIBERO suites; Cosmos3 B=1->16",
+              "source_locator": "Evidence locator: PDF Page 2-3 - Control-time Roofline"
+            },
+            {
+              "claim": "Simulated integrated RL rollout (8x A100 GPUs, batch 40, 41 policy-inference calls/RL step): inference share of step time drops from 53.1% (baseline) to 36.2% (PhyAI), a 31.8% relative reduction, corresponding to ~26.5% rollout-step latency reduction and ~1.36x higher training throughput.",
+              "value": "53.1% -> 36.2% inference share; ~1.36x training throughput",
+              "baseline": "baseline inference backend",
+              "condition": "simulated RL rollout, 8x A100, non-inference time held fixed",
+              "source_locator": "Evidence locator: PDF Page 3 - RL rollout simulation"
+            }
+          ],
+          "evaluation_context": "Unified runtime evaluated across devices: Jetson Thor, RTX 5090, A40, H100, 8x H20, 8x A100. Models: pi0, pi0.5, GR00T N1.7, MiniCPM-Robot, Cosmos3-Nano-Policy-DROID, Cosmos3-Edge, MiniCPM-Track. Profiles use PyTorch 2.11.0 and CUDA 13.0. Baselines: official implementations; specialized runtimes (FlashRT, realtime-vla, vla.cpp) compared where available (FlashRT uses FP8, not precision-matched). Metrics: single-request latency, phase FLOPs/latency share, throughput (samples/s), control-time margin. Code/benchmarks at github.com/mingti-org/phyai.",
+          "limitations": "Speedups are relative to official paths, not always the fastest specialized runtime - FlashRT is faster than PhyAI for pi0.5 on RTX 5090 and for GR00T on Thor/RTX 5090/A40; PI0 FlashRT measurements use FP8 (not precision-matched). The control-time Roofline data on LIBERO do not quantify how much action-window margin can be traded for model size or cheaper hardware (authors flag this as future work). RL rollout results are simulated with non-inference time held fixed, not a full end-to-end RL training run. No production deployment scale, cost, or task-success-vs-latency on physical robots is reported in the visible evidence.",
+          "project_relevance": "PhyAI is a serving-runtime unification for embodied/VLA inference across edge and cloud, relevant to AI infra efficiency for Physical AI and agent execution. The control-time Roofline is a concrete diagnostic for deciding when further inference optimization matters. For the project card it provides verifiable latency/throughput mechanisms and multi-device evidence; it fits the horizontal Agent-ecosystem/AI-Infra radar rather than the seven deep topics, and is a research runtime, not a production deployment.",
+          "primary_source_resolved": true,
+          "quality_score": 80,
+          "source_notes": [
+            "arXiv preprint 2608.03682v2 (4 Aug 2026), FETCHED primary source; authors from BUPT, Nanjing U, Peking U, Tsinghua, MingTi, ModelBest; code at github.com/mingti-org/phyai.",
+            "Speedups are vs official implementations; specialized runtimes (FlashRT, realtime-vla) are sometimes faster and are not always precision-matched (FlashRT uses FP8).",
+            "RL rollout throughput gain (1.36x) is from a simulation with non-inference time held fixed, not a measured end-to-end training run."
+          ],
+          "evidence_gaps": [],
+          "_provenance": {
+            "task_id": "b4d09830d0bd6500755474c4",
+            "candidate_id": "cf4665bb36d5a27bb47d17c8",
+            "source_title": "PhyAI: Real-Time Physical AI at the Edge, Scalable Rollouts in the Cloud",
+            "source_url": "https://arxiv.org/abs/2608.03682v2",
+            "document_id": "7af702bbb3a9e028f9615c26"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    }
+  ],
+  "constraints": {
+    "independent_items": true,
+    "no_cross_item_evidence": true
+  }
+}

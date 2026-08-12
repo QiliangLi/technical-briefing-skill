@@ -1,0 +1,68 @@
+{
+  "_task": {
+    "id": "ad98a94bbf3005fa2cb9bbe6",
+    "type": "fact_extraction",
+    "entity_id": "f6ae2293baf4c2a35857c194",
+    "input_digest": "679d334933abcc3df2cd28beb66776b6",
+    "contract_version": 2,
+    "prompt_digest": "7b9ccad8928dae8772ad4a6411ead813",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/tpn.md": "612f70f913e22f3ac7d82d098c813734",
+      "workspace/runs/2026-08-12-010915/documents/0b1c6dadef01cbee4d4359e8.evidence.md": "e5cb5b89ad81e7b60c905f6a080ed042"
+    },
+    "execution_envelope_digest": "afecb64349d824fab382090f1cad6cdf"
+  },
+  "title": "PTStore (Prefix Tensor Store): Distributed Prefix Caching and Replication for High Throughput Inference Serving",
+  "event_hint": "PTStore: a distributed prefix caching and replication system that stores reusable KV-cache prefix tensors across nodes/GPUs to accelerate LLM inference, from JHU and Argonne.",
+  "problem": "Existing inference runtimes (vLLM, DeepSpeed-MII, LMCache, Mooncake, SGLang) cache KV results mostly in local GPU/host memory; they lack support for aggregating distributed memory tiers, so cross-node prefix reuse requires regenerating the KV cache, causing load imbalance when popular tensors concentrate on a few servers and capping total KV-cache capacity.",
+  "mechanism": "Inspired by CDN client-caching, PTStore distributes and replicates popular tensors that form reusable KV-cache prefixes across distributed nodes and GPUs. It uses incremental tensor storage to minimize redundancy, consolidated metadata for rapid longest-common-prefix (LCP) queries, and a replication strategy optimizing local access to hot prefixes. Clients issue LCP queries (broadcast+reduce) and read/write tensor subsets via optimized RDMA built on the Mochi composable stack (Thallium C++ wrapper over Mercury and Argobots), progressing multiple servers in parallel. It integrates with existing LLM runtimes (e.g., vLLM).",
+  "evidence": [
+    {
+      "claim": "PTStore executes inferences on long-passage Q&A datasets 5-6 times more efficiently than current baselines that do not aggregate memory across nodes/GPUs and therefore regenerate the KV cache.",
+      "value": "5-6x",
+      "baseline": "baselines that do not aggregate memory across nodes/GPUs (require KV cache regeneration)",
+      "condition": "long-passage Q&A datasets (abstract claim)",
+      "source_locator": "Evidence locator: PDF Page 1 - Abstract"
+    },
+    {
+      "claim": "In TTFT scalability tests (1k-8k tokens, vLLM, SQUAD), PTStore outperforms vLLM's prefix caching starting at 2k tokens and is almost 2x faster at 8k tokens.",
+      "value": "~2x faster",
+      "baseline": "vLLM prefix caching",
+      "condition": "vLLM runtime, SQUAD dataset, 8k token sequences, TTFT metric",
+      "source_locator": "Evidence locator: PDF Page 12 - Fig.4a"
+    },
+    {
+      "claim": "PTStore is more than 2x faster than EvoStore for 1k-token sequences and about 20% faster for 8k tokens, with the advantage attributed to prefix replication (Fig.4b I/O vs compute breakdown).",
+      "value": ">2x (1k), 20% (8k)",
+      "baseline": "EvoStore",
+      "condition": "TTFT, SQUAD dataset, 1k and 8k token sequences",
+      "source_locator": "Evidence locator: PDF Page 12"
+    },
+    {
+      "claim": "Experimental evaluations show PTStore significantly reduces Time to First Token (TTFT) versus state of the art by up to an order of magnitude and remains scalable across variable sequence lengths.",
+      "value": "up to an order of magnitude",
+      "baseline": "state of the art",
+      "condition": "TTFT metric, scaling experiments",
+      "source_locator": "Evidence locator: PDF Page 12 - 7 Conclusions"
+    },
+    {
+      "claim": "Workloads use WikiQA (3,000 questions, page lengths 2,000-40,000 tokens) for scaling experiments and SQUAD (100,000 questions) for reading-comprehension extractive tasks; both are long-prompt/short-answer workloads that stress the prefill stage.",
+      "value": "WikiQA 3,000 Q / SQUAD 100,000 Q",
+      "baseline": null,
+      "condition": "extractive long-context Q&A workloads",
+      "source_locator": "Evidence locator: PDF Page 9 - Workloads"
+    }
+  ],
+  "evaluation_context": "Research prototype (JHU + Argonne) evaluated on extractive long-context Q&A (WikiQA, SQUAD). Communication uses optimized bulk RDMA via Mochi/Thallium. Reported metrics focus on TTFT and end-to-end runtime; sequence lengths tested 1k-8k tokens. No TPOT, token throughput, network utilization, or end-to-end P95 latency numbers are visible in the Evidence Pack; no production hardware spec or deployment scale (node/GPU counts) is exposed.",
+  "limitations": "TTFT and end-to-end runtime are the main reported metrics; decode-phase (TPOT), token throughput, and P95 latency are not reported in the visible evidence. Hardware platform, exact node/GPU counts, and RDMA fabric specs are not exposed. Results are specific to extractive long-context Q&A workloads (long prompt, short answer) which favor prefill optimization; performance on short prompts or decode-heavy chat workloads is not characterized. For small query lengths vLLM's baseline prefix caching is superior, per the authors.",
+  "project_relevance": "PTStore is a distributed prefix-cache storage layer using RDMA for cross-node KV-cache access, directly relevant to KVCache-aware network/bandwidth scheduling and the TPN question of whether network-side mechanisms reduce cross-node KVCache transfer and improve TTFT. It offers a concrete reference point for how distributed KV-cache aggregation changes the storage/network boundary, though it is a research prototype, not an Alibaba TPN product.",
+  "primary_source_resolved": true,
+  "quality_score": 78,
+  "source_notes": [
+    "arXiv preprint 2607.22648v1 (25 Jun 2026), FETCHED primary source.",
+    "Headline 5-6x efficiency gain is an abstract claim whose detailed baseline and workload condition are restated but the exact measurement table is in the unread suffix.",
+    "Comparison baselines are explicitly named: vLLM (prefix caching), EvoStore; related systems discussed include LMCache, Mooncake, SGLang (RadixAttention), Splitwise, DistServe."
+  ],
+  "evidence_gaps": []
+}

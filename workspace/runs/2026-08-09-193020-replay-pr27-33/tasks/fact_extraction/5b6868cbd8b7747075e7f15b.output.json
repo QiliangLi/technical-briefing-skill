@@ -1,0 +1,81 @@
+{
+  "_task": {
+    "id": "5b6868cbd8b7747075e7f15b",
+    "type": "fact_extraction",
+    "entity_id": "43c7fa1b267743b5a824fc67",
+    "input_digest": "b68ba787abe28bcef5e6f8a26f00325c",
+    "contract_version": 2,
+    "prompt_digest": "5eb65f47c4f214f2139030f1cda285bb",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/tpn.md": "612f70f913e22f3ac7d82d098c813734",
+      "workspace/runs/2026-08-09-193020-replay-pr27-33/documents/15263e41840bc4cdccfb7003.evidence.md": "1439ca252e3f2eaffa68ff6f88a5591f"
+    },
+    "execution_envelope_digest": "df539e608336303d20aed62bed9ec387"
+  },
+  "title": "Towards Load-Aware Prefill Deflection for Disaggregated LLM Serving",
+  "event_hint": "Kairos: a load-aware prefill-deflection scheduler that runs deflected prefill in place on decode nodes to cut P95 TTFT up to 81% and eliminate inter-node KV-cache transfer in disaggregated LLM serving.",
+  "problem": "Disaggregated LLM serving runs prefill and decode on separate GPU pools, which creates a new asymmetry: under bursty, heavy-tailed workloads prefill nodes saturate and queue while decode nodes sit underutilized (decode is memory-bound with spare compute). On a 2P2D A100 cluster the authors show prefill execution is only 2-23% of P95 TTFT; the remaining 77-98% is prefill queue wait and inter-node GPU-to-GPU KV-cache transfer, both scheduling artifacts rather than compute limits. Prior disaggregated designs (Splitwise, DistServe, Mooncake, TetriInfer) assume a request stays on its prefill node until prefill completes and then ships its KV cache to a decode node, so they cannot exploit the spare compute on decode nodes.",
+  "mechanism": "Kairos is a proactive, time-aware prefill-deflection scheduler. For each queued request it estimates TTFT on the prefill node from current queue depth/order, and for every decode node sweeps candidate chunk-size sequences using an analytical TBT-safety model that predicts per-step decode latency from in-flight decode batch size, KV-cache occupancy, and added prefill chunk size (no live inference trials; one-time deployment-time profiling; no model changes). It deflects the request's prefill phase to a decode node when both (i) TBT safety holds (in-flight decode step latency stays within the TBT SLO tau, with margin beta) and (ii) projected decode-node TTFT is at most alpha times the prefill-node TTFT, where alpha >= 1 is a single operator-tunable knob (alpha=1 deflects only when the decode path is strictly faster). Deflected prefill runs as chunked-prefill steps interleaved with in-flight decode batches, so the prefill phase executes in place on the decode node and the inter-node KV-cache transfer is eliminated. Implemented on vLLM 0.18.1 (~2000 lines of Python); per-request scheduling overhead is below 1 ms at the prefill dispatcher. Code at https://github.com/sudokara/Kairos.",
+  "evidence": [
+    {
+      "claim": "Prefill execution accounts for only 2-23% of P95 TTFT across the five workloads; the remaining 77-98% is prefill queue wait plus inter-node KV-cache transfer (e.g., Bursty: 840.8 ms prefill queue, 1,070.1 ms prefill exec, 2,175.6 ms KV transfer, 7,893.9 ms end-to-end P95).",
+      "value": "2-23% prefill exec; 77-98% queue + KV transfer",
+      "baseline": "Canonical 2P2D disaggregated serving (2 prefill + 2 decode nodes), no deflection",
+      "condition": "Five production-derived workloads (LPLD/LPHD/HPLD/HPHD/Bursty); DeepSeek-V2-Lite; A100 80GB",
+      "source_locator": "Section 3.1 Claim 2 and Table 3, PDF Pages 4-5"
+    },
+    {
+      "claim": "Kairos reduces P95 TTFT by up to 81% and raises SLO attainment by up to 79% over state-of-the-art disaggregated schedulers, at sub-millisecond per-request routing cost.",
+      "value": "up to 81% P95 TTFT reduction; up to 79% higher SLO attainment; <1 ms routing",
+      "baseline": "state-of-the-art disaggregated schedulers",
+      "condition": "Production-derived trace (Company X); bursty load; 2P2D A100 cluster; DeepSeek-V2-Lite; vLLM 0.18.1",
+      "source_locator": "Abstract and Section 1 Contributions, PDF Pages 1-2"
+    },
+    {
+      "claim": "Utilization is complementary: prefill SM utilization is 75-84% while decode SM utilization never exceeds 27%; the gap is widest in HPLD (84% prefill vs 7.5% decode), confirming decode-side compute slack available for chunked prefill.",
+      "value": "prefill SM 75-84%; decode SM <=27% (HPLD decode 7.5%)",
+      "baseline": "Steady-state utilization on 2P2D disaggregated cluster",
+      "condition": "Five workloads; A100 80GB; measured via NVIDIA Nsight Systems",
+      "source_locator": "Section 3 Claim 1 and Table 2, PDF Pages 3-4"
+    },
+    {
+      "claim": "Injecting chunked prefill into decode batches keeps decode step-latency increase within 30 ms for chunk sizes up to 512 tokens across all workloads and batch sizes; for chunk sizes >= 1024 the first-chunk increase reaches about 30 ms (low-prefill regimes) up to about 50 ms (bursty/high-prefill regimes), so using large first chunks requires knowledge of cached-token volume.",
+      "value": "delta T_step <= 30 ms for chunk size <= 512; up to ~50 ms for >= 1024",
+      "baseline": "Decode step latency with no chunked-prefill injection",
+      "condition": "Mixed prefill-decode batches on decode nodes across the five workloads",
+      "source_locator": "Section 3 and Figure 1, PDF Page 5"
+    },
+    {
+      "claim": "Deflected requests execute prefill in place on the decode node, eliminating the inter-node KV-cache transfer; the system needs only one-time deployment-time profiling, no model changes, and imposes less than 1 ms per-request scheduling overhead (~2000 lines of Python on vLLM 0.18.1).",
+      "value": "inter-node KV transfer eliminated for deflected requests; <1 ms routing; ~2000 LoC",
+      "baseline": "Canonical disaggregated serving ships KV cache from prefill node to decode node",
+      "condition": "Kairos on vLLM 0.18.1; 2P2D A100; deflected requests only",
+      "source_locator": "Sections 1-2 Contributions and Design, PDF Pages 1-2"
+    }
+  ],
+  "evaluation_context": "Cluster: 2 prefill + 2 decode nodes (2P2D), each an NVIDIA A100 80GB; the paper also compared 2P2D against 1P3D and 3P1D on the Bursty workload (1P3D saturates the single prefill node with median prefill queue >2x of 2P2D; 3P1D is capacity-limited on the single decode node, where KV-cache occupancy forces transfer back-pressure and inflates end-to-end TTFT). Traces are derived from a large-scale production LLM serving deployment (Company X), replayed against DeepSeek-V2-Lite (MoE); token counts normalized to its 32K context window preserving prompt-to-completion ratio (prompt P25/median/P90 = 2,071/3,569/10,336; completion 21/50/163; median prefill-to-decode ratio 69.7, well above NVIDIA Dynamo's 8:1 disaggregation threshold with RDMA). Five workloads (Table 1): LPLD (RPS 22, P:D 61.46), LPHD (RPS 20, P:D 4.99), HPLD (RPS 1, P:D 1482.89), HPHD (RPS 1, P:D 66.53), and Bursty (RPS 4, P:D 69.67, Gamma inter-arrival from long-tailed production distribution). SLO targets: 4 s P95 TTFT, 70 ms TBT. Implementation on vLLM 0.18.1 (~2000 LoC Python), <1 ms per-request routing. Baselines: state-of-the-art disaggregated schedulers; throughput compared against PD disaggregation in Figure 5 (Kairos comparable or higher, holding to 7 RPS per the partially visible Page 10 text).",
+  "limitations": "The headline 'up to 81% TTFT / 79% SLO attainment' are best-case, bursty-load figures from the abstract/contributions; the precise baseline identities and per-workload, per-RPS conditions are in the not-yet-visible Section 6, and at lower request rates Kairos behaves similarly to standard PD disaggregation (little gain). Evaluated on a single small cluster (2P2D, four A100s) and a single model architecture (DeepSeek-V2-Lite, MoE); larger pools and other architectures are not shown in the visible evidence. Benefit depends on decode-side compute slack and workload regime, and using chunk size >= 1024 for the first chunk requires cached-token-volume awareness. The visible evidence reports GPU SM/TC/HBM utilization but not aggregate KV-cache bytes transferred or network-bandwidth utilization as outcome metrics.",
+  "project_relevance": "Directly relevant to the TPN/KV-transfer topic: Kairos is a per-request, KV-cache-occupancy-aware scheduler that eliminates inter-node KV-cache transfer for deflected requests by running prefill in place on decode nodes, and it reports end-to-end P95 TTFT (up to 81% lower) and SLO attainment, which the topic values. Important boundary for project inference: Kairos is a GPU-pool/scheduling-side mechanism, not a network-side optimization; it avoids KV transfer rather than making the network faster, so it illustrates what scheduling alone can achieve and does not answer the topic's question about the irreplaceable value of network-side mechanisms. The visible evidence does not report network utilization, KV-transfer bytes, or TPOT as improved outcome metrics.",
+  "primary_source_resolved": true,
+  "quality_score": 82,
+  "source_notes": [
+    "Primary arXiv PDF (2607.02043v1) fetched; evidence covers abstract, intro/design (Pages 1-2), empirical study with Tables 1-3 and Figure 1 (Pages 3-5), and a partial throughput result (Page 10).",
+    "System is named Kairos in the body; the abstract describes it as a proactive prefill-deflecting scheduler.",
+    "The 81%/79% headline figures are abstract/contribution claims; their exact baseline and per-workload conditions are recorded as a gap pending the unread Section 6."
+  ],
+  "evidence_gaps": [
+    {
+      "question": "Which specific disaggregated scheduler is the baseline for the up-to-81% TTFT and up-to-79% SLO-attainment results, and under which workload, RPS, and alpha are those maxima achieved (versus non-bursty or lower-load cases)?",
+      "terms": ["state-of-the-art disaggregated scheduler", "Splitwise", "DistServe", "Mooncake", "PD disaggregation", "bursty", "81%", "SLO attainment"]
+    },
+    {
+      "question": "Does the paper quantify the KV-cache transfer reduction (bytes or transfers eliminated) or network-bandwidth utilization as an outcome, rather than only stating per-deflected-request elimination and GPU SM/TC/HBM utilization?",
+      "terms": ["KV cache transfer", "bytes transferred", "network utilization", "transfer eliminated", "deflection rate", "KV transfer"]
+    },
+    {
+      "question": "What is the full throughput-vs-RPS curve (Figure 5 text is truncated at '7 RPS'), and at what load or cluster scale do Kairos gains over PD disaggregation vanish; are results shown beyond 2P2D / four A100s?",
+      "terms": ["throughput", "RPS", "7 RPS", "Figure 5", "2P2D", "scale", "PD disaggregation"]
+    }
+  ]
+}

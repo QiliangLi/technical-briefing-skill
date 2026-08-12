@@ -1,0 +1,61 @@
+{
+  "title": "DeltaServe: Host-Agnostic Co-Serving of Inference and Fine-Tuning for LLMs",
+  "event_hint": "DeltaServe: a host-agnostic co-serving design that folds LoRA fine-tuning into an existing LLM inference engine (vLLM, SGLang, S-LoRA) under SLO control, harvesting idle GPU compute observed in production inference traces.",
+  "problem": "LLM serving is provisioned for peak load to meet latency SLOs, leaving GPU compute idle when traffic is below peak. A representative Nutanix production co-pilot coding trace shows average load ~60% of provisioned capacity (40% GPU unused) over six months of traces. Prior inference-pipeline optimizations (Splitwise, Orca) raise efficiency under a fixed request stream but do not recover idle GPU cycles when the request stream itself falls below peak.",
+  "mechanism": "DeltaServe integrates with existing inference engines through a compact hook interface requiring only multi-LoRA batching support. It exploits the shared execution structure of inference prefill and LoRA fine-tuning forward passes, admits fine-tuning only when sufficient inference headroom exists (forward batch co-serving), and interrupts fine-tuning-only steps when inference requests arrive. An SLO-aware scheduler is driven by a CUDA-graph-aware latency model calibrated offline and refined online; mixed batches are priced with eager-mode coefficients because activation hooks require leaving CUDA-graph replay.",
+  "evidence": [
+    {
+      "claim": "On a Nutanix production trace, DeltaServe on vLLM delivers 2.9x higher fine-tuning throughput than LLMStation at 100% inference SLO compliance, versus 85% for LLMStation; it also achieves 39% higher fine-tuning throughput than vLLM+torchtune using no additional hardware with full SLO compliance.",
+      "value": "2.9x vs LLMStation; 39% vs vLLM+torchtune",
+      "baseline": "LLMStation (85% SLO); vLLM+torchtune (100% SLO)",
+      "condition": "Nutanix production trace, 4-GPU deployment",
+      "source_locator": "Evidence locator: PDF Page 1 - Abstract; PDF Page 10 - Figure 5"
+    },
+    {
+      "claim": "Nutanix production inference workload trace (co-pilot coding service) shows average load ~60.6% of provisioned capacity with ~40% GPU unused, persisting across six months of collected traces.",
+      "value": "60.6% avg load; ~40% GPU unused",
+      "baseline": "provisioned peak capacity",
+      "condition": "20-minute representative window, 6-month trace",
+      "source_locator": "Evidence locator: PDF Page 1 - Figure 1 / Introduction"
+    },
+    {
+      "claim": "End-to-end 4-GPU comparison (Nutanix trace): DeltaServe-vLLM fine-tuning avg 1418 tok/s (SLO 100%), LLMStation 489 tok/s (SLO 85.5%), vLLM+torchtune 1014 tok/s (SLO 100%); burst-dense LLMStation SLO drops to 83.3%.",
+      "value": "1418 vs 489 vs 1014 tok/s",
+      "baseline": "LLMStation, vLLM+torchtune",
+      "condition": "Nutanix trace, burst-light, burst-dense, 4-GPU",
+      "source_locator": "Evidence locator: PDF Page 10 - Figure 5"
+    },
+    {
+      "claim": "Ablation on single RTX 5090: forward batch co-serving raises fine-tuning throughput from 507 to 934 tok/s (+84%) over idle-only admission while preserving SLO; fine-tuning-only step interruption limits 5% tail latency overhead to 8% (vs 27% with interruption disabled), at only ~2% throughput cost.",
+      "value": "507->934 tok/s; 8% vs 27% tail overhead",
+      "baseline": "DeltaServe-Temp (no forward co-serving); DeltaServe-No-INTR",
+      "condition": "single RTX 5090, scaled Nutanix trace 600-800s window",
+      "source_locator": "Evidence locator: PDF Page 12 - 4.4 Ablation, Figures 7 & 8"
+    },
+    {
+      "claim": "DeltaServe integrates with vLLM, SGLang, and S-LoRA via a compact hook interface requiring only multi-LoRA batching support; the SLO-aware scheduler uses a CUDA-graph-aware latency model calibrated offline and refined online.",
+      "value": "vLLM, SGLang, S-LoRA",
+      "baseline": null,
+      "condition": "host-agnostic hook interface",
+      "source_locator": "Evidence locator: PDF Page 1 - Abstract; PDF Page 8 - Estimator calibration"
+    }
+  ],
+  "evaluation_context": "Evaluated on a real Nutanix production inference trace (co-pilot coding service, 6 months collected, average load ~60.6%), plus burst-light and burst-dense synthetic traces. Main end-to-end deployment is 4 GPUs (model/hardware spec not fully exposed in visible evidence); ablations on single RTX 5090. Baselines: LLMStation, vLLM+torchtune, bare vLLM. Metrics: fine-tuning throughput (tok/s), per-request end-to-end latency, SLO satisfaction rate (TTFT/TPOT against 95% target). Integrated with vLLM, SGLang, S-LoRA.",
+  "limitations": "Specific GPU model and count for the main 4-GPU end-to-end comparison is not named in the visible evidence (ablations name RTX 5090). The model(s) served and LoRA rank used in the production-trace experiments are not exposed in the visible evidence. Co-serving benefit depends on inference load profile - under sustained peak traffic there is no idle headroom to harvest. Mixed-batch admission requires leaving CUDA-graph replay (eager mode), so some inference latency overhead is inherent when forward co-serving is enabled.",
+  "project_relevance": "DeltaServe directly addresses AI infra efficiency by converting idle inference GPU compute into fine-tuning throughput under SLO control, with a real production trace and explicit SLO compliance numbers. It is a serving-runtime/co-scheduling contribution relevant to GPU utilization and cost. For the project card it provides verifiable system mechanisms and production-scale evidence (Nutanix trace), fitting the horizontal AI-Infra radar rather than a single deep topic.",
+  "primary_source_resolved": true,
+  "quality_score": 84,
+  "source_notes": [
+    "arXiv preprint 2607.28848v1 (30 Jul 2026), FETCHED primary source; authors from McGill, MBZUAI, Nutanix.",
+    "Production trace is explicitly from Nutanix (the discovery summary's 'Company X' is Nutanix per the evidence).",
+    "Baselines explicitly named: LLMStation, vLLM+torchtune, bare vLLM; integrated hosts: vLLM, SGLang, S-LoRA."
+  ],
+  "evidence_gaps": [],
+  "_provenance": {
+    "task_id": "ec422a0685fe356471c5d12a",
+    "candidate_id": "125476cd874d7026622611c2",
+    "source_title": "DeltaServe: Host-Agnostic Co-Serving of Inference and Fine-Tuning for LLMs",
+    "source_url": "https://arxiv.org/abs/2607.28848v1",
+    "document_id": "c53d6c6437420cff8699d5aa"
+  }
+}

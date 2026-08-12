@@ -1,0 +1,68 @@
+{
+  "_task": {
+    "id": "8ffe6ad0623664ed05e0e115",
+    "type": "fact_extraction",
+    "entity_id": "fdd58c55b558a461fb216d8a",
+    "input_digest": "1005ec13c999f5c3ab37549041b9fc85",
+    "contract_version": 2,
+    "prompt_digest": "7b9ccad8928dae8772ad4a6411ead813",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/storage-media.md": "d0568bb4c82afda5c57de0ba57b42819",
+      "workspace/runs/2026-08-12-010915/documents/b22fa74cc5d691f672894e45.evidence.md": "45445289f6122cd096aff1773f5aa7a2"
+    },
+    "execution_envelope_digest": "366d625318ed5e1022022e9bf38142fa"
+  },
+  "title": "D-NOVA: In-Storage Retrieval Accelerator via Dual-Bound 3D NAND-Optimized Similarity Search with Vector Adaptation",
+  "event_hint": "D-NOVA: an in-storage vector retrieval accelerator for RAG that embeds IVF-based similarity search directly into 3D NAND arrays using Dual-bound Tight Similarity Sensing (DTS) and a contrastive vector adapter (MICRO 2026).",
+  "problem": "Dense vector retrieval in RAG is the primary latency/energy bottleneck. Existing in-storage/near-storage accelerators (SmartSSD, RAGX, REIS) still rely on host/embedded processors for final re-ranking; in REIS this INT8 re-ranking step accounts for nearly 70% of total retrieval time, dominated by multi-level cell read latency and data movement to the embedded processor, creating a new memory wall.",
+  "mechanism": "D-NOVA executes an IVF-based hierarchical retrieval pipeline entirely inside the NAND array. It introduces Dual-bound Tight Similarity Sensing (DTS), a distance metric that reformulates vector retrieval as a query-dependent threshold search over ordered V_TH levels using complement sensing and compact scoring within the NAND string. A lightweight contrastive adapter maps embedding vectors into a DTS-friendly domain to recover near-software recall. Only compact scores/metadata leave the array; full embeddings never move off-array. D-NOVA reuses existing page-buffer structures in binary pass/fail mode, preserving standard QLC read/program compatibility and achieving SLC-like read latency at QLC density.",
+  "evidence": [
+    {
+      "claim": "D-NOVA is up to 41.7x faster and 71x more energy-efficient than a CPU baseline, and achieves 12.13x higher throughput while being up to 1.26x more energy-efficient than state-of-the-art in-storage RAG accelerators.",
+      "value": "41.7x faster; 71x energy; 12.13x throughput; 1.26x energy",
+      "baseline": "CPU baseline; state-of-the-art in-storage RAG accelerators",
+      "condition": "abstract headline; per-workload breakdown in results",
+      "source_locator": "Evidence locator: PDF Page 1 - Abstract"
+    },
+    {
+      "claim": "In prior in-storage accelerators, the off-array INT8 re-ranking step accounts for nearly 70% of total retrieval time, dominated by MLC read latency and data movement to the embedded processor.",
+      "value": "~70% of retrieval time",
+      "baseline": null,
+      "condition": "REIS-style in-storage accelerators with controller-side re-ranking",
+      "source_locator": "Evidence locator: PDF Page 2 - REIS analysis"
+    },
+    {
+      "claim": "D-NOVA and D-NOVA-F sustain roughly 481-679x of the CPU QPS and about 42.7-67.9x of the NSP baseline throughput; relative to REIS, D-NOVA/D-NOVA-F improve throughput by ~4.3-6.1x and D-NOVA-XF reaches ~8.6-12.1x higher QPS.",
+      "value": "481-679x CPU QPS; 42.7-67.9x NSP; 4.3-6.1x vs REIS",
+      "baseline": "CPU, NSP baseline, REIS",
+      "condition": "large-batch steady-state throughput (QPS)",
+      "source_locator": "Evidence locator: PDF Page 12 - Throughput Improvement"
+    },
+    {
+      "claim": "Compared to REIS, D-NOVA reduces latency by 3.01-3.79x, D-NOVA-F by 3.80-4.99x, and D-NOVA-XF by 5.98-7.53x, with additional energy savings of 6-27% by avoiding off-array final re-ranking.",
+      "value": "3.01-7.53x latency reduction; 6-27% energy savings",
+      "baseline": "REIS",
+      "condition": "D-NOVA variants (m1,m2,m3) configurations",
+      "source_locator": "Evidence locator: PDF Page 12"
+    },
+    {
+      "claim": "Simulated on QLC 3D NAND (128 WLs/string, 8.5V window, PTM-MG 14nm) using Spectre circuit simulation and Monte Carlo V_TH variation modeling; config: PCIe 4.0x4 host, 8 flash channels (16 GB/s total), 8 dies/ch, 12 planes/die, ~1 TB/s inter-plane H-Tree bandwidth; shared accumulator adds 0.023 mm^2/plane (<1.5% of 1.476 mm^2 plane area) synthesized at ASAP7 7nm.",
+      "value": "<1.5% plane area overhead",
+      "baseline": null,
+      "condition": "QLC 3D NAND, ASAP7 7nm synthesis, 1 GHz",
+      "source_locator": "Evidence locator: PDF Page 9 - Tables 1 & 2; PDF Page 12 - 6.7 Overhead"
+    }
+  ],
+  "evaluation_context": "Simulated in-storage NVMe SSD subsystem (not silicon). QLC 3D NAND (128 WLs/string), 8 flash channels at 2.0 GB/s/channel (16 GB/s total), 8 dies/channel, 12 planes/die, ~1 TB/s inter-plane H-Tree bandwidth, PCIe 4.0x4 host interface. Circuit-level validation via Spectre 19.1 (PTM-MG 14nm) with Monte Carlo V_TH mismatch and QLC drift modeling; accumulator synthesized with ASAP7 7nm at 1 GHz. Workloads: BEIR/NQ, HotpotQA, synthetic dataset (16GB-120GB); embeddings all-MiniLM-L6-v2 and all-mpnet-base-v2. Baselines: CPU-IVF (FAISS IVF-Flat on dual-socket 128-core server, 1.5TB DDR4), NSP baseline, REIS.",
+  "limitations": "Results are simulation-based (cycle-level SSD model plus Spectre/Monte Carlo circuit simulation), not measurements from fabricated silicon. Read latency/energy parameters are rescaled from prior measured NAND data (294.9 nJ/page read, 30us SLC / 140us QLC). Absolute end-to-end RAG serving latency (including LLM generation) is not reported; metrics focus on retrieval stage. Endurance/write-amplification impact of DTS sensing on QLC cells is not quantified in the visible evidence. DTS sensing resolution degrades at larger simultaneous-cell count m, a tradeoff tuned per config.",
+  "project_relevance": "D-NOVA is a NAND-centric in-storage compute design that pushes vector search into the flash array, directly relevant to whether 3D NAND can take on AI-serving storage-hierarchy roles (RAG retrieval) beyond bulk storage. For the project card it is a simulation-stage architecture study showing how in-array sensing can convert NAND density into retrieval throughput/energy gains; it is not a product or deployed system. The QLC-density-at-SLC-latency claim touches the storage-media density/bandwidth/latency questions.",
+  "primary_source_resolved": true,
+  "quality_score": 80,
+  "source_notes": [
+    "arXiv preprint 2607.17538v1 (20 Jul 2026), to appear MICRO 2026; FETCHED primary source; authors from UC San Diego.",
+    "All performance numbers are simulation-based (cycle-level SSD simulator + Spectre/Monte Carlo), not silicon measurements.",
+    "Baselines explicitly named: CPU-IVF (FAISS on 128-core server), NSP near-storage processor, REIS in-storage; D-NOVA variants D-NOVA/D-NOVA-F/D-NOVA-XF differ by (m1,m2,m3) multi-cell sensing config."
+  ],
+  "evidence_gaps": []
+}

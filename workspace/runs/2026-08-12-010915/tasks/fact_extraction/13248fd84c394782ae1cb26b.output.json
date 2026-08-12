@@ -1,0 +1,68 @@
+{
+  "_task": {
+    "id": "13248fd84c394782ae1cb26b",
+    "type": "fact_extraction",
+    "entity_id": "500e309fc8771655e8e44cd0",
+    "input_digest": "a026a1703b8a19bcdd6391239b2d47e8",
+    "contract_version": 2,
+    "prompt_digest": "7b9ccad8928dae8772ad4a6411ead813",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/ai-infra-horizontal.md": "f0cbf7b19e7688a07f07868cfd3ba38c",
+      "workspace/runs/2026-08-12-010915/documents/e2b0d2068bf7c3ce84ead6b5.evidence.md": "39aa725d9b236c5e15c6fa2fc47b4a5a"
+    },
+    "execution_envelope_digest": "23d507c50face7b915a26630b38b35a3"
+  },
+  "title": "Unified Static-Dynamic Pruning for Efficient LLM Inference",
+  "event_hint": "SPDP: a unified sparse-inference framework integrating unstructured static weight pruning with input-adaptive dynamic pruning via a Tiled-CBC format and dual GPU kernels (spMspV decode + Tensor-Core SpMM prefill), published at PVLDB 19(11) 2026.",
+  "problem": "Autoregressive LLM decoding is dominated by memory-bandwidth-bound, low-compute-intensity kernels. Static pruning (SP) permanently removes weights but lacks adaptivity; dynamic pruning (DP) adapts to input sparsity but introduces runtime irregularity. Existing systems (Flash-LLM, SpInfer) rely only on static sparsity, forfeiting input-adaptive redundancy. The two paradigms were not directly composable: SP kernels are row-major SpMM-optimized while DP induces column-wise spMspV workloads, disrupting coalesced access and Tensor Core utilization.",
+  "mechanism": "SPDP co-designs the Tiled-Column-wise Bitmap Compressed (Tiled-CBC) format that encodes statically pruned weights in column-major micro-tiles aligned with DP activation sparsity. Two kernels: (1) a CUDA-core spMspV kernel with Hybrid Activation-aware Dynamic Shared-Memory Bitmap Decoding (HAD-SMBD) for fine-grained runtime activation skipping during decode; (2) a Tensor-Core SpMM kernel for prefill using the same format via shared-memory layout alignment. SP and DP act on orthogonal dimensions (SP prunes weights across rows, DP skips activations across columns), so their sparsity patterns multiply effective sparsity.",
+  "evidence": [
+    {
+      "claim": "SPDP achieves 1.24x-1.37x average kernel speedup (up to 2.51x) over state-of-the-art sparse frameworks such as SpInfer on inference-optimized GPUs, while matching perplexity with up to 25% higher sparsity.",
+      "value": "1.24x-1.37x avg (up to 2.51x); +25% sparsity at matched perplexity",
+      "baseline": "SpInfer (and cuBLAS dense)",
+      "condition": "kernel-level, A10G/L4/L40S GPUs",
+      "source_locator": "Evidence locator: PDF Page 1 - Abstract; PDF Page 10 - Figure 8"
+    },
+    {
+      "claim": "Kernel-level (A10G): SPDP-spMspV averages 1.88x over cuBLAS and 1.24x over SpInfer (max 3.32x / 1.70x); on L4, averages 2.11x over cuBLAS and 1.37x over SpInfer (max 3.52x / 2.52x).",
+      "value": "1.24x (A10G) / 1.37x (L4) vs SpInfer",
+      "baseline": "cuBLAS_TC, SpInfer",
+      "condition": "LLM projection matrix shapes, 30-50% SP/DP",
+      "source_locator": "Evidence locator: PDF Page 10 - Figure 8"
+    },
+    {
+      "claim": "End-to-end (LLaMA-2-7B): SPDP achieves average 1.34x TPOT speedup over SpInfer at comparable moderate sparsity while maintaining lower perplexity (under 5.4); perplexity diverges sharply beyond 70% static sparsity.",
+      "value": "~1.34x TPOT speedup; PPL < 5.4",
+      "baseline": "SpInfer (Wanda-based SP)",
+      "condition": "LLaMA-2-7B-hf, A10G/L4/L40S, end-to-end decode",
+      "source_locator": "Evidence locator: PDF Page 11 - 5.5 End-to-end"
+    },
+    {
+      "claim": "Hardware profiling (A10G, (DP,SP)=(30%,30%)): SPDP-spMspV attains the highest SM busy (66.0%) vs SpInfer 30% (48.0%) and SpInfer 50% (38.2%), lowest bank conflicts (74 vs 3817/449), with comparable Max bandwidth (87.3% vs 84.4-87.4%).",
+      "value": "SM busy 66.0%; bank conflicts 74",
+      "baseline": "SpInfer(30%): 48.0%/3817; SpInfer(50%): 38.2%/449",
+      "condition": "A10G, (DP,SP)=(30%,30%) vs matched/mixed sparsity",
+      "source_locator": "Evidence locator: PDF Page 11 - Figure 9"
+    },
+    {
+      "claim": "Evaluation uses LLM projection matrix shapes from OPT (13B-175B), LLaMA-2 (7B-70B), LLaMA-3 (8B,70B), Qwen (7B,14B), Qwen2 (7B,72B), Mixtral-8x7B MoE, Phi-2/3, gpt-oss (20B,120B); baselines: cuBLAS, cuSPARSE, Sputnik, SparTA, Flash-LLM, SpInfer.",
+      "value": "OPT/LLaMA/Qwen/Mixtral/Phi/gpt-oss shapes",
+      "baseline": "cuBLAS, cuSPARSE, Sputnik, SparTA, Flash-LLM, SpInfer",
+      "condition": "30-50% practical sparsity range",
+      "source_locator": "Evidence locator: PDF Page 10 - LLM projection matrix"
+    }
+  ],
+  "evaluation_context": "Kernel-level and end-to-end evaluation on inference-optimized GPUs: NVIDIA A10G, L4, L40S. Workloads: LLM projection matrix shapes from major architectures (OPT 13B-175B, LLaMA-2 7B-70B, LLaMA-3 8B/70B, Qwen 7B/14B, Qwen2 7B/72B, Mixtral-8x7B MoE, Phi-2/3, gpt-oss 20B/120B). Practical sparsity range 30-50% for both SP and DP. End-to-end model: LLaMA-2-7B-hf. Baselines: cuBLAS (dense), cuSPARSE, Sputnik, SparTA, Flash-LLM, SpInfer. Metrics: kernel TFLOP/s, TPOT, perplexity, SM busy, Max bandwidth, bank conflicts. Source code at github.com/AIDASLab/SPDP.",
+  "limitations": "End-to-end gains are modest (Amdahl-style ceiling) because many decode components (attention, normalization) are not sparsity-sensitive and decoding is memory-bound. Quantization and unstructured sparsity do not provide multiplicative compression in practice (low-bit precision reduces only Values; bitmap/colinfo/tileoffset metadata remain). SPDP targets moderate-sparsity LLM decode; on extremely sparse matrices (e.g., SuiteSparse) existing works may be superior. No production deployment scale, power-in-watts, or serving-end-to-end (continuous batching) latency numbers are in the visible evidence; energy-efficiency claims are qualitative ('meaningfully decreases data movement').",
+  "project_relevance": "SPDP is a GPU kernel/format co-design for sparse LLM inference, directly relevant to serving-runtime/compiler optimization and decode memory-bandwidth bottlenecks. It offers a concrete mechanism (unified static-dynamic pruning with Tiled-CBC) for improving decode throughput and performance-per-watt. For the project card it is a research system with kernel and end-to-end (LLaMA-2-7B) results on inference GPUs, not a production deployment.",
+  "primary_source_resolved": true,
+  "quality_score": 80,
+  "source_notes": [
+    "PVLDB 19(11): 2950-2963, 2026 (arXiv 2607.21985v2, 24 Jul 2026), FETCHED primary source; authors from Seoul National University; code at github.com/AIDASLab/SPDP.",
+    "Baselines explicitly named: cuBLAS, cuSPARSE, Sputnik, SparTA, Flash-LLM, SpInfer; GPUs: A10G, L4, L40S.",
+    "End-to-end model is LLaMA-2-7B-hf; performance-per-watt/energy claims are qualitative, not watt-measured."
+  ],
+  "evidence_gaps": []
+}

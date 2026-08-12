@@ -1,0 +1,56 @@
+{
+  "title": "[AAFLOW+] Stateful Operator Abstraction with Zero-Copy Distributed KV Cache Orchestration for Multi-Agent Workflows",
+  "event_hint": "AAFLOW+: distributed KV cache orchestration system for multi-agent LLM workflows with stateful operators",
+  "problem": "Multi-agent LLM systems remain fundamentally text-centric, requiring agents to repeatedly recompute shared context through expensive prefill operations. KV-cache management is typically restricted to local serving scopes, limiting reuse across distributed agents.",
+  "mechanism": "AAFLOW+ extends agentic workflow operators to make KV cache a first-class distributed systems object. It builds processes into communication-aware graphs that concurrently optimize data, prompts, and reusable model state. The system provides operators for KV materialization, transfer, fork, composition, and eviction. Runtime enables zero-copy, transfer-aware execution, allowing agents to reuse long context without recomputation. Forked states initially share block references, so memory grows with branch continuation rather than full-context duplication.",
+  "evidence": [
+    {
+      "claim": "TTFT reduction on HF backend with Mistral model",
+      "value": 0.041,
+      "baseline": "AAFLOW-text: 2.057 s (50.2× slower)",
+      "condition": "HuggingFace backend, Mistral-7B-Instruct-v0.3 model, context grid 1K-32K tokens, mean TTFT",
+      "source_locator": "PDF Page 9, Table 2 / Figure 7"
+    },
+    {
+      "claim": "TTFT reduction on HF backend with Llama3 model",
+      "value": 0.03,
+      "baseline": "AAFLOW-text: 0.509 s (17.0× slower)",
+      "condition": "HuggingFace backend, Meta-Llama-3-8B-Instruct model, mean TTFT",
+      "source_locator": "PDF Page 9, Table 2"
+    },
+    {
+      "claim": "Multi-agent compute cost reduction at 16-agent scale on HF+Mistral",
+      "value": 220.05,
+      "baseline": "SGLang prefix: 1679.81 s (7.63× slower), Dense: 2716.109 s (12.3× slower)",
+      "condition": "HF backend, Mistral-7B model, 16 agents, aggregate compute cost",
+      "source_locator": "PDF Page 9, Table 3 / Section 6.7"
+    },
+    {
+      "claim": "Multi-agent compute cost reduction at 16-agent scale on HF+Llama3",
+      "value": 220.05,
+      "baseline": "SGLang prefix: 1679.82 s (7.63× slower), Dense: 2303.34 s (10.5× slower)",
+      "condition": "HF backend, Llama3-8B model, 16 agents, aggregate compute cost",
+      "source_locator": "PDF Page 9, Table 3"
+    },
+    {
+      "claim": "Throughput on Mistral with AAFLOW+",
+      "value": 302.6,
+      "baseline": "Dense prefill: 31.94 tokens/s (9.47× slower), vLLM-local: 38.81 tokens/s (7.80× slower)",
+      "condition": "Mistral-7B model, generated tokens per second, fixed context grid",
+      "source_locator": "PDF Page 11, Table 5 / Section 6.10"
+    }
+  ],
+  "evaluation_context": "Evaluation uses a trace-driven model parameterized by hardware microbenchmarks on a distributed GPU cluster of 4-16 nodes, each with NVIDIA A100 (80GB/40GB), 32-64 CPU cores, and RDMA-enabled InfiniBand interconnects. Experiments use deterministic synthetic long-context prompts with context lengths from 1K-32K tokens (mean context grid variation), 64 generated output tokens per branch, and agent counts from 1-16. Tested across HuggingFace, vLLM, and SGLang backends with Mistral-7B-Instruct-v0.3 and Meta-Llama-3-8B-Instruct models. Network configuration: 25 GB/s (200 Gbps) bandwidth, 50μs network latency for main experiments; Experiment 3 sweeps bandwidth from 10-400 Gbps with both RDMA-like (10μs) and Ethernet-like (100μs) latency settings. TTFT measured at 0.041s (Mistral) and 0.030s (Llama3) for AAFLOW+ vs 2.057s and 0.509s for AAFLOW-text baselines. Throughput measured at ~302 tokens/s vs ~31-40 tokens/s for baselines.",
+  "limitations": "Evaluation methodology uses analytical cost modeling parameterized by hardware microbenchmarks rather than direct end-to-end runtime measurements on live serving infrastructure. Workloads use deterministic synthetic prompts rather than real-world datasets or production workloads. Validation covers only specific backends (HF, vLLM, SGLang) and models (Mistral-7B, Llama3-8B). Output length is fixed at 64 tokens per branch; TTFT advantage would diminish for longer outputs where decode time dominates. Results are projected from a trace-driven model—the aggregate latency values represent modeled workload costs, not observed Slurm wall-clock runtime. Framework overhead Ω is explicitly modeled as 0.0075s for AAFLOW+, distinguishing orchestration cost from compute. P95 latency, tail behavior, and real serving deployment metrics not reported. Network-side mechanisms that actively perceive KV state placement, inference stages, or token performance goals are not introduced—system operates at distributed systems layer rather than network layer.",
+  "project_relevance": "Directly relevant to TPN's focus on KV-cache-aware network and bandwidth scheduling. The transfer/recomputation scheduler provides concrete decision rules for when KV transmission outperforms recomputation across different bandwidth conditions (10-400 Gbps). At 200 Gbps with RDMA-like latency, KV transfer is beneficial for most tested contexts; at 10 Gbps, transfer remains preferable for 5/8 contexts. However, AAFLOW+ does not introduce network-side mechanisms that actively perceive KV state placement, inference stages, or token performance goals—it operates at the distributed systems layer rather than the network layer. The work demonstrates that moderate-to-high bandwidth networks make KV transmission superior to recomputation, with specific throughput gains (~302 vs ~32 tokens/s, 7.8-9.5× improvement) and TTFT reductions (0.041s vs 2.057s, 50.2× for Mistral). Framework overhead is explicitly modeled at 0.0075s versus 11.17s for text-based passing. The trace-driven modeling approach distinguishes between orchestration overhead and compute cost, but P95 latency, tail behavior, and real serving deployment metrics are not reported.",
+  "primary_source_resolved": true,
+  "quality_score": 78,
+  "evidence_gaps": [],
+  "_provenance": {
+    "task_id": "59872f8e6460e9ae4478f258",
+    "candidate_id": "713ba7b928bb440208ca2b49",
+    "source_title": "[AAFLOW+] Stateful Operator Abstraction with Zero-Copy Distributed KV Cache Orchestration for Multi-Agent Workflows",
+    "source_url": "https://arxiv.org/abs/2607.10987v1",
+    "document_id": "fc988b9690fddb3918555909"
+  }
+}

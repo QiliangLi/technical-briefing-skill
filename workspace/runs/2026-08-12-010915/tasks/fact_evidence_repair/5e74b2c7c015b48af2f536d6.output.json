@@ -1,0 +1,76 @@
+{
+  "_task": {
+    "id": "5e74b2c7c015b48af2f536d6",
+    "type": "fact_evidence_repair",
+    "entity_id": "46d66925dc71a877c7f56496",
+    "input_digest": "0b739828146c0983c255beb18194e1e8",
+    "contract_version": 2,
+    "prompt_digest": "9f785b85311247a90e04eff95dd02295",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/ai-chip-accelerator.md": "1ce51c080e056a030d51699ea1a2b0aa",
+      "workspace/runs/2026-08-12-010915/documents/9ada48f91d67be0b532e3e05.supplement.md": "9747865228394358bb23c7592037e907"
+    },
+    "execution_envelope_digest": "377dc4bf8bbf7eee7fa0d8c3cf0894bc"
+  },
+  "title": "MADAR: An Address-Free Processor",
+  "event_hint": "MADAR: a proposed address-free processor architecture that abolishes random-access storage and the program counter, replacing them with a single primitive (rotation): all state circulates in a compile-time-scheduled hierarchy of rings of increasing period, with fixed compute stations executing instructions when they sweep past their operands; validated only via a cycle-accurate RTL implementation and a first-order energy model (Horowitz 45nm per-event energies, in-order 70 pJ/instruction baseline), with no silicon or synthesis-based comparison.",
+  "problem": "In a modern processor, computing (arithmetic) is the cheap part; most area and energy go to addressing — moving operands to/from a register file and cache, and running the tags, ports, miss queues, and bypass networks that find a value where it was left. A cited detailed energy measurement of a general-purpose processor running a video encoder reports functional units consumed under 6% of total energy, with >90% being overhead relative to the operations actually performed, and instruction supply alone roughly a third of core energy. The tension: the datapath streams operands through functional units, but the memory system forces every value to rest at a fixed address so it can be found again on demand, requiring register files with many ports, caches with tag arrays/MSHRs, memory arbiters, load-store queues, and operand-bypass networks.",
+  "mechanism": "MADAR replaces the von Neumann primitives (random-access store + program counter) with a single primitive: rotation. Four conjoined properties: (a) Circulating storage — the only storage is a set of rings R0..Rn, each a circular sequence of slots advancing one slot per clock, with geometrically increasing periods (representative values 16, 256, 4K, 64K slots); small fast rings are literal shift registers, large slow rings are single-port SRAM banks read/written through a rotating pointer (sequential, portless access with no address decode/tags/arbitration/multi-porting). (b) Co-circulating code and data — every slot holds one packet (64-bit payload + kind tag, or opcode + operand refs + destination + predicate); instructions and data ride in the same slots. (c) Distributed collision execution — fixed compute stations (ALU, multiplier, steer, transfer, I/O); an instruction executes when it sweeps past a station of its class, with operands named by rotational offset within a window W=8 slots ahead; no queue, no scheduler, no dynamic matching, no scoreboard (arrival is the schedule). (d) Compiler-scheduled period hierarchy — a hierarchy of rings of increasing period replaces the cache hierarchy; transfer stations bridge adjacent rings on a compile-time schedule, doing by rotation what a cache does by tags, with no reactive misses. A constructive backtracking scheduler emits programs cross-checked slot-for-slot against the Verilator cycle-accurate model; it computes a correct seating, not the minimal-energy one. A rendezvous station handles values the schedule cannot pre-place, at ~half a rotation of latency.",
+  "evidence": [
+    {
+      "claim": "First-order energy model parameters (Section 7): per-event figures are Horowitz's 45nm values — a 64-bit add at 0.2 pJ, a multiply at 12.4 pJ, an 8 KB SRAM access at 10 pJ. The slot-advance cost is priced three ways: a conservative register-file proxy (6 pJ, upper bound on a true shift), a realistic flip-flop toggle (1 pJ), and the SRAM access (10 pJ) for large rings swept by a rotating pointer. The baseline is a simple in-order core at 70 pJ per instruction (Horowitz's figure for a programmable processor's per-instruction overhead, consistent with measured embedded cores). Rotation is clock-gated: on a shift-register ring only slots whose contents change dissipate a word-shift each cycle; a large SRAM ring advances its pointer at one read + one write per cycle.",
+      "value": "add 0.2 pJ; multiply 12.4 pJ; 8KB SRAM access 10 pJ; slot-advance 6/1/10 pJ; in-order baseline 70 pJ/instr (45nm Horowitz)",
+      "baseline": "simple in-order core at 70 pJ/instruction",
+      "condition": "first-order energy model, 45nm Horowitz per-event figures, clock-gated rotation",
+      "source_locator": "PDF Page 7 (Section 7 Cost Model, Energies paragraph)"
+    },
+    {
+      "claim": "Energy crossover per kernel (Table 6): the baseline cost-per-instruction at which the in-order core and MADAR consume equal energy, rotation clock-gated, each ring priced at its realization. Below the 70 pJ in-order baseline, MADAR wins. Counted-sum crossover 26 pJ/instr (wins), FIR tap 30 pJ/instr (wins), multiply-accumulate 63 pJ/instr (wins); degree-2 polynomial 126 pJ/instr (loses), degree-5 polynomial 161 pJ/instr (loses, 3 relays), 12-deep accumulation 205 pJ/instr (loses, 5 relays). Loop and MAC kernels win on short rings; polynomial and accumulation chains pushed onto longer rings lose to rotation.",
+      "value": "counted-sum 26, FIR 30, MAC 63 pJ/instr crossover (win); deg-2 poly 126, deg-5 poly 161, 12-deep accum 205 pJ/instr crossover (lose)",
+      "baseline": "70 pJ/instruction in-order core",
+      "condition": "clock-gated rotation, ring-period-dependent pricing, 6 kernels",
+      "source_locator": "PDF Page 7 (Section 7, Table 6)"
+    },
+    {
+      "claim": "Streaming AI dense-core result (Section 9): an 8x8 matrix-vector product costs 86 pJ per multiply-accumulate on MADAR (first-order model), below both the fused tile and a lone streaming inner product, and it is the only dataflow that improves on the inner product in isolation; the period hierarchy is where dense-kernel operand reuse wants to live. Validated on the cycle-accurate model and, for the inner product and fused tile, cross-checked against the RTL implementation; the reuse comparison is priced on the first-order model.",
+      "value": "8x8 matmul-vector 86 pJ/MAC (first-order); only dataflow improving on lone inner product",
+      "baseline": "lone streaming inner product; fused tile",
+      "condition": "first-order energy model, 8x8 matmul-vector, cycle-accurate + RTL cross-check for primitives",
+      "source_locator": "PDF Page 9 (Section 9 Scope paragraph)"
+    },
+    {
+      "claim": "Scheduler validation (Table 5, Section 6): the constructive scheduler places 8 kernels (MAC, degree-2/5 polynomial, counted sum, FIR tap, 12-deep accumulation, two-stage pipeline, 8-wide fan-out) from their dataflow with no hand placement; each compiled program is emitted as an RTL testbench whose final ring state is compared slot-for-slot against the Verilator cycle-accurate model, and all agree. The scheduler computes a correct seating, not the minimal-energy one; the two-stage kernel is placed across two rings with one scheduled inter-ring transfer, and the fan-out kernel declared on a 16-slot ring too small to hold it is demoted to a 64-slot ring.",
+      "value": "8 kernels placed with no hand placement; all agree slot-for-slot vs Verilator model; scheduler exact within scope but not minimal-energy",
+      "baseline": "Verilator cycle-accurate RTL model",
+      "condition": "8 representative kernels; backtracking placer",
+      "source_locator": "PDF Page 7 (Section 6, Table 5)"
+    },
+    {
+      "claim": "Authors' explicit open question and scope limits (Section 9): the decisive open question is whether motion is cheaper than stillness — the design rationale argues deleting addressing machinery should save more than rotation costs, but that is an argument; ONLY a synthesis-based comparison can settle it, and that is the evaluation this paper motivates and does NOT replace. MADAR is fast only where data movement is statically known; data-dependent accesses pay the half-rotation rendezvous cost, expensive on long rings. Systems limits: no program counter and all state in flight means no natural primitive for saving a context, so preemptive multiprogramming, precise interrupts, and protection boundaries are genuinely hard and unaddressed; subroutine linkage is by inlining calls into a single parked kernel. Softmax/normalization/activation need stations beyond the present adder/multiplier or polynomial approximation; the backtracking placer is too slow for large tiles.",
+      "value": "open question: motion vs stillness (only synthesis can settle); data-dependent access pays half-rotation; no context-save/interrupts/protection; placer too slow for large tiles",
+      "baseline": "n/a (authors' self-assessed scope)",
+      "condition": "single-program, statically schedulable regime",
+      "source_locator": "PDF Page 9 (Section 9 Discussion, Limitations and Applicability)"
+    }
+  ],
+  "evaluation_context": "Implementation: cycle-accurate Verilator RTL model of the MADAR execution engine; a constructive backtracking scheduler emits programs cross-checked slot-for-slot against the RTL (8 representative kernels, all agree). Pricing: a deliberately transparent first-order energy model using Horowitz 45nm per-event energies (64-bit add 0.2 pJ, multiply 12.4 pJ, 8KB SRAM access 10 pJ), slot-advance priced at 6 pJ (register-file proxy upper bound) / 1 pJ (flip-flop toggle) / 10 pJ (SRAM access for large rings), against a simple in-order baseline of 70 pJ/instruction. Rotation is clock-gated (only changed slots dissipate on shift-register rings; SRAM rings advance pointer at 1 read + 1 write/cycle). Representative ring periods: 16/256/4K/64K slots; operand window W=8; packet = 64-bit payload + 2-bit kind + 3-bit opcode + 4-bit src_a/src_b/dst. Case study: MAC, dot product, streaming inner product, 8x8 matmul-vector tile (86 pJ/MAC, first-order), validated against the cycle-accurate model and RTL-cross-checked for primitives. NO silicon, tape-out, FPGA prototype, hardware benchmark, synthesized netlist, process-node/area estimate, or matched synthesized baseline of a conventional machine.",
+  "limitations": "The supplement confirms the first-order energy model's parameters (Horowitz 45nm per-event energies, 70 pJ/instruction in-order baseline, clock-gated rotation) and exposes per-kernel crossover numbers (MAC 63 pJ/instr crossover wins; polynomial/accumulation chains on longer rings lose, up to 205 pJ/instr) plus the 8x8 matmul-vector at 86 pJ/MAC (first-order). However, the authors explicitly state these are stand-in figures and the robust result is the crossover, not absolute joules; the baseline is a single published per-instruction number (70 pJ), not a matched implementation measured on the same flow. The decisive open question — whether motion is cheaper than stillness — can only be settled by a synthesis-based comparison of both machines through one flow, which is the evaluation this model motivates and does NOT replace. So the substantive part of the recorded gap (absolute pJ/MAC, TOPS/MACs-per-second, area, process node, matched synthesized baseline) remains UNRESOLVED by design. Additional intrinsic limits: MADAR is fast only where data movement is statically known (data-dependent access pays a half-rotation rendezvous cost, expensive on long rings); no natural context-save primitive, so preemptive multiprogramming, precise interrupts, and protection boundaries are unaddressed; subroutine linkage is by inlining into a single parked kernel; softmax/normalization/activation need stations beyond the present adder/multiplier or polynomial approximation; the backtracking placer is too slow for large tiles. No HBM/HBF/interconnect/package data; no TOPS/TFLOPS; single-author affiliation (Illumina, a genomics company).",
+  "project_relevance": "Tangentially relevant to the AI-chip-accelerator card: MADAR proposes a genuinely novel architectural mechanism (abolish addresses; all state circulates in compile-time-scheduled rings; distributed collision execution; period hierarchy replaces caches) whose stated payoff is clearest for AI acceleration — an 8x8 matmul-vector costs 86 pJ/MAC in the first-order model and the MAC crossover (63 pJ/instr) wins against the 70 pJ/instruction in-order baseline on short rings, with operand reuse routed through the period hierarchy. It targets the data-movement/addressing overhead bottleneck directly (the card's first judgment). However, it fails the card's primary evidence bar: no silicon, no pre-silicon validation against a matched synthesized baseline, no measured throughput/latency/absolute-energy, no HBM/interconnect/package data; the crossover numbers are first-order stand-ins that the authors themselves say only a synthesis-based comparison can settle. For the project this is an idea-stage design point worth noting for its mechanism (rotation as memory hierarchy, exact scheduling without reactive memory, clock-gated rotation), not a deployable or benchmarkable AI accelerator result.",
+  "primary_source_resolved": true,
+  "quality_score": 52,
+  "evidence_gaps": [
+    {
+      "question": "Are there any absolute energy-per-operation (pJ/MAC), throughput (TOPS or MACs/s), area, or process-node numbers for MADAR beyond the first-order model, and what is the matched synthesized baseline used for the crossover claim?",
+      "terms": [
+        "energy per operation",
+        "pJ",
+        "TOPS",
+        "synthesized netlist",
+        "crossover",
+        "process node",
+        "area"
+      ]
+    }
+  ]
+}

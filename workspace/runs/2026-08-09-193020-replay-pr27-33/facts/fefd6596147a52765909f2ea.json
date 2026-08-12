@@ -1,0 +1,88 @@
+{
+  "title": "TensorCast: The Missing Tensor Management Layer in Large Language Model Infrastructure",
+  "event_hint": "arXiv preprint (2608.06007v1, 6 Aug 2026) proposing TensorCast / Tensor-as-a-Service (TaaS), a distributed tensor lifecycle management layer for LLM infrastructure, integrated with vLLM and SGLang.",
+  "problem": "Existing LLM systems optimize individual tensor management tasks (weight loading, KV cache placement/transfer, checkpoint sync) by deeply coupling task-specific mechanisms with execution engines, networks, or storage backends, creating isolated silos that prevent reuse/composition and block cross-component optimizations such as jointly balancing instance load and KV cache locality.",
+  "mechanism": "A Tensor-as-a-Service (TaaS) layer decouples tensor lifecycle management from computation: first-class tensor abstractions (system-owned Artifact, caller-leased tensors), programmable lifecycle primitives (identify/place/materialize/transform_into/coordinate), a distributed tensor pool plus lifecycle runtime that separates policies from execution mechanisms, and an instance adaptor that confines engine-specific import/export. Uses view() for rank-specific slicing/resharding, CUDA IPC zero-copy for warm materialization (vLLM consumes pre-materialized tensors via tensor_dict in under 1 second), and a userspace mTCP implementation with multipath transmission for non-RDMA KV transfer.",
+  "evidence": [
+    {
+      "claim": "TensorCast accelerates large-tensor materialization in two scenarios. (a) Model weight synchronization (RL training-serving sync): 1.61x-2.00x for Qwen3-14B and 1.14x-2.63x for Qwen3-32B vs the Default JFS updater across TP=1/2/4 (Fig. 7). (b) MaaS instance launch (single-node, 8xH800, TP=8, safetensors from JuiceFS/SSD/tmpfs): under JFS for Qwen3-30B-A3B, TensorCast-cold cuts weight-load time by 60.7x vs Default and 10.2x vs InstantTensor, and end-to-end launch-ready time by 28.5x and 5.4x; TensorCast-warm (CUDA IPC prefetch) consumes weights in <1s, yielding 228.6x and 40.7x end-to-end launch speedups over Default and InstantTensor for Qwen3-235B-A22B (Fig. 5/6).",
+      "value": "sync 1.14x-2.63x; launch cold 60.7x/10.2x load & 28.5x/5.4x ready; launch warm 228.6x/40.7x ready",
+      "baseline": "Default (native vLLM loader / JFS updater) and InstantTensor fast weight loader",
+      "condition": "Sync: 2-node, 64 CPU, 500GB DRAM, 4xH800, RDMA disabled for fairness, Qwen3-14B/32B. Launch: single node, 64 CPU, 500GB DRAM, 8xH800, vLLM TP=8, weights in safetensors from JuiceFS / node-local SSD / tmpfs.",
+      "source_locator": "Sec 6.1 Setup/Results + Fig 5/6 (instance launch) and Sec 6.2 + Fig 7 (weight sync), PDF Page 11-12"
+    },
+    {
+      "claim": "For Qwen3-32B (TP=2) KV cache retrieval, with RDMA enabled TensorCast achieves TTFT reductions of 60% to 87.5% (2.5x to 8x speedup) comparable to Mooncake, and significantly outperforms Mooncake with RDMA disabled.",
+      "value": "60% to 87.5% TTFT reduction (2.5x-8x speedup) with RDMA",
+      "baseline": "State-of-the-art Mooncake KV-centric integration in SGLang under identical settings",
+      "condition": "N-node cluster; each node 64 CPU, 1 TB DRAM, 8 x H800 GPUs, 200 Gbps RDMA links; LongBench prompts (~16k and ~35k tokens); 100% cache-hit rate stress test; TTFT reduction measured for N-1 instances relative to first instance.",
+      "source_locator": "Section 6.3 'High-Cardinality Tensor Management', Results paragraph (Fig. 8a-8d), PDF Page 12-13."
+    },
+    {
+      "claim": "For Qwen3-235B-A22B (TP=8), TensorCast is comparable to Mooncake under RDMA and better without RDMA; TP=8 introduces 4x more concurrent KV page retrieval requests than TP=2, increasing contention and reducing TTFT improvements for both systems.",
+      "value": null,
+      "baseline": "Mooncake KV storage backend in SGLang",
+      "condition": "Same N-node H800 cluster; TP=8; 16k/35k token prompts; Fig. 9a-9d.",
+      "source_locator": "Section 6.3, Results (Fig. 9), PDF Page 13."
+    },
+    {
+      "claim": "A programmable request-routing policy implemented with TensorCast (cache-aware routing plus KV-cache-migrating load rebalancing) improves median TTFT by up to 93.2% under highly concurrent multi-turn agent workloads.",
+      "value": "up to 93.2% median TTFT improvement",
+      "baseline": "Compared against Load-aware, Load-aware+Mooncake, and Cache-aware router policies (Fig. 10)",
+      "condition": "Highly concurrent multi-turn agentic coding workloads; three LogNorm inter-turn delay presets (fast/medium/slow, Table 3); exact comparison cell and session count not restated in visible text.",
+      "source_locator": "Abstract (PDF Page 1); Section 6.4 'Programmable Request Router' and Fig. 10/11 (PDF Page 13-14)."
+    },
+    {
+      "claim": "Agent workload presets use LogNorm-sampled inter-turn delays: fast (median 8.2s, P95 22.0s), medium (median 20.1s, P95 75.0s), slow (median 60.3s, P95 311s), representing tight coding-agent loops, typical SWE agents, and long research/planning agents respectively.",
+      "value": "fast 8.2s / medium 20.1s / slow 60.3s (median inter-turn delay)",
+      "baseline": null,
+      "condition": "Synthetic LogNorm sampling within a session used to drive the §6.4 router evaluation.",
+      "source_locator": "Table 3 'The three inter-turn delay presets used by the LogNorm sampling within a session', PDF Page 13."
+    }
+  ],
+  "evaluation_context": "Hardware: 2-node and N-node clusters of H800 GPUs (4x or 8x per node), 64 CPUs, 500 GB-1 TB DRAM, 200 Gbps RDMA links; the instance-launch study (Sec 6.1) uses a single 8xH800 node (TP=8) with weights in safetensors from JuiceFS / node-local SSD / tmpfs. Baselines: Default JFS weight updater, InstantTensor fast loader, and Mooncake (SGLang KV backend). Models: Qwen3-14B, Qwen3-30B-A3B, Qwen3-32B, Qwen3-235B-A22B with TP=1/2/4/8. Datasets/workloads: LongBench prompts (~16k/35k tokens), 100% cache-hit KV-reuse stress test, MaaS instance-launch (cold/warm materialization), and simulated multi-turn agent sessions (LogNorm inter-turn delays). Integrations: vLLM and SGLang. Reported metrics are TTFT reduction ratios, weight-sync/launch speedups, and cache-hit rate vs session count; absolute TPOT, token throughput, end-to-end P95 TTFT, and network utilization are not reported.",
+  "limitations": "Evaluations cover inference workloads only; training-framework integration (Megatron-LM, DeepSpeed) is explicitly left as future work (Discussion, PDF Page 14). Authors explicitly disclaim that a general abstraction is inherently faster than every specialized implementation; under RDMA, TensorCast is only comparable (not superior) to Mooncake, with its advantage concentrated in the non-RDMA and composability cases. The headline 93.2% TTFT gain is conditioned on highly concurrent multi-turn agent workloads and a specific programmable policy; the exact comparison baseline and session count are not restated in the visible text, and the targeted supplement (Sec 6.1 instance launch) did not expose the §6.4 router detail either. The deployment-level metrics requested (absolute TPOT, token throughput, end-to-end P95 TTFT, network utilization) are still absent. Agent workloads use synthetic LogNorm-sampled delays rather than a production trace. This is an arXiv v1 preprint.",
+  "project_relevance": "Relevant to the KV-cache-aware network/scheduling question: TensorCast provides a composable layer where request routing, KV placement, and instance load can be jointly programmed, and it reports TTFT reductions and a 93.2% median-TTFT agent-workload gain. However, the visible evidence reports reduction ratios rather than absolute TPOT, token throughput, end-to-end P95, or network utilization, and the network-side value is mainly in the non-RDMA (mTCP multipath) and cross-component composition cases rather than beating specialized RDMA KV systems head-to-head. Treat as a systems/preprint signal on composability, pending absolute tail metrics and training-side validation.",
+  "primary_source_resolved": true,
+  "quality_score": 82,
+  "source_notes": [
+    "Primary source is an arXiv preprint (v1, 2608.06007v1, 6 Aug 2026); fetch_status=FETCHED and raw_fulltext_cache_hit=true, so primary_source_resolved=true.",
+    "Evidence pack spans abstract/intro (PDF Page 1-3) and evaluation sections 6.1-6.4 + Discussion (PDF Page 11-14); results locators cite specific figures/tables.",
+    "Sec 6.1 instance launch (PDF Page 11): TensorCast-cold 60.7x/10.2x weight-load and 28.5x/5.4x launch-ready speedups over Default/InstantTensor under JFS (Qwen3-30B-A3B); TensorCast-warm 228.6x/40.7x launch-ready for Qwen3-235B-A22B via CUDA IPC zero-copy.",
+    "Fig 7 (PDF Page 11) confirms weight-sync speedups: Qwen3-14B 2.00x/1.81x/1.61x and Qwen3-32B 1.14x/1.66x/2.63x across TP=1/2/4.",
+    "Authors affiliated with Peking University, Stepfun, and Beijing University of Posts and Telecommunications; work partly done at Stepfun."
+  ],
+  "evidence_gaps": [
+    {
+      "question": "Which router baseline and which session/concurrency point produce the headline up-to-93.2% median TTFT improvement, since the abstract states 'up to' but the visible text does not pin the exact comparison cell?",
+      "terms": [
+        "TensorCast router",
+        "median TTFT",
+        "93.2%",
+        "Load-aware",
+        "Cache-aware",
+        "session number",
+        "Fig. 10"
+      ]
+    },
+    {
+      "question": "What are the absolute TPOT, token throughput, end-to-end P95 TTFT, and network utilization figures, since the paper reports TTFT reduction ratios and cache-hit rates but not these deployment-level metrics?",
+      "terms": [
+        "TPOT",
+        "token throughput",
+        "P95 TTFT",
+        "network utilization",
+        "end-to-end",
+        "Fig. 10"
+      ]
+    }
+  ],
+  "_provenance": {
+    "task_id": "2dcdbc24fa8068a7f80be236",
+    "candidate_id": "fefd6596147a52765909f2ea",
+    "source_title": "TensorCast: The Missing Tensor Management Layer in Large Language Model Infrastructure",
+    "source_url": "https://arxiv.org/abs/2608.06007v1",
+    "document_id": "6521369f4123808f82669f48",
+    "repair_of_task_id": "1bb86ae97f778c9d247e540a"
+  }
+}

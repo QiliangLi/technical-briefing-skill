@@ -1,0 +1,76 @@
+{
+  "_task": {
+    "id": "90b113c5f3960662f2fcc175",
+    "type": "fact_extraction",
+    "entity_id": "d2aa64678921e72ce51ad3e2",
+    "input_digest": "68e405df279337b37e39b7d4025d1be7",
+    "contract_version": 2,
+    "prompt_digest": "7b9ccad8928dae8772ad4a6411ead813",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/tpn.md": "612f70f913e22f3ac7d82d098c813734",
+      "workspace/runs/2026-08-12-010915/documents/9fd589fafaab6321920df54c.evidence.md": "c866a1aada91a7714ed78e4d56b882ec"
+    },
+    "execution_envelope_digest": "9c237fbd97666057793d0d3d9d3ae33c"
+  },
+  "title": "Fewer Paths, Better Performance: Understanding the ZCube Topology through Braess's Paradox",
+  "event_hint": "Analyzes the ZCube datacenter topology (removes the Spine layer, eliminates path multiplicity) via Braess's paradox, and reports first public production inference evidence: a 1000-GPU GLM-5.1 coding-inference cluster migrated from rail-optimized Fat-Tree (ROFT) to ZCube with zero GPU/software/model-config change.",
+  "problem": "Datacenter networks follow a multipath doctrine (provision many paths, hash flows via ECMP, let redundancy absorb imbalance). ZCube violates it by removing the Spine layer and eliminating path multiplicity, yet reports better performance for both LLM training and inference. The paper asks why fewer paths can help, and frames the answer through Braess's paradox: under congestion-oblivious routing over competing paths, adding paths can hurt (Braess) and removing paths can help (ZCube). For structured LLM traffic (Prefill-to-Decode KV cache transfers that are asymmetric and physically clustered), ECMP hashing produces persistent, pattern-correlated link hotspots that rehashing does not remove.",
+  "mechanism": "ZCube uses a complete bipartite K_{m,m} core with an orthogonal dual partition (odd/even switch groups) that provably balances load for arbitrary traffic matrices; its Path Diversity Index is PDI=1 by construction, making it provably immune to Braess's paradox (PDI>=2 is a necessary condition for Braess vulnerability, and Fat-Tree has PDI=m). The authors bound greedy routing's Price of Anarchy at 4/3 of optimal for affine latencies while static ECMP admits unbounded worst-case imbalance. AllReduce (training) and KV-cache transfers (disaggregated inference) fall out as two corollaries of the load-spreading theorem. The price of immunity is failover: Fat-Tree recovers locally in microseconds via hash recomputation, while ZCube recovers via a centralized controller on a millisecond scale (core-link fault domain is 1/m^2 of pairs; for n=16384, k=128, m=128 that is 0.006% of pairs), with path length rising from 2 to 4 hops after a detour. The trade favors LLM serving because failures are rare (hardware annual failure <1%, so ZCube runs at optimum >99% of the time) while Fat-Tree pays its 'Braess tax' every day.",
+  "evidence": [
+    {
+      "claim": "Production measurement on a 1000-GPU cluster serving GLM-5.1 coding inference, migrated from rail-optimized Fat-Tree (ROFT) to ZCube with no GPU/software/model-config change (topology is the only variable): network cost (switches + optical modules) fell 33%, average GPU inference throughput rose 15%, and P99 TTFT fell 40.6%.",
+      "value": "-33% network cost; +15% GPU throughput; -40.6% P99 TTFT",
+      "baseline": "ROFT (rail-optimized Fat-Tree) pre-migration, same cluster",
+      "condition": "1000-GPU GLM-5.1 coding inference cluster, disaggregated Prefill/Decode, zero-change migration, stable for several weeks at time of writing",
+      "source_locator": "PDF Page 2 (Introduction); PDF Page 4 (Table 2, Section 3.2 Production Evidence)"
+    },
+    {
+      "claim": "The authors explicitly treat the throughput/latency gain as a hypothesis rather than a foregone conclusion: 'the throughput and latency gains exceed what the bandwidth change alone predicts', and attribute them to topology via the zero-change migration rather than a full decomposition of contributing factors (stated as a limitation).",
+      "value": "gains exceed bandwidth-change prediction; attribution is by zero-change migration, not factor decomposition",
+      "baseline": "ROFT pre-migration",
+      "condition": "GLM-5.1 coding inference cluster",
+      "source_locator": "PDF Page 4 (Section 3.2); PDF Page 10 (Limitations, fourth item)"
+    },
+    {
+      "claim": "PDI characterization: a Braess subgraph requires at least two competing routes, so PDI>=2 is necessary for Braess vulnerability. Fat-Tree has PDI=m (m Spine paths); ZCube has PDI=1 by construction, which is the structural basis of its immunity.",
+      "value": "ZCube PDI=1; Fat-Tree PDI=m",
+      "baseline": "Fat-Tree",
+      "condition": "topological Path Diversity Index definition",
+      "source_locator": "PDF Page 4 (Section defining PDI, Eq. 2)"
+    },
+    {
+      "claim": "Simulated link-load imbalance (max/mean, 1.0=perfect balance) on n=128 GPUs, k=16/switch, m=8/group, 500 ECMP hash seeds for ROFT: under uniform AllReduce ROFT+ECMP pays residual imbalance 1.14 vs ZCube 1.00; under clustered 25/75 Prefill-to-Decode ROFT reaches 4.50 while ZCube stays 1.33 (exactly 1.00 on links carrying the pattern's traffic); under 8 adversarial elephant flows both degrade to ~9 (the honest boundary: the theorem disperses structured clusters, not arbitrary point flows).",
+      "value": "ROFT 1.14 vs ZCube 1.00 (AllReduce); ROFT 4.50 vs ZCube 1.33 (25/75 PD); both ~9 (elephants)",
+      "baseline": "ROFT + ECMP over 500 hash seeds",
+      "condition": "simulated n=128, k=16, m=8 fabric; four traffic patterns",
+      "source_locator": "PDF Page 9 (Section 7.2, Figure 2)"
+    },
+    {
+      "claim": "Failure-recovery trade (Table 3): Fat-Tree+ECMP recovers via distributed hash recomputation in microseconds with unchanged path length; ZCube recovers via a centralized controller in milliseconds with path length rising 2->4 hops, core-link fault domain = 1/m^2 of pairs (0.006% for n=16384,k=128,m=128). The trade favors LLM serving because hardware failure rate is <1%/year so ZCube runs at optimum >99% of the time while Fat-Tree pays its Braess tax continuously.",
+      "value": "recovery us (Fat-Tree) vs ms (ZCube); ZCube fault domain 0.006% of pairs; hardware failure <1%/yr",
+      "baseline": "Fat-Tree + ECMP",
+      "condition": "single core-link / switch / access-link failure analysis",
+      "source_locator": "PDF Page 8 (Table 3, Section 6.2-6.3)"
+    }
+  ],
+  "evaluation_context": "Production: a 1000-GPU cluster serving GLM-5.1 coding inference, disaggregated Prefill/Decode (Prefill nodes transfer large KV cache volumes to Decode nodes), migrated from rail-optimized Fat-Tree (ROFT) to ZCube with topology as the only variable (no GPU, software-stack, or model-serving-config change), stable for several weeks. Baseline: ROFT pre-migration. Metrics: switches+optical-module cost, average GPU inference throughput, P99 TTFT. Simulation: n=128 GPUs, k=16 GPUs/switch, m=8 switches/group, ROFT models ECMP over 500 random hash seeds, ZCube computes core link loads deterministically; four traffic patterns (uniform AllReduce, 25/75 and 50/50 clustered Prefill-to-Decode, 8 random elephant flows). Theory: Price of Anarchy bounded at 4/3 for greedy routing on affine latencies (Roughgarden-Tardos); PDI-based Braess-vulnerability characterization.",
+  "limitations": "Four explicitly stated limits: (1) the complete bipartite K_{m,m} core requires switch radix to grow with m, so very large clusters need hierarchical extensions; (2) the K_{m,m} core has substantial wiring complexity, handled with automated layout/validation tooling; (3) failure recovery depends on a centralized controller, a single point of operational risk; (4) production evidence comes from one cluster serving one model family, and gains are attributed to topology through the zero-change migration rather than a full decomposition of contributing factors. The throughput/latency gains exceed what bandwidth change alone predicts and are treated as a hypothesis validated by analysis, not a foregone conclusion. Simulation n=128 is much smaller than the 1000-GPU (or 16384-GPU theoretical) deployment. Per-link utilization and TTFT distributions before/after migration are stated to be 'in preparation for a future revision' (not in the visible evidence). The failure-recovery comparison is qualitative (microseconds vs milliseconds) without absolute measured values.",
+  "project_relevance": "Directly relevant to the TPN card's question of whether network-side mechanisms reduce KV-cache cross-node transfer congestion and improve end-to-end TTFT/throughput. The production result (-40.6% P99 TTFT, +15% throughput) is attributed precisely to structural congestion removal on the Prefill-to-Decode KV-cache transfer path: on ROFT, contiguous Prefill blocks overload a small set of Leaf uplinks (pattern-correlated hotspots that rehashing does not remove), while ZCube's orthogonal dual partition provably balances arbitrary traffic matrices including the asymmetric clustered KV transfer pattern. This is a concrete answer to the card's question of what network-side topology matching adds over GPU/memory-side scheduling. Caveats for project use: the gain is from one cluster/one model family with attribution by zero-change migration rather than factor decomposition, and finer per-link/TTFT telemetry is not yet public.",
+  "primary_source_resolved": true,
+  "quality_score": 82,
+  "evidence_gaps": [
+    {
+      "question": "What are the absolute P99 TTFT (ms), GPU throughput (tokens/s or req/s), and per-link utilization numbers behind the -40.6%/+15%/-33% production ratios, and the absolute failure-recovery latencies (us vs ms) behind Table 3?",
+      "terms": [
+        "P99 TTFT",
+        "GPU inference throughput",
+        "switch and optics cost",
+        "per-link utilization",
+        "recovery latency",
+        "Table 2",
+        "Table 3"
+      ]
+    }
+  ]
+}

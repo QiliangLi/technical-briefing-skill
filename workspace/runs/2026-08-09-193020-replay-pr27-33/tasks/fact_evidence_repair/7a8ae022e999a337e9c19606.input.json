@@ -1,0 +1,190 @@
+{
+  "_task": {
+    "id": "7a8ae022e999a337e9c19606",
+    "type": "fact_evidence_repair",
+    "entity_id": "1eb47f5bbd4285e3bfad9886",
+    "input_digest": "a4a7b7008281090e0658973da6a21945",
+    "contract_version": 2,
+    "prompt_digest": "776ccd47c80b2bde3d197a92486966bc",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/ai-infra-horizontal.md": "f0cbf7b19e7688a07f07868cfd3ba38c",
+      "workspace/runs/2026-08-09-193020-replay-pr27-33/documents/350cb78eee153c4006f7eada.supplement.md": "b44a16d4ff867d640b649d1717b39704"
+    },
+    "execution_envelope_digest": "af55effe707348c61de46916453e1cb8"
+  },
+  "candidate_id": "1eb47f5bbd4285e3bfad9886",
+  "source": {
+    "title": "Unified Static-Dynamic Pruning for Efficient LLM Inference",
+    "summary": "The increasing deployment of large language models (LLMs) has magnified the computational and memory bottlenecks of autoregressive decoding, where low compute intensity and bandwidth-bound kernels dominate inference cost. Weight pruning offers a promising remedy, but existing methods remain confined to either static pruning (SP), which permanently removes redundant weights but lacks adaptivity, or dynamic pruning (DP), which adapts to input sparsity but introduces runtime irregularity. This paper presents SPDP, a unified sparse-inference framework that integrates unstructured SP with input-adaptive DP for efficient LLM inference on GPUs. SPDP co-designs a new Tiled-Column-wise Bitmap Compressed (Tiled-CBC) format and two complementary GPU kernels: (1) a CUDA-core spMspV kernel featuring Hybrid Activation-aware Dynamic Shared-Memory Bitmap Decoding (HAD-SMBD) for fine-grained, runtime activation skipping, and (2) a Tensor-Core SpMM kernel optimized for prefill computation. This joint format-kernel design harmonizes static and dynamic sparsity, maintaining bandwidth-efficient memory access and high compute intensity under both phases of LLM inference. Comprehensive evaluations on inference-optimized GPUs demonstrate that SPDP achieves 1.24x-1.37x average speedup (up to 2.51x) over state-of-the- art sparse frameworks such as SpInfer, while matching. perplexity with up to 25% higher sparsity. SPDP advances the inference efficiency-quality Pareto frontier, showing that unified static-dynamic pruning can deliver substantial throughput and performance-per-watt improvements in large-scale LLM serving",
+    "url": "https://arxiv.org/abs/2607.21985v1",
+    "published_at": "2026-07-24T05:19:41Z",
+    "discovery_source": "arXiv",
+    "source_level": "A",
+    "discovery_only": false
+  },
+  "topic": {
+    "id": "ai_infra_horizontal",
+    "name": "AI Infra横向动态",
+    "current_questions": [
+      "哪些系统与硬件变化会直接影响AI训练、推理或Agent端到端效率",
+      "新机制是否提供端到端数据、真实部署规模或明确工程边界",
+      "该进展后续应归入哪个既有专题，还是保持横向观察"
+    ],
+    "valuable_evidence": [
+      "端到端时延",
+      "吞吐",
+      "GPU利用率",
+      "集群规模",
+      "成本",
+      "故障恢复时间",
+      "部署数据"
+    ]
+  },
+  "direction": {
+    "id": "serving_runtime_compiler",
+    "name": "推理服务、运行时与编译优化",
+    "queries": [
+      "LLM serving inference engine runtime optimization",
+      "GPU kernel compiler inference latency throughput",
+      "LLM quantization runtime production benchmark"
+    ],
+    "aihot_queries": [
+      "LLM serving",
+      "inference engine",
+      "GPU kernel",
+      "inference compiler"
+    ],
+    "arxiv_query": "((\"LLM serving\" OR \"inference engine\" OR \"GPU kernel\" OR compiler) AND (latency OR throughput OR scheduling))",
+    "include_terms": [
+      "llm serving",
+      "inference engine",
+      "runtime",
+      "compiler",
+      "gpu kernel",
+      "quantization"
+    ],
+    "exclude_terms": [
+      "marketing",
+      "consumer app"
+    ]
+  },
+  "project_context_path": "config/project-context/ai-infra-horizontal.md",
+  "previous_facts": {
+    "title": "Unified Static-Dynamic Pruning for Efficient LLM Inference",
+    "event_hint": "PVLDB 2026 paper (Seoul National University, arXiv:2607.21985v1) introduces SPDP, a unified static+dynamic weight-pruning GPU kernel framework for LLM decode/prefill inference.",
+    "problem": "LLM autoregressive decoding is memory-/bandwidth-bound, and existing weight-pruning systems are either purely static (fixed offline patterns, no input adaptivity) or purely dynamic (coarse-grained structured masks, hardware-incompatible, cannot exploit unstructured sparsity). Static-sparse kernels are row-major SpMM-optimized while dynamic pruning induces column-wise spMspV workloads, so the two are not directly composable: naively combining them breaks memory coalescing, warp stride regularity, and Tensor Core utilization.",
+    "mechanism": "SPDP co-designs a Tiled-Column-wise Bitmap Compressed (Tiled-CBC) weight layout with two kernels: (1) a CUDA-core spMspV decode kernel using Hybrid Activation-aware Dynamic Shared-Memory Bitmap Decoding (HAD-SMBD) for fine-grained runtime activation skipping, and (2) a Tensor-Core SpMM kernel for prefill that reuses the same layout via shared-memory alignment. Key insight: static pruning removes weights row-wise and dynamic pruning skips activations column-wise, acting on orthogonal dimensions, so their sparsity patterns overlap minimally and effective sparsities multiply.",
+    "evidence": [
+      {
+        "claim": "SPDP-spMspV kernel on A10G averages 1.24x speedup over SpInfer and 1.88x over cuBLAS (maxima 1.70x and 3.32x).",
+        "value": "1.24x avg / 1.70x max over SpInfer; 1.88x avg / 3.32x max over cuBLAS",
+        "baseline": "SpInfer (SOTA Tensor-Core sparse kernel) and cuBLAS dense Tensor-Core baseline",
+        "condition": "A10G GPU; static sparsity swept 0-90% with DP fixed at 30%; matrix shapes from OPT/LLaMA-2/3/Qwen/Qwen2/Mixtral/Phi/gpt-oss",
+        "source_locator": "Section 5.4, Figure 8a (PDF Page 10)"
+      },
+      {
+        "claim": "On L4 GPU, SPDP-spMspV averages 1.37x over SpInfer (max 2.52x) and 2.11x over cuBLAS (max 3.52x).",
+        "value": "1.37x avg / 2.52x max over SpInfer; 2.11x avg / 3.52x max over cuBLAS",
+        "baseline": "SpInfer and cuBLAS dense",
+        "condition": "L4 GPU; DP fixed at 30%; same matrix-shape suite as A10G",
+        "source_locator": "Section 5.4, Figure 8b (PDF Page 10)"
+      },
+      {
+        "claim": "End-to-end decode TPOT speedup averages 1.34x over SpInfer at moderate sparsity on Llama-2-7B-hf while keeping perplexity under 5.4.",
+        "value": "1.34x average TPOT speedup",
+        "baseline": "SpInfer",
+        "condition": "Llama-2-7B-hf; A10G/L4/L40S; total sparsity up to 65% (best config 30% SP + 50% DP); full decode latency incl. attention/norm",
+        "source_locator": "Section 5.5, Figure 11 (PDF Page 11)"
+      },
+      {
+        "claim": "At matched perplexity, SPDP sustains up to 25% higher total sparsity than SpInfer (Wanda-based static pruning) with comparable or lower TPOT.",
+        "value": "up to 25% higher total sparsity at matched PPL",
+        "baseline": "SpInfer with Wanda static pruning",
+        "condition": "Matched perplexity (~4.97-5.34); A10G, L4, L40S GPUs",
+        "source_locator": "Section 5.5, Figure 10 (PDF Page 11)"
+      },
+      {
+        "claim": "SPDP-spMspV at (DP,SP)=(30%,30%) attains the highest SM-busy fraction and the lowest bank conflicts (74) versus SpInfer(30%) and SpInfer(50%) on A10G, with comparable Max bandwidth.",
+        "value": "highest SM busy (48.0%), bank conflicts 74",
+        "baseline": "SpInfer at SP=30% and SP=50% (same total sparsity)",
+        "condition": "A10G GPU; (DP,SP)=(30%,30%); metrics normalized to per-kernel peak",
+        "source_locator": "Section 5.4, Figure 9 (PDF Page 11)"
+      }
+    ],
+    "evaluation_context": "Inference-optimized GPUs: A10G, L4, L40S. Kernel benchmarks use projection/FFN weight-matrix shapes from OPT(13B-175B), LLaMA-2(7B-70B), LLaMA-3(8B/70B), Qwen(7B/14B), Qwen2(7B/72B), Mixtral-8x7B MoE, Phi-2/3, gpt-oss(20B/120B). End-to-end decode run on Llama-2-7B-hf. Practical sparsity range 30-50% for both SP and DP. Baselines: cuBLAS (dense), cuSPARSE, Sputnik, SparTA, Flash-LLM, SpInfer.",
+    "limitations": "End-to-end gains are Amdahl-limited: attention, normalization and other non-sparse components are not sparsity-sensitive, and decode is memory-bound so higher sparsity improves arithmetic efficiency more than latency. Perplexity diverges sharply beyond ~70% static sparsity (Wanda impractical there). Quantization and unstructured sparsity do not compress multiplicatively in practice (low-bit reduces only Values; Bitmap, ColInfo, TileOffset and padding metadata persist). SPDP targets moderate-sparsity LLM decode; extreme-sparsity matrices (e.g., SuiteSparse) and large-N prefill (where existing works fail to beat cuBLAS) are out of scope.",
+    "project_relevance": "Falls in the serving/runtime/compiler direction: SPDP is a projection-matmul kernel replacement for LLM serving engines, orthogonal to attention and compatible with continuous batching / fused prefill-decode. For our briefing it is a horizontal kernel-level sparse-inference observation, not a deployed at-scale system; the operationally meaningful number is the 1.34x end-to-end TPOT gain (and up to 25% extra sparsity at iso-quality), not the kernel-level 1.24-1.37x headline.",
+    "primary_source_resolved": true,
+    "quality_score": 84,
+    "source_notes": [
+      "The abstract headline '1.24x-1.37x average speedup (up to 2.51x)' corresponds to kernel-level spMspV measurements over SpInfer on A10G/L4 (Section 5.4, Figure 8); the end-to-end TPOT speedup is lower, averaging 1.34x (Section 5.5).",
+      "Artifacts at https://github.com/AIDASLab/SPDP; published as PVLDB 19(11) 2026.",
+      "Evidence pack covers abstract, intro, kernel profiling (Fig 8/9) and end-to-end eval (Fig 10/11); prefill kernel (Fig 12) and SuiteSparse (Fig 13) figures referenced but only qualitatively described."
+    ],
+    "evidence_gaps": [
+      {
+        "question": "Does SPDP report a concrete performance-per-watt or energy measurement (watts/joules) backing the abstract's perf-per-watt claim, or is it only argued qualitatively?",
+        "terms": [
+          "performance-per-watt",
+          "energy efficiency",
+          "watt",
+          "joule",
+          "power consumption"
+        ]
+      },
+      {
+        "question": "What prefill-stage speedup does the Tensor-Core SpMM kernel achieve over cuBLAS and SpInfer (Figure 12 is referenced but no numbers given in the visible evidence)?",
+        "terms": [
+          "prefill",
+          "SpMM",
+          "Tensor-Core",
+          "Figure 12",
+          "cuBLAS baseline"
+        ]
+      }
+    ]
+  },
+  "previous_task_id": "46d6c46abb98851512df754a",
+  "evidence_gaps": [
+    {
+      "question": "Does SPDP report a concrete performance-per-watt or energy measurement (watts/joules) backing the abstract's perf-per-watt claim, or is it only argued qualitatively?",
+      "terms": [
+        "performance-per-watt",
+        "energy efficiency",
+        "watt",
+        "joule",
+        "power consumption"
+      ]
+    },
+    {
+      "question": "What prefill-stage speedup does the Tensor-Core SpMM kernel achieve over cuBLAS and SpInfer (Figure 12 is referenced but no numbers given in the visible evidence)?",
+      "terms": [
+        "prefill",
+        "SpMM",
+        "Tensor-Core",
+        "Figure 12",
+        "cuBLAS baseline"
+      ]
+    }
+  ],
+  "document": {
+    "document_id": "350cb78eee153c4006f7eada",
+    "supplement_path": "workspace/runs/2026-08-09-193020-replay-pr27-33/documents/350cb78eee153c4006f7eada.supplement.md",
+    "text_path": "workspace/runs/2026-08-09-193020-replay-pr27-33/documents/350cb78eee153c4006f7eada.supplement.md",
+    "chunks": [
+      "workspace/runs/2026-08-09-193020-replay-pr27-33/documents/350cb78eee153c4006f7eada.supplement.md"
+    ],
+    "fetch_status": "FETCHED",
+    "evidence_char_count": 8953,
+    "source_raw_char_count": 86929,
+    "source_evidence_char_count": 17956,
+    "source_fingerprint": "fd9f27cf2f3dac8bd6d751adb84d8747",
+    "extractor_version": "front-evidence-v2:536942ab56394b5e:repair-776ccd47c8:balanced-evidence-v2",
+    "fact_cache_eligible": false
+  },
+  "constraints": {
+    "single_supplement_round": true,
+    "do_not_open_original_evidence_or_raw_fulltext": true
+  }
+}

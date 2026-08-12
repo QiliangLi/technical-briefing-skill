@@ -1,0 +1,61 @@
+{
+  "title": "ReMP: Low-Downtime Runtime Model-Parallelism Reconfiguration for LLM Serving",
+  "event_hint": "ReMP: a runtime model-parallelism (TP/PP) reconfiguration framework for LLM serving that switches topology in seconds without full service restart, preserving KV cache via two-dimensional migration; implemented on vLLM V1.",
+  "problem": "LLM serving systems treat TP/PP topology as a static pre-deployment config. Switching topology currently requires restarting the service, causing several minutes of service interruption, KV cache loss, and prohibitive recomputation overhead. This conflicts with dynamically changing workloads (real service token-usage traces vary substantially across the day), where different traffic regimes demand different optimal TP/PP configs.",
+  "mechanism": "ReMP decouples model-parallel topology from runtime state so weights, KV cache, workers, communication groups, and scheduler metadata are not permanently bound to a topology. Three techniques: (1) decoupling topology from runtime state to avoid full reconstruction; (2) a two-dimensional KV cache migration mechanism that preserves reusable cache states across TP/PP changes; (3) end-to-end online reconfiguration via shared-memory model reloading, prebuilt parallel-state snapshots, and worker reuse. For serving, ReMP probes representative TP/PP configs under current load and continues with the best-performing one.",
+  "evidence": [
+    {
+      "claim": "ReMP completes most topology switches within 1-7 seconds on models from 7B to 70B parameters, achieving speedups of tens to over a hundred times compared to the restart approach.",
+      "value": "1-7s; tens to >100x vs restart",
+      "baseline": "restart-based switching",
+      "condition": "abstract headline; H100 and RTX 5090 8-GPU platforms",
+      "source_locator": "Evidence locator: PDF Page 1 - Abstract"
+    },
+    {
+      "claim": "On H100 (8x NVIDIA H100): Llama2-7B switches in ~1-2s across transitions; Qwen3-30B-A3B and DeepSeek-R1-Distill-Qwen-32B switch in ~2-3s for most transitions; even Llama2-70B completes within several seconds (e.g., end-to-end switch times shown as ~3.9-7.4s depending on transition).",
+      "value": "~1-2s (7B); ~2-3s (30-32B); several s (70B)",
+      "baseline": "restart-based switching",
+      "condition": "8x H100 platform, per-transition end-to-end time",
+      "source_locator": "Evidence locator: PDF Page 9 - 4.2.1 End-to-end Reconfiguration Time"
+    },
+    {
+      "claim": "ReMP speedup over restart reaches tens to >100x; the end-to-end switching-time figure (H100) shows per-transition speedups in the ~30-110x range across Llama2-7B/70B, Qwen3-30B-A3B, DeepSeek-R1-Distill-Qwen-32B transitions.",
+      "value": "~30-110x (H100 figure)",
+      "baseline": "restart-based switching",
+      "condition": "H100 8-GPU platform, multiple model transitions",
+      "source_locator": "Evidence locator: PDF Page 10 - ReMP End-to-end Switching Time figure"
+    },
+    {
+      "claim": "Evaluation hardware: two 8-GPU platforms - (1) 8x NVIDIA H100, AMD EPYC 7R13, 2TB host memory; (2) 8x NVIDIA RTX 5090, Intel Xeon Gold 6530, 960GB host memory. Implemented on vLLM V1; Llama2-70B excluded on RTX 5090 due to GPU memory limits.",
+      "value": "8x H100; 8x RTX 5090; vLLM V1",
+      "baseline": null,
+      "condition": "experimental setup",
+      "source_locator": "Evidence locator: PDF Page 9 - 4.1 Experimental Setup"
+    },
+    {
+      "claim": "Models: Llama2-7B (dense, 32 layers, 32 KV heads), Llama2-70B (dense, 80 layers, 8 KV heads), DeepSeek-R1-Distill-Qwen-32B (dense, 64 layers, 8 KV heads), Qwen3-30B-A3B (MoE, 30.5B params / 3.3B active, 48 layers, 4 KV heads); workloads use BurstGPT-derived traces; baselines: restart-based (reconfig cost) and fixed TP/PP (serving performance).",
+      "value": "7B-70B dense + MoE; BurstGPT traces",
+      "baseline": "restart-based; fixed TP/PP configs",
+      "condition": "Table 2 model configs; BurstGPT traces",
+      "source_locator": "Evidence locator: PDF Page 10 - Table 2; PDF Page 9 - Workloads/Baselines"
+    }
+  ],
+  "evaluation_context": "Evaluated on two 8-GPU platforms (8x H100 / 2TB host; 8x RTX 5090 / 960GB host), implemented on vLLM V1. Models: Llama2-7B, Llama2-70B, DeepSeek-R1-Distill-Qwen-32B, Qwen3-30B-A3B (MoE). Workloads: BurstGPT-derived request traces replayed under different request pressure. Baselines: restart-based switching (reconfig cost) and fixed TP/PP configurations (serving performance). Metrics: switching time, speedup over restart, internal switching-time breakdown (model loading from shared weight store + KV cache transfer), and serving throughput/latency (TTFT, TPOT, output throughput).",
+  "limitations": "Visible evidence emphasizes reconfiguration-cost (switching time and speedup vs restart) with per-transition numbers; the detailed serving-performance figures (TTFT/TPOT/throughput improvements over fixed configs under dynamic load) are summarized in text but their exact numeric gains are in figures not fully exposed in the Evidence Pack. Cross-region/WAN migration is not the focus - the two-dimensional KV cache migration is across GPUs within an 8-GPU node during TP/PP reconfiguration, not across geographic regions. RTX 5090 platform results are mentioned as showing a similar trend but Llama2-70B is excluded there. Production deployment scale beyond the two test platforms is not reported.",
+  "project_relevance": "ReMP is primarily an LLM serving / model-parallelism reconfiguration contribution, with KV cache migration as an intra-node (cross-GPU) mechanism rather than cross-region WAN transfer. It is relevant to the cross-region topic only in the narrow sense of KV cache migration/preservation during topology changes; its main value is AI-infra serving adaptivity. For the project card it provides concrete reconfiguration-cost evidence (seconds, tens-to-100x vs restart) but does not address WAN RTT, cross-region hit rate, or P95 under geographic distribution.",
+  "primary_source_resolved": true,
+  "quality_score": 78,
+  "source_notes": [
+    "arXiv preprint 2606.18741v1 (17 Jun 2026), FETCHED primary source; authors from ICT CAS, Zhejiang Lab, Infinigence AI.",
+    "Implemented on vLLM V1; hardware 8x H100 and 8x RTX 5090; models Llama2-7B/70B, DeepSeek-R1-Distill-Qwen-32B, Qwen3-30B-A3B.",
+    "KV cache migration is intra-node (across GPUs) during TP/PP reconfiguration, not cross-region/WAN; serving-performance numeric gains are summarized but detailed figures are partly unexposed."
+  ],
+  "evidence_gaps": [],
+  "_provenance": {
+    "task_id": "d61a8a1a2fc21a110f9285be",
+    "candidate_id": "af3cc384547234ef81d1c0e8",
+    "source_title": "ReMP: Low-Downtime Runtime Model-Parallelism Reconfiguration for LLM Serving",
+    "source_url": "https://arxiv.org/abs/2606.18741v1",
+    "document_id": "27264d9ea6a52f2b4ae43441"
+  }
+}

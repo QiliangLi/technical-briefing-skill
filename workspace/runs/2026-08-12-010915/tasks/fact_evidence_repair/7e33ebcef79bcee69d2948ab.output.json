@@ -1,0 +1,75 @@
+{
+  "_task": {
+    "id": "7e33ebcef79bcee69d2948ab",
+    "type": "fact_evidence_repair",
+    "entity_id": "0c6c0888b4a1ecb2c94d0ece",
+    "input_digest": "82beabe8d59afc8c34d1cfa159afe761",
+    "contract_version": 2,
+    "prompt_digest": "9f785b85311247a90e04eff95dd02295",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/agent-acceleration.md": "6c8e3b6e3a330a5f68dd7c8d6933c545",
+      "workspace/runs/2026-08-12-010915/documents/11c34a3016e16415be59a46c.supplement.md": "cf30f4037d299f6d3c6219574821c25d"
+    },
+    "execution_envelope_digest": "720dfcc48b0eabc6cdb3a217bea86f08"
+  },
+  "title": "Deep Agentic Search for Repository-Level Code Question Answering: An Empirical Study",
+  "event_hint": "Empirical comparison of Semantic search (vector index + ReAct) vs Deep Agentic search (grep-search by isolated subagent) for repository-level code QA on SWE-QA across four LLMs; finds Semantic more accurate and cheaper, with a large failure share of Deep Agentic at the planner->subagent hand-off.",
+  "problem": "Code agents spend much of their effort locating the right code inside a repository, and two paradigms dominate current practice: Semantic search (retrieve code blocks from a pre-built vector index) and Deep Agentic search (a planning agent delegates exploration to a separate subagent working in an isolated context window, returning only a condensed result, to protect the main agent from context pollution/context rot). Recent code agents (Claude Code, Codex, Antigravity) have quickly adopted Deep Agentic search as 'good context engineering practice', but there was little empirical evidence on whether it actually produces better answers than indexed retrieval for repository-level code QA.",
+  "mechanism": "Two agent architectures compared on the SWE-QA benchmark (Peng et al., 2026a; open-ended What/Why/Where/How questions over whole Python repositories, 15 repos x 48 questions = 720 questions per condition; 12 repos drawn from SWE-bench and 3 from SWE-bench-Live). Semantic: a ReAct agent (LangChain SWE-QA Agent harness) restricted to three tools (repository structure lookup, retrieval over a vector index built once per repository by chunking and embedding files, and a file reader), with no shell/filesystem-write/planning tools. Deep Agentic: a Deep Agent (LangChain Deep Agents framework harness with default toolset including planning, a virtual filesystem, and sub-agent delegation), in which a planning orchestrator delegates exploration to an isolated sub-agent that returns a condensed result; orchestrator and sub-agent use the same model. Each question answered in a fresh conversation thread, only the targeted repository available, all execution traces recorded. Tool-space and orchestration differences are treated as constitutive of the paradigms (a paradigm-bundle comparison, not a single-factor ablation). Grading: LLM judge Claude Sonnet 4.6 (different provider/family from every answering model), five dimensions combined to a 0-100 score with three-class verdict (Pass >=70, Partial 50-69, Fail <50). Three RQs plus a six-mechanism/five-symptom failure taxonomy (two-author inter-rater Cohen's kappa 0.86 symptom / 0.78 mechanism).",
+  "evidence": [
+    {
+      "claim": "On SWE-QA (720 questions per condition, 15 Python repos), Semantic search answered 65.2% of questions correctly vs 46.2% for Deep Agentic search (pooled headline), and Semantic produced each correct answer at less than half the cost of Deep Agentic.",
+      "value": "65.2% vs 46.2% Pass; Semantic <half the $/correct of Deep Agentic",
+      "baseline": "Deep Agentic search",
+      "condition": "SWE-QA repository-level code QA, 720 questions/condition, 15 Python repos, four LLMs (Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3 Flash, Qwen3-235B), LLM judge Claude Sonnet 4.6 validated vs human panel",
+      "source_locator": "PDF Page 1 (Abstract); PDF Page 15 (Table 3 master comparison)"
+    },
+    {
+      "claim": "Per-model Pass-rate advantage for Semantic over Deep Agentic: +5.6pp (Gemini 2.5 Flash), +10.0pp (Gemini 2.5 Pro), +10.6pp (Qwen3-235B) and +49.6pp (Gemini 3 Flash); all four McNemar and all four Wilcoxon tests remained significant after FDR correction. Cliff's delta on score ~0.14 for the two Gemini 2.5 models, ~0.24 for Qwen3-235B, ~0.76 for Gemini 3 Flash.",
+      "value": "+5.6 / +10.0 / +10.6 / +49.6 pp Semantic advantage; all FDR-significant",
+      "baseline": "Deep Agentic search per model",
+      "condition": "paired within-model comparison, SWE-QA, four LLMs, McNemar + Wilcoxon with Benjamini-Hochberg FDR, bootstrap CIs, Cliff's delta",
+      "source_locator": "PDF Page 15 (Table 4, Fig. 7 narrative)"
+    },
+    {
+      "claim": "Deep Agentic search did not remove failures but introduced a new failure class: the single largest share of its failures, 41.8%, occurred at the planner-to-sub-agent hand-off (coordination breakdown), which is structurally impossible for the flat Semantic agent; the association between architecture and failure mechanism is very strong (chi-square 508.8 on 5 df, Cramer's V 0.56; excluding the Deep-only mechanism, chi-square 147.2 on 4 df, Cramer's V 0.35).",
+      "value": "41.8% of Deep failures at hand-off; chi-square 508.8 df5 V=0.56 (147.2 df4 V=0.35 excluding Deep-only)",
+      "baseline": "Semantic search failure distribution",
+      "condition": "failure taxonomy coded from recorded traces, SWE-QA, four LLMs",
+      "source_locator": "PDF Page 26 (Section 6.3 Failure distributions, Figure 19)"
+    },
+    {
+      "claim": "Memorization/leakage check (Section 8 External validity): splitting the 15 repos by provenance (12 SWE-bench vs 3 SWE-bench-Live), Semantic led on both subsets for every model, and the pooled advantage was somewhat larger on the three later SWE-bench-Live repos (15.9 vs 12.7 points), the opposite of what an advantage driven by memorization would predict; treated as a descriptive check, not a test.",
+      "value": "Semantic leads both subsets; pooled advantage 15.9pp (SWE-bench-Live) vs 12.7pp (SWE-bench), opposite to memorization prediction",
+      "baseline": "Deep Agentic search",
+      "condition": "provenance split of SWE-QA repos, paired within-model",
+      "source_locator": "PDF Page 32 (Section 8 External validity)"
+    },
+    {
+      "claim": "Judge validity: on a stratified sample of 800 answers (100 per condition), human-majority vs LLM-judge agreement was Cohen's kappa 0.74 (84.0% exact agreement) on the categorical verdict and Pearson r=0.83 / Spearman rho=0.81 / MAD 5.2 score points on the harmonized 0-100 score; human panel internal Fleiss' kappa 0.81; judge is a different provider/family from every answering model.",
+      "value": "human vs judge kappa 0.74 (84.0%); Pearson r=0.83; MAD 5.2; panel Fleiss' kappa 0.81",
+      "baseline": "independent human three-rater panel",
+      "condition": "stratified 800-answer sample, 100 per condition, three-class verdict + harmonized 0-100 score",
+      "source_locator": "PDF Page 15 (Table 2 Judge validity)"
+    }
+  ],
+  "evaluation_context": "Benchmark: SWE-QA (Peng et al., 2026a), repository-level code QA over 15 Python repositories (12 from SWE-bench + 3 from SWE-bench-Live), 48 questions each = 720 questions/condition, four interrogative categories (What/Why/Where/How) in roughly equal proportion; each question in a fresh thread with only the targeted repository available. Two architectures: ReAct + Semantic search (vector index over chunked files, three tools) vs Deep Agent + Deep Agentic search (planner + isolated sub-agent, default Deep Agents toolset; orchestrator and sub-agent use the same model). Four LLMs: Gemini 2.5 Flash (0.30/2.50 $/M in/out), Gemini 2.5 Pro (1.25/10.00), Gemini 3 Flash (0.50/3.00), Qwen3-235B (0.22/0.88); reasoning tokens billed at output rate. Grading: LLM judge Claude Sonnet 4.6 (different provider/family from all answering models), five dimensions -> 0-100 score, Pass>=70/Partial 50-69/Fail<50, validated vs independent three-rater human panel on 800 stratified answers. Failure taxonomy: six mechanisms/five symptoms, two-author inter-rater kappa 0.86/0.78.",
+  "limitations": "The two agent action spaces are intentionally not identical (tool and orchestration differences co-vary by design; the authors read this as a paradigm-bundle comparison, not a single-factor ablation, and did not run sensitivity across alternative deep-agent harnesses). SWE-QA targets read-only repository-level code QA over Python repositories that can be pre-indexed; the authors explicitly state in External Validity that findings may NOT transfer to other benchmarks, other models, or other (non-Python) languages, and they did not test write/patch (SWE-bench-style) tasks — Section 7 notes tasks that 'write and execute code' are precisely where heavier deep-agent orchestration may be justified. The repos are drawn from SWE-bench/SWE-bench-Live but the task is QA, not patching. The headline 65.2% vs 46.2% pools across four models of very different capability (Gemini 3 Flash alone shows a 49.6pp gap while the Gemini 2.5 pair shows ~5.6-10pp), so the pooled number overstates the typical gap. Cost columns exclude some token categories from displayed token counts (reasoning tokens billed but reported separately), so $/q is not derivable from shown token columns. The LLM judge has MAD 5.2 score points and lower agreement on Deep conditions. Latency was heavy-tailed and environment-sensitive, so no conclusion is based on it.",
+  "project_relevance": "Highly relevant and contrarian for the agent-acceleration card: it directly tests the now-popular Deep Agentic / grep-by-subagent design (adopted by Claude Code, Codex, Antigravity) against indexed Semantic retrieval on a real repo-QA benchmark and finds Semantic retrieval both more accurate and roughly half the cost per correct answer, with the Deep design introducing a new silent failure mode (41.8% of its failures at the planner->subagent hand-off, often ending in fluent confident wrong answers). Actionable for the project: for read-only repo questions that can be indexed, retrieval is the stronger and cheaper default, and the context-pollution protection of sub-agent delegation is not free; a hybrid that keeps a cheap semantic index and reserves delegated exploration for genuinely hard cases is suggested (future work). Important scope caveat (now explicit): the result is for QA over indexable Python repos only; the authors flag that write/patch tasks, non-Python repos, and non-indexable environments are where deep agents may be justified, so this complements rather than contradicts papers showing structural indices helping patch resolve.",
+  "primary_source_resolved": true,
+  "quality_score": 88,
+  "evidence_gaps": [
+    {
+      "question": "Do the accuracy/cost conclusions hold for write/patch (SWE-bench-style) tasks and for non-Python repositories, or only for read-only Python repo QA?",
+      "terms": [
+        "SWE-bench",
+        "patch",
+        "write",
+        "non-Python",
+        "Java",
+        "Go"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "_task": {
+    "id": "840d9e41b85653f992edcf37",
+    "type": "fact_extraction",
+    "entity_id": "46d66925dc71a877c7f56496",
+    "input_digest": "c2a13d65e6e7bfcc5f78b30c243ec309",
+    "contract_version": 2,
+    "prompt_digest": "7b9ccad8928dae8772ad4a6411ead813",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/ai-chip-accelerator.md": "1ce51c080e056a030d51699ea1a2b0aa",
+      "workspace/runs/2026-08-12-010915/documents/9ada48f91d67be0b532e3e05.evidence.md": "4b6d6bd50a62c462e021310ce82ee997"
+    },
+    "execution_envelope_digest": "c1a26d17d36923a1bd333d0de27a7f49"
+  },
+  "title": "MADAR: An Address-Free Processor",
+  "event_hint": "MADAR: a proposed address-free processor architecture that abolishes random-access storage and the program counter, replacing them with a single primitive (rotation): all state circulates in a compile-time-scheduled hierarchy of rings of increasing period, with fixed compute stations executing instructions when they sweep past their operands; validated only via a cycle-accurate RTL implementation and a first-order energy model, with no silicon or hardware measurements.",
+  "problem": "In a modern processor, computing (arithmetic) is the cheap part; most area and energy go to addressing — moving operands to/from a register file and cache, and running the tags, ports, miss queues, and bypass networks that find a value where it was left. A cited detailed energy measurement of a general-purpose processor running a video encoder reports functional units consumed under 6% of total energy, with >90% being overhead relative to the operations actually performed, and instruction supply alone roughly a third of core energy. The tension: the datapath streams operands through functional units, but the memory system forces every value to rest at a fixed address so it can be found again on demand, requiring register files with many ports, caches with tag arrays/MSHRs, memory arbiters, load-store queues, and operand-bypass networks.",
+  "mechanism": "MADAR replaces the von Neumann primitives (random-access store + program counter) with a single primitive: rotation. Four conjoined properties: (a) Circulating storage — the only storage is a set of rings R0..Rn, each a circular sequence of slots advancing one slot per clock, with geometrically increasing periods (representative values 16, 256, 4K, 64K slots); small fast rings are literal shift registers, large slow rings are single-port SRAM banks read/written through a rotating pointer (sequential, portless access with no address decode/tags/arbitration/multi-porting). (b) Co-circulating code and data — every slot holds one packet (64-bit payload + kind tag, or opcode + operand refs + destination + predicate); instructions and data ride in the same slots, distinguished only by a kind field. (c) Distributed collision execution — fixed compute stations (ALU, multiplier, steer, transfer, I/O) mounted at fixed ring positions; an instruction executes when it sweeps past a station of its class, with operands named by rotational offset within a window W=8 slots ahead; no queue, no scheduler, no dynamic matching, no scoreboard, no wakeup (arrival is the schedule). (d) Compiler-scheduled period hierarchy — a hierarchy of rings of increasing period replaces the cache hierarchy; transfer stations bridge adjacent rings (promoting/demoting values) on a compile-time schedule, doing by rotation what a cache does by tags, with no reactive misses. The constructive scheduler emits programs cross-checked against the cycle-accurate RTL. A rendezvous station (one comparator against one free-running phase counter) handles values the schedule cannot pre-place, at the cost of ~half a rotation of latency.",
+  "evidence": [
+    {
+      "claim": "Architecture validation method (abstract + Section 5/7): MADAR is validated in a cycle-accurate register-transfer-level (RTL) implementation (programs cross-checked against the implementation by a constructive scheduler) and priced with a FIRST-ORDER energy model. There is no silicon, no tape-out, no FPGA prototype, and no hardware benchmark; all performance/energy figures are model-derived, not measured.",
+      "value": "cycle-accurate RTL + first-order energy model; no silicon/measurements",
+      "baseline": "n/a (model/RTL self-validation)",
+      "condition": "representative working ring parameters (periods 16/256/4K/64K); no physical implementation",
+      "source_locator": "PDF Page 1 (Abstract); PDF Page 8 (Section 7 cost model, Threats to validity)"
+    },
+    {
+      "claim": "Motivating energy claim (cited prior measurement, Section 1): in a detailed energy measurement of a general-purpose processor running a video encoder, functional units consumed under 6% of total energy and >90% was overhead relative to the operations actually performed; instruction supply is roughly a third of core energy. This is the external motivation for deleting addressing machinery and supplying loop bodies for free (a parked loop body re-executes once per revolution with no fetch/decode/branch prediction).",
+      "value": "FU <6% of energy; >90% overhead; instruction supply ~1/3 of core energy",
+      "baseline": "conventional general-purpose processor (video encoder workload, cited [12])",
+      "condition": "cited prior detailed energy measurement, not a MADAR measurement",
+      "source_locator": "PDF Page 1 (Section 1 Introduction, citing [12])"
+    },
+    {
+      "claim": "Design-rationale deletions (Section 3): MADAR deletes (rather than optimizes) addressing machinery — no tags (slot identity is its phase), no arbitration (one packet per slot per cycle), a single sequential SRAM port swept by a rotating pointer (no random address decode, no port replication), no MSHRs (nothing requested reactively), and the W=8 operand window replaces the bypass network. Timing is exact (emitted schedule == executed schedule cycle-for-cycle), distinguishing it from statically scheduled VLIW whose bundles issue against a reactive register file/caches where a miss invalidates the schedule.",
+      "value": "deletes tags/arbitration/MSHRs/multi-ports/bypass-network; exact cycle-true scheduling vs VLIW reactive stalls",
+      "baseline": "conventional von Neumann core; statically scheduled VLIW",
+      "condition": "architectural mechanism description",
+      "source_locator": "PDF Page 4 (Section 3 Design Rationale)"
+    },
+    {
+      "claim": "Streaming AI inference case study (Section 8): the inference primitives (dot product, streaming inner product, matmul tile) were built, compiled, and validated against the cycle-accurate model and priced with the cost model. A flat reduction tree does not seat under the constructive scheduler (products scatter beyond the W=8 window); written as a sequential accumulation s_i = s_{i-1} + a_i*b_i the scheduler seats it with no relays. The win is real where the ring is sized to the work; operand reuse (the heart of matmul efficiency) routes through the period hierarchy; the MAC compiles to a streaming form whose energy per operation the authors claim stays flat as the reduction grows.",
+      "value": "sequential accumulation seats with no relays; flat reduction loses; MAC energy/op claimed flat as reduction grows",
+      "baseline": "flat reduction tree (does not seat)",
+      "condition": "MADAR cycle-accurate RTL + first-order cost model; matmul tile primitives",
+      "source_locator": "PDF Page 8 (Section 8 A Case Study: Streaming AI Inference)"
+    },
+    {
+      "claim": "Threats to validity (Section 7): the cost model is first-order — its gated rotation is an idealized clock-gate (counts slots whose contents change, not a measured flop-enable network); it prices a rotation by one per-word figure rather than a synthesized netlist; the baseline is a single published per-instruction number, not a matched implementation measured on the same flow. The authors state the figures are stand-ins and the result they rest on is the crossover (robust to exact magnitudes), not an absolute energy; a synthesis-based comparison of both machines through one flow is the evaluation this model motivates and does not replace.",
+      "value": "first-order model; idealized clock-gate; single per-word rotation price; single published baseline number; no synthesized netlist",
+      "baseline": "single published per-instruction energy number (not matched)",
+      "condition": "first-order energy model self-assessment",
+      "source_locator": "PDF Page 8 (Section 7 Threats to validity)"
+    }
+  ],
+  "evaluation_context": "Implementation: cycle-accurate register-transfer-level (RTL) model of the MADAR execution engine, with a constructive scheduler that emits programs cross-checked against the RTL. Pricing: a first-order energy model (idealized gated rotation counting changed slots; one per-word rotation price; no synthesized netlist; baseline is a single published per-instruction energy number, not a matched implementation). Representative ring parameters: periods 16/256/4K/64K slots; operand window W=8; packet = 64-bit payload + 2-bit kind + 3-bit opcode + 4-bit src_a/src_b/dst. Case study: dot product, streaming inner product, matmul tile compiled and validated against the cycle-accurate model and priced with the cost model. External motivation: a cited detailed energy measurement of a conventional GP processor running a video encoder (FU <6%, >90% overhead, instruction supply ~1/3 of core energy). No silicon, tape-out, FPGA, or hardware benchmark; no comparison against a matched synthesized baseline of a conventional machine.",
+  "limitations": "This is an architecture proposal with NO physical implementation: no silicon, no tape-out, no FPGA prototype, no hardware measurements. All performance and energy properties are model-derived (cycle-accurate RTL + first-order energy model). The authors explicitly state the energy figures are stand-ins and the robust result is the crossover (not absolute energy); the baseline is a single published per-instruction number rather than a matched implementation measured on the same flow, and a synthesis-based comparison is the evaluation this model motivates and does NOT replace. The AI-inference case study covers only micro-primitives (dot product, inner product, matmul tile), not full models, real workloads, or end-to-end throughput/latency against a real accelerator. The W=8 operand window is a hard reach limit: producers and consumers more than 8 slots apart require compiler-emitted XFER relay chains that occupy slots, so long-range dependences trade against ring capacity (a chain of 24 at 72 packets no longer fits a 64-slot ring); dense kernels may fail to fit. The architecture is suited only to computations whose data movement is known before the program runs (Section 9 bound); data-dependent/control-flow-heavy workloads are out of scope. No HBM/HBF/interconnect/package data; no TOPS/TFLOPS/W or bandwidth numbers; no process node or area estimate. Single-author affiliation (Illumina, a genomics company, not an AI-chip vendor).",
+  "project_relevance": "Tangentially relevant to the AI-chip-accelerator card: MADAR proposes a genuinely novel architectural mechanism (abolish addresses; all state circulates in compile-time-scheduled rings; distributed collision execution; period hierarchy replaces caches) whose stated payoff is clearest for AI acceleration (MAC compiles to a streaming form with claimed flat energy-per-op as reduction grows; operand reuse routes through the period hierarchy). It addresses the card's question of which bottleneck is targeted: it explicitly targets the data-movement/addressing overhead rather than peak TOPS/TFLOPS. However, it fails the card's primary evidence bar on every dimension: no silicon, no pre-silicon validation against a matched synthesized baseline, no measured throughput/latency/energy-per-op/W, no HBM/interconnect/package data, and the authors themselves state the energy figures are stand-ins and a synthesis-based comparison is the missing evaluation. For the project this is an idea-stage design point worth noting for its mechanism (rotation as memory hierarchy, exact scheduling without reactive memory), not a deployable or benchmarkable AI accelerator result.",
+  "primary_source_resolved": true,
+  "quality_score": 48,
+  "evidence_gaps": [
+    {
+      "question": "Are there any absolute energy-per-operation (pJ/MAC), throughput (TOPS or MACs/s), area, or process-node numbers for MADAR beyond the first-order model, and what is the matched synthesized baseline used for the crossover claim?",
+      "terms": [
+        "energy per operation",
+        "pJ",
+        "TOPS",
+        "synthesized netlist",
+        "crossover",
+        "process node",
+        "area"
+      ]
+    }
+  ]
+}

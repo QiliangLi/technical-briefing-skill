@@ -1,0 +1,82 @@
+{
+  "_task": {
+    "id": "9c5b2700514253480c8a25a2",
+    "type": "fact_evidence_repair",
+    "entity_id": "1b5f6d48893635b3b6e50cea",
+    "input_digest": "ccf32a0f7e621b1e425cf54527a55142",
+    "contract_version": 2,
+    "prompt_digest": "776ccd47c80b2bde3d197a92486966bc",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/ai-infra-horizontal.md": "f0cbf7b19e7688a07f07868cfd3ba38c",
+      "workspace/runs/2026-08-09-193020-replay-pr27-33/documents/f14230896ecca02fa1091158.supplement.md": "25c33d82fa94e01bb4b47ebe035c616e"
+    },
+    "execution_envelope_digest": "9f01f11798e81e5b6ba2ed9fafbac415"
+  },
+  "title": "KAP: Bridging the Knowledge Selection-Runtime Consumption Gap in LLM Systems",
+  "event_hint": "QiYuanLab paper (arXiv:2607.24260v1, 2026-07-27) proposes Knowledge Access Planning (KAP), a serving-time IR that compiles structured knowledge priors into physical KV-access policies, instantiated as the GraphSpec compiler-executor on vLLM.",
+  "problem": "Knowledge-augmented LLM systems (RAG, GraphRAG, HippoRAG) produce rich structured priors (ranked evidence, graph topology, confidence), but prompt serialization collapses these into a flat token stream, forcing the serving backend to densely consume the full key-value (KV) state during decoding. The authors name this the Knowledge Selection-Runtime Consumption (KSRC) gap: richer contexts enlarge the KV footprint and decode-time memory traffic, raising latency and hurting throughput even when reasoning depends on a small fraction of the context.",
+  "mechanism": "KAP elevates structured knowledge priors from prompt-construction hints into first-class physical execution artifacts via a universal intermediate representation-the runtime access plan-that compiles knowledge signals to govern physical KV access without altering logical prompt semantics, model weights, or training. It is instantiated as GraphSpec: a compiler-executor pairing a Graph-RAG knowledge-selection frontend with a vLLM serving backend. Algorithm 1 (PDF Page 7) formalizes compilation: GroundEvidence -> AlignTokenSpans -> SelectEvidenceUnderBudget -> ResolveSelectedKVObjects -> PreserveLogicalPositions -> AssignCompactSlots -> BuildBlockTable/SlotMapping -> BuildSelectedKVView -> EmitRuntimeAccessPlan. The materialization reorganizes only physical KV placement over vLLM's paged-KV cache; original logical positions are preserved through the visibility mask, prompt-length metadata, block tables, and slot mappings consumed by the attention backend, so proposal and verifier logits stay aligned. The executor runs sparse self-speculative decoding with full-context verification using the SAME base model for proposal and verification (k=6 speculative tokens, q_prop=1 decode-like forward pass per proposal step); only the prompt-side KV objects exposed to attention are restricted by the selected-KV view. A phase-boundary cost model characterizes the positive-speedup regime via the margin h-s between proposal acceptance rate (h) and retained-KV ratio (s).",
+  "evidence": [
+    {
+      "claim": "GraphSpec reduces proposal-visible KV access from 40.1% of source KV at 4K down to 5.5% at 128K, with decode throughput (TPS) speedup rising from 1.08x to 1.19x over full-context vLLM as context grows.",
+      "value": "KV/source 5.5% at 128K (10.8% at 64K); TPS speedup 1.08x-1.19x",
+      "baseline": "Full-context decoding on vLLM (TPS 41.10 at 128K)",
+      "condition": "GraphSpec TPS 48.80 at 128K; long-context QA workload (SPIQA), 4K-128K; Qwen3-VL-32B-Instruct, 4xA800-80GB TP=4 bf16, vLLM v0.16.0, k=6 spec tokens; Graph-RAG priors frozen pre-benchmark; frontend retrieval excluded from TTFT",
+      "source_locator": "Table 2 (RQ1), PDF Page 13"
+    },
+    {
+      "claim": "Answer quality is preserved: pass-rate difference vs full-context is at most 0.3 percentage points at five of six lengths, and 1.9 points higher at 64K (87.9% vs 86.0%); average similarity stays closely matched (e.g., 0.748 vs 0.741 at 64K).",
+      "value": "GraphSpec pass 87.9% vs 86.0% full-context at 64K; <=0.3pp gap elsewhere",
+      "baseline": "Full-context decoding (same LLM-as-judge similarity metric, 0.5 threshold)",
+      "condition": "4K-128K context sweep on SPIQA; Qwen3-VL-32B-Instruct; pass rate = fraction with weighted LLM similarity >= 0.5",
+      "source_locator": "Table 3 (RQ2), PDF Page 13"
+    },
+    {
+      "claim": "The runtime access plan, not evidence selection alone, drives the gain: materializing the same selected evidence as a 0.95K-token prompt (Physical concat) drops pass rate to 73.9% vs 87.9% for GraphSpec at 64K, while Random concat and Local window fall to 49.7% and 47.1%.",
+      "value": "Physical concat 73.9% vs GraphSpec 87.9% pass at 64K",
+      "baseline": "GraphSpec (full logical prompt preserved) vs Physical/Random/Local concat on vLLM",
+      "condition": "64K contexts on SPIQA; Qwen3-VL-32B-Instruct; GraphSpec accessed KV/source 10.8%, TPS 51.70 vs full-context 45.68",
+      "source_locator": "Table 4 (RQ3 ablation), PDF Page 14"
+    },
+    {
+      "claim": "Empirical speedup tracks the phase-boundary prediction: retained ratio s falls from 0.401 to 0.055 across 4K-128K while acceptance h stays high (~0.95+), so the margin h-s rises from 0.557 to 0.897 alongside measured speedup rising 1.08x to 1.19x.",
+      "value": "h-s margin 0.557 -> 0.897; speedup 1.08x -> 1.19x",
+      "baseline": "Phase-boundary cost model (directional implication, not refit to measurements)",
+      "condition": "4K-128K contexts on SPIQA; Qwen3-VL-32B-Instruct; h = Top-3 tolerant proposal acceptance rate",
+      "source_locator": "Table 5 (RQ4), PDF Page 14"
+    },
+    {
+      "claim": "The LLM-as-judge pass criterion was independently audited: on 100 SPIQA samples, thresholded judge decisions agreed with majority-vote human labels on 95%; evidence recalls were answer 68.8%, rationale 66.8%, caption 76.8%.",
+      "value": "95% judge-human agreement on 100 SPIQA samples",
+      "baseline": "Three independent human annotators, blinded to LLM scores, majority vote",
+      "condition": "0.5 threshold fixed before audit; token-level/ROUGE-1 coverage of gold evidence; Qwen3-VL-32B-Instruct",
+      "source_locator": "Table 1, PDF Page 12"
+    }
+  ],
+  "evaluation_context": "Section 5.1 setup (PDF Page 11): target model is Qwen3-VL-32B-Instruct (32B multimodal backbone); GraphSpec is implemented by extending VLLM v0.16.0. Hardware: four NVIDIA A800 80GB GPUs, tensor parallelism 4, bfloat16 execution; serving engine configured for the 4K-128K context sweep. GraphSpec uses the same base model for proposal and verification with k=6 speculative tokens (q_prop=1 per proposal step), i.e. sparse self-speculative decoding with full-context verification. Dataset: SPIQA, a multimodal QA benchmark grounded in figures, tables, and text from scientific papers, used for the FULL 4K-128K sweep (not only the 100-sample audit). Context-length control is a nested sweep: per query the answer and core supporting evidence are fixed and query-specific hard negatives are appended to build 4K/8K/16K/32K/64K/128K prompts; the distractor list is fixed across lengths. The full-context baseline, GraphSpec, and prompt-materialization baselines (Physical/Random/Local concat) share identical model weights, tokenizer, decoding config, software stack, and hardware. Graph-RAG priors frozen before benchmarking so frontend retrieval is excluded from TTFT; TTFT measured from frozen-request submission to first token and for GraphSpec includes runtime-access-plan compilation and selected-KV materialization; throughput covers the full executor path (not isolated model-forward). Quality via LLM-as-judge similarity in [0,1] with pass threshold 0.5. Audit dataset SPIQA. The supplement does NOT state batch size or request concurrency for the TPS/TTFT tables.",
+  "limitations": "Validates KAP through a single concrete instantiation (Graph-RAG frontend + vLLM v0.16.0 backend on Qwen3-VL-32B-Instruct, 4xA800-80GB TP=4 bf16); does not exhaust the broader design space. Results are strongest for long-context multimodal QA where graph-derived priors can be grounded in evidence spans and realized as backend runtime objects; effectiveness depends on prior quality, the compiler's translation, and backend execution without excessive metadata/scheduling/synchronization overhead. Gains are decode-throughput-only: GraphSpec TTFT is slightly higher than full-context at most lengths (e.g., 0.87s vs 0.65s at 8K, 1.56s vs 1.51s at 4K) due to plan-compilation overhead, only turning slightly favorable at 128K (37.90s vs 38.31s). The batch size and request concurrency used for the Tables 2-5 TPS/TTFT measurements remain unreported, so absolute throughput numbers cannot be re-scaled to other serving configurations.",
+  "project_relevance": "Falls in the serving/runtime/compiler direction: a serving-time IR and compiler-executor for plan-driven KV access, complementary to RAG serving cache-reuse work (RAGCache, CacheBlend, TurboRAG, RAGO) which targets prefill/scheduling/cache reuse rather than decode-time KV consumption. For our briefing it is a horizontal observation with measured but modest decode-throughput gains (1.08-1.19x) and a quality-preserving KV-reduction trajectory; deployability beyond Graph-RAG-style long-context QA is unproven.",
+  "primary_source_resolved": true,
+  "quality_score": 86,
+  "source_notes": [
+    "Primary source is arXiv:2607.24260v1 (FETCHED, raw_fulltext_cache_hit=true); evidence pack spans abstract/intro (p1), metrics+audit (p12), RQ1/RQ2 tables (p13), RQ3/RQ4 ablation+phase-boundary (p14), related work (p15), limitations+conclusion (p16).",
+    "GraphSpec speedups are decode-throughput (TPS); TTFT is generally not improved (plan-compilation overhead), an important boundary visible in Table 2.",
+    "Phase-boundary model is validated only directionally (not refit), per the authors' RQ4 design.",
+    "Repair supplement (PDF Pages 6, 7, 11) identified the previously-unknown setup: backbone Qwen3-VL-32B-Instruct; SPIQA used for the full 4K-128K nested sweep; hardware 4xA800-80GB TP=4 bf16; vLLM v0.16.0; k=6 speculative tokens (q_prop=1); plus Algorithm 1 and the selected-KV-view materialization detail. Batch size / request concurrency remain unreported."
+  ],
+  "evidence_gaps": [
+    {
+      "question": "What GPU hardware, batch size, and request concurrency were used for the vLLM/GraphSpec throughput (TPS) and TTFT measurements, since these materially determine the absolute and relative numbers?",
+      "terms": [
+        "GPU",
+        "A100",
+        "H100",
+        "batch size",
+        "concurrency",
+        "vLLM",
+        "hardware setup"
+      ]
+    }
+  ]
+}

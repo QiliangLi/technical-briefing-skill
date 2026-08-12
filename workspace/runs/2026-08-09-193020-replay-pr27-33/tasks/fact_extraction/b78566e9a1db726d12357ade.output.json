@@ -1,0 +1,65 @@
+{
+  "_task": {
+    "id": "b78566e9a1db726d12357ade",
+    "type": "fact_extraction",
+    "entity_id": "4614600f28ae7992dc7cb784",
+    "input_digest": "5a87715843d04b32d96b0847c91356a3",
+    "contract_version": 2,
+    "prompt_digest": "5eb65f47c4f214f2139030f1cda285bb",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/agent-acceleration.md": "6c8e3b6e3a330a5f68dd7c8d6933c545",
+      "workspace/runs/2026-08-09-193020-replay-pr27-33/documents/d1740538b8469e2955cb1211.evidence.md": "476980aa33683d527a0c34c1fcf507a7"
+    },
+    "execution_envelope_digest": "b4e7da7fea06fb4f537501ee1b71c717"
+  },
+  "title": "Code Isn't Memory: A Structural Codebase Index Inside a Coding Agent",
+  "event_hint": "arXiv paper (SuperAGI Research) giving the first leak-audited, model-controlled causal ablation of a structural codebase index (semantic+lexical+call-graph) inside the open-source SuperCoder coding-agent harness, versus the same harness without it and an agentic-grep (OpenCode) comparator.",
+  "problem": "Coding agents interleave LLMs with repository retrieval, but retrieval implementations vary widely across harnesses and there is no clean causal answer to whether adding a structural codebase index changes cost or resolve. Prior work either compares whole harnesses (confounding retrieval with prompt, tool surface, and control loop) or evaluates retrieval components in isolation on acc@k without the downstream agentic loop that turns ranking into a fix.",
+  "mechanism": "Three arms run on the same instance set with the model held fixed (Claude Opus 4.7): SC-ON (SuperCoder harness with context-engine tools codebase_search and codebase_graph available), SC-OFF (same harness, same prompts, with exactly those two engine tools removed), and OpenCode (an independent harness whose retrieval is ripgrep + file reads, no structural index). The within-harness SC-ON vs SC-OFF toggle isolates the index causally. Localization is scored under 'View B' (agent-targeted), which strips paths whose only provenance is an engine result list so that SC-ON acc@k counts the same agent-targeted surface as a grep arm; the rule is a strict no-op for SC-OFF/OpenCode (Algorithm 1, §4.7).",
+  "evidence": [
+    {
+      "claim": "Within-harness ablation: View B acc@5 localization moves from 44.3% (SC-OFF) to 84.5% (SC-ON), paired Wilcoxon p < 0.0001.",
+      "value": "44.3% -> 84.5% acc@5",
+      "baseline": "SC-OFF (same harness, engine tools removed) 44.3%",
+      "condition": "SuperCoder harness, Claude Opus 4.7, 3 seeds, View B localization, SWE-PolyBench Verified + SWE-bench Pro; pairwise n=80 (SC-ON vs SC-OFF)",
+      "source_locator": "§7 Discussion, PDF Page 9"
+    },
+    {
+      "claim": "Within-harness ablation: resolve moves from 41.9% (SC-OFF) to 50.4% (SC-ON), paired p = 0.003; per-cell mean cost is statistically null (p = 0.73) while turns and tokens both fall significantly.",
+      "value": "41.9% -> 50.4% resolve; cost p = 0.73",
+      "baseline": "SC-OFF resolve 41.9%, $/cell null",
+      "condition": "same harness/model/seeds; resolve = F2P pass and P2P pass per upstream benchmark scorers",
+      "source_locator": "§7 Discussion, PDF Page 9"
+    },
+    {
+      "claim": "Cross-harness check vs agentic-grep: SC-ON vs OpenCode on resolve (p = 0.087) and View B acc@5 (p = 0.080) is directional in SC-ON's favor but NOT conventionally significant (marginal). The within-harness ablation is the cleaner read.",
+      "value": "resolve p = 0.087; acc@5 p = 0.080",
+      "baseline": "OpenCode (independent ripgrep-based harness)",
+      "condition": "3 seeds, pairwise n=78 (SC-ON vs OpenCode); across-seed SD 0.7-3.3 pp on resolve and acc@5, ablation effects exceed noise by 3-10x",
+      "source_locator": "§7 Discussion / 'What we do not claim', PDF Page 9"
+    },
+    {
+      "claim": "Cost/effort: per-cell mean cost is statistically null while turns and tokens both fall significantly; across seeds the index lands at a lower $/solved than agentic grep (no cost penalty per cell, lower cost per solve).",
+      "value": "lower $/solved than agentic grep; $/cell null",
+      "baseline": "agentic grep (OpenCode); SC-OFF $/cell",
+      "condition": "unified provider gateway captured token-level cost on every LLM call, same accounting across arms",
+      "source_locator": "Abstract + §7 Discussion, PDF Pages 1 & 9"
+    }
+  ],
+  "evaluation_context": "Model fixed throughout: Claude Opus 4.7 (claude-opus-4-7), 3 seeds, pass@1 per seed; stats reported as mean of seed means with across-seed SD. Benchmarks: SWE-PolyBench Verified (Go, Java, Python) + SWE-bench Pro (long-context Python). Run scope: 91 instances (34 Go, 20 Java, 37 Python); JS/TS not covered. Paired-n: triple-intersection n=75; pairwise n=80 (SC-ON vs SC-OFF), n=78 (SC-ON vs OpenCode). 30-minute wall-clock cap, no turn/dollar cap; cap fired on two cells (one SC-OFF, one OpenCode); SC-ON's longest legit cell ran 19 min. Per-task isolated container, uniform image across arms, leak-audited sandbox; released artifacts include per-cell exclusion ledger, leak-audit script, dual-view localization extractor, and full results DB (per-cell patches/traces/prompts held back due to licensed source + internal config).",
+  "limitations": "Single-model study (only Claude Opus 4.7) — intentional control trade, acknowledged as a limitation. Closed-source harnesses (Claude Code, Cursor, Windsurf) out of scope by design. JavaScript/TypeScript not covered. The cross-harness SC-ON vs OpenCode result on resolve (p=0.087) and acc@5 (p=0.080) is marginal, NOT conventionally significant — the within-harness ablation is the cleaner read. The substantive benefit is conditional: the deployment question is whether the workload includes multi-file changes where structural ranking pays off, not whether the index is too expensive to run. Does not address the phrasing-ecological-validity threat (Garg et al. >50% capability overestimation).",
+  "project_relevance": "Directly on the Agent-semantic-acceleration card: it causally tests whether a structural codebase index reduces repeated search/read effort and improves task success, and reports exactly the card's valuable evidence — tool-call count (turns), token consumption, resolve rate, and $/solved. The finding that turns and tokens both fall significantly while per-cell cost stays null and $/solved drops is concrete evidence that the index cuts repeated Read/Grep-style exploration, answering the card's core question. The marginal cross-harness result and single-model scope are the boundary the briefing must flag before generalizing.",
+  "primary_source_resolved": true,
+  "quality_score": 86,
+  "source_notes": [
+    "Source: arXiv 2606.22417v1, SuperAGI Research (Ishaan Bhola, Adithyan Krishnan, Sravanth Kurmala, Mukunda NS), fetch_status=FETCHED, raw_fulltext_cache_hit=true.",
+    "Evidence Pack spans PDF Pages 1, 2, 4, 5, 9: abstract, intro, related work, experimental design (arms/model/benchmarks/sandbox/metrics/localization views), and the §7 Discussion with the headline ablation numbers and explicit 'what we do not claim' caveats."
+  ],
+  "evidence_gaps": [
+    {
+      "question": "What are the per-arm turns, tokens, and $/solved magnitudes? §7 states they fall significantly, but the §6 per-arm tables are not in the visible Evidence Pack.",
+      "terms": ["turns", "tokens", "$/solved", "$/cell", "Section 6", "Table", "per-cell cost", "effort"]
+    }
+  ]
+}

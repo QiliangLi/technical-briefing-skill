@@ -1,0 +1,57 @@
+{
+  "title": "CodeGrep: An RL-Trained Retrieval Agent for LLM Coding Agents",
+  "event_hint": "CodeGrep: a 14B agent-style code retriever trained end-to-end with GRPO and injected into a frozen OpenHands agent on SWE-Bench Verified to cut exploration rounds and tokens.",
+  "problem": "Modern LLM coding agents (Claude Code, OpenHands) spend most of their token budget finding the file to patch rather than writing the patch. A 30B OpenHands agent on SWE-Bench Verified averages 23 rounds and 631K tokens per resolved issue, dominated by grep, glob and view_file calls in ambiguous exploration loops, often 20+ rounds in a wrong direction before giving up. Whether a specialized retrieval submodule can shorten this exploration phase (H2: same issues resolved with shorter rollout) without hurting resolve (H1: better retrieval raises resolve) had not been jointly tested in the open.",
+  "mechanism": "CodeGrep is a 14B retriever built on Qwen3-14B-Instruct, trained end-to-end with GRPO (on ms-swift, LoRA + optimizer offload + vLLM-colocated rollout on a single 8xB200 node, ~27h wall-clock, early-stopped at step 897 of 2000). It exposes three read-only primitives (grep regex search, glob path matching, read file contents) and emits up to 8 parallel tool calls per turn executed concurrently inside a Git-worktree RL environment, capped at 4 turns (3 exploration + 1 answer), max 32 tool execs per rollout. Supervision is mined from 67K open-source OpenHands trajectories via CATM (one-to-many attribution), giving 31,977 effective training samples (47.7% retention) judged by GLM-5.1-FP8 (16-way parallel, ~5h). At inference, CodeGrep takes the issue description, emits a candidate-file list injected into the prompt of a frozen downstream OpenHands agent (Qwen3-30B-A3B-Instruct-2507) — only the retriever is trained, so downstream effects attribute cleanly. Reward-design study v1->v2->v3 shows moving the efficiency signal from the reward layer to the advantage layer holds KL drift to ~0.09-0.15 vs v1's ~0.31, and v3 drops an auxiliary line-range term absent from the downstream editor.",
+  "evidence": [
+    {
+      "claim": "Injected into a frozen OpenHands agent on all 500 SWE-Bench Verified instances, CodeGrep v3 lifts resolve rate by +1.2pp (25.8% -> 27.0%) while cutting resolved rounds 23.0 -> 19.6 (-15%) and resolved tokens 631K -> 514K (-19%); on unresolved instances it also lowers rounds from 32.0 to 27.5.",
+      "value": "+1.2pp resolve (25.8%->27.0%); -15% resolved rounds; -19% resolved tokens; unresolved rounds 32.0->27.5",
+      "baseline": "no-retrieval baseline (OpenHands Qwen3-30B-A3B, 25.8% resolve at 23.0 resolved rounds / 631K resolved tokens / 32.0 unresolved rounds)",
+      "condition": "SWE-Bench Verified, 500 instances, frozen OpenHands + Qwen3-30B-A3B-Instruct-2507 at temp 0, 100-round max",
+      "source_locator": "PDF Page 7 (Section 4.3 Table 3, full efficiency columns incl. Unresolved r.)"
+    },
+    {
+      "claim": "Section 5.3 pooled-vs-paired control: the Table 3 efficiency numbers are pooled over each config's own resolved set (baseline 129, v3 135 instances), mixing a genuine efficiency effect with a selection effect. Restricted to the 96 instances both configurations resolve, rounds fall 20.1 -> 18.3 (-9%) and tokens 525K -> 448K (-15%), preserving 60-80% of the pooled effect and confirming the improvement as per-issue acceleration rather than only a selection artifact.",
+      "value": "paired-instance: -9% rounds (20.1->18.3); -15% tokens (525K->448K); 60-80% of pooled effect retained",
+      "baseline": "no-retrieval baseline on the 96 paired-resolved instances",
+      "condition": "96 instances resolved by both baseline and CodeGrep v3",
+      "source_locator": "PDF Page 8 (Section 5.3 Pooled vs. paired-instance efficiency)"
+    },
+    {
+      "claim": "Across three retrievers, downstream utility follows a precision threshold with three regimes: BM25 at file-precision 0.375 degrades the agent (resolve 25.2%, resolved tokens 763K, +21% vs baseline); Jina-1.5B at precision 0.445 is neutral (resolve 25.8%, resolved tokens 587K, -7%); CodeGrep at precision 0.677 crosses the threshold. The neutral-to-net-positive transition lies between precision 0.45 and 0.68.",
+      "value": "BM25 0.375 hurts; Jina 0.445 neutral; CodeGrep 0.677 buys efficiency; transition in (0.45, 0.68)",
+      "baseline": "no-retrieval baseline",
+      "condition": "SWE-Bench Verified, frozen OpenHands agent; file-precision on internal eval set",
+      "source_locator": "PDF Page 7 (Section 5.1 precision threshold, Takeaway; Table 3)"
+    },
+    {
+      "claim": "Reward-design study: applying the tool-call efficiency signal at the advantage layer (v2/v3) instead of multiplicative reward-layer scaling (v1) reduces KL-to-reference drift from ~0.31 to ~0.09/0.15; v3 stabilizes average rollout turns at ~2.1 (from v1's ~3.8, 1.65x). v1 matches v3's 27.0% resolve but delivers only -1.3% rounds / -0.6% tokens vs baseline, whereas v3 delivers -15% / -19%.",
+      "value": "KL 0.31 -> 0.09/0.15; v1 inference 3.8 turns vs v3 2.3; v1 -1.3% rounds/-0.6% tokens vs v3 -15%/-19%",
+      "baseline": "v1 reward-layer scaling",
+      "condition": "GRPO training of CodeGrep, ~900-step run",
+      "source_locator": "PDF Page 7 (Section 5.2 Reward iterations: three failure modes)"
+    },
+    {
+      "claim": "Action-level case study (django-15278): without a retrieval hint the frozen agent stalls after 74 actions and 3.2M tokens with no passing patch; with CodeGrep injection the same agent succeeds in 15 actions and 307K tokens (~10x fewer tokens), locating the fix in related.py. CodeGrep does not supply the fix — it compresses the exploratory prefix the agent otherwise burns on repo-wide find/grep sweeps for issue-prose tokens absent from the codebase.",
+      "value": "74 actions / 3.2M tokens (stall) -> 15 actions / 307K tokens (pass); ~10x token reduction",
+      "baseline": "no-retrieval baseline on django-15278",
+      "condition": "single representative issue, frozen OpenHands + Qwen3-30B-A3B, action-level trace",
+      "source_locator": "PDF Page 8 (Section 6 Case Study: Where the Token Savings Come From)"
+    }
+  ],
+  "evaluation_context": "Benchmark: SWE-Bench Verified (500 instances). Downstream agent: OpenHands with Qwen3-30B-A3B-Instruct-2507 at temperature 0, 100-round max, frozen. Baseline reproduces public reference: 25.8% resolve at 23.0 resolved rounds / 631K resolved tokens / 32.0 unresolved rounds (within 1 SD of publicly reported 25.2 +/- 0.7%). Six configs compared: baseline, BM25, Jina-1.5B, CodeGrep v1/v2/v3 (Table 3 reports Resolve, Resolved r., Resolved tok., Unresolved r.). Training: GRPO on ms-swift, LoRA + optimizer offload + vLLM-colocated rollout, single 8xB200 node, ~27h wall-clock, early-stop step 897 of planned 2000. RL environment: Git-worktree per rollout, max 8 parallel tools per turn, max 32 tool execs per rollout. Data: 67,074 raw trajectories -> 31,977 effective training samples (47.7% retention) judged by GLM-5.1-FP8. Efficiency accounting: Table 3 columns are pooled over each config's own resolved/unresolved set; paired-instance control (n=96) in Section 5.3.",
+  "limitations": "Resolve-rate lift is small (+1.2pp, 25.8%->27.0%) and CodeGrep v1 reaches the same 27.0% resolve without the efficiency gain, so the resolve contribution is not clearly attributable to v3 specifically; v3's marginal quality gain over v2 (median F-beta +28%) yields only +0.4pp resolve, the rest absorbed as rollout compression — consistent with file localization not being the binding bottleneck on resolve rate. Training is single-node, early-stopped at step 897 of a 2000-step budget, so full-budget behavior is unknown. Downstream utility is characterized only for OpenHands + Qwen3-30B-A3B; the precision-threshold transferability to other downstream agents is explicitly left open (Section 7). Closed commercial comparator Cognition SWE-grep has an undisclosed reward formulation (Table 6 marks components n/s), so component-level comparison is partial. Model release is promised ('we will release') but not yet public at paper time. Section 5.3 confirms the pooled efficiency numbers mix a selection effect with a genuine effect, but the paired-instance control (-9% rounds / -15% tokens on 96 shared-resolve instances) preserves 60-80% of the pooled magnitude, so the dividend is real per-issue acceleration, not only selection.",
+  "project_relevance": "Directly on-topic for the agent-acceleration card's central question of reducing repeated Read/Grep/Glob and shortening the exploration phase: CodeGrep is a concrete, open, RL-trained retrieval submodule that delivers a measured -15% resolved rounds / -19% resolved tokens efficiency dividend on a real SWE-Bench Verified workload while preserving resolve, confirmed as per-issue acceleration (not only a selection artifact) by the paired-instance control in Section 5.3. The action-level case study (74 actions/3.2M tokens -> 15 actions/307K tokens) pinpoints the token savings to the exploratory prefix of repo-wide find/grep sweeps. The precision-threshold characterization (BM25 0.375 hurts, Jina 0.445 neutral, CodeGrep 0.677 buys efficiency; transition in 0.45-0.68) is project-actionable: it gives a concrete precision bar a code retriever must clear before it reduces rollout cost, and warns that naive lexical retrieval actively harms efficiency. The advantage-layer vs reward-layer RL finding is a reusable design rule for training future tool-using retrieval agents.",
+  "primary_source_resolved": true,
+  "quality_score": 90,
+  "evidence_gaps": [],
+  "_provenance": {
+    "task_id": "718232276b616bd460e0f60b",
+    "candidate_id": "626098bfa2a4e6661e10ed7c",
+    "source_title": "CodeGrep: An RL-Trained Retrieval Agent for LLM Coding Agents",
+    "source_url": "https://arxiv.org/abs/2608.05886v1",
+    "document_id": "68e0825ec6c070d255f03ed0",
+    "repair_of_task_id": "42b1f08b2ee6d36f7853dd73"
+  }
+}

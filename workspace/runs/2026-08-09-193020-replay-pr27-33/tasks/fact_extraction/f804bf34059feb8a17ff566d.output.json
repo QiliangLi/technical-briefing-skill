@@ -1,0 +1,78 @@
+{
+  "_task": {
+    "id": "f804bf34059feb8a17ff566d",
+    "type": "fact_extraction",
+    "entity_id": "2c5ec5b4a64b56814323156d",
+    "input_digest": "961d015f9d6531042d346e0470770888",
+    "contract_version": 2,
+    "prompt_digest": "5eb65f47c4f214f2139030f1cda285bb",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/memory-dsa.md": "cb0cd8265a94e838ab7f10251d6597c7",
+      "workspace/runs/2026-08-09-193020-replay-pr27-33/documents/43b887037a3fa93694bb9cf8.evidence.md": "eea0c46bd0206f4d2130aa3d49793871"
+    },
+    "execution_envelope_digest": "24117a1f9fdb6c70662e394a09378673"
+  },
+  "title": "SAC: Disaggregated KV Cache System for Sparse Attention LLMs with CXL",
+  "event_hint": "SAC (arXiv 2606.19746v1) is presented as the first CXL-based disaggregated KV cache system for sparse-attention LLMs, fetching only the dynamically selected top-k KV entries on demand at cache-line granularity via CXL load/store, instead of RDMA full-prefix fetch.",
+  "problem": "RDMA-based disaggregated KV cache systems fetch the entire prefix KV cache into local memory before decoding (coarse-grained). For sparse-attention models where only a small top-k subset of KV is active per layer, this causes two problems: (P1) transmission bottleneck over RDMA, and (P2) local memory wasting, since the bulk of the fetched KV is never used during decode yet must be held locally, forcing TB-level local memory for high concurrency.",
+  "mechanism": "SAC keeps the full KV cache in a disaggregated CXL memory pool (multiple CXL-MEM devices behind a CXL switch, host GPUs on PCIe 5.0 x16 / 64 GB/s links). The decode instance (built on the HiSparse framework in SGLang) computes the per-layer top-k selection at runtime and, during each attention layer, directly fetches only those top-k KV entries from the CXL pool into GPU HBM using CXL cache-line-granularity load/store semantics with near-DRAM latency; newly generated token KV is written back to the CXL pool. Three components: a Prefill Instance (writes full KV to the pool), a Decode Instance (on-demand top-k fetch), and a CXL-based KV cache manager exposing a global CXL address space with optimized read/write kernels and device interleaving.",
+  "evidence": [
+    {
+      "claim": "On DeepSeek-V3.2 served via SGLang across 16K-128K token contexts, SAC claims 2.1x higher throughput, 9.7x lower TTFT, and 1.8x lower TBT than an RDMA-based disaggregated KV pool.",
+      "value": "2.1x throughput / 9.7x lower TTFT / 1.8x lower TBT",
+      "baseline": "RDMA-based disaggregated KV cache pool",
+      "condition": "DeepSeek-V3.2 on SGLang; context lengths 16K-128K; claim stated in the introduction, not the detailed evaluation section",
+      "source_locator": "PDF Page 2 (Introduction / contributions)"
+    },
+    {
+      "claim": "Against a non-disaggregated upper bound on the same workload, SAC incurs only a 9% throughput degradation, used by the authors to argue CXL-based disaggregation is near-optimal.",
+      "value": "9% throughput degradation",
+      "baseline": "Non-disaggregated upper bound",
+      "condition": "DeepSeek-V3.2 on SGLang, 16K-128K context; introduction-level claim",
+      "source_locator": "PDF Page 2 (Introduction)"
+    },
+    {
+      "claim": "Sparse KV retrieval-latency microbenchmark (DRAM vs CXL vs RDMA): at 2048 fetched KV indices CXL is ~1.63x DRAM while RDMA is ~19.7x DRAM, with the RDMA/DRAM gap widening as the fetched-index count grows (3.97x at 64 indices up to 19.7x at 2048).",
+      "value": "CXL ~1.63x / RDMA ~19.7x relative to DRAM at 2048 indices",
+      "baseline": "Local DRAM read latency",
+      "condition": "Per-index sparse KV read latency microbenchmark; absolute latency values not given in the figure",
+      "source_locator": "PDF Page 4, Figure 5 (Retrieval latency comparison for sparse KV)"
+    },
+    {
+      "claim": "KV cache footprint and utilization for DeepSeek-V3.2 (ShareGPT, 1K-token output): per-request footprint is 1.2/2.3/4.6/9.2 GB at 16K/32K/64K/128K context, and at 128K only ~21% of the KV cache is actually utilized, quantifying the local-memory-wasting problem.",
+      "value": "9.2 GB/request at 128K; 21% utilized at 128K",
+      "baseline": null,
+      "condition": "DeepSeek-V3.2; ShareGPT dataset; 1K-token output; profiling of active vs inactive KV",
+      "source_locator": "PDF Page 4, Figure 4 (KV cache usage and footprint for DeepSeek-V3.2)"
+    },
+    {
+      "claim": "RDMA prefix-KV prefetch latency under a 100 Gbps RNIC grows near-linearly with concurrency and context length, reaching dozens of seconds in high-concurrency scenarios and directly inflating TTFT.",
+      "value": "dozens of seconds at high concurrency",
+      "baseline": "100 Gbps RNIC",
+      "condition": "Average KV-cache transmission latency across concurrency 1-32 and contexts 16K-128K",
+      "source_locator": "PDF Page 4, Figure 3 (RDMA prefetch latency for prefix KV cache)"
+    }
+  ],
+  "evaluation_context": "Model: DeepSeek-V3.2 (native sparse attention, DSA, top-k=2048 KV latent vectors). Serving stack: SGLang with the HiSparse hierarchical-memory decode instance. Workload: long-context inference, context lengths 16K-128K; ShareGPT dataset with 1K-token output used for KV profiling. Baselines: RDMA-based disaggregated KV pool (CPU-driven RDMA, e.g. MoonCake/LMCache-style) and a non-disaggregated upper bound. Hardware topology shown: dual-socket CPU server, GPUs on PCIe 5.0 x16 (64 GB/s), CXL switch chip with multiple CXL-MEM devices and device interleaving. The exact GPU model, CXL device count, and concurrency used for the headline end-to-end numbers are not stated in the visible front evidence.",
+  "limitations": "Applicability is restricted to sparse-attention models (DeepSeek-V3.2, GLM-5.1, DeepSeek-V4 cited); dense-attention models are out of scope (existing CXL work Beluga/TRACT does full-prefix prefetch for dense models). Top-k is fixed at 2048 in the current DSA implementation. The 3x throughput / 256-concurrency / 8xH200 GLM-5.1-FP8 result in Appendix C is HiSparse's prior-work basis, not SAC's own end-to-end result. The headline 2.1x/9.7x/1.8x and 9% numbers are introduction-level claims whose detailed evaluation methodology, baseline configuration, and hardware are in the unread later sections. Source is an arXiv preprint (v1, 2026-06-18).",
+  "project_relevance": "Directly addresses the topic's memory-semantics question: SAC demonstrates that CXL cache-line-granularity load/store (vs RDMA message-passing) changes remote memory placement/sharing semantics enough to enable fine-grained, on-demand sparse KV access. It also shows end-to-end propagation of a memory-tier change to LLM serving metrics (throughput, TTFT, TBT on SGLang + DeepSeek-V3.2), which is exactly the 'does the benefit reach end-to-end' question on the project card. Note: the offload here is GPU<->CXL-memory data movement via CXL, not Intel DSA/IAA device offload, so it informs the CXL/disaggregated-memory half of the topic rather than the DSA/IAA卸载 half.",
+  "primary_source_resolved": true,
+  "quality_score": 78,
+  "source_notes": [
+    "Source: arXiv 2606.19746v1, FETCHED, source_level A, discovery_source arXiv, published 2026-06-18.",
+    "Keywords: CXL, disaggregated KV cache, sparse attention, DeepSeek-V3.2, SGLang, HiSparse, top-k KV, load/store semantics, RDMA pooling, TTFT/TBT/throughput.",
+    "DeepSeek Sparse Attention (DSA) top-k = 2048 KV latent vectors per layer (PDF Page 3).",
+    "Prior-work basis: HiSparse hierarchical memory management in SGLang (Appendix C)."
+  ],
+  "evidence_gaps": [
+    {
+      "question": "What exact GPU model/count, CXL device count and latency, and concurrency/request mix were used for SAC's headline 2.1x/9.7x/1.8x and 9% end-to-end results?",
+      "terms": ["SAC evaluation", "DeepSeek-V3.2", "SGLang", "throughput", "TTFT", "TBT", "H200", "concurrency"]
+    },
+    {
+      "question": "Which specific RDMA disaggregated-KV baseline (e.g. MoonCake/LMCache configuration and RNIC) was used in the end-to-end comparison against SAC?",
+      "terms": ["RDMA baseline", "MoonCake", "LMCache", "RDMA pool", "100 Gbps", "RNIC"]
+    }
+  ]
+}

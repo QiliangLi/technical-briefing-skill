@@ -1,0 +1,68 @@
+{
+  "_task": {
+    "id": "1abd20a63780d89a84bc18fd",
+    "type": "fact_extraction",
+    "entity_id": "5bbca3a6cac8e236bf126671",
+    "input_digest": "a5a71de483a117e5d9d8255736dbd62b",
+    "contract_version": 2,
+    "prompt_digest": "7b9ccad8928dae8772ad4a6411ead813",
+    "schema_digest": "0f87f9089f7bc10cca24848c5e218bb3",
+    "context_digests": {
+      "config/project-context/cross-region.md": "e3774d4c1bca643192ed0299a3cd257f",
+      "workspace/runs/2026-08-12-010915/documents/f402ea08310d1e60b46800c7.evidence.md": "3d60161b0367ae434957ca48d5daa158"
+    },
+    "execution_envelope_digest": "0f95e8c7c2a29674f63a5144905efa88"
+  },
+  "title": "LMCache/LMCache v0.5.0",
+  "event_hint": "LMCache v0.5.0 release: adds Peer-to-Peer (P2P) KV cache transfer between LMCache instances in multiprocess (MP) mode, plus CacheBlend, prefetch sliding-window, asymmetric serde, and new L2 backends/connectors.",
+  "problem": "KV cache reuse across multiple LMCache serving instances previously required indirect paths; MP-mode deployments needed a way to look up and transfer KV cache directly between instances, and existing transfer/prefetch/serde mechanisms lacked the flexibility (asymmetric precision, sliding-window prefetch, segmented-prefix retrieval) for efficient distributed reuse.",
+  "mechanism": "v0.5.0 introduces a P2P adapter and transfer-channel abstraction for MP mode, with a new RPC interface for P2P lookup and lock, enabling direct KV cache lookup and transfer between LMCache instances. The MP coordinator gains P2P info and runtime registration/deregistration of L2 adapters. Supporting features: asymmetric serde (e.g., FP16 Key with FP8 Value), Device-DAX hybrid L1 overflow, DeviceIPCWrapper for device-agnostic KV-cache IPC, CacheBlend segmented-prefix retrieval with coordinator knobs and observability span (cb.coordinator_match), prefetch sliding window (1/N) with a blocking WAIT_PREFETCH_STATUS to avoid busy-polling, and new backends/connectors (SGLang XPU, native Aerospike L2, MUSA stage-2).",
+  "evidence": [
+    {
+      "claim": "v0.5.0 introduces full P2P support for multiprocess (MP) mode: a P2P adapter (#3740), transfer-channel abstraction for MP mode (#3712), a new RPC interface for P2P lookup and lock (#3728), P2P info into the MP coordinator (#3706), and runtime registration/deregistration of L2 adapters (#3743).",
+      "value": "P2P adapter + RPC lookup/lock",
+      "baseline": "prior LMCache releases (no direct P2P transfer)",
+      "condition": "MP mode between LMCache instances",
+      "source_locator": "Evidence locator: Peer-to-Peer (P2P) KV Cache Transfer"
+    },
+    {
+      "claim": "CacheBlend additions: fault-inject L2 adapter + segmented-prefix retrieval path (#3697), coordinator knobs exposed as CLI flags (#3731), global CacheBlend token matching optimization (#3708), and an observability span cb.coordinator_match (#3711).",
+      "value": "segmented-prefix retrieval; cb.coordinator_match",
+      "baseline": null,
+      "condition": "CacheBlend coordinator path",
+      "source_locator": "Evidence locator: CacheBlend"
+    },
+    {
+      "claim": "Asymmetric serde support is added (e.g., FP16 Key with FP8 Value) (#3277), enabling different precisions for K and V in MP mode.",
+      "value": "FP16 Key / FP8 Value",
+      "baseline": "symmetric (same precision K and V)",
+      "condition": "MP mode",
+      "source_locator": "Evidence locator: Multiprocess (MP) Mode"
+    },
+    {
+      "claim": "Prefetch & Performance: a blocking WAIT_PREFETCH_STATUS avoids busy-polling the lookup wait (#3704), and a prefetch sliding window (1/N) adds bitmap operations (#3745).",
+      "value": "WAIT_PREFETCH_STATUS; sliding window 1/N",
+      "baseline": "busy-polling lookup wait",
+      "condition": "prefetch path",
+      "source_locator": "Evidence locator: Prefetch & Performance"
+    },
+    {
+      "claim": "New backends/connectors: SGLang XPU connectors for KV cache transfer (#3121), optional native Aerospike L2 backend via BUILD_AEROSPIKE (#3458), Stage-2 MUSA support with optional native in-process transfer (#3580), nixl_storage presence_cache_only option (#3587); plus multi-LMCache-server deployment with vLLM (#3248).",
+      "value": "SGLang XPU; Aerospike L2; MUSA; multi-server vLLM",
+      "baseline": null,
+      "condition": "L2 backends / connectors",
+      "source_locator": "Evidence locator: Backends & Connectors; Multiprocess (MP) Mode"
+    }
+  ],
+  "evaluation_context": "GitHub release notes (LMCache v0.5.0, published 2026-06-23, full changelog v0.4.7...v0.5.0). The evidence is a feature/release-notes enumeration referencing PR numbers; it describes mechanisms and integrations (vLLM, SGLang) but contains no quantitative benchmarks - no WAN RTT, transferred bytes, cache hit rate, P95 latency, compression ratio, or consistency overhead numbers are present.",
+  "limitations": "This is a software release notes source, not a benchmark study. No quantitative performance, hit-rate, transfer-volume, or latency measurements are included in the visible evidence; all claims are feature descriptions tied to PR numbers. Cross-region/WAN behavior is not characterized - P2P transfer is between LMCache instances (MP mode) and the evidence does not specify whether it targets local fabric, rack, or WAN. Worker-adapter liveness hygiene is introduced in two parts but its measured effect is not quantified.",
+  "project_relevance": "LMCache v0.5.0 is directly relevant to the cross-region/KVCache-transfer topic: P2P KV cache transfer, CacheBlend segmented-prefix reuse, prefetch sliding window, and asymmetric serde are concrete mechanisms for distributed KV-cache movement and placement. For the project card it is a release (engineering artifact) confirming capability exists, but it provides no quantitative WAN RTT/hit-rate/P95 evidence to judge cross-region deployment value; it is better suited to the KVCache-ecosystem radar than to a deep quantitative briefing.",
+  "primary_source_resolved": true,
+  "quality_score": 55,
+  "source_notes": [
+    "GitHub release LMCache/LMCache v0.5.0 (23 Jun 2026), FETCHED primary source; full changelog v0.4.7...v0.5.0.",
+    "Evidence is release-notes feature list with PR references; no benchmark numbers (hit rate, latency, transfer bytes) are present.",
+    "P2P transfer is between LMCache instances in MP mode; the evidence does not specify WAN vs local-fabric scope."
+  ],
+  "evidence_gaps": []
+}

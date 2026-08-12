@@ -1,0 +1,66 @@
+{
+  "title": "[AAFLOW+] Stateful Operator Abstraction with Zero-Copy Distributed KV Cache Orchestration for Multi-Agent Workflows",
+  "event_hint": "PVLDB/arXiv paper introducing AAFLOW+, a stateful agentic-workflow algebra that treats KV cache as a distributed object with materialize/transfer/fork/composition/eviction operators for multi-agent LLM serving.",
+  "problem": "Multi-agent LLM systems are text-centric: each agent repeatedly recomputes shared context via expensive prefill. Existing KV-cache optimization (vLLM PagedAttention, SGLang RadixAttention, DistServe, LMCache, FlexGen) is confined to single-node or single-request scopes and does not expose KV cache as a shareable distributed object across agents, so workflow-level branch duplication persists.",
+  "mechanism": "AAFLOW+ extends operator abstraction from dataflow to 'stateflow', making KV cache a first-class distributed systems object. It builds processes into communication-aware graphs that concurrently optimize data, prompts, and reusable model state, and provides explicit operators for KV materialization, transfer, fork, restricted composition, and eviction. The runtime enables zero-copy, transfer-aware execution so agents resume from already-materialized distributed state instead of replaying the prefix; communication uses UCX and NCCL. A bandwidth/latency-aware cost model decides transfer-vs-recompute per link.",
+  "evidence": [
+    {
+      "claim": "TTFT reduction (concrete): on the HF backend Mistral, AAFLOW+ reaches 0.041s mean TTFT vs AAFLOW-text 2.057s, dense prefill 2.017s, KVCOMM 0.704s, and DistServe-style 0.123s (3.0x slower). At vLLM max context Mistral AAFLOW+ is 0.171s vs dense prefill 38.880s and AAFLOW-text 39.655s.",
+      "value": "0.041s mean TTFT (HF Mistral); 0.171s at vLLM max context",
+      "baseline": "DistServe-style 0.123s (3.0x slower); dense prefill 38.880s and AAFLOW-text 39.655s at vLLM max context",
+      "condition": "HF/vLLM backends, Mistral-7B, 64 output tokens; Exp.1 bandwidth 200 Gbps, latency 50us",
+      "source_locator": "Section F.1 / Table 8, PDF Page 18"
+    },
+    {
+      "claim": "Multi-agent scaling: at 16 agents AAFLOW+ gives 7.63x lower aggregate compute cost than the nearest competitor on Llama3 (220.05s vs SGLang-prefix 1679.81s) and 7.60x on Mistral (224.39s vs SGLang-prefix 1704.86s).",
+      "value": "7.63x (Llama3, 16 agents); 7.60x (Mistral, 16 agents)",
+      "baseline": "SGLang-prefix 1679.81s (Llama3) / 1704.86s (Mistral); dense prefill 2716.11s (Mistral, 16 agents)",
+      "condition": "HF backend, 16 agents, Mistral-7B / Llama-3-8B, 64 output tokens; aggregate modeled cost not wall-clock",
+      "source_locator": "Section F.2 / Table 9, PDF Page 18; Table 3, PDF Page 10"
+    },
+    {
+      "claim": "Transfer-vs-recompute crossover: KV transfer outperforms recomputation on moderate-to-high bandwidth; on slow 10 Gbps links recomputation is preferable for 5 of 8 contexts. The scheduler transfers state only when KV_bytes/bandwidth + latency < T_prefill.",
+      "value": "recompute preferable in 5/8 contexts at 10 Gbps",
+      "baseline": "dense/text recompute; local-prefix reuse (vLLM/SGLang/KVCOMM)",
+      "condition": "Exp.3 bandwidth sweep 10-400 Gbps, RDMA-like 10us / Ethernet-like 100us latency, HF backend Mistral",
+      "source_locator": "Section 6.8 / Figure 9, PDF Page 10"
+    },
+    {
+      "claim": "Headline claims now located in supporting tables: 50.2x TTFT = Mistral AAFLOW-text 2.057s vs AAFLOW+ 0.041s (Exp.1, fixed 16 agents); KV-memory 1.72-6.10x spans vLLM-local 1.72x (14.351 GiB) to DistServe-style 6.10x (50.995 GiB) vs AAFLOW+ 8.355 GiB (Exp.4, branch factors 1-16); throughput 7.63-8.04x vs nearest competitors (Exp.5, 302.61 tok/s vs 37.62-39.62 tok/s), abstract states >7.74x.",
+      "value": "50.2x TTFT (Mistral AAFLOW-text); 1.72-6.10x KV memory; 7.63-8.04x throughput (abstract: >7.74x)",
+      "baseline": "AAFLOW-text 2.057s (50.2x); vLLM-local 14.351 GiB (1.72x) to DistServe 50.995 GiB (6.10x); SGLang/vLLM/DistServe 37.62-39.62 tok/s",
+      "condition": "HF backend, Mistral-7B; Exp.1 fixed 16 agents / Exp.4 branch factors 1-16 / Exp.5 fixed context with variation agents",
+      "source_locator": "Table 2, PDF Page 9; Table 4 + text, PDF Page 11 / Table 11, PDF Page 20; Table 5, PDF Page 11 / Table 12, PDF Page 20"
+    }
+  ],
+  "evaluation_context": "Distributed GPU cluster of 4-16 nodes, each NVIDIA A100 (80GB and 40GB), 32-64 CPU cores, RDMA InfiniBand; communication via UCX/NCCL. Backends: HF (AutoModelForCausalLM, deterministic decoding), vLLM, SGLang. Models: Mistral-7B-Instruct-v0.3 (up to 32,640 ctx) and Llama-3-8B-Instruct (up to 8,128 ctx), 64 generated tokens/branch. Workload is a shared-prefix parallel broadcast / Tree-of-Thought DAG (root -> KV materialize -> fork -> {agents} -> merge), not independent stateless chat; agent count swept k in {1,2,4,8,16}, context 1K-32K. Exp.1 network: 200 Gbps, 50us latency, 0.1ms resume overhead. Exp.3 sweeps 10-400 Gbps with 10us/100us latency. The total_latency_sec field is a modeled aggregate workload cost (text baselines charged 16x8x32=4096 full prefill/decode executions), explicitly NOT the Slurm wall-clock runtime. Throughput (Exp.5) and KV memory (Exp.4) are reported as modeled/simulated per-backend metrics over the same cost model.",
+  "limitations": "Results are from a trace-driven/analytical cost model parameterized by microbenchmarks, chosen to isolate systems-level KV-transfer limits from Python agentic-framework variance, not end-to-end observed wall-clock. The supplement confirms Exp.5 throughput and framework overhead remain a modeled/simulation profile (Omega is a modeled overhead), with no observed wall-clock validation. With Y=64 output tokens prefill dominates; if Y were thousands of tokens decode would dominate and the relative TTFT advantage shrinks. At 10 Gbps the serialized KV payload is large enough that recomputation wins for 5/8 contexts, so benefit requires moderate-to-high bandwidth. AAFLOW+ is not expected to help independent short stateless prompts (no shared state to fork/transfer).",
+  "project_relevance": "Directly on-topic for the TPN / state-aware-network card: it makes KV cache a distributed, network-transferable object with explicit transfer/fork operators and a bandwidth-aware transfer-vs-recompute scheduler, and reports the TTFT, throughput, KV-memory and transfer-crossover metrics the card lists as valuable evidence. It answers the card's core question by showing network-side KV transfer adds value beyond local GPU-memory scheduling, but only above a bandwidth crossover (it loses at 10 Gbps), which is exactly the applicability boundary the briefing must flag.",
+  "primary_source_resolved": true,
+  "quality_score": 85,
+  "source_notes": [
+    "Source: arXiv 2607.10987v1 (PVLDB submission), University of Virginia + Rutgers, fetch_status=FETCHED, raw_fulltext_cache_hit=true.",
+    "Evidence Pack is a balanced excerpt (Pages 1, 2, 8, 10, 12, 18) covering abstract, intro, related work, metrics/setup, and the appendix evaluation details F.1-F.3.",
+    "Repair supplement added PDF Pages 9, 11, 20: located Table 2 (Exp.1 TTFT, 50.2x config), Table 4/Table 11 (Exp.4 KV memory, 1.72-6.10x), and Table 5/Table 12 (Exp.5 throughput, >7.74x) plus Exp.5 modeled framework-overhead Omega."
+  ],
+  "evidence_gaps": [
+    {
+      "question": "Is there any observed (non-modeled) end-to-end wall-clock validation of the aggregate compute-cost speedups?",
+      "terms": [
+        "wall-clock",
+        "Slurm",
+        "observed latency",
+        "end-to-end",
+        "real run"
+      ]
+    }
+  ],
+  "_provenance": {
+    "task_id": "4a75683fc2125e5f653fd785",
+    "candidate_id": "7ed05c2d8c077f12f2dd4471",
+    "source_title": "[AAFLOW+] Stateful Operator Abstraction with Zero-Copy Distributed KV Cache Orchestration for Multi-Agent Workflows",
+    "source_url": "https://arxiv.org/abs/2607.10987v1",
+    "document_id": "b0dd91fb91aede035cfeb21f",
+    "repair_of_task_id": "b1f22c43a5ca4517fcae7327"
+  }
+}

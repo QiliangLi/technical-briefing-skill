@@ -1,0 +1,547 @@
+{
+  "_task": {
+    "id": "2d183c256e6e3cce4e5358bb",
+    "type": "fact_check_batch",
+    "entity_id": "c3df3462675f8d4bc93af98b",
+    "input_digest": "52506ec2157b2cd7bdc430aaa34df449",
+    "contract_version": 2,
+    "prompt_digest": "dd0d6b563953ed7d68d183c125fe2ecd",
+    "schema_digest": "afce088006ec21040312c7ebd5c83696",
+    "context_digests": {},
+    "execution_envelope_digest": "55f869c330d6bc28c13f3b6e38cc85e8"
+  },
+  "batch_id": "fact-check-2",
+  "checks": [
+    {
+      "brief_item_id": "d68187e106469502469bd400",
+      "brief_item": {
+        "title": "Kairos让Prefill在Decode节点就地完成以删除跨节点KV传输",
+        "type": "研究",
+        "topic_name": "状态感知网络、TPN",
+        "direction_name": "KVCache传输与通信优化",
+        "published_at": "2026-07-02T11:10:05Z",
+        "core_conclusion": "解耦推理在突发负载下排队与KV传输占P95 TTFT近八成，把Prefill迁至空闲Decode节点既降时延又删传输。",
+        "mechanism": "用分析式TBT模型估算迁后解码时延，仅当Decode路径不劣于原节点且仍在SLO内才偏转。",
+        "result": "在2P2D A100上P95 TTFT最多降81%，SLO达成率升79%。",
+        "boundary": "仅四卡小集群与单一MoE模型验证，未量化KV传输量也未处理前缀缓存。",
+        "project_relevance": "这是GPU调度侧而非网络侧的优化，可作为规避KV传输的基准，不回答网络机制本身的不可替代价值。",
+        "keywords": [
+          "Prefill偏转",
+          "解耦推理",
+          "KV缓存传输",
+          "TTFT",
+          "vLLM"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2607.02043v1",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-07-02T11:10:05Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 84.0,
+        "_provenance": {
+          "task_id": "d9432c20287f2d1c2001242f",
+          "event_id": "9bf7f66692b87759e578eccd",
+          "batch_id": "writing-2",
+          "source_urls": [
+            "https://arxiv.org/abs/2607.02043v1"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "Towards Load-Aware Prefill Deflection for Disaggregated LLM Serving",
+          "event_hint": "Kairos: a load-aware prefill-deflection scheduler that runs deflected prefill in place on decode nodes to cut P95 TTFT up to 81% and eliminate inter-node KV-cache transfer in disaggregated LLM serving.",
+          "problem": "Disaggregated LLM serving runs prefill and decode on separate GPU pools, which creates a new asymmetry: under bursty, heavy-tailed workloads prefill nodes saturate and queue while decode nodes sit underutilized (decode is memory-bound with spare compute). On a 2P2D A100 cluster the authors show prefill execution is only 2-23% of P95 TTFT; the remaining 77-98% is prefill queue wait and inter-node GPU-to-GPU KV-cache transfer, both scheduling artifacts rather than compute limits. Prior disaggregated designs (Splitwise, DistServe, Mooncake, TetriInfer) assume a request stays on its prefill node until prefill completes and then ships its KV cache to a decode node, so they cannot exploit the spare compute on decode nodes.",
+          "mechanism": "Kairos is a proactive, time-aware prefill-deflection scheduler. For each queued request it estimates TTFT on the prefill node from current queue depth/order, and for every decode node sweeps candidate chunk-size sequences using an analytical TBT-safety model that predicts per-step decode latency from in-flight decode batch size, KV-cache occupancy, and added prefill chunk size (no live inference trials; one-time deployment-time profiling; no model changes). It deflects the request's prefill phase to a decode node when both (i) TBT safety holds (in-flight decode step latency stays within the TBT SLO tau, with margin beta) and (ii) projected decode-node TTFT is at most alpha times the prefill-node TTFT, where alpha >= 1 is a single operator-tunable knob (alpha=1 deflects only when the decode path is strictly faster). Algorithm 1 (PDF Page 9) formalizes this: build a TBT-safe chunk schedule per decode node via LargestSafe, pick the fastest feasible node, then deflect only if TTFT_dec(n*) <= alpha * TTFT_pf and TTFT_dec(n*) <= TTFT_slo (Eq. 7), else Keep. Deflected prefill runs as chunked-prefill steps interleaved with in-flight decode batches, so the prefill phase executes in place on the decode node and the inter-node KV-cache transfer is eliminated. Implemented on vLLM 0.18.1 (~2000 lines of Python); per-request scheduling overhead is below 1 ms at the prefill dispatcher.",
+          "evidence": [
+            {
+              "claim": "Prefill execution accounts for only 2-23% of P95 TTFT across the five workloads; the remaining 77-98% is prefill queue wait plus inter-node KV-cache transfer (e.g., Bursty: 840.8 ms prefill queue, 1,070.1 ms prefill exec, 2,175.6 ms KV transfer, 7,893.9 ms end-to-end P95).",
+              "value": "2-23% prefill exec; 77-98% queue + KV transfer",
+              "baseline": "Canonical 2P2D disaggregated serving (2 prefill + 2 decode nodes), no deflection",
+              "condition": "Five production-derived workloads (LPLD/LPHD/HPLD/HPHD/Bursty); DeepSeek-V2-Lite; A100 80GB",
+              "source_locator": "Section 3.1 Claim 2 and Table 3, PDF Pages 4-5"
+            },
+            {
+              "claim": "Kairos reduces P95 TTFT by up to 81% and raises SLO attainment by up to 79% over state-of-the-art disaggregated schedulers; the Section 6 evaluation names the baselines as PD Disaggregation (DistServe-style [21]) and TaiChi [18], run on the Bursty trace over RPS 6-12 where Kairos holds P95 TTFT/TBT SLO up to 9 RPS while PD disaggregation and TaiChi fall out earlier. Routing cost <1 ms per request.",
+              "value": "up to 81% P95 TTFT reduction; up to 79% higher SLO attainment; <1 ms routing; SLO held to 9 RPS",
+              "baseline": "PD Disaggregation (DistServe-style [21]) and TaiChi [18]",
+              "condition": "Bursty trace; RPS 6-12; SLO P95 TTFT<=4s and P95 TBT<=70ms; DeepSeek-V2-Lite; 2P2D A100 cluster; vLLM 0.18.1 (exact RPS/alpha of the 81%/79% maxima not stated in supplement)",
+              "source_locator": "Abstract and Section 1, PDF Pages 1-2; Section 6.1.2 Baselines and 6.2/Figure 4, PDF Page 9"
+            },
+            {
+              "claim": "Utilization is complementary: prefill SM utilization is 75-84% while decode SM utilization never exceeds 27%; the gap is widest in HPLD (84% prefill vs 7.5% decode), confirming decode-side compute slack available for chunked prefill.",
+              "value": "prefill SM 75-84%; decode SM <=27% (HPLD decode 7.5%)",
+              "baseline": "Steady-state utilization on 2P2D disaggregated cluster",
+              "condition": "Five workloads; A100 80GB; measured via NVIDIA Nsight Systems",
+              "source_locator": "Section 3 Claim 1 and Table 2, PDF Pages 3-4"
+            },
+            {
+              "claim": "Injecting chunked prefill into decode batches keeps decode step-latency increase within 30 ms for chunk sizes up to 512 tokens across all workloads and batch sizes; for chunk sizes >= 1024 the first-chunk increase reaches about 30 ms (low-prefill regimes) up to about 50 ms (bursty/high-prefill regimes), so using large first chunks requires knowledge of cached-token volume.",
+              "value": "delta T_step <= 30 ms for chunk size <= 512; up to ~50 ms for >= 1024",
+              "baseline": "Decode step latency with no chunked-prefill injection",
+              "condition": "Mixed prefill-decode batches on decode nodes across the five workloads",
+              "source_locator": "Section 3 and Figure 1, PDF Page 5"
+            },
+            {
+              "claim": "Deflected requests execute prefill in place on the decode node, eliminating the inter-node KV-cache transfer; the system needs only one-time deployment-time profiling, no model changes, and imposes less than 1 ms per-request scheduling overhead (~2000 lines of Python on vLLM 0.18.1).",
+              "value": "inter-node KV transfer eliminated for deflected requests; <1 ms routing; ~2000 LoC",
+              "baseline": "Canonical disaggregated serving ships KV cache from prefill node to decode node",
+              "condition": "Kairos on vLLM 0.18.1; 2P2D A100; deflected requests only",
+              "source_locator": "Sections 1-2 Contributions and Design, PDF Pages 1-2; Algorithm 1, PDF Page 9"
+            }
+          ],
+          "evaluation_context": "Section 6 evaluation runs on Azure Machine Learning Compute Clusters using Standard_ND96amsr_A100_v4 nodes, each with 8x NVIDIA A100-SXM4-80GB GPUs via NVLINK 3.0, AMD EPYC 7V12 64-core CPU, 900 GiB host memory; inter-node communication over InfiniBand and Azure Accelerated Networking. Topology is 2 prefill + 2 decode nodes (2P2D), with prior 1P3D / 3P1D comparisons on the Bursty workload. Model: DeepSeek-v2-Lite (MoE, 16B total / 2.4B active). Section 6 evaluates on the Bursty trace (most realistic, non-stratified) over RPS 6-12. SLO targets (both simultaneous): P95 TTFT <= 4 s, P95 TBT <= 70 ms. Section 6 baselines: PD Disaggregation (traditional DistServe-style [21], all prefill on prefill nodes) and TaiChi [18] (unified aggregation/disaggregation with differentiated GPU instances and flowing-decode scheduling). Q1 result: Kairos holds SLO up to 9 RPS while PD disaggregation and TaiChi fall out earlier. Per-request routing <1 ms; heartbeat interval = 100 ms; the decode-side single-deflection-per-heartbeat bottleneck requires RPS >= |decode nodes| / heartbeat (~20), far above the SLO-supported RPS, and is extensible by scaling decode nodes. Traces derived from a large-scale production LLM serving deployment (Company X); five workloads as in Table 1.",
+          "limitations": "The headline 'up to 81% TTFT / 79% SLO attainment' are best-case figures from the abstract/contributions; Section 6 confirms the baselines (PD Disaggregation/DistServe-style and TaiChi) and the Bursty/RPS 6-12 condition but does not state the exact alpha or RPS at which the 81%/79% maxima occur, and at lower request rates Kairos behaves similarly to standard PD disaggregation (little gain). Evaluated on a single small cluster (2P2D, four A100 nodes) and a single model architecture (DeepSeek-V2-Lite, MoE); the full throughput-vs-RPS curve (Figure 5) and any pool sizes beyond 2P2D are not in the supplement. Benefit depends on decode-side compute slack and workload regime, and using chunk size >= 1024 for the first chunk requires cached-token-volume awareness. New caveat from supplement: if a request has a prefix already cached on a prefill node, deflecting it to a decode node loses that cached prefix, and Kairos currently does NOT account for prefix-cache residency in its TTFT estimate. The evidence reports GPU SM/TC/HBM utilization but not aggregate KV-cache bytes transferred or network-bandwidth utilization as outcome metrics; KV-transfer reduction remains stated qualitatively (eliminated per deflected request), not quantified.",
+          "project_relevance": "Directly relevant to the TPN/KV-transfer topic: Kairos is a per-request, KV-cache-occupancy-aware scheduler that eliminates inter-node KV-cache transfer for deflected requests by running prefill in place on decode nodes, and it reports end-to-end P95 TTFT (up to 81% lower) and SLO attainment, which the topic values. Important boundary for project inference: Kairos is a GPU-pool/scheduling-side mechanism, not a network-side optimization; it avoids KV transfer rather than making the network faster, so it illustrates what scheduling alone can achieve and does not answer the topic's question about the irreplaceable value of network-side mechanisms. The visible evidence does not report network utilization, KV-transfer bytes, or TPOT as improved outcome metrics.",
+          "primary_source_resolved": true,
+          "quality_score": 85,
+          "source_notes": [
+            "Primary arXiv PDF (2607.02043v1) fetched; evidence covers abstract, intro/design (Pages 1-2), empirical study with Tables 1-3 and Figure 1 (Pages 3-5), and a partial throughput result (Page 10).",
+            "System is named Kairos in the body; the abstract describes it as a proactive prefill-deflecting scheduler.",
+            "Repair supplement (PDF Pages 9, 11, 12) added Algorithm 1 (deflection decision), Section 6 setup/baselines (PD Disaggregation = DistServe-style [21]; TaiChi [18]), the Bursty RPS 6-12 eval with Kairos holding SLO to 9 RPS, the decode-bottleneck threshold (RPS >= |decode nodes|/heartbeat ~20), and the prefix-cache-residency-loss caveat. It did not state the exact alpha/RPS of the 81%/79% maxima, did not show the Figure 5 throughput curve, and did not quantify KV-transfer bytes/network utilization."
+          ],
+          "evidence_gaps": [
+            {
+              "question": "Which specific disaggregated scheduler is the baseline for the up-to-81% TTFT and up-to-79% SLO-attainment results, and under which workload, RPS, and alpha are those maxima achieved (versus non-bursty or lower-load cases)?",
+              "terms": [
+                "state-of-the-art disaggregated scheduler",
+                "Splitwise",
+                "DistServe",
+                "Mooncake",
+                "PD disaggregation",
+                "bursty",
+                "81%",
+                "SLO attainment"
+              ]
+            },
+            {
+              "question": "Does the paper quantify the KV-cache transfer reduction (bytes or transfers eliminated) or network-bandwidth utilization as an outcome, rather than only stating per-deflected-request elimination and GPU SM/TC/HBM utilization?",
+              "terms": [
+                "KV cache transfer",
+                "bytes transferred",
+                "network utilization",
+                "transfer eliminated",
+                "deflection rate",
+                "KV transfer"
+              ]
+            },
+            {
+              "question": "What is the full throughput-vs-RPS curve (Figure 5 text is truncated at '7 RPS'), and at what load or cluster scale do Kairos gains over PD disaggregation vanish; are results shown beyond 2P2D / four A100s?",
+              "terms": [
+                "throughput",
+                "RPS",
+                "7 RPS",
+                "Figure 5",
+                "2P2D",
+                "scale",
+                "PD disaggregation"
+              ]
+            }
+          ],
+          "_provenance": {
+            "task_id": "911f33a619afa958067a63db",
+            "candidate_id": "43c7fa1b267743b5a824fc67",
+            "source_title": "Towards Load-Aware Prefill Deflection for Disaggregated LLM Serving",
+            "source_url": "https://arxiv.org/abs/2607.02043v1",
+            "document_id": "15263e41840bc4cdccfb7003",
+            "repair_of_task_id": "5b6868cbd8b7747075e7f15b"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "810e7598d049ddf8b401fc54",
+      "brief_item": {
+        "title": "GraphSpec把知识先验编译为运行期KV访问计划以压缩解码内存流量",
+        "type": "研究",
+        "topic_name": "AI Infra横向动态",
+        "direction_name": "推理服务、运行时与编译优化",
+        "published_at": "2026-07-27T10:51:38Z",
+        "core_conclusion": "知识增强LLM把图先验平铺成token迫使解码密集消费整段KV，KAP将其提升为运行期访问计划只暴露被选中的KV对象。",
+        "mechanism": "GraphSpec在vLLM分页KV上重排物理放置并保留逻辑位置，以同模型自推测解码验证全上下文。",
+        "result": "Qwen3-VL-32B上可见KV在128K仅5.5%，解码吞吐升1.08至1.19倍且质量不变。",
+        "boundary": "仅Graph-RAG单实例验证，TTFT因编译略升，批次与并发未报告。",
+        "project_relevance": "属解码期KV消费优化，与RAG缓存复用工作互补，长上下文多模态QA之外的可迁移性尚未证明。",
+        "keywords": [
+          "KV访问计划",
+          "Graph-RAG",
+          "自推测解码",
+          "vLLM",
+          "长上下文"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2607.24260v1",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-07-27T10:51:38Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 83.7,
+        "_provenance": {
+          "task_id": "d9432c20287f2d1c2001242f",
+          "event_id": "34fd409cdc29465eddb97e56",
+          "batch_id": "writing-2",
+          "source_urls": [
+            "https://arxiv.org/abs/2607.24260v1"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "KAP: Bridging the Knowledge Selection-Runtime Consumption Gap in LLM Systems",
+          "event_hint": "QiYuanLab paper (arXiv:2607.24260v1, 2026-07-27) proposes Knowledge Access Planning (KAP), a serving-time IR that compiles structured knowledge priors into physical KV-access policies, instantiated as the GraphSpec compiler-executor on vLLM.",
+          "problem": "Knowledge-augmented LLM systems (RAG, GraphRAG, HippoRAG) produce rich structured priors (ranked evidence, graph topology, confidence), but prompt serialization collapses these into a flat token stream, forcing the serving backend to densely consume the full key-value (KV) state during decoding. The authors name this the Knowledge Selection-Runtime Consumption (KSRC) gap: richer contexts enlarge the KV footprint and decode-time memory traffic, raising latency and hurting throughput even when reasoning depends on a small fraction of the context.",
+          "mechanism": "KAP elevates structured knowledge priors from prompt-construction hints into first-class physical execution artifacts via a universal intermediate representation-the runtime access plan-that compiles knowledge signals to govern physical KV access without altering logical prompt semantics, model weights, or training. It is instantiated as GraphSpec: a compiler-executor pairing a Graph-RAG knowledge-selection frontend with a vLLM serving backend. Algorithm 1 (PDF Page 7) formalizes compilation: GroundEvidence -> AlignTokenSpans -> SelectEvidenceUnderBudget -> ResolveSelectedKVObjects -> PreserveLogicalPositions -> AssignCompactSlots -> BuildBlockTable/SlotMapping -> BuildSelectedKVView -> EmitRuntimeAccessPlan. The materialization reorganizes only physical KV placement over vLLM's paged-KV cache; original logical positions are preserved through the visibility mask, prompt-length metadata, block tables, and slot mappings consumed by the attention backend, so proposal and verifier logits stay aligned. The executor runs sparse self-speculative decoding with full-context verification using the SAME base model for proposal and verification (k=6 speculative tokens, q_prop=1 decode-like forward pass per proposal step); only the prompt-side KV objects exposed to attention are restricted by the selected-KV view. A phase-boundary cost model characterizes the positive-speedup regime via the margin h-s between proposal acceptance rate (h) and retained-KV ratio (s).",
+          "evidence": [
+            {
+              "claim": "GraphSpec reduces proposal-visible KV access from 40.1% of source KV at 4K down to 5.5% at 128K, with decode throughput (TPS) speedup rising from 1.08x to 1.19x over full-context vLLM as context grows.",
+              "value": "KV/source 5.5% at 128K (10.8% at 64K); TPS speedup 1.08x-1.19x",
+              "baseline": "Full-context decoding on vLLM (TPS 41.10 at 128K)",
+              "condition": "GraphSpec TPS 48.80 at 128K; long-context QA workload (SPIQA), 4K-128K; Qwen3-VL-32B-Instruct, 4xA800-80GB TP=4 bf16, vLLM v0.16.0, k=6 spec tokens; Graph-RAG priors frozen pre-benchmark; frontend retrieval excluded from TTFT",
+              "source_locator": "Table 2 (RQ1), PDF Page 13"
+            },
+            {
+              "claim": "Answer quality is preserved: pass-rate difference vs full-context is at most 0.3 percentage points at five of six lengths, and 1.9 points higher at 64K (87.9% vs 86.0%); average similarity stays closely matched (e.g., 0.748 vs 0.741 at 64K).",
+              "value": "GraphSpec pass 87.9% vs 86.0% full-context at 64K; <=0.3pp gap elsewhere",
+              "baseline": "Full-context decoding (same LLM-as-judge similarity metric, 0.5 threshold)",
+              "condition": "4K-128K context sweep on SPIQA; Qwen3-VL-32B-Instruct; pass rate = fraction with weighted LLM similarity >= 0.5",
+              "source_locator": "Table 3 (RQ2), PDF Page 13"
+            },
+            {
+              "claim": "The runtime access plan, not evidence selection alone, drives the gain: materializing the same selected evidence as a 0.95K-token prompt (Physical concat) drops pass rate to 73.9% vs 87.9% for GraphSpec at 64K, while Random concat and Local window fall to 49.7% and 47.1%.",
+              "value": "Physical concat 73.9% vs GraphSpec 87.9% pass at 64K",
+              "baseline": "GraphSpec (full logical prompt preserved) vs Physical/Random/Local concat on vLLM",
+              "condition": "64K contexts on SPIQA; Qwen3-VL-32B-Instruct; GraphSpec accessed KV/source 10.8%, TPS 51.70 vs full-context 45.68",
+              "source_locator": "Table 4 (RQ3 ablation), PDF Page 14"
+            },
+            {
+              "claim": "Empirical speedup tracks the phase-boundary prediction: retained ratio s falls from 0.401 to 0.055 across 4K-128K while acceptance h stays high (~0.95+), so the margin h-s rises from 0.557 to 0.897 alongside measured speedup rising 1.08x to 1.19x.",
+              "value": "h-s margin 0.557 -> 0.897; speedup 1.08x -> 1.19x",
+              "baseline": "Phase-boundary cost model (directional implication, not refit to measurements)",
+              "condition": "4K-128K contexts on SPIQA; Qwen3-VL-32B-Instruct; h = Top-3 tolerant proposal acceptance rate",
+              "source_locator": "Table 5 (RQ4), PDF Page 14"
+            },
+            {
+              "claim": "The LLM-as-judge pass criterion was independently audited: on 100 SPIQA samples, thresholded judge decisions agreed with majority-vote human labels on 95%; evidence recalls were answer 68.8%, rationale 66.8%, caption 76.8%.",
+              "value": "95% judge-human agreement on 100 SPIQA samples",
+              "baseline": "Three independent human annotators, blinded to LLM scores, majority vote",
+              "condition": "0.5 threshold fixed before audit; token-level/ROUGE-1 coverage of gold evidence; Qwen3-VL-32B-Instruct",
+              "source_locator": "Table 1, PDF Page 12"
+            }
+          ],
+          "evaluation_context": "Section 5.1 setup (PDF Page 11): target model is Qwen3-VL-32B-Instruct (32B multimodal backbone); GraphSpec is implemented by extending VLLM v0.16.0. Hardware: four NVIDIA A800 80GB GPUs, tensor parallelism 4, bfloat16 execution; serving engine configured for the 4K-128K context sweep. GraphSpec uses the same base model for proposal and verification with k=6 speculative tokens (q_prop=1 per proposal step), i.e. sparse self-speculative decoding with full-context verification. Dataset: SPIQA, a multimodal QA benchmark grounded in figures, tables, and text from scientific papers, used for the FULL 4K-128K sweep (not only the 100-sample audit). Context-length control is a nested sweep: per query the answer and core supporting evidence are fixed and query-specific hard negatives are appended to build 4K/8K/16K/32K/64K/128K prompts; the distractor list is fixed across lengths. The full-context baseline, GraphSpec, and prompt-materialization baselines (Physical/Random/Local concat) share identical model weights, tokenizer, decoding config, software stack, and hardware. Graph-RAG priors frozen before benchmarking so frontend retrieval is excluded from TTFT; TTFT measured from frozen-request submission to first token and for GraphSpec includes runtime-access-plan compilation and selected-KV materialization; throughput covers the full executor path (not isolated model-forward). Quality via LLM-as-judge similarity in [0,1] with pass threshold 0.5. Audit dataset SPIQA. The supplement does NOT state batch size or request concurrency for the TPS/TTFT tables.",
+          "limitations": "Validates KAP through a single concrete instantiation (Graph-RAG frontend + vLLM v0.16.0 backend on Qwen3-VL-32B-Instruct, 4xA800-80GB TP=4 bf16); does not exhaust the broader design space. Results are strongest for long-context multimodal QA where graph-derived priors can be grounded in evidence spans and realized as backend runtime objects; effectiveness depends on prior quality, the compiler's translation, and backend execution without excessive metadata/scheduling/synchronization overhead. Gains are decode-throughput-only: GraphSpec TTFT is slightly higher than full-context at most lengths (e.g., 0.87s vs 0.65s at 8K, 1.56s vs 1.51s at 4K) due to plan-compilation overhead, only turning slightly favorable at 128K (37.90s vs 38.31s). The batch size and request concurrency used for the Tables 2-5 TPS/TTFT measurements remain unreported, so absolute throughput numbers cannot be re-scaled to other serving configurations.",
+          "project_relevance": "Falls in the serving/runtime/compiler direction: a serving-time IR and compiler-executor for plan-driven KV access, complementary to RAG serving cache-reuse work (RAGCache, CacheBlend, TurboRAG, RAGO) which targets prefill/scheduling/cache reuse rather than decode-time KV consumption. For our briefing it is a horizontal observation with measured but modest decode-throughput gains (1.08-1.19x) and a quality-preserving KV-reduction trajectory; deployability beyond Graph-RAG-style long-context QA is unproven.",
+          "primary_source_resolved": true,
+          "quality_score": 86,
+          "source_notes": [
+            "Primary source is arXiv:2607.24260v1 (FETCHED, raw_fulltext_cache_hit=true); evidence pack spans abstract/intro (p1), metrics+audit (p12), RQ1/RQ2 tables (p13), RQ3/RQ4 ablation+phase-boundary (p14), related work (p15), limitations+conclusion (p16).",
+            "GraphSpec speedups are decode-throughput (TPS); TTFT is generally not improved (plan-compilation overhead), an important boundary visible in Table 2.",
+            "Phase-boundary model is validated only directionally (not refit), per the authors' RQ4 design.",
+            "Repair supplement (PDF Pages 6, 7, 11) identified the previously-unknown setup: backbone Qwen3-VL-32B-Instruct; SPIQA used for the full 4K-128K nested sweep; hardware 4xA800-80GB TP=4 bf16; vLLM v0.16.0; k=6 speculative tokens (q_prop=1); plus Algorithm 1 and the selected-KV-view materialization detail. Batch size / request concurrency remain unreported."
+          ],
+          "evidence_gaps": [
+            {
+              "question": "What GPU hardware, batch size, and request concurrency were used for the vLLM/GraphSpec throughput (TPS) and TTFT measurements, since these materially determine the absolute and relative numbers?",
+              "terms": [
+                "GPU",
+                "A100",
+                "H100",
+                "batch size",
+                "concurrency",
+                "vLLM",
+                "hardware setup"
+              ]
+            }
+          ],
+          "_provenance": {
+            "task_id": "9c5b2700514253480c8a25a2",
+            "candidate_id": "1b5f6d48893635b3b6e50cea",
+            "source_title": "KAP: Bridging the Knowledge Selection-Runtime Consumption Gap in LLM Systems",
+            "source_url": "https://arxiv.org/abs/2607.24260v1",
+            "document_id": "f14230896ecca02fa1091158",
+            "repair_of_task_id": "bfc4edbcd4df423d8e7bbe4c"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "ee715d6b89c2722b10eafa3e",
+      "brief_item": {
+        "title": "AAFLOW+将KV缓存建模为分布式对象并按带宽决定传输或重算",
+        "type": "研究",
+        "topic_name": "状态感知网络、TPN",
+        "direction_name": "KVCache感知的网络与带宽调度",
+        "published_at": "2026-07-13T01:19:13Z",
+        "core_conclusion": "多Agent系统反复重算共享上下文且现有KV优化局限于单节点，AAFLOW+把KV提升为可跨Agent复用的分布式对象并提供派生与传输算子。",
+        "mechanism": "构建通信感知工作流图，用UCX与NCCL零拷贝恢复已物化状态，带宽时延模型逐链路判定传输或重算。",
+        "result": "16Agent下成本较SGLang-prefix低7.6倍，Mistral上TTFT 0.041s。",
+        "boundary": "结果为建模成本而非墙钟实测，10Gbps下8个场景中5个重算更优。",
+        "project_relevance": "证实网络侧KV传输在中等以上带宽确有价值，低带宽交叉点是部署评估必须标注的边界。",
+        "keywords": [
+          "分布式KV缓存",
+          "多Agent",
+          "零拷贝传输",
+          "带宽感知调度",
+          "UCX"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2607.10987v1",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-07-13T01:19:13Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 82.9,
+        "_provenance": {
+          "task_id": "d9432c20287f2d1c2001242f",
+          "event_id": "2a5fdc820b278dd66856d189",
+          "batch_id": "writing-2",
+          "source_urls": [
+            "https://arxiv.org/abs/2607.10987v1"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "[AAFLOW+] Stateful Operator Abstraction with Zero-Copy Distributed KV Cache Orchestration for Multi-Agent Workflows",
+          "event_hint": "PVLDB/arXiv paper introducing AAFLOW+, a stateful agentic-workflow algebra that treats KV cache as a distributed object with materialize/transfer/fork/composition/eviction operators for multi-agent LLM serving.",
+          "problem": "Multi-agent LLM systems are text-centric: each agent repeatedly recomputes shared context via expensive prefill. Existing KV-cache optimization (vLLM PagedAttention, SGLang RadixAttention, DistServe, LMCache, FlexGen) is confined to single-node or single-request scopes and does not expose KV cache as a shareable distributed object across agents, so workflow-level branch duplication persists.",
+          "mechanism": "AAFLOW+ extends operator abstraction from dataflow to 'stateflow', making KV cache a first-class distributed systems object. It builds processes into communication-aware graphs that concurrently optimize data, prompts, and reusable model state, and provides explicit operators for KV materialization, transfer, fork, restricted composition, and eviction. The runtime enables zero-copy, transfer-aware execution so agents resume from already-materialized distributed state instead of replaying the prefix; communication uses UCX and NCCL. A bandwidth/latency-aware cost model decides transfer-vs-recompute per link.",
+          "evidence": [
+            {
+              "claim": "TTFT reduction (concrete): on the HF backend Mistral, AAFLOW+ reaches 0.041s mean TTFT vs AAFLOW-text 2.057s, dense prefill 2.017s, KVCOMM 0.704s, and DistServe-style 0.123s (3.0x slower). At vLLM max context Mistral AAFLOW+ is 0.171s vs dense prefill 38.880s and AAFLOW-text 39.655s.",
+              "value": "0.041s mean TTFT (HF Mistral); 0.171s at vLLM max context",
+              "baseline": "DistServe-style 0.123s (3.0x slower); dense prefill 38.880s and AAFLOW-text 39.655s at vLLM max context",
+              "condition": "HF/vLLM backends, Mistral-7B, 64 output tokens; Exp.1 bandwidth 200 Gbps, latency 50us",
+              "source_locator": "Section F.1 / Table 8, PDF Page 18"
+            },
+            {
+              "claim": "Multi-agent scaling: at 16 agents AAFLOW+ gives 7.63x lower aggregate compute cost than the nearest competitor on Llama3 (220.05s vs SGLang-prefix 1679.81s) and 7.60x on Mistral (224.39s vs SGLang-prefix 1704.86s).",
+              "value": "7.63x (Llama3, 16 agents); 7.60x (Mistral, 16 agents)",
+              "baseline": "SGLang-prefix 1679.81s (Llama3) / 1704.86s (Mistral); dense prefill 2716.11s (Mistral, 16 agents)",
+              "condition": "HF backend, 16 agents, Mistral-7B / Llama-3-8B, 64 output tokens; aggregate modeled cost not wall-clock",
+              "source_locator": "Section F.2 / Table 9, PDF Page 18; Table 3, PDF Page 10"
+            },
+            {
+              "claim": "Transfer-vs-recompute crossover: KV transfer outperforms recomputation on moderate-to-high bandwidth; on slow 10 Gbps links recomputation is preferable for 5 of 8 contexts. The scheduler transfers state only when KV_bytes/bandwidth + latency < T_prefill.",
+              "value": "recompute preferable in 5/8 contexts at 10 Gbps",
+              "baseline": "dense/text recompute; local-prefix reuse (vLLM/SGLang/KVCOMM)",
+              "condition": "Exp.3 bandwidth sweep 10-400 Gbps, RDMA-like 10us / Ethernet-like 100us latency, HF backend Mistral",
+              "source_locator": "Section 6.8 / Figure 9, PDF Page 10"
+            },
+            {
+              "claim": "Headline claims now located in supporting tables: 50.2x TTFT = Mistral AAFLOW-text 2.057s vs AAFLOW+ 0.041s (Exp.1, fixed 16 agents); KV-memory 1.72-6.10x spans vLLM-local 1.72x (14.351 GiB) to DistServe-style 6.10x (50.995 GiB) vs AAFLOW+ 8.355 GiB (Exp.4, branch factors 1-16); throughput 7.63-8.04x vs nearest competitors (Exp.5, 302.61 tok/s vs 37.62-39.62 tok/s), abstract states >7.74x.",
+              "value": "50.2x TTFT (Mistral AAFLOW-text); 1.72-6.10x KV memory; 7.63-8.04x throughput (abstract: >7.74x)",
+              "baseline": "AAFLOW-text 2.057s (50.2x); vLLM-local 14.351 GiB (1.72x) to DistServe 50.995 GiB (6.10x); SGLang/vLLM/DistServe 37.62-39.62 tok/s",
+              "condition": "HF backend, Mistral-7B; Exp.1 fixed 16 agents / Exp.4 branch factors 1-16 / Exp.5 fixed context with variation agents",
+              "source_locator": "Table 2, PDF Page 9; Table 4 + text, PDF Page 11 / Table 11, PDF Page 20; Table 5, PDF Page 11 / Table 12, PDF Page 20"
+            }
+          ],
+          "evaluation_context": "Distributed GPU cluster of 4-16 nodes, each NVIDIA A100 (80GB and 40GB), 32-64 CPU cores, RDMA InfiniBand; communication via UCX/NCCL. Backends: HF (AutoModelForCausalLM, deterministic decoding), vLLM, SGLang. Models: Mistral-7B-Instruct-v0.3 (up to 32,640 ctx) and Llama-3-8B-Instruct (up to 8,128 ctx), 64 generated tokens/branch. Workload is a shared-prefix parallel broadcast / Tree-of-Thought DAG (root -> KV materialize -> fork -> {agents} -> merge), not independent stateless chat; agent count swept k in {1,2,4,8,16}, context 1K-32K. Exp.1 network: 200 Gbps, 50us latency, 0.1ms resume overhead. Exp.3 sweeps 10-400 Gbps with 10us/100us latency. The total_latency_sec field is a modeled aggregate workload cost (text baselines charged 16x8x32=4096 full prefill/decode executions), explicitly NOT the Slurm wall-clock runtime. Throughput (Exp.5) and KV memory (Exp.4) are reported as modeled/simulated per-backend metrics over the same cost model.",
+          "limitations": "Results are from a trace-driven/analytical cost model parameterized by microbenchmarks, chosen to isolate systems-level KV-transfer limits from Python agentic-framework variance, not end-to-end observed wall-clock. The supplement confirms Exp.5 throughput and framework overhead remain a modeled/simulation profile (Omega is a modeled overhead), with no observed wall-clock validation. With Y=64 output tokens prefill dominates; if Y were thousands of tokens decode would dominate and the relative TTFT advantage shrinks. At 10 Gbps the serialized KV payload is large enough that recomputation wins for 5/8 contexts, so benefit requires moderate-to-high bandwidth. AAFLOW+ is not expected to help independent short stateless prompts (no shared state to fork/transfer).",
+          "project_relevance": "Directly on-topic for the TPN / state-aware-network card: it makes KV cache a distributed, network-transferable object with explicit transfer/fork operators and a bandwidth-aware transfer-vs-recompute scheduler, and reports the TTFT, throughput, KV-memory and transfer-crossover metrics the card lists as valuable evidence. It answers the card's core question by showing network-side KV transfer adds value beyond local GPU-memory scheduling, but only above a bandwidth crossover (it loses at 10 Gbps), which is exactly the applicability boundary the briefing must flag.",
+          "primary_source_resolved": true,
+          "quality_score": 85,
+          "source_notes": [
+            "Source: arXiv 2607.10987v1 (PVLDB submission), University of Virginia + Rutgers, fetch_status=FETCHED, raw_fulltext_cache_hit=true.",
+            "Evidence Pack is a balanced excerpt (Pages 1, 2, 8, 10, 12, 18) covering abstract, intro, related work, metrics/setup, and the appendix evaluation details F.1-F.3.",
+            "Repair supplement added PDF Pages 9, 11, 20: located Table 2 (Exp.1 TTFT, 50.2x config), Table 4/Table 11 (Exp.4 KV memory, 1.72-6.10x), and Table 5/Table 12 (Exp.5 throughput, >7.74x) plus Exp.5 modeled framework-overhead Omega."
+          ],
+          "evidence_gaps": [
+            {
+              "question": "Is there any observed (non-modeled) end-to-end wall-clock validation of the aggregate compute-cost speedups?",
+              "terms": [
+                "wall-clock",
+                "Slurm",
+                "observed latency",
+                "end-to-end",
+                "real run"
+              ]
+            }
+          ],
+          "_provenance": {
+            "task_id": "4a75683fc2125e5f653fd785",
+            "candidate_id": "7ed05c2d8c077f12f2dd4471",
+            "source_title": "[AAFLOW+] Stateful Operator Abstraction with Zero-Copy Distributed KV Cache Orchestration for Multi-Agent Workflows",
+            "source_url": "https://arxiv.org/abs/2607.10987v1",
+            "document_id": "b0dd91fb91aede035cfeb21f",
+            "repair_of_task_id": "b1f22c43a5ca4517fcae7327"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    },
+    {
+      "brief_item_id": "c37bbb0e061ba80f732084f3",
+      "brief_item": {
+        "title": "结构化代码库索引在固定模型下的因果消融显示其降低Agent搜索开销",
+        "type": "研究",
+        "topic_name": "Agent语义加速",
+        "direction_name": "上下文定位、构建与裁剪",
+        "published_at": "2026-06-21T10:10:51Z",
+        "core_conclusion": "此前整框架对比混淆了检索与提示控制，该工作在同模型同框架内开关索引做因果消融以分离结构化检索的独立贡献。",
+        "mechanism": "三臂共用同一模型运行，框架内仅移除两个引擎工具构成对照，定位评分剥离只来自引擎结果列表的路径。",
+        "result": "acc@5从44.3%升至84.5%，resolve从41.9%升至50.4%，且单格成本持平。",
+        "boundary": "仅Claude Opus 4.7单模型，跨框架未显著，未含JS与TS。",
+        "project_relevance": "为多文件改动场景引入结构化索引提供了依据，但单模型结论不应外推到其他模型。",
+        "keywords": [
+          "代码库索引",
+          "因果消融",
+          "定位准确率",
+          "SWE-bench",
+          "Coding Agent"
+        ],
+        "sources": [
+          {
+            "publisher": "arXiv",
+            "url": "https://arxiv.org/abs/2606.22417v1",
+            "source_level": "A",
+            "primary": true,
+            "published_at": "2026-06-21T10:10:51Z"
+          }
+        ],
+        "discovered_via": "arXiv",
+        "incremental_update": false,
+        "incremental_change": null,
+        "score": 81.8,
+        "_provenance": {
+          "task_id": "d9432c20287f2d1c2001242f",
+          "event_id": "82a7cd7c47c64c29c70a8330",
+          "batch_id": "writing-2",
+          "source_urls": [
+            "https://arxiv.org/abs/2606.22417v1"
+          ]
+        }
+      },
+      "facts": [
+        {
+          "title": "Code Isn't Memory: A Structural Codebase Index Inside a Coding Agent",
+          "event_hint": "arXiv paper (SuperAGI Research) giving the first leak-audited, model-controlled causal ablation of a structural codebase index (semantic+lexical+call-graph) inside the open-source SuperCoder coding-agent harness, versus the same harness without it and an agentic-grep (OpenCode) comparator.",
+          "problem": "Coding agents interleave LLMs with repository retrieval, but retrieval implementations vary widely across harnesses and there is no clean causal answer to whether adding a structural codebase index changes cost or resolve. Prior work either compares whole harnesses (confounding retrieval with prompt, tool surface, and control loop) or evaluates retrieval components in isolation on acc@k without the downstream agentic loop that turns ranking into a fix.",
+          "mechanism": "Three arms run on the same instance set with the model held fixed (Claude Opus 4.7): SC-ON (SuperCoder harness with context-engine tools codebase_search and codebase_graph available), SC-OFF (same harness, same prompts, with exactly those two engine tools removed), and OpenCode (an independent harness whose retrieval is ripgrep + file reads, no structural index). The within-harness SC-ON vs SC-OFF toggle isolates the index causally. Localization is scored under 'View B' (agent-targeted), which strips paths whose only provenance is an engine result list so that SC-ON acc@k counts the same agent-targeted surface as a grep arm; the rule is a strict no-op for SC-OFF/OpenCode (Algorithm 1, §4.7).",
+          "evidence": [
+            {
+              "claim": "Within-harness ablation: View B acc@5 localization moves from 44.3% (SC-OFF) to 84.5% (SC-ON), paired Wilcoxon p < 0.0001.",
+              "value": "44.3% -> 84.5% acc@5",
+              "baseline": "SC-OFF (same harness, engine tools removed) 44.3%",
+              "condition": "SuperCoder harness, Claude Opus 4.7, 3 seeds, View B localization, SWE-PolyBench Verified + SWE-bench Pro; pairwise n=80 (SC-ON vs SC-OFF)",
+              "source_locator": "§7 Discussion, PDF Page 9; Table V, §6.2, PDF Page 7"
+            },
+            {
+              "claim": "Within-harness ablation: resolve moves from 41.9% (SC-OFF) to 50.4% (SC-ON), paired p = 0.003; per-cell mean cost is statistically null (p = 0.73) while turns and tokens both fall significantly.",
+              "value": "41.9% -> 50.4% resolve; cost p = 0.73",
+              "baseline": "SC-OFF resolve 41.9%, $/cell null",
+              "condition": "same harness/model/seeds; resolve = F2P pass and P2P pass per upstream benchmark scorers",
+              "source_locator": "§7 Discussion, PDF Page 9; Table V, §6.2, PDF Page 7"
+            },
+            {
+              "claim": "Cross-harness check vs agentic-grep: SC-ON vs OpenCode on resolve (p = 0.087, delta +6.0 pp) and View B acc@5 (p = 0.080, delta +8.1 pp) is directional in SC-ON's favor but NOT conventionally significant (marginal). The within-harness ablation is the cleaner read.",
+              "value": "resolve p = 0.087; acc@5 p = 0.080",
+              "baseline": "OpenCode (independent ripgrep-based harness)",
+              "condition": "3 seeds, pairwise n=78 (SC-ON vs OpenCode); across-seed SD 0.7-3.3 pp on resolve and acc@5, ablation effects exceed noise by 3-10x",
+              "source_locator": "§7 Discussion / 'What we do not claim', PDF Page 9; §6.1, PDF Page 7"
+            },
+            {
+              "claim": "Cost/effort: SC-ON $/solved is $2.30 vs SC-OFF $2.84 and OpenCode $2.92 (about 21% lower than OpenCode); per-cell mean cost is statistically null ($1.15 vs $1.19, p=0.73 within-harness; $1.15 vs $1.32, p=0.35 cross-harness). Turns drop from 36.2 to 28.3 (p<0.0001) and tokens from 11.1k to 10.1k (p=0.027) within-harness; cross-harness turns 36.0 to 28.3 (p<0.0001), tokens 14.0k to 10.1k (p<0.0001).",
+              "value": "$/solved $2.30 vs $2.84 vs $2.92; turns -8.3 (p<0.0001); tokens -1.6k (p=0.027); $/cell null",
+              "baseline": "SC-OFF ($2.84/solved, 36.2 turns, 11.1k tokens) and OpenCode ($2.92/solved, 36.0 turns, 14.0k tokens)",
+              "condition": "unified provider gateway captured token-level cost on every LLM call, same accounting across arms; per-cell means on legit cells, 3 seeds",
+              "source_locator": "Table IV + Table V, §6.1-6.2, PDF Page 7; Abstract + §7 Discussion, PDF Pages 1 & 9"
+            },
+            {
+              "claim": "Per-arm headline magnitudes (Table IV, mean of seed means): SC-ON resolve 50.4%, acc@5 84.5%, recall@5 0.611, $/solved $2.30, $/cell $1.15, turns 28.3, tokens 10.1k, wall-clock 4.5 min; SC-OFF resolve 41.9%, acc@5 44.3%, recall@5 0.330, $/solved $2.84, $/cell $1.19, turns 36.2, tokens 11.1k, wall-clock 5.5 min; OpenCode resolve 45.3%, acc@5 75.3%, recall@5 0.601, $/solved $2.92, $/cell $1.32, turns 36.0, tokens 14.0k, wall-clock 5.4 min. Per-seed resolve SD: SC-ON 2.75, SC-OFF 1.86, OpenCode 0.71 (Table III). First-gold-file rank-1 rate: SC-ON 77.4% vs OpenCode 58.4% vs SC-OFF 33.3% (Figure 3).",
+              "value": "see claim; SC-ON cheaper iso-$/solved curve",
+              "baseline": "SC-OFF and OpenCode",
+              "condition": "SC-ON/SC-OFF/OpenCode, Claude Opus 4.7, 3 seeds, SWE-PolyBench Verified + SWE-bench Pro; per-cell means on legit cells; acc@5 is View B",
+              "source_locator": "Table III, Table IV, §6, PDF Page 7; Figure 3, PDF Page 8"
+            }
+          ],
+          "evaluation_context": "Model fixed throughout: Claude Opus 4.7 (claude-opus-4-7), 3 seeds, pass@1 per seed; stats reported as mean of seed means with across-seed SD. Benchmarks: SWE-PolyBench Verified (Go, Java, Python) + SWE-bench Pro (long-context Python). Run scope: 91 instances (34 Go, 20 Java, 37 Python); JS/TS not covered. Paired-n: triple-intersection n=75; pairwise n=80 (SC-ON vs SC-OFF), n=78 (SC-ON vs OpenCode). 30-minute wall-clock cap, no turn/dollar cap; cap fired on two cells (one SC-OFF, one OpenCode); SC-ON's longest legit cell ran 19 min. Per-task isolated container, uniform image across arms, leak-audited sandbox; released artifacts include per-cell exclusion ledger, leak-audit script, dual-view localization extractor, and full results DB. Supplement (§6, PDF Pages 7-8) provides Table III (per-seed resolve), Table IV (headline metrics: resolve/acc@5/recall@5/$/solved/$/cell/turns/tokens/wall-clock per arm), Table V (causal ablation paired deltas and p-values), Table VI (per-language Go/Java/Python resolve and acc@5), Figure 3 (first-gold rank CDF: SC-ON rank-1 77.4% vs SC-OFF 33.3%), and Figure 4 (acc@5 by gold-file count: 3+ file bucket SC-ON 91.3% vs SC-OFF 44.9%, gap 46.4 pp). Exploratory per-language localization: Go 95.4% ON vs 44.8% OFF, Python 82.9% vs 42.4%, Java 71.7% vs 46.7% (Table VI; no significance claims, per-language n 18-46).",
+          "limitations": "Single-model study (only Claude Opus 4.7) — intentional control trade, acknowledged as a limitation. Closed-source harnesses (Claude Code, Cursor, Windsurf) out of scope by design. JavaScript/TypeScript not covered. The cross-harness SC-ON vs OpenCode result on resolve (p=0.087) and acc@5 (p=0.080) is marginal, NOT conventionally significant — the within-harness ablation is the cleaner read. The substantive benefit is conditional: the deployment question is whether the workload includes multi-file changes where structural ranking pays off (exploratory Figure 4 shows the largest within-harness acc@5 gap in the 3+ file bucket, 46.4 pp), not whether the index is too expensive to run. Per-language slices (Table VI) are exploratory with n=18-46 and no significance claims. Does not address the phrasing-ecological-validity threat (Garg et al. >50% capability overestimation).",
+          "project_relevance": "Directly on the Agent-semantic-acceleration card: it causally tests whether a structural codebase index reduces repeated search/read effort and improves task success, and reports exactly the card's valuable evidence — tool-call count (turns), token consumption, resolve rate, and $/solved. The supplement confirms the magnitudes: turns drop 36.2->28.3 (p<0.0001), tokens 11.1k->10.1k (p=0.027) within-harness while per-cell cost stays null ($1.15 vs $1.19, p=0.73) and $/solved drops to $2.30 from $2.84. This is concrete evidence that the index cuts repeated Read/Grep-style exploration, answering the card's core question. The marginal cross-harness result and single-model scope are the boundary the briefing must flag before generalizing.",
+          "primary_source_resolved": true,
+          "quality_score": 90,
+          "source_notes": [
+            "Source: arXiv 2606.22417v1, SuperAGI Research (Ishaan Bhola, Adithyan Krishnan, Sravanth Kurmala, Mukunda NS), fetch_status=FETCHED, raw_fulltext_cache_hit=true.",
+            "Evidence Pack spans PDF Pages 1, 2, 4, 5, 9: abstract, intro, related work, experimental design (arms/model/benchmarks/sandbox/metrics/localization views), and the §7 Discussion with the headline ablation numbers and explicit 'what we do not claim' caveats.",
+            "Repair supplement (PDF Pages 7-8) resolved the prior evidence gap: Table IV provides full per-arm headline metrics (turns 28.3/36.2/36.0, tokens 10.1k/11.1k/14.0k, $/solved $2.30/$2.84/$2.92, $/cell $1.15/$1.19/$1.32, wall-clock 4.5/5.5/5.4 min), Table V provides causal ablation paired deltas and p-values, Table III provides per-seed resolve, Table VI provides per-language breakdown, and Figures 3-4 provide rank CDF and gold-file-count heterogeneity."
+          ],
+          "evidence_gaps": [],
+          "_provenance": {
+            "task_id": "d388a13bfdbf122e86f25993",
+            "candidate_id": "4614600f28ae7992dc7cb784",
+            "source_title": "Code Isn't Memory: A Structural Codebase Index Inside a Coding Agent",
+            "source_url": "https://arxiv.org/abs/2606.22417v1",
+            "document_id": "d1740538b8469e2955cb1211",
+            "repair_of_task_id": "b78566e9a1db726d12357ade"
+          }
+        }
+      ],
+      "length": {
+        "min_chars": 180,
+        "max_chars": 260
+      },
+      "rules": [
+        "All numbers must be supported by facts.",
+        "Baseline and experimental conditions must not be omitted when material.",
+        "Project inference must be labelled as project judgement, not source fact.",
+        "AI HOT summaries cannot be the sole evidence.",
+        "Every field must be a complete sentence without ellipsis or dangling punctuation."
+      ]
+    }
+  ],
+  "constraints": {
+    "independent_items": true,
+    "no_cross_item_evidence": true
+  }
+}
