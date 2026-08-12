@@ -23,7 +23,11 @@ def _base_email() -> str:
     return """<!doctype html><html><body><table>
 <tr id="judgement-row"><td><table data-reader-role="judgement"><tr><td>本期判断</td></tr></table></td></tr>
 <tr id="tpn-row"><td><a id="topic-tpn"></a>TPN</td></tr>
+<tr data-reader-row="deep-row" id="deep-1"><td>deep-1</td></tr>
+<tr data-reader-row="deep-row" id="deep-2"><td>deep-2</td></tr>
 <tr id="agent-row"><td><a id="topic-agent_acceleration"></a>Agent</td></tr>
+<tr data-reader-row="deep-row" id="deep-3"><td>deep-3</td></tr>
+<tr data-reader-row="deep-row" id="deep-4"><td>deep-4</td></tr>
 </table></body></html>"""
 
 
@@ -161,6 +165,10 @@ def test_renderer_accepts_more_than_three_generated_persona_images(tmp_path: Pat
 
     assert len(illustrations) == 5
     assert all(node["data-persona-used"] == "1" for node in illustrations)
+    assert all(node.get("data-illustration-slot") for node in illustrations)
+    for node in illustrations:
+        assert node.find_previous_sibling("tr").get("data-reader-role") != "explanatory-illustration"
+        assert node.find_next_sibling("tr").get("data-reader-role") != "explanatory-illustration"
 
 
 def test_schema_has_no_image_count_cap_and_requires_persona_for_generated_images() -> None:
@@ -267,6 +275,7 @@ def test_illustration_input_reads_only_finalized_issue_document_and_ian_persona(
     assert constraints["persona_overlay_path"] == "assets/persona/ian-qiliang/overlay.md"
     assert constraints["persona_reference_manifest_path"] == "assets/persona/ian-qiliang/reference-manifest.yaml"
     assert constraints["persona_reference_paths"] == expected_references
+    assert "layout_policy" in constraints
     assert "persona_spec_path" not in constraints
     assert "persona_reference_path" not in constraints
 
