@@ -5,7 +5,10 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from briefing_skill.issue_style_polish import (
+    PATCH_PROMPT,
+    PATCH_SCHEMA,
     STYLE_FIELDS,
+    _reconstruct_sparse_items,
     _strip_redundant_writing_skills,
 )
 
@@ -22,38 +25,128 @@ def test_old_per_batch_writing_skill_chain_is_removed() -> None:
     assert _strip_redundant_writing_skills("fact_check_batch", metadata) == metadata
 
 
-def test_issue_level_polish_is_the_only_writing_skill_stage() -> None:
+def test_issue_level_polish_is_sparse_keep_by_default_and_only_writing_skill_stage() -> None:
     root = Path(__file__).resolve().parents[1]
-    prompt = (root / "prompts" / "item-style-polish.md").read_text(encoding="utf-8")
+    prompt = (root / "prompts" / PATCH_PROMPT).read_text(encoding="utf-8")
     draft_prompt = (root / "prompts" / "item-writing-batch.md").read_text(encoding="utf-8")
     synthesis_prompt = (root / "prompts" / "issue-synthesis.md").read_text(encoding="utf-8")
 
     assert "single issue-level Chinese style pass" in prompt
     assert "Call `$human-writing` **once for the entire `items` array**" in prompt
-    assert "do not load any other writing Skill" in prompt
+    assert "default action is **KEEP**" in prompt
+    assert '{"patches": []}' in prompt
+    assert "Never return a complete item" in prompt
     assert "Do not call any writing Skill here" in draft_prompt
     assert "Do not call any writing Skill here" in synthesis_prompt
 
 
-def test_style_polish_schema_edits_only_reader_facing_fields() -> None:
+def test_sparse_style_schema_allows_empty_or_field_level_patches_only() -> None:
     root = Path(__file__).resolve().parents[1]
-    schema = json.loads((root / "schemas" / "item-style-polish.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads((root / "schemas" / PATCH_SCHEMA).read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
-    result = {
-        "results": [
+
+    assert list(validator.iter_errors({"patches": []})) == []
+    payload = {
+        "patches": [
             {
                 "brief_item_id": "item-1",
-                "title": "一个足够具体的技术标题",
-                "core_conclusion": "该方案在明确条件下改变了关键数据路径，并把主要收益集中到可验证的系统瓶颈上。",
-                "mechanism": "系统通过结构化索引缩短重复探索路径，同时保留原有事实边界。",
-                "result": "实验在给定基线与工作负载下获得明确收益，结论不外推到未测试条件。",
-                "boundary": "当前结果仍受实验规模和部署条件限制。",
-                "project_relevance": "项目侧应优先复现实验条件，再判断该机制是否值得进入现有数据路径。",
+                "field": "mechanism",
+                "before": "原机制表述。",
+                "after": "更通顺但事实完全相同的机制表述。",
+                "reason": "原句主谓关系不清。",
             }
         ]
     }
-    assert list(validator.iter_errors(result)) == []
-    assert tuple(result["results"][0].keys())[1:] == STYLE_FIELDS
+    assert list(validator.iter_errors(payload)) == []
+    assert payload["patches"][0]["field"] in STYLE_FIELDS
+
+    whole_item = {
+        "patches": [
+            {
+                **payload["patches"][0],
+                "title": "不允许重新输出整条 item",
+            }
+        ]
+    }
+    assert list(validator.iter_errors(whole_item))
+
+
+def _input_item():
+    item = {
+        "title": "技术标题",
+        "core_conclusion": "核心结论保持不变。",
+        "mechanism": "原机制表述。",
+        "result": "实验结果保持不变。",
+        "boundary": "边界保持不变。",
+        "project_relevance": "项目相关性保持不变。",
+        "score": 90,
+        "sources": [{"url": "https://example.org/source"}],
+    }
+    return {
+        "items": [
+            {
+                "brief_item_id": "item-1",
+                "item": item,
+                "length": {"min_chars": 1, "max_chars": 1000},
+            }
+        ],
+        "constraints": {"sparse_patch": True},
+    }
+
+
+def test_good_input_noop_is_exactly_identical() -> None:
+    input_data = _input_item()
+    reconstructed, errors = _reconstruct_sparse_items(input_data, [])
+    assert errors == []
+    assert reconstructed["item-1"] == input_data["items"][0]["item"]
+
+
+def test_single_field_patch_leaves_every_other_field_byte_identical() -> None:
+    input_data = _input_item()
+    before = input_data["items"][0]["item"]
+    patches = [
+        {
+            "brief_item_id": "item-1",
+            "field": "mechanism",
+            "before": "原机制表述。",
+            "after": "机制表述更通顺。",
+            "reason": "修复语序。",
+        }
+    ]
+    reconstructed, errors = _reconstruct_sparse_items(input_data, patches)
+    assert errors == []
+    after = reconstructed["item-1"]
+    assert after["mechanism"] == "机制表述更通顺。"
+    for field, value in before.items():
+        if field != "mechanism":
+            assert after[field] == value
+
+
+def test_stale_before_and_noop_patch_are_rejected() -> None:
+    input_data = _input_item()
+    stale = [
+        {
+            "brief_item_id": "item-1",
+            "field": "mechanism",
+            "before": "不是当前文本",
+            "after": "修改后",
+            "reason": "测试 stale patch",
+        }
+    ]
+    _, errors = _reconstruct_sparse_items(input_data, stale)
+    assert any("before text does not match" in error for error in errors)
+
+    noop = [
+        {
+            "brief_item_id": "item-1",
+            "field": "mechanism",
+            "before": "原机制表述。",
+            "after": "原机制表述。",
+            "reason": "不应存在的无效 patch",
+        }
+    ]
+    _, errors = _reconstruct_sparse_items(input_data, noop)
+    assert any("no-op" in error for error in errors)
 
 
 def test_fact_check_batching_is_character_bounded_with_high_item_ceiling() -> None:
