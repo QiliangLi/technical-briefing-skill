@@ -6,7 +6,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .radar_signal_synthesis import build_radar_candidates
-from .utils import canonicalize_url, read_json, write_json
+from .utils import canonicalize_url, normalize_text, read_json, write_json
 
 
 MANIFEST_NAME = "publication-manifest.json"
@@ -312,6 +312,32 @@ def _html_urls(soup, selector: str) -> set[str]:
     return urls
 
 
+def _radar_records_from_manifest(manifest: dict[str, Any]) -> set[tuple[str, str, str]]:
+    records: set[tuple[str, str, str]] = set()
+    for item in manifest.get("radar") or []:
+        category = normalize_text(item.get("category") or "")
+        title = normalize_text(item.get("title") or "")
+        for value in item.get("urls") or []:
+            url = canonicalize_url(value)
+            if url:
+                records.add((category, title, url))
+    return records
+
+
+def _radar_records_from_html(soup) -> set[tuple[str, str, str]]:
+    records: set[tuple[str, str, str]] = set()
+    for card in soup.select('[data-reader-role="radar-card"]'):
+        category = normalize_text(card.get("data-radar-category") or "")
+        for node in card.select('[data-reader-role="radar-item"]'):
+            link = node.find("a", href=True)
+            if link is None:
+                continue
+            url = canonicalize_url(link.get("href"))
+            if url:
+                records.add((category, normalize_text(link.get_text(" ", strip=True)), url))
+    return records
+
+
 def publication_provenance_errors(root: Path, run_id: str, email_html: str) -> list[str]:
     """Prove that the final DOM is the structured publication, not a hand-edited lookalike."""
 
@@ -329,22 +355,26 @@ def publication_provenance_errors(root: Path, run_id: str, email_html: str) -> l
     expected_appendix = {
         url for item in manifest.get("appendix") or [] for url in item.get("urls") or [] if url
     }
-    expected_radar = {
-        url for item in manifest.get("radar") or [] for url in item.get("urls") or [] if url
-    }
     actual_deep = _html_urls(soup, '[data-reader-role="deep-card"], [data-reader-role="observation-card"]')
     actual_appendix = _html_urls(soup, 'tr[data-topic-appendix="1"]')
-    actual_radar = _html_urls(soup, '[data-reader-role="radar-item"]')
 
     for label, expected, actual in (
         ("Deep/Observation", expected_deep, actual_deep),
         ("Appendix", expected_appendix, actual_appendix),
-        ("Radar", expected_radar, actual_radar),
     ):
         if expected != actual:
             missing = sorted(expected - actual)
             extra = sorted(actual - expected)
             errors.append(f"{label} HTML provenance mismatch: missing={missing[:3]} extra={extra[:3]}")
+
+    expected_radar = _radar_records_from_manifest(manifest)
+    actual_radar = _radar_records_from_html(soup)
+    if expected_radar != actual_radar:
+        missing = sorted(expected_radar - actual_radar)
+        extra = sorted(actual_radar - expected_radar)
+        errors.append(
+            f"Radar HTML provenance mismatch: missing={missing[:3]} extra={extra[:3]}"
+        )
 
     contract = manifest.get("radar_contract") or {}
     required = int(contract.get("required_minimum") or 0)
