@@ -125,7 +125,11 @@ def install_publication_stage() -> None:
     from . import reader_facing_quality
     from .emailer import EmailService
     from .pipeline import Pipeline
-    from .publication_manifest import finalize_radar_groups, write_publication_manifest
+    from .publication_manifest import (
+        filter_current_final_radar_groups,
+        finalize_radar_groups,
+        write_publication_manifest,
+    )
     from .rendering import Renderer
 
     if getattr(Pipeline, "_publication_stage_installed", False):
@@ -154,9 +158,9 @@ def install_publication_stage() -> None:
 
     EmailService._topic_groups = topic_groups
 
-    # Radar finalization happens after Deep + Appendix are fixed. First remove source
-    # collisions, then refill only from this run's reserve candidates and persist the
-    # exact structured publication manifest before Jinja renders the email.
+    # Radar finalization happens after Deep + Appendix are fixed. Historical reference
+    # issues are not allowed to refill Radar. Surviving Agent-selected signals are kept
+    # first, then only this run's frozen reserve candidates may fill the product minimum.
     original_aihot_groups = EmailService._aihot_groups
 
     def aihot_groups(self, issue_date=None, *, issue_id=None, issue_data=None):
@@ -166,14 +170,13 @@ def install_publication_stage() -> None:
             issue_id=issue_id,
             issue_data=issue_data,
         )
-        filtered = final_reader_contract.filter_final_radar_groups(
+        if not issue_data:
+            return groups
+        filtered = filter_current_final_radar_groups(
             self,
             groups,
-            issue_id=str(issue_id) if issue_id else None,
             issue_data=issue_data,
         )
-        if not issue_data:
-            return filtered
         final_groups, contract = finalize_radar_groups(
             self,
             filtered,
