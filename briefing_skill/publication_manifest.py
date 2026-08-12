@@ -43,6 +43,41 @@ def _appendix_urls(service) -> set[str]:
     return urls
 
 
+def filter_current_final_radar_groups(
+    service,
+    groups: list[dict[str, Any]],
+    *,
+    issue_data: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Filter final Radar against the actual current Deep/Appendix publication.
+
+    The old final-reader helper could refill from a named historical reference run.
+    The active publication path must not do that: any refill belongs to this run's
+    reserve candidate pool and is handled later by ``finalize_radar_groups``.
+    """
+
+    forbidden = {
+        canonicalize_url(source.get("url"))
+        for item in issue_data.get("items") or []
+        for source in item.get("sources") or []
+        if canonicalize_url(source.get("url"))
+    } | _appendix_urls(service)
+    forbidden_projects = _github_projects(forbidden)
+    filtered: list[dict[str, Any]] = []
+    for group in groups or []:
+        kept: list[dict[str, Any]] = []
+        for item in group.get("items") or []:
+            urls = _urls_from_item(item)
+            if not urls or urls & forbidden:
+                continue
+            if _github_projects(urls) & forbidden_projects:
+                continue
+            kept.append(dict(item))
+        if kept:
+            filtered.append({**group, "items": kept})
+    return filtered
+
+
 def _radar_policy(service) -> tuple[int, int]:
     policy = dict(getattr(service.config, "scoring", {}).get("radar") or {})
     return (
@@ -96,8 +131,6 @@ def finalize_radar_groups(
     } | _appendix_urls(service)
     forbidden_projects = _github_projects(forbidden)
 
-    # Keep synthesis-selected signals first, but apply the final category/total limits
-    # deterministically before considering reserve candidates.
     final_groups: list[dict[str, Any]] = []
     by_name: dict[str, dict[str, Any]] = {}
     seen: set[str] = set()
@@ -146,7 +179,7 @@ def finalize_radar_groups(
         viable_unique.add(url)
         available_by_category[name] += 1
 
-    # Capacity counts already-kept signals plus legal reserve slots per category.
+    # Capacity counts already-kept cards plus legal reserve slots per category.
     category_names = set(counts) | set(available_by_category)
     capacity = min(
         total_max,
@@ -155,7 +188,7 @@ def finalize_radar_groups(
             for name in category_names
         ),
     )
-    raw_eligible = len(seen) + len(reserve)
+    raw_eligible = total + len(reserve)
     required = radar_required_minimum(raw_eligible, capacity)
 
     for name, candidate in reserve:
@@ -233,11 +266,14 @@ def write_publication_manifest(
     radar: list[dict[str, Any]] = []
     for group in groups:
         for item in group.get("items") or []:
+            primary = canonicalize_url(item.get("url"))
             radar.append(
                 {
                     "category": str(group.get("name") or "其他技术前沿"),
                     "title": str(item.get("title") or ""),
-                    "urls": sorted(_urls_from_item(item)),
+                    # The template renders only hot.url even when one synthesized
+                    # signal was grounded by multiple source URLs.
+                    "urls": [primary] if primary else [],
                 }
             )
 
