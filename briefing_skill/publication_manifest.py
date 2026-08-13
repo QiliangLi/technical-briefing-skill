@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -387,30 +387,54 @@ def publication_provenance_errors(root: Path, run_id: str, email_html: str) -> l
     return errors
 
 
-def illustration_provenance_errors(root: Path, run_id: str, email_html: str) -> list[str]:
+def illustration_provenance_errors(
+    root: Path,
+    run_id: str,
+    email_html: str,
+    *,
+    required: bool = False,
+) -> list[str]:
+    """Validate generated illustration identity, multiplicity and spacing.
+
+    Missing illustration state is allowed only for runs that never entered the
+    illustration stage. Callers that know an illustration task exists must set
+    ``required=True`` so this validator remains a second fail-closed guard even if
+    an upstream build-time manifest check regresses.
+    """
+
     path = root / "workspace" / "runs" / run_id / "illustrations" / "manifest.json"
-    if not path.is_file():
-        return []
-    manifest = read_json(path, {})
-    expected = {
-        str(item.get("published_asset_url") or item.get("generated_asset_path") or "")
-        for item in manifest.get("illustrations") or []
-        if item.get("status") == "generated" and item.get("persona_used") is True
-    }
-    expected.discard("")
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(email_html, "html.parser")
     rows = soup.select('tr[data-reader-role="explanatory-illustration"]')
-    actual = {
+    if not path.is_file():
+        if required or rows:
+            return ["Missing illustrations/manifest.json for final illustration provenance validation"]
+        return []
+
+    manifest = read_json(path, {})
+    expected = Counter(
+        str(item.get("published_asset_url") or item.get("generated_asset_path") or "")
+        for item in manifest.get("illustrations") or []
+        if item.get("status") == "generated"
+        and item.get("persona_used") is True
+        and str(item.get("published_asset_url") or item.get("generated_asset_path") or "")
+    )
+    # The renderer contract currently puts one generated image in each explanatory
+    # illustration row. Count rather than set-compare so duplicate DOM insertions cannot
+    # hide behind identical src values.
+    actual = Counter(
         str(image.get("src") or "")
         for row in rows
         for image in row.find_all("img", src=True)
-    }
+    )
     errors: list[str] = []
     if expected != actual:
+        missing = list((expected - actual).elements())
+        extra = list((actual - expected).elements())
         errors.append(
-            "Illustration HTML provenance mismatch: rendered generated images do not exactly match manifest"
+            "Illustration HTML provenance mismatch: rendered generated images do not exactly match manifest "
+            f"including multiplicity; missing={missing[:3]} extra={extra[:3]}"
         )
     for row in rows:
         previous = row.find_previous_sibling("tr")
