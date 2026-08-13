@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
+from .business_time import briefing_date
 from .utils import read_json, source_url_is_resolved, write_json
 
 
@@ -155,7 +156,7 @@ def install_quality_guards() -> None:
             )
         )
         max_age_days = pipeline_module.freshness_limits(self.config)["absolute"]
-        date_to = datetime.now(timezone.utc).date()
+        date_to = briefing_date(self.config)
         date_from = date_to - timedelta(days=max_age_days)
         created = 0
         for topic, direction in gaps:
