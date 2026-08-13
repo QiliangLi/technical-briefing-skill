@@ -142,43 +142,9 @@ def install_pipeline_optimizations() -> None:
     original_apply = Pipeline._apply_task
     original_demo = demo_module._demo_output
 
-    def prepare_agent_search(self, max_queries: int = 4) -> int:
-        policy = _policy(self.config.settings)
-        limit = min(max(0, int(max_queries)), int(self.config.settings.get("agent_web_search_max_queries", 4)))
-        if not limit:
-            return 0
-        deep_topics = set(policy.get("deep_topics") or DEFAULT_DEEP_TOPICS)
-        raw_rows = self.db.fetchall("SELECT title,summary,topic_hint,direction_hint FROM raw_items WHERE run_id=?", (self.run_id,))
-        priority = {"highest": 100, "high": 80, "medium": 55, "low": 30}
-        gaps = [(topic, direction) for topic, direction in self.config.iter_directions()
-                if topic.get("id") in deep_topics and not direction_is_covered(raw_rows, topic["id"], direction)]
-        gaps.sort(key=lambda pair: (-priority.get(pair[0].get("aihot_priority", "low"), 30), pair[0]["id"], pair[1]["id"]))
-        absolute_days = pipeline_module.freshness_limits(self.config)["absolute"]
-        date_to = datetime.now(timezone.utc).date()
-        date_from = date_to - timedelta(days=absolute_days)
-        created = 0
-        for topic, direction in gaps[:limit]:
-            queries = direction.get("queries") or []
-            if not queries:
-                continue
-            domains = []
-            if topic["id"] == "agent_acceleration":
-                domains = ["arxiv.org", "openreview.net", "github.com", "simonwillison.net", "latent.space"]
-            elif topic["id"] == "optical_network":
-                domains = ["ofcconference.org", "dl.acm.org", "arxiv.org", "research.google"]
-            self.tasks.create(self.run_id, "agent_web_search", f"{topic['id']}:{direction['id']}", {
-                "topic_id": topic["id"], "topic_name": topic["name"],
-                "direction_id": direction["id"], "direction_name": direction["name"],
-                "query": queries[0], "preferred_domains": domains,
-                "freshness_days": absolute_days, "date_from": date_from.isoformat(),
-                "date_to": date_to.isoformat(), "max_results": 10,
-                "search_reason": "fixed-source coverage gap",
-            }, prompt="agent-web-search.md", schema="web-search-results.schema.json",
-               priority=priority.get(topic.get("aihot_priority", "low"), 30))
-            created += 1
-        if created:
-            self.db.update_run(self.run_id, stage="AWAITING_AGENT_SEARCH")
-        return created
+    # Coverage-gap search is owned by discovery_stage. Do not install the older
+    # per-lane prepare_agent_search implementation here; keeping two shadowed owners
+    # made the old UTC-date path a latent install-order regression.
 
     def prepare_relevance(self) -> int:
         pipeline_module.RuleMatcher(self.config, self.db).create_candidates(self.run_id)
@@ -349,7 +315,6 @@ def install_pipeline_optimizations() -> None:
                                   "matched_signals": ["机制", "端到端加速"]} for row in data.get("candidates", [])]}
         return original_demo(task_type, data)
 
-    Pipeline.prepare_agent_search = prepare_agent_search
     Pipeline.prepare_relevance = prepare_relevance
     Pipeline._apply_task = apply_task
     Pipeline._maybe_prepare_facts = maybe_prepare_facts
