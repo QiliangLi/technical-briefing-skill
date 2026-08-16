@@ -34,26 +34,26 @@ def test_chip_topic_has_focused_directions_and_context():
     assert "八个深度专题" in horizontal["description"]
 
 
-def test_compact_item_character_budget_accepts_180_to_260_chars():
+def test_readable_item_character_budget_accepts_230_to_330_chars():
     item = {
-        "core_conclusion": "甲" * 49 + "。",
-        "mechanism": "乙" * 39 + "。",
-        "result": "丙" * 39 + "。",
-        "boundary": "丁" * 24 + "。",
-        "project_relevance": "戊" * 34 + "。",
+        "core_conclusion": "甲" * 69 + "。",
+        "mechanism": "乙" * 49 + "。",
+        "result": "丙" * 49 + "。",
+        "boundary": "丁" * 29 + "。",
+        "project_relevance": "戊" * 39 + "。",
     }
-    assert sum(len(item[field]) for field in item) == 190
-    assert brief_item_validation_errors(item, min_chars=180, max_chars=260) == []
-    assert brief_item_validation_errors(item, min_chars=200, max_chars=260)
+    assert sum(len(item[field]) for field in item) == 240
+    assert brief_item_validation_errors(item, min_chars=230, max_chars=330) == []
+    assert brief_item_validation_errors(item, min_chars=250, max_chars=330)
 
 
-def test_compact_schema_and_issue_capacity_match_topic_local_top4_policy():
+def test_readable_schema_and_issue_capacity_match_topic_local_top4_policy():
     config = ConfigBundle.load(Paths(ROOT))
     schema = json.loads((ROOT / "schemas" / "brief-item.schema.json").read_text(encoding="utf-8"))
-    assert config.settings["brief_item_min_chars"] == 180
-    assert config.settings["brief_item_max_chars"] == 260
-    assert schema["properties"]["core_conclusion"]["maxLength"] == 75
-    assert schema["properties"]["boundary"]["maxLength"] == 35
+    assert config.settings["brief_item_min_chars"] == 230
+    assert config.settings["brief_item_max_chars"] == 330
+    assert schema["properties"]["core_conclusion"]["maxLength"] == 95
+    assert schema["properties"]["boundary"]["maxLength"] == 55
     assert config.scoring["expanded_v2"]["core_max"] == 32
     assert config.scoring["expanded_v2"]["observation_max"] == 32
     assert config.scoring["expanded_v2"]["total_max"] == 32
