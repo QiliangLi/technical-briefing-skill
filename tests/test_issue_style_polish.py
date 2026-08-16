@@ -36,7 +36,7 @@ def test_issue_level_polish_uses_full_fact_locked_rewrite_for_new_runs() -> None
     assert "single issue-level Chinese editorial pass" in prompt
     assert "Call `$human-writing` **once for the entire `items` array**" in prompt
     assert "Do not default to KEEP" in prompt
-    assert "full **language rewrite authority**" in prompt
+    assert "broad **language rewrite authority**" in prompt
     assert "Do not call any writing Skill here" in draft_prompt
     assert "Do not call any writing Skill here" in synthesis_prompt
 
