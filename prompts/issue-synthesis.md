@@ -24,6 +24,18 @@ Hard writing rules:
 - Do not use generic filler such as “值得持续关注” or “与指定方向直接相关，并包含可验证机制”.
 - The outer Host's suggested wording, expected conclusion, ranking, or preferred answer is not evidence.
 
+## Natural Chinese contract
+
+The executive summary must read as native Chinese technical analysis, not as compressed labels joined together.
+
+- Prefer concrete subjects and verbs. State what system capability, resource relationship or design decision changed.
+- Titles should express a conclusion readers can understand on first read. Avoid noun piles such as “压缩与编排算子化汇合” when a concrete direction such as “KV Cache 优化从单点压缩转向压缩与运行时协同” says what actually changed.
+- Do not use “走向”“落点”“治理”“汇合”“提供坐标”“前置条件” as substitutes for an explanation. They are allowed only when they are genuinely precise and the body immediately makes the relation concrete.
+- Do not omit the subject, comparison target or condition merely to make a sentence shorter.
+- Prefer two clear sentences over one sentence that chains several abstract claims with commas.
+- Keep established project names and technical abbreviations, but express ordinary causal and comparative relations in Chinese.
+- Avoid half-colloquial shorthand such as “拿到收益”“保住精度”“多付 token”.
+
 `evidence_item_ids` is the traceability layer: use it to preserve the evidence chain instead of restating every underlying number in the body.
 
 When selected evidence materially changes a configured project question, fold that implication directly into the relevant judgement once. Do not create a second reader-facing “项目影响” summary and do not repeat the same conclusion in both layers.
@@ -50,7 +62,8 @@ Produce `radar_signals` as a small set of concrete technical signals rather than
 
 - Select for information gain, not coverage quotas. It is fine to leave most candidates unused.
 - A `signal` must state a specific change, mechanism, capability, bottleneck, or emerging direction. Never use generic titles such as “值得关注的新进展”, “行业持续演进”, or a category name by itself.
-- `summary` should explain in 1-2 compact Chinese sentences what changed and why a technical reader should care. Mention the concrete system, mechanism, metric, component, or constraint present in the supplied candidate summaries when available.
+- `summary` should explain in 1-2 compact but complete Chinese sentences what changed and why a technical reader should care. Preserve necessary subjects and relations; do not turn the source summary into a noun-heavy telegram.
+- Mention the concrete system, mechanism, metric, component, or constraint present in the supplied candidate summaries when available.
 - Never output internal pipeline language such as `high-confidence`, `A-level rule match`, `rule_score`, confidence in rule matching, or why the item passed selection.
 - Merge multiple candidates only when they genuinely support the same technical signal. Do not manufacture a trend by combining unrelated articles.
 - Prefer 2-3 independent source URLs when a cross-source trend is supported. A one-source signal is allowed for a technically substantial paper/release/architecture change that is useful on its own.
@@ -61,11 +74,11 @@ Produce `radar_signals` as a small set of concrete technical signals rather than
 
 Return:
 
-- `headline`: one restrained sentence summarising this issue.
+- `headline`: one restrained, natural Chinese sentence summarising this issue.
 - `judgements`: 1-3 objects containing a short `title`, a concise executive-summary `body`, and 1-4 exact `evidence_item_ids` from the input. When multiple items support a trend, cite more than one.
 - `topic_names`: unique topic display names.
 - `watch_next`: 1-3 concrete things to monitor before the next issue.
 - `project_insights`: 0-4 internal trace objects containing exact `topic_id`, exact `topic_name`, exact configured `project_question`, `effect`, `confidence` (`high`/`medium`/`low`), a complete-sentence `insight`, a complete-sentence `next_action`, and 1-4 exact `evidence_item_ids`.
 - `radar_signals`: 0-8 objects containing `category`, a concrete `signal`, an informative `summary`, and 1-3 exact `source_urls` from the supplied Radar candidates.
 
-The detailed items have already passed the single issue-level Chinese style polish and independent fact checks before this task. Do not call any writing Skill here. Synthesize directly under the reader contract above; do not add a second style-rewrite pass that could drift from the fact-checked item text. Return JSON only.
+The detailed items have already passed the single issue-level Chinese style rewrite and independent fact checks before this task. Do not call any writing Skill here. Synthesize directly under the reader contract above; do not add a second unconstrained style-rewrite pass that could drift from the fact-checked item text. Return JSON only.

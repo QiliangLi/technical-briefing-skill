@@ -5,6 +5,8 @@ import yaml
 from jsonschema import Draft202012Validator
 
 from briefing_skill.issue_style_polish import (
+    FULL_PROMPT,
+    FULL_SCHEMA,
     PATCH_PROMPT,
     PATCH_SCHEMA,
     STYLE_FIELDS,
@@ -25,26 +27,32 @@ def test_old_per_batch_writing_skill_chain_is_removed() -> None:
     assert _strip_redundant_writing_skills("fact_check_batch", metadata) == metadata
 
 
-def test_issue_level_polish_is_sparse_keep_by_default_and_only_writing_skill_stage() -> None:
+def test_issue_level_polish_uses_full_fact_locked_rewrite_for_new_runs() -> None:
     root = Path(__file__).resolve().parents[1]
-    prompt = (root / "prompts" / PATCH_PROMPT).read_text(encoding="utf-8")
+    prompt = (root / "prompts" / FULL_PROMPT).read_text(encoding="utf-8")
     draft_prompt = (root / "prompts" / "item-writing-batch.md").read_text(encoding="utf-8")
     synthesis_prompt = (root / "prompts" / "issue-synthesis.md").read_text(encoding="utf-8")
 
-    assert "single issue-level Chinese style pass" in prompt
+    assert "single issue-level Chinese editorial pass" in prompt
     assert "Call `$human-writing` **once for the entire `items` array**" in prompt
-    assert "default action is **KEEP**" in prompt
-    assert '{"patches": []}' in prompt
-    assert "Never return a complete item" in prompt
+    assert "Do not default to KEEP" in prompt
+    assert "broad **language rewrite authority**" in prompt
     assert "Do not call any writing Skill here" in draft_prompt
     assert "Do not call any writing Skill here" in synthesis_prompt
 
+    schema = json.loads((root / "schemas" / FULL_SCHEMA).read_text(encoding="utf-8"))
+    result_properties = schema["properties"]["results"]["items"]["properties"]
+    assert set(STYLE_FIELDS).issubset(result_properties)
+    assert result_properties["mechanism"]["maxLength"] >= 70
 
-def test_sparse_style_schema_allows_empty_or_field_level_patches_only() -> None:
+
+def test_sparse_style_schema_remains_available_for_old_run_resume_only() -> None:
     root = Path(__file__).resolve().parents[1]
+    prompt = (root / "prompts" / PATCH_PROMPT).read_text(encoding="utf-8")
     schema = json.loads((root / "schemas" / PATCH_SCHEMA).read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
 
+    assert "default action is **KEEP**" in prompt
     assert list(validator.iter_errors({"patches": []})) == []
     payload = {
         "patches": [
@@ -59,16 +67,6 @@ def test_sparse_style_schema_allows_empty_or_field_level_patches_only() -> None:
     }
     assert list(validator.iter_errors(payload)) == []
     assert payload["patches"][0]["field"] in STYLE_FIELDS
-
-    whole_item = {
-        "patches": [
-            {
-                **payload["patches"][0],
-                "title": "不允许重新输出整条 item",
-            }
-        ]
-    }
-    assert list(validator.iter_errors(whole_item))
 
 
 def _input_item():
@@ -94,14 +92,14 @@ def _input_item():
     }
 
 
-def test_good_input_noop_is_exactly_identical() -> None:
+def test_good_sparse_resume_noop_is_exactly_identical() -> None:
     input_data = _input_item()
     reconstructed, errors = _reconstruct_sparse_items(input_data, [])
     assert errors == []
     assert reconstructed["item-1"] == input_data["items"][0]["item"]
 
 
-def test_single_field_patch_leaves_every_other_field_byte_identical() -> None:
+def test_sparse_resume_patch_leaves_every_other_field_byte_identical() -> None:
     input_data = _input_item()
     before = input_data["items"][0]["item"]
     patches = [
@@ -122,7 +120,7 @@ def test_single_field_patch_leaves_every_other_field_byte_identical() -> None:
             assert after[field] == value
 
 
-def test_stale_before_and_noop_patch_are_rejected() -> None:
+def test_stale_before_and_noop_sparse_patch_are_rejected() -> None:
     input_data = _input_item()
     stale = [
         {
@@ -149,11 +147,13 @@ def test_stale_before_and_noop_patch_are_rejected() -> None:
     assert any("no-op" in error for error in errors)
 
 
-def test_fact_check_batching_is_character_bounded_with_high_item_ceiling() -> None:
+def test_fact_check_batching_and_readable_item_budget() -> None:
     root = Path(__file__).resolve().parents[1]
     settings = yaml.safe_load((root / "config" / "settings.yaml").read_text(encoding="utf-8"))
     efficiency = settings["efficiency"]
 
+    assert settings["brief_item_min_chars"] == 230
+    assert settings["brief_item_max_chars"] == 330
     assert efficiency["item_writing_batch_size"] == 4
     assert efficiency["fact_check_batch_size"] == 24
     assert efficiency["editorial_batch_max_input_chars"] == 65000
