@@ -10,6 +10,10 @@ from .utils import read_json, stable_hash, write_json
 
 STYLE_FIELDS = ("title", *BRIEF_FIELDS)
 TASK_TYPE = "item_style_polish"
+FULL_SCHEMA = "item-style-polish.schema.json"
+FULL_PROMPT = "item-style-polish.md"
+# Sparse patches remain readable only so already-started runs created under v2 can
+# resume safely. New runs use the full-field fact-locked rewrite contract above.
 PATCH_SCHEMA = "item-style-polish-patch.schema.json"
 PATCH_PROMPT = "item-style-polish-patch.md"
 
@@ -20,8 +24,8 @@ def _style_input(pipeline) -> dict[str, Any]:
         (pipeline.run_id,),
     )
     length = {
-        "min_chars": int(pipeline.config.settings.get("brief_item_min_chars", 180)),
-        "max_chars": int(pipeline.config.settings.get("brief_item_max_chars", 260)),
+        "min_chars": int(pipeline.config.settings.get("brief_item_min_chars", 230)),
+        "max_chars": int(pipeline.config.settings.get("brief_item_max_chars", 330)),
     }
     items: list[dict[str, Any]] = []
     for row in rows:
@@ -42,10 +46,9 @@ def _style_input(pipeline) -> dict[str, Any]:
         "items": items,
         "constraints": {
             "single_issue_level_pass": True,
-            "sparse_patch": True,
-            "keep_by_default": True,
+            "full_field_rewrite": True,
+            "rewrite_reader_fields_freely": True,
             "editable_fields": list(STYLE_FIELDS),
-            "before_must_match_exactly": True,
             "preserve_facts_numbers_conditions": True,
             "preserve_all_non_style_fields": True,
             "no_cross_item_fact_transfer": True,
@@ -57,7 +60,7 @@ def _strip_redundant_writing_skills(
     task_type: str,
     metadata: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
-    """Keep draft/synthesis tasks free of the old two-skill rewrite chain."""
+    """Keep draft/synthesis tasks free of redundant writing-skill chains."""
 
     if task_type not in {"item_writing", "item_writing_batch", "issue_synthesis"}:
         return metadata
@@ -77,6 +80,8 @@ def _reconstruct_sparse_items(
     input_data: dict[str, Any],
     patches: list[dict[str, Any]],
 ) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Compatibility reconstruction for v2 sparse tasks only."""
+
     inputs = {
         str(row.get("brief_item_id") or ""): row
         for row in input_data.get("items") or []
@@ -117,7 +122,7 @@ def _reconstruct_sparse_items(
 
 
 def install_issue_style_polish() -> None:
-    """Conservatively patch drafted prose once, then fact-check the resulting text."""
+    """Rewrite drafted prose once, then fact-check the resulting reader text."""
 
     from . import demo as demo_module
     from .pipeline import Pipeline
@@ -207,13 +212,13 @@ def install_issue_style_polish() -> None:
             TASK_TYPE,
             entity_id,
             payload,
-            prompt=PATCH_PROMPT,
-            schema=PATCH_SCHEMA,
+            prompt=FULL_PROMPT,
+            schema=FULL_SCHEMA,
             priority=95,
             metadata={
                 "required_skills": ["human-writing"],
-                "skill_mode": "single_issue_level_sparse_chinese_technical_polish",
-                "style_patch_version": 2,
+                "skill_mode": "single_issue_level_fact_locked_chinese_rewrite",
+                "style_rewrite_version": 3,
             },
         )
         self.db.update_run(self.run_id, stage="AWAITING_STYLE_POLISH")
@@ -225,6 +230,7 @@ def install_issue_style_polish() -> None:
         output = self.tasks.read_result(task)
         input_data = read_json(self.root / task["input_path"], {})
         if _sparse_mode(task, input_data):
+            # Compatibility path for already-created v2 tasks.
             patches = list(output.get("patches") or [])
             grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for patch in patches:
@@ -251,7 +257,8 @@ def install_issue_style_polish() -> None:
                     write_json(self.root / row["json_path"], changed)
             return
 
-        # Compatibility for already-started runs created with the legacy whole-item schema.
+        # New path: every reader-facing field may be rewritten as a whole while all
+        # non-style fields remain byte-for-byte sourced from the current item.
         for result in output.get("results", []):
             brief_item_id = str(result.get("brief_item_id") or "")
             row = self.db.fetchone(
@@ -261,10 +268,10 @@ def install_issue_style_polish() -> None:
             if not row:
                 raise KeyError(brief_item_id)
             current = read_json(self.root / row["json_path"], {})
-            polished = dict(current)
+            rewritten = dict(current)
             for field in STYLE_FIELDS:
-                polished[field] = result[field]
-            write_json(self.root / row["json_path"], polished)
+                rewritten[field] = result[field]
+            write_json(self.root / row["json_path"], rewritten)
 
     def semantic_errors(
         self,
@@ -303,13 +310,12 @@ def install_issue_style_polish() -> None:
                     f"item_style_polish {item_id}: {message}"
                     for message in brief_item_validation_errors(
                         item,
-                        min_chars=int(length.get("min_chars", 180)),
-                        max_chars=int(length.get("max_chars", 260)),
+                        min_chars=int(length.get("min_chars", 230)),
+                        max_chars=int(length.get("max_chars", 330)),
                     )
                 )
             return list(dict.fromkeys(errors))
 
-        # Compatibility validator for legacy whole-item polish tasks.
         expected = list(inputs)
         actual = [str(row.get("brief_item_id") or "") for row in data.get("results", [])]
         if len(actual) != len(set(actual)):
@@ -345,11 +351,11 @@ def install_issue_style_polish() -> None:
                 f"item_style_polish {brief_item_id}: {message}"
                 for message in brief_item_validation_errors(
                     reconstructed,
-                    min_chars=int(length.get("min_chars", 180)),
-                    max_chars=int(length.get("max_chars", 260)),
+                    min_chars=int(length.get("min_chars", 230)),
+                    max_chars=int(length.get("max_chars", 330)),
                 )
             )
-        return errors
+        return list(dict.fromkeys(errors))
 
     def demo_output(task_type: str, data: dict[str, Any]):
         if task_type == TASK_TYPE:
