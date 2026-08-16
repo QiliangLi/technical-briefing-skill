@@ -311,7 +311,8 @@ def install_pipeline_optimizations() -> None:
     def demo_output(task_type: str, data: dict[str, Any]):
         if task_type == "relevance_batch":
             return {"results": [{"candidate_id": row["candidate_id"], "relevant": True, "score": 88,
-                                  "reason": "与指定方向直接相关，并包含可验证机制。", "fulltext_required": True,
+                                  "reason": "示例判定:来源机制与判断卡方向一致,并给出可复现的量化对照。",
+                                  "fulltext_required": True,
                                   "matched_signals": ["机制", "端到端加速"]} for row in data.get("candidates", [])]}
         return original_demo(task_type, data)
 

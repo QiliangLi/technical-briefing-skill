@@ -27,6 +27,20 @@ def text_is_generic_boilerplate(value: Any) -> bool:
     return any(_compact(phrase) == compact for phrase in GENERIC_READER_PHRASES)
 
 
+_CJK_RE = re.compile(r"[\u3400-\u9fff]")
+
+
+def text_contains_chinese(value: Any) -> bool:
+    return bool(_CJK_RE.search(str(value or "")))
+
+
+def summary_is_reader_chinese(value: Any) -> bool:
+    """Non-empty, contains Chinese, and not generic filler."""
+
+    text = str(value or "").strip()
+    return bool(text) and text_contains_chinese(text) and not text_is_generic_boilerplate(text)
+
+
 def title_conclusion_too_similar(title: Any, conclusion: Any) -> bool:
     left = _compact(title)
     right = _compact(conclusion)
@@ -70,6 +84,21 @@ def item_writing_contract_errors(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+def relevance_reason_contract_errors(data: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    for index, result in enumerate(data.get("results") or []):
+        if not isinstance(result, dict):
+            continue
+        reason = str(result.get("reason") or "").strip()
+        if not reason:
+            continue
+        if text_is_generic_boilerplate(reason):
+            errors.append(f"results[{index}].reason is generic reader-facing filler")
+        elif not text_contains_chinese(reason):
+            errors.append(f"results[{index}].reason must be written in Chinese")
+    return errors
+
+
 def issue_writing_contract_errors(data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     for index, judgement in enumerate(data.get("judgements") or []):
@@ -98,8 +127,9 @@ def _clean_appendix_boilerplate(service, original_collect, run_id: str, issue_da
         for item in items:
             summary = str(item.get("summary") or "").strip()
             if text_is_generic_boilerplate(summary):
-                # Do not replace one vague sentence with another generated sentence.
-                # Prefer the source summary already captured in raw_items.
+                # Filler reasons are never reader copy, and the raw fallback is usable
+                # only when it is itself Chinese: an English abstract would put a
+                # foreign-language body into the briefing, so drop the entry instead.
                 url = str(item.get("url") or "")
                 raw = service.db.fetchone(
                     """
@@ -109,7 +139,8 @@ def _clean_appendix_boilerplate(service, original_collect, run_id: str, issue_da
                     """,
                     (url, url),
                 )
-                summary = service.__class__._clean_text((raw or {}).get("summary")) if raw else ""
+                raw_summary = service.__class__._clean_text((raw or {}).get("summary")) if raw else ""
+                summary = raw_summary if summary_is_reader_chinese(raw_summary) else ""
             if not summary or text_is_generic_boilerplate(summary):
                 continue
             kept.append({**item, "summary": summary})
@@ -136,6 +167,8 @@ def install_reader_writing_contract() -> None:
             errors.extend(item_writing_contract_errors(data))
         elif task.get("task_type") == "issue_synthesis":
             errors.extend(issue_writing_contract_errors(data))
+        elif task.get("task_type") == "relevance_batch":
+            errors.extend(relevance_reason_contract_errors(data))
         return errors
 
     TaskService._semantic_errors = semantic_errors

@@ -27,7 +27,7 @@ def complete_pending_demo_tasks(root: Path, db: Database, run_id: str) -> int:
 
 def _demo_output(task_type: str, data: dict):
     if task_type == "relevance_review":
-        return {"relevant": True, "score": 88, "reason": "与指定技术方向直接相关，并包含可验证机制。", "reject_reason": None, "fulltext_required": True, "matched_signals": ["机制", "端到端加速"]}
+        return {"relevant": True, "score": 88, "reason": "示例判定:来源机制与判断卡方向一致,并给出可复现的量化对照。", "reject_reason": None, "fulltext_required": True, "matched_signals": ["机制", "端到端加速"]}
     if task_type == "fact_extraction":
         title = data["source"]["title"]
         agent = "CodeGraph" in title or "repository" in title.lower()

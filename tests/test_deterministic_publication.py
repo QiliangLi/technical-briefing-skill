@@ -17,7 +17,7 @@ def _candidate(index: int, category: str) -> dict:
         "candidate_id": f"raw-{index}",
         "category": category,
         "title": f"signal-{index}",
-        "summary": f"technical signal summary {index} with enough detail",
+        "summary": f"第{index}条技术信号:机制与量化对照齐备。",
         "url": f"https://example.org/signal-{index}",
         "source_name": "example.org",
         "source_level": "A",
@@ -48,7 +48,7 @@ def test_current_run_reserve_refills_radar_without_historical_reference(monkeypa
             "items": [
                 {
                     "title": "signal-1",
-                    "summary": "selected signal",
+                    "summary": "已入选信号:机制与影响齐备。",
                     "url": "https://example.org/signal-1",
                     "source_name": "example.org",
                     "published_at": "2026-08-12",

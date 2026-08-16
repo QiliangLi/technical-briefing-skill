@@ -11,6 +11,7 @@ from .cost_schema import ensure_cost_schema
 from .efficiency import DEFAULT_RADAR_TOPICS, RelevancePlan
 from .freshness import published_age_days
 from .paths import Paths
+from .reader_writing_contract import summary_is_reader_chinese
 from .utils import complete_sentence_excerpt, now_iso, read_json, stable_hash
 
 
@@ -299,6 +300,13 @@ def apply_cached_relevance(config, db, root: Path, row: dict[str, Any]) -> bool:
         (fingerprint, topic_id, direction_id, evaluator_version),
     )
     if not cache:
+        return False
+
+    cached_reason = str(cache.get("relevance_reason") or "")
+    if cached_reason and not summary_is_reader_chinese(cached_reason):
+        # Legacy demo runs cached filler or non-Chinese reasons. The reader layers
+        # refuse them, so replaying the verdict would push an unusable summary into
+        # the briefing; treat the row as a miss and let this run re-judge the source.
         return False
 
     relevant = bool(cache.get("relevant"))

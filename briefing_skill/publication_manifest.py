@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .radar_signal_synthesis import build_radar_candidates
+from .reader_writing_contract import text_contains_chinese
 from .utils import canonicalize_url, normalize_text, read_json, write_json
 
 
@@ -71,6 +72,10 @@ def filter_current_final_radar_groups(
             if not urls or urls & forbidden:
                 continue
             if _github_projects(urls) & forbidden_projects:
+                continue
+            if not text_contains_chinese(item.get("summary")):
+                # Reader-facing Radar summaries must be Chinese; raw English
+                # abstracts from discovery are not briefing copy.
                 continue
             kept.append(dict(item))
         if kept:
@@ -141,6 +146,8 @@ def finalize_radar_groups(
         nonlocal total
         if total >= total_max or counts[name] >= per_category:
             return False
+        if not text_contains_chinese(item.get("summary")):
+            return False
         urls = _urls_from_item(item)
         if not urls or urls & forbidden or urls & seen:
             return False
@@ -169,6 +176,11 @@ def finalize_radar_groups(
     available_by_category: defaultdict[str, int] = defaultdict(int)
     viable_unique: set[str] = set(seen)
     for candidate in candidates:
+        if not text_contains_chinese(candidate.get("summary")):
+            # English-only discovery abstracts can enter the Radar lane only through
+            # the synthesis Agent, which writes Chinese signals; they must not be
+            # reserve-filled straight into the reader-facing set.
+            continue
         url = canonicalize_url(candidate.get("url"))
         if not url or url in forbidden or url in viable_unique:
             continue

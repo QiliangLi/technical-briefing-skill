@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from .freshness import published_age_days
 from .radar_taxonomy import classify_radar_category
+from .reader_writing_contract import summary_is_reader_chinese, text_contains_chinese
 from .utils import canonicalize_url, read_json
 
 
@@ -59,12 +60,15 @@ def build_radar_candidates(task_service, run_id: str, issue_input: dict[str, Any
 
     rows = task_service.db.fetchall(
         """
-        SELECT id,title,summary,original_url,canonical_url,published_at,priority,
-               discovery_source,source_id,source_level,discovery_only
-        FROM raw_items WHERE run_id=?
-        ORDER BY priority DESC,published_at DESC,LENGTH(COALESCE(summary,'')) DESC,title
+        SELECT r.id,r.title,r.summary,r.original_url,r.canonical_url,r.published_at,r.priority,
+               r.discovery_source,r.source_id,r.source_level,r.discovery_only,
+               c.relevance_reason
+        FROM raw_items r
+        LEFT JOIN candidates c ON c.raw_item_id=r.id AND c.run_id=?
+        WHERE r.run_id=?
+        ORDER BY r.priority DESC,r.published_at DESC,LENGTH(COALESCE(r.summary,'')) DESC,r.title
         """,
-        (run_id,),
+        (run_id, run_id),
     )
 
     level_rank = {"A": 0, "B": 1, "C": 2}
@@ -90,7 +94,14 @@ def build_radar_candidates(task_service, run_id: str, issue_input: dict[str, Any
         canonical = canonicalize_url(url)
         if not canonical or canonical in core_urls or canonical in seen_urls:
             continue
-        summary = _clean(row.get("summary"), RADAR_SUMMARY_MAX_CHARS)
+        # A concrete Chinese relevance reason outranks the raw (often English)
+        # discovery abstract so judged sources stay usable as reader-facing Radar.
+        reason = _clean(row.get("relevance_reason"), RADAR_SUMMARY_MAX_CHARS)
+        summary = (
+            reason
+            if summary_is_reader_chinese(reason)
+            else _clean(row.get("summary"), RADAR_SUMMARY_MAX_CHARS)
+        )
         title = _clean(row.get("title"), 180)
         if not title or len(summary) < 20:
             continue
@@ -176,6 +187,10 @@ def radar_semantic_errors(task: dict[str, Any], input_data: dict[str, Any], data
         category = str(signal.get("category") or "")
         if category not in RADAR_CATEGORIES:
             errors.append(f"radar signal {index} has unsupported category {category}")
+        if not text_contains_chinese(signal.get("signal")) or not text_contains_chinese(
+            signal.get("summary")
+        ):
+            errors.append(f"radar signal {index} must be written in Chinese")
         text = f"{signal.get('signal') or ''} {signal.get('summary') or ''}".lower()
         leaked = [phrase for phrase in FORBIDDEN_SIGNAL_TEXT if phrase in text]
         if leaked:
