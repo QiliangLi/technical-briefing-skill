@@ -130,6 +130,44 @@ def estimate_task_reduction(*, candidates: int, ambiguous_candidates: int, batch
     }
 
 
+def reset_orphaned_relevance_candidates(db, root: Path, run_id: str) -> int:
+    """Return RELEVANCE_TASKED candidates without a live batch task to the pool.
+
+    Batch entity ids used per-call topic indexes, so a later prepare call could
+    overwrite an earlier, not-yet-applied batch task while the earlier rows
+    stayed RELEVANCE_TASKED forever. Rows that appear in no unfinished batch
+    input are safe to re-plan; applied batches already moved their members on.
+    """
+    from .utils import read_json
+
+    unfinished = db.fetchall(
+        """
+        SELECT input_path FROM tasks
+        WHERE run_id=? AND task_type='relevance_batch'
+          AND status IN ('PENDING','INVALID','COMPLETED')
+        """,
+        (run_id,),
+    )
+    member_ids: set[str] = set()
+    for task in unfinished:
+        try:
+            data = read_json(Path(root) / task["input_path"], {})
+        except Exception:
+            continue
+        for row in data.get("candidates") or []:
+            member_ids.add(str(row.get("candidate_id") or ""))
+    rows = db.fetchall(
+        "SELECT id FROM candidates WHERE run_id=? AND status='RELEVANCE_TASKED'",
+        (run_id,),
+    )
+    orphans = [row["id"] for row in rows if str(row["id"]) not in member_ids]
+    for candidate_id in orphans:
+        db.execute(
+            "UPDATE candidates SET status='PENDING_RELEVANCE' WHERE id=?", (candidate_id,)
+        )
+    return len(orphans)
+
+
 def install_pipeline_optimizations() -> None:
     from . import demo as demo_module, emailer as emailer_module, pipeline as pipeline_module
     from .fulltext import FulltextService
@@ -148,6 +186,7 @@ def install_pipeline_optimizations() -> None:
 
     def prepare_relevance(self) -> int:
         pipeline_module.RuleMatcher(self.config, self.db).create_candidates(self.run_id)
+        reset_orphaned_relevance_candidates(self.db, self.root, self.run_id)
         rows = self.db.fetchall("""
             SELECT c.*,r.title,r.summary,r.original_url,r.aihot_url,r.published_at,r.discovered_at,
                    r.discovery_source,r.source_level,r.discovery_only,r.payload_json,r.priority
@@ -162,7 +201,14 @@ def install_pipeline_optimizations() -> None:
             self.db.execute("UPDATE candidates SET relevant=0,relevance_score=?,relevance_reason='below deterministic relevance floor',fulltext_required=0,status='REJECTED' WHERE id=?", (_number(row.get("rule_score")), row["id"]))
         for row in plan.radar:
             self.db.execute("UPDATE candidates SET relevant=NULL,relevance_reason='retained in horizontal radar without deep processing',fulltext_required=0,status='RADAR' WHERE id=?", (row["id"],))
-        for index, batch in enumerate(plan.batches, 1):
+        # Batch indexes must stay unique across repeated prepare calls within one
+        # run: a per-call counter would collide with an earlier, unapplied batch
+        # task and silently overwrite it while orphaning its candidates.
+        batch_offset = self.db.fetchone(
+            "SELECT COUNT(*) AS n FROM tasks WHERE run_id=? AND task_type='relevance_batch'",
+            (self.run_id,),
+        )["n"]
+        for index, batch in enumerate(plan.batches, batch_offset + 1):
             topic_id = str(batch[0]["topic_id"])
             topic = self.config.topic(topic_id)
             entity_id = stable_hash(self.run_id, "relevance-batch", topic_id, index)
