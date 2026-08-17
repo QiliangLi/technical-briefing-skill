@@ -209,6 +209,19 @@ def test_schema_has_no_image_count_cap_and_requires_persona_for_generated_images
     )
     assert list(validator.iter_errors(invalid_url))
 
+    release_url = json.loads(json.dumps(five_generated, ensure_ascii=False))
+    release_url["illustrations"][0]["published_asset_url"] = (
+        "https://github.com/QiliangLi/technical-briefing-skill/releases/download/"
+        "illustrations-demo/image-1.png"
+    )
+    assert list(validator.iter_errors(release_url)) == []
+
+    non_asset_release = json.loads(json.dumps(five_generated, ensure_ascii=False))
+    non_asset_release["illustrations"][0]["published_asset_url"] = (
+        "https://github.com/QiliangLi/technical-briefing-skill/releases/download/tag/readme.md"
+    )
+    assert list(validator.iter_errors(non_asset_release))
+
 
 def test_renderer_skips_generated_image_without_required_persona(tmp_path: Path) -> None:
     image = tmp_path / "missing-persona.png"

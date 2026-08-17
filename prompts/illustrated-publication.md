@@ -75,15 +75,16 @@ A local image is **not** a valid email asset. Before returning any illustration 
 
 1. Save it only under the repository-relative `constraints.output_directory`, which is a stable `published-assets/<run_id>/` directory. Do not put publishable images under `workspace/runs`.
 2. Stage only the generated publication assets needed by this issue. Do not stage unrelated working-tree changes.
-3. Commit the assets to the current repository and push the current branch to GitHub.
-4. Read the exact 40-character commit SHA containing the image.
-5. Construct the immutable raw URL exactly as described by `constraints.asset_publication_policy.url_format`.
-6. Verify that the URL points to the same generated asset and return it as `published_asset_url`.
+3. Publish the assets on GitHub in one of two immutable forms:
+   - Preferred: upload as assets of a GitHub release tagged for this run (for example `illustrations-<run_id>`) and use the release download URL;
+   - Also accepted: commit the assets, push, read the exact 40-character commit SHA, and construct the raw URL described by `constraints.asset_publication_policy.accepted_url_format`.
+4. Construct the immutable URL exactly as described by `constraints.asset_publication_policy.preferred_url_format` (release) or `accepted_url_format` (raw).
+5. Verify that the URL points to the same generated asset and return it as `published_asset_url`.
 
 For a generated item, both are required:
 
 - `generated_asset_path`: repository-relative local path used for generation/QA;
-- `published_asset_url`: `https://raw.githubusercontent.com/<owner>/<repo>/<40-char-commit-sha>/<path>`.
+- `published_asset_url`: either `https://github.com/<owner>/<repo>/releases/download/<release-tag>/<asset-filename>` or `https://raw.githubusercontent.com/<owner>/<repo>/<40-char-commit-sha>/<path>`.
 
 Never return a branch-name URL such as `/main/...`; the email must remain stable even after later commits. Never expose `/home/...`, `/Users/...`, `file://...`, `workspace/...`, or a bare relative path in reader-facing HTML.
 
@@ -93,6 +94,6 @@ If the asset cannot be committed and pushed reliably, that illustration is not p
 
 - There is no fixed maximum number of illustration entries.
 - Never pad the manifest to increase image count.
-- Every generated entry must have a real local `generated_asset_path`, a commit-pinned GitHub `published_asset_url`, `persona_used=true`, factual `alt`, and a concise reader-facing `caption`.
+- Every generated entry must have a real local `generated_asset_path`, an immutable published GitHub `published_asset_url` (release download URL or commit-SHA-pinned raw URL), `persona_used=true`, factual `alt`, and a concise reader-facing `caption`.
 - `caption` should explain what the picture clarifies rather than repeat the title.
 - Return JSON only and preserve the task transport binding required by the host.

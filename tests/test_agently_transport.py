@@ -54,6 +54,36 @@ def test_generated_illustration_requires_commit_pinned_public_url(tmp_path):
         render_publication_html(original, tmp_path, "<html></html>", manifest)
 
 
+def test_generated_illustration_accepts_release_download_url(tmp_path):
+    captured = {}
+
+    def original(root, base_html, manifest):
+        captured["manifest"] = manifest
+        return base_html
+
+    release_url = (
+        "https://github.com/QiliangLi/technical-briefing-skill/releases/download/"
+        "illustrations-run-1/diagram.png"
+    )
+    manifest = {
+        "illustrations": [
+            {
+                "status": "generated",
+                "generated_asset_path": "published-assets/run-1/diagram.png",
+                "published_asset_url": release_url,
+            }
+        ]
+    }
+    assert render_publication_html(original, tmp_path, "<html></html>", manifest) == "<html></html>"
+    assert captured["manifest"]["illustrations"][0]["generated_asset_path"] == release_url
+
+    manifest["illustrations"][0]["published_asset_url"] = (
+        "https://github.com/QiliangLi/technical-briefing-skill/releases/download/tag/readme.md"
+    )
+    with pytest.raises(RuntimeError, match="immutable public URL"):
+        render_publication_html(original, tmp_path, "<html></html>", manifest)
+
+
 def test_send_html_rejects_local_or_relative_images(tmp_path):
     good = tmp_path / "good.html"
     good.write_text(f'<html><img src="{PINNED_URL}"></html>', encoding="utf-8")
@@ -121,4 +151,5 @@ def test_publication_input_moves_assets_to_tracked_publication_directory():
     assert payload["constraints"]["output_directory"] == "published-assets/run-42"
     policy = payload["constraints"]["asset_publication_policy"]
     assert policy["required"] is True
-    assert "<40-char-commit-sha>" in policy["url_format"]
+    assert "<release-tag>" in policy["preferred_url_format"]
+    assert "<40-char-commit-sha>" in policy["accepted_url_format"]

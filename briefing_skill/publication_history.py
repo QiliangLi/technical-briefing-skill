@@ -68,8 +68,11 @@ def _published_source(url: str, title: str = "", section: str = "publication") -
     parsed = urlparse(canonical)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
-    # Raw image assets are publication transport, not technical sources.
+    # Image assets are publication transport, not technical sources.
     if parsed.netloc.lower() == "raw.githubusercontent.com":
+        return None
+    host = parsed.netloc.lower()
+    if host == "github.com" and "/releases/download/" in parsed.path:
         return None
     identity = source_identity_key(canonical)
     if not identity:
