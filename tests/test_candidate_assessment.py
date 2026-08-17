@@ -220,3 +220,62 @@ def test_partial_legacy_cache_fails_closed_to_fresh_assessment(tmp_path: Path) -
     assert candidate["technology_value_score"] is None
     assert candidate["deep_eligible"] is None
     assert candidate["status"] == "PENDING_RELEVANCE"
+
+
+def test_demo_verdict_and_synthetic_run_never_rewrite_relevance_cache(tmp_path: Path) -> None:
+    db = _db(tmp_path)
+    config = _Config()
+    _insert_candidate(db, run_id="run-1", raw_id="raw-1", candidate_id="candidate-1")
+    row = db.fetchone(
+        """
+        SELECT c.*,r.source_id,r.identity_key,r.external_id,r.content_hash,r.canonical_url,
+               r.original_url,r.title,r.summary,r.payload_json,r.published_at
+        FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id WHERE c.id='candidate-1'
+        """
+    )
+    fingerprint, topic_id, direction_id, version = _identity(config, tmp_path, row)
+    now = now_iso()
+    db.execute(
+        """
+        INSERT INTO relevance_cache(
+          cache_key,source_fingerprint,topic_id,direction_id,evaluator_version,source_url,
+          source_identity,relevant,relevance_score,relevance_reason,fulltext_required,created_at,last_used_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            "cache-1", fingerprint, topic_id, direction_id, version,
+            "https://arxiv.org/abs/2608.12345v1", "arxiv:2608.12345", 1, 45,
+            "诚实评审:相邻但非深读。", 0, now, now,
+        ),
+    )
+    db.execute(
+        """
+        UPDATE candidates SET relevant=1,relevance_score=88,
+          relevance_reason='示例判定:来源机制与判断卡方向一致,并给出可复现的量化对照。',
+          technology_value_score=4,technology_value_json='{}',topic_fit='direct',
+          core_contribution='kv_transfer',boundary_conflict=0,matched_direction_id='kv_transfer',
+          deep_eligible=1,deep_eligibility_reason='demo',fulltext_required=1,status='RELEVANT'
+        WHERE id='candidate-1'
+        """
+    )
+
+    assert persist_candidate_assessment(config, db, tmp_path, "candidate-1", provenance="agent_relevance_batch")
+    cache = db.fetchone("SELECT * FROM relevance_cache WHERE cache_key='cache-1'")
+    assert cache["relevance_score"] == 45
+    assert cache["relevance_reason"] == "诚实评审:相邻但非深读。"
+    assert cache["deep_eligible"] == 0 or cache["deep_eligible"] in (0, None)
+
+    # A synthetic (demo/fixture) run must not touch the cache even with an honest reason.
+    from briefing_skill.fact_cache_provenance import set_run_execution_mode
+
+    set_run_execution_mode(db, "run-1", "demo")
+    db.execute(
+        """
+        UPDATE candidates SET relevance_score=91,relevance_reason='诚实评审:另一条判定。'
+        WHERE id='candidate-1'
+        """
+    )
+    assert persist_candidate_assessment(config, db, tmp_path, "candidate-1", provenance="agent_relevance_batch")
+    cache = db.fetchone("SELECT * FROM relevance_cache WHERE cache_key='cache-1'")
+    assert cache["relevance_score"] == 45
+    assert cache["relevance_reason"] == "诚实评审:相邻但非深读。"

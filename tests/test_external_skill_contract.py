@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 TEXT_SUFFIXES = {".md", ".py", ".json", ".yaml", ".yml", ".toml", ".txt", ".cjs", ".html"}
-SKIP_DIRS = {".git", ".pytest_cache", "__pycache__", "vendor", "workspace"}
+SKIP_DIRS = {".git", ".pytest_cache", "__pycache__", "vendor", "workspace", ".codex", "node_modules"}
 
 
 def _repository_text_files(root: Path):

@@ -288,3 +288,93 @@ def test_relevance_plan_uses_larger_count_bound_without_changing_candidate_set()
     assert len(plan.batches) == 3
     assert sorted(flattened) == sorted(row["id"] for row in rows)
     assert max(len(batch) for batch in plan.batches) <= 24
+
+
+def test_demo_filler_verdict_never_enters_relevance_cache(tmp_path):
+    config = _config()
+    db = _db(tmp_path)
+    _insert_arxiv_raw(db, raw_id="r1", run_id="run1")
+    _insert_candidate(
+        db,
+        candidate_id="c1",
+        raw_id="r1",
+        run_id="run1",
+        relevant=1,
+        score=88.0,
+        reason="示例判定:来源机制与判断卡方向一致,并给出可复现的量化对照。",
+        fulltext=1,
+        status="RELEVANT",
+    )
+    assert store_relevance_candidate(config, db, ROOT, "c1") is False
+    assert db.fetchone("SELECT COUNT(*) AS n FROM relevance_cache")["n"] == 0
+
+
+def test_demo_filler_cache_row_is_treated_as_miss(tmp_path):
+    config = _config()
+    db = _db(tmp_path)
+    _insert_arxiv_raw(db, raw_id="r1", run_id="run1")
+    # Seed the cache directly with a legacy poisoned row for this exact source.
+    _insert_candidate(
+        db,
+        candidate_id="c1",
+        raw_id="r1",
+        run_id="run1",
+        relevant=1,
+        score=90.0,
+        reason="诚实评审:机制与判断卡方向相关。",
+        fulltext=0,
+        status="RADAR",
+    )
+    assert store_relevance_candidate(config, db, ROOT, "c1") is True
+    db.execute(
+        "UPDATE relevance_cache SET relevance_reason='示例判定:来源机制与判断卡方向一致,并给出可复现的量化对照。', relevance_score=88.0"
+    )
+    _insert_candidate(
+        db,
+        candidate_id="c2",
+        raw_id="r1",
+        run_id="run1",
+        status="PENDING_RELEVANCE",
+    )
+    assert apply_cached_relevance(config, db, ROOT, _candidate_row(db, "c2")) is False
+    candidate = db.fetchone("SELECT status FROM candidates WHERE id='c2'")
+    assert candidate["status"] == "PENDING_RELEVANCE"
+
+
+def test_synthetic_run_mode_skips_relevance_cache_roundtrip(tmp_path):
+    config = _config()
+    db = _db(tmp_path)
+    _insert_arxiv_raw(db, raw_id="r1", run_id="run1")
+    _insert_candidate(
+        db,
+        candidate_id="c1",
+        raw_id="r1",
+        run_id="run1",
+        relevant=1,
+        score=90.0,
+        reason="诚实评审:机制与判断卡方向相关。",
+        fulltext=0,
+        status="RADAR",
+    )
+    assert store_relevance_candidate(config, db, ROOT, "c1") is True
+    from briefing_skill.fact_cache_provenance import set_run_execution_mode
+
+    set_run_execution_mode(db, "run1", "demo")
+    _insert_candidate(
+        db,
+        candidate_id="c2",
+        raw_id="r1",
+        run_id="run1",
+        relevant=1,
+        score=99.0,
+        reason="诚实评审:另一条判定。",
+        fulltext=1,
+        status="RELEVANT",
+    )
+    # A demo-mode run must neither store new verdicts nor restore existing ones.
+    assert store_relevance_candidate(config, db, ROOT, "c2") is False
+    cached = db.fetchone("SELECT relevance_score FROM relevance_cache")
+    assert cached["relevance_score"] == 90.0
+    db.execute("UPDATE candidates SET status='PENDING_RELEVANCE', relevant=NULL, relevance_score=NULL, relevance_reason=NULL, fulltext_required=NULL WHERE id='c2'")
+    assert apply_cached_relevance(config, db, ROOT, _candidate_row(db, "c2")) is False
+    assert db.fetchone("SELECT status FROM candidates WHERE id='c2'")["status"] == "PENDING_RELEVANCE"

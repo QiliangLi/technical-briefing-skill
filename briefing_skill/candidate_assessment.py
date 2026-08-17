@@ -107,6 +107,8 @@ def _assessment_payload(row: dict[str, Any]) -> dict[str, Any]:
 def persist_candidate_assessment(config, db, root, candidate_id: str, *, provenance: str) -> bool:
     """Persist one final assessment and make relevance_cache its single cross-run owner."""
 
+    from .relevance_efficiency import _is_demo_verdict, _relevance_cache_isolated
+
     ensure_candidate_assessment_schema(db)
     row = _candidate_row(db, candidate_id)
     if not row or row.get("relevant") is None or row.get("technology_value_score") is None:
@@ -115,28 +117,35 @@ def persist_candidate_assessment(config, db, root, candidate_id: str, *, provena
     assessment = _assessment_payload(row)
     now = now_iso()
 
+    # Demo/fixture runs and demo filler verdicts must never rewrite the production
+    # relevance cache, whatever bookkeeping path reaches this persistence layer.
+    cache_write_allowed = not _relevance_cache_isolated(db, row.get("run_id")) and not _is_demo_verdict(
+        row.get("relevance_reason")
+    )
+
     # Only cache-eligible sources have a relevance_cache row. For those sources this
     # single update owns every semantic signal produced by the relevance Agent plus the
     # Python-derived Deep decision. Non-cacheable sources still get a per-run assessment.
-    db.execute(
-        """
-        UPDATE relevance_cache SET
-          relevant=?,relevance_score=?,relevance_reason=?,fulltext_required=?,
-          technology_value_score=?,technology_value_json=?,topic_fit=?,core_contribution=?,
-          boundary_conflict=?,matched_direction_id=?,deep_eligible=?,deep_eligibility_reason=?,
-          last_used_at=?
-        WHERE source_fingerprint=? AND topic_id=? AND direction_id=? AND evaluator_version=?
-        """,
-        (
-            row.get("relevant"), row.get("relevance_score"), row.get("relevance_reason"),
-            row.get("fulltext_required"), row.get("technology_value_score"),
-            row.get("technology_value_json") or "{}", row.get("topic_fit"),
-            row.get("core_contribution"), row.get("boundary_conflict"),
-            row.get("matched_direction_id"), row.get("deep_eligible"),
-            row.get("deep_eligibility_reason"), now,
-            fingerprint, topic_id, direction_id, version,
-        ),
-    )
+    if cache_write_allowed:
+        db.execute(
+            """
+            UPDATE relevance_cache SET
+              relevant=?,relevance_score=?,relevance_reason=?,fulltext_required=?,
+              technology_value_score=?,technology_value_json=?,topic_fit=?,core_contribution=?,
+              boundary_conflict=?,matched_direction_id=?,deep_eligible=?,deep_eligibility_reason=?,
+              last_used_at=?
+            WHERE source_fingerprint=? AND topic_id=? AND direction_id=? AND evaluator_version=?
+            """,
+            (
+                row.get("relevant"), row.get("relevance_score"), row.get("relevance_reason"),
+                row.get("fulltext_required"), row.get("technology_value_score"),
+                row.get("technology_value_json") or "{}", row.get("topic_fit"),
+                row.get("core_contribution"), row.get("boundary_conflict"),
+                row.get("matched_direction_id"), row.get("deep_eligible"),
+                row.get("deep_eligibility_reason"), now,
+                fingerprint, topic_id, direction_id, version,
+            ),
+        )
     db.execute(
         """
         INSERT INTO candidate_assessments(

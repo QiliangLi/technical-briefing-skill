@@ -20,7 +20,6 @@ from .expanded import rebuild_expanded_issue
 from .paths import Paths, discover_root
 from .pipeline import Pipeline
 from .rendering import Renderer
-from .review import ReviewServer, approve_issue
 from .tasks import TaskService
 from .utils import load_root_env, read_json, setup_logging
 from .vendor import VendorManager
@@ -192,6 +191,11 @@ def cmd_resume(args) -> int:
 def cmd_demo(args) -> int:
     root, paths, config, db = _context(args)
     run_id = args.run or f"demo-{_run_id(config)}"
+    from .fact_cache_provenance import set_run_execution_mode
+
+    # Mark demo runs even when they reuse a real run id, so cache layers can
+    # refuse to commit demo judgements into production tables.
+    set_run_execution_mode(db, run_id, "demo")
     if not db.fetchone("SELECT 1 FROM runs WHERE id=?", (run_id,)):
         db.create_run(run_id, "COLLECTING")
     run_dir = paths.runs / run_id
@@ -243,29 +247,6 @@ def cmd_validate(args) -> int:
     return 1 if report.get("failures") else 0
 
 
-def cmd_review(args) -> int:
-    root, paths, config, db = _context(args)
-    run_id = _resolve_run(db, args.run)
-    server = ReviewServer(root, db, run_id)
-    if args.serve:
-        server.serve(args.port)
-    else:
-        print(server.build_html())
-    return 0
-
-
-
-def cmd_approve(args) -> int:
-    root, paths, config, db = _context(args)
-    run_id = _resolve_run(db, args.run)
-    if args.all:
-        ids = {row["id"] for row in db.fetchall("SELECT id FROM brief_items WHERE run_id=? AND fact_check_status='PASS'", (run_id,))}
-    else:
-        ids = {value.strip() for value in (args.ids or "").split(",") if value.strip()}
-    path = approve_issue(root, db, run_id, ids)
-    print(f"Approved {len(ids)} items; rebuilt email: {path}")
-    return 0
-
 def cmd_send(args) -> int:
     root, paths, config, db = _context(args)
     run_id = _resolve_run(db, args.run)
@@ -293,8 +274,6 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("render"); p.add_argument("--run", default="latest"); p.add_argument("--execute", action="store_true"); p.set_defaults(func=cmd_render)
     p = sub.add_parser("rebuild-existing"); p.add_argument("--run", required=True); p.add_argument("--confirm-rebuild", action="store_true"); p.set_defaults(func=cmd_rebuild_existing)
     p = sub.add_parser("validate"); p.add_argument("--run", default="latest"); p.set_defaults(func=cmd_validate)
-    p = sub.add_parser("review"); p.add_argument("--run", default="latest"); p.add_argument("--serve", action="store_true"); p.add_argument("--port", type=int, default=8765); p.set_defaults(func=cmd_review)
-    p = sub.add_parser("approve"); p.add_argument("--run", default="latest"); p.add_argument("--all", action="store_true"); p.add_argument("--ids"); p.set_defaults(func=cmd_approve)
     p = sub.add_parser("send"); p.add_argument("--run", default="latest"); p.add_argument("--confirm-send", action="store_true"); p.set_defaults(func=cmd_send)
     return parser
 

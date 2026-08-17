@@ -190,6 +190,25 @@ def _cache_eligible(row: dict[str, Any]) -> bool:
     return False
 
 
+# The offline demo executor answers every relevance task with this fixed filler
+# verdict (briefing_skill.demo._demo_output). Such judgements must never be
+# committed to the production relevance cache regardless of bookkeeping.
+_DEMO_VERDICT_PREFIX = "示例判定:"
+
+
+def _is_demo_verdict(reason: Any) -> bool:
+    return str(reason or "").lstrip().startswith(_DEMO_VERDICT_PREFIX)
+
+
+def _relevance_cache_isolated(db, run_id: Any) -> bool:
+    try:
+        from .fact_cache_provenance import SYNTHETIC_MODES, execution_mode
+
+        return execution_mode(db, str(run_id or "")) in SYNTHETIC_MODES
+    except Exception:
+        return False
+
+
 def relevance_source_fingerprint(row: dict[str, Any]) -> str:
     return stable_hash(
         "relevance-source-v1",
@@ -280,6 +299,8 @@ def _cache_key(source_fingerprint: str, topic_id: str, direction_id: str, evalua
 
 def apply_cached_relevance(config, db, root: Path, row: dict[str, Any]) -> bool:
     ensure_cost_schema(db)
+    if _relevance_cache_isolated(db, row.get("run_id")):
+        return False
     if not _cache_eligible(row):
         return False
     topic_id = str(row.get("topic_id") or "")
@@ -300,6 +321,11 @@ def apply_cached_relevance(config, db, root: Path, row: dict[str, Any]) -> bool:
         (fingerprint, topic_id, direction_id, evaluator_version),
     )
     if not cache:
+        return False
+
+    if _is_demo_verdict(cache.get("relevance_reason")):
+        # Defense in depth: a demo-filler verdict must never steer a production run,
+        # even if a legacy row survived in the cache.
         return False
 
     cached_reason = str(cache.get("relevance_reason") or "")
@@ -350,6 +376,10 @@ def store_relevance_candidate(config, db, root: Path, candidate_id: str) -> bool
         (candidate_id,),
     )
     if not row or row.get("relevant") is None or not _cache_eligible(row):
+        return False
+    if _relevance_cache_isolated(db, row.get("run_id")):
+        return False
+    if _is_demo_verdict(row.get("relevance_reason")):
         return False
     topic_id = str(row.get("topic_id") or "")
     direction_id = str(row.get("direction_id") or "")

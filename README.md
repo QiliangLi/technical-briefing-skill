@@ -68,8 +68,7 @@ python briefing.py advance
 # 重复 tasks next / advance，直到 READY_FOR_RENDER
 python briefing.py render --execute
 python briefing.py validate
-python briefing.py review --serve
-python briefing.py approve --all
+# validate 即发布门：通过后 issue 进入 READY_TO_SEND，没有 review/approve 步骤
 python briefing.py send --confirm-send
 ```
 

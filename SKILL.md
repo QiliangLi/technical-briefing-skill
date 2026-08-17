@@ -1,6 +1,6 @@
 ---
 name: technical-briefing-skill
-description: Collect, verify, deduplicate, analyse, illustrate, format, review, and email recurring internal technical briefings. Use for 技术情报简报、技术信息收集、论文与博客筛选、Agent/AI/KVCache/DPU/DSA/TPN/AI芯片与加速器/跨域传输/光交换信息追踪、Guizang图文卡片、定期邮件简报、去重和断点恢复。
+description: Collect, verify, deduplicate, analyse, illustrate, format, validate, and email recurring internal technical briefings. Use for 技术情报简报、技术信息收集、论文与博客筛选、Agent/AI/KVCache/DPU/DSA/TPN/AI芯片与加速器/跨域传输/光交换信息追踪、Guizang图文卡片、定期邮件简报、去重和断点恢复。
 ---
 
 # Technical Briefing Skill
@@ -113,28 +113,26 @@ relevance cache命中时，Python会在任务创建前直接恢复`relevant / sc
 
 重复直到运行阶段为`READY_FOR_RENDER`。
 
-### 第三步：渲染与审核
+### 第三步：渲染与校验
 
 ```bash
 python briefing.py render --execute
 python briefing.py validate
-python briefing.py review --serve
 ```
 
-必须先审核再发送。第一版不得自动发送。
+`validate`就是发布门：渲染完成后由最终校验把issue提升到`READY_TO_SEND`，存在FAIL时必须修复后重跑。没有独立的review/approve命令；人工检查直接阅读`workspace/runs/<run_id>/email.html`与`validation.json`完成。
 
 ### 第四步：发送
 
-完成审核、修复所有FAIL后：
+校验通过、并经人工确认邮件内容后：
 
 ```bash
-python briefing.py approve --all   # 仅在已人工确认全部条目时使用
 python briefing.py send --confirm-send
 ```
 
 没有`--confirm-send`时必须拒绝发送。使用默认`agently-cli`时，第一次带`--confirm-send`的调用只请求发送确认令牌并停止；将摘要展示给用户，等待用户确认后，再次运行同一命令完成发送。令牌保存在当前运行目录的被忽略文件中，不能提交到仓库。
 
-如果需要使用SMTP备用后端，先设置`EMAIL_BACKEND=smtp`，再按同一人工审核和`--confirm-send`门禁发送。
+如果需要使用SMTP备用后端，先设置`EMAIL_BACKEND=smtp`，再按同一人工确认和`--confirm-send`门禁发送。
 
 ## 上下文与成本硬规则
 
@@ -378,4 +376,4 @@ AI解释图的个人角色只由`assets/persona/ian-qiliang/overlay.md`和`asset
 - 所有成功生成并进入增强版邮件的解释图都包含批准的个人IP；
 - HTML正文可复制、链接可点击；
 - 图片无法加载时正文仍完整；
-- 已经经过人工审核。
+- 已经通过最终`validate`校验，并经人工确认过邮件内容。
