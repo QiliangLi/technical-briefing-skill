@@ -201,3 +201,46 @@ def test_repo_config_uses_sixty_day_deep_window_and_disables_rule_auto_accept():
     assert config.settings["efficiency"]["auto_accept_rule_score"] > 100
     assert config.settings["efficiency"]["max_fact_candidates_per_project"] == 1
     assert config.settings["efficiency"]["topic_appendix_max_per_topic"] == 8
+
+
+def test_topic_floor_fills_thin_topic_with_supplement_observation(tmp_path):
+    """A thin topic reaches topic_target via labelled supplements, never beyond cap."""
+    config = ConfigBundle.load(Paths(ROOT))
+    items = []
+    # tpn is thin (3 core-grade + 1 sub-bar); agent has 5 core-grade (overflow capped).
+    for topic, scores in (("tpn", (88, 84, 80, 62)), ("agent_acceleration", (88, 84, 80, 78, 76))):
+        for index, score in enumerate(scores):
+            published = "2026-08-0%d" % (index + 1)
+            payload = {
+                "title": f"item {topic} {index}",
+                "published_at": published,
+                "sources": [{"url": f"https://arxiv.org/abs/2608.0{index}{len(topic)}{index}", "source_level": "A"}],
+                "incremental_update": False,
+            }
+            path = tmp_path / f"{topic}-{index}.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            items.append(
+                {
+                    "id": f"{topic}-{index}",
+                    "score": score,
+                    "json_path": path.name,
+                    "fact_check_status": "PASS",
+                    "topic_id": topic,
+                    "direction_id": "kv_transfer",
+                    "source_published_at": published,
+                    "last_pushed_at": None,
+                }
+            )
+    selected, excluded, counts, limits = select_expanded_rows(
+        tmp_path, config, items, reference_date="2026-08-09"
+    )
+    per_topic = {}
+    for row in selected:
+        per_topic.setdefault(row["topic_id"], []).append((row["item_role"], row["score"]))
+    assert len(per_topic["tpn"]) == limits["topic_target"]
+    assert [role for role, _ in per_topic["tpn"]] == ["core"] * 3 + ["observation"]
+    assert per_topic["tpn"][-1][1] == 62
+    assert len(per_topic["agent_acceleration"]) == limits["max_per_topic"]
+    assert all(role == "core" for role, _ in per_topic["agent_acceleration"])
+    overflow = {row["id"] for row in excluded if row["reason"] == "expanded-v2 capacity"}
+    assert overflow == {"agent_acceleration-4"}

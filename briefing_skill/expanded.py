@@ -40,6 +40,7 @@ def _limits(config: ConfigBundle) -> dict[str, int]:
         "total_min": 0,
         "total_max": 20,
         "max_per_topic": 4,
+        "topic_target": 4,
         "core_score": 70,
         "observation_score": 60,
     }
@@ -109,22 +110,46 @@ def select_expanded_rows(
     selected: list[dict[str, Any]] = []
     topic_counts: dict[str, int] = {}
     core_count = observation_count = 0
+    # Per-topic floor pass: core-eligible rows first, then same-topic rows that
+    # only missed the core score bar as labelled supplements, so a thin topic
+    # still reaches topic_target detailed items when honest material exists.
+    topic_floor_candidates: dict[str, list[dict[str, Any]]] = {}
     for row in eligible:
-        if len(selected) >= limits["total_max"] or topic_counts.get(row["topic_id"], 0) >= limits["max_per_topic"]:
-            excluded.append({"id": row["id"], "score": row["score"], "reason": "expanded-v2 capacity"})
-            continue
+        if row["item_role"] != "core":
+            topic_floor_candidates.setdefault(row["topic_id"], []).append(row)
+    for row in eligible:
         if row["item_role"] == "core":
+            if len(selected) >= limits["total_max"] or topic_counts.get(row["topic_id"], 0) >= limits["max_per_topic"]:
+                excluded.append({"id": row["id"], "score": row["score"], "reason": "expanded-v2 capacity"})
+                continue
             if core_count >= limits["core_max"]:
                 excluded.append({"id": row["id"], "score": row["score"], "reason": "core capacity"})
                 continue
             core_count += 1
-        else:
-            if observation_count >= limits["observation_max"]:
-                excluded.append({"id": row["id"], "score": row["score"], "reason": "observation capacity"})
-                continue
+            topic_counts[row["topic_id"]] = topic_counts.get(row["topic_id"], 0) + 1
+            selected.append(row)
+    for topic_id in sorted(topic_floor_candidates):
+        shortfall = limits["topic_target"] - topic_counts.get(topic_id, 0)
+        for row in topic_floor_candidates[topic_id][:max(0, shortfall)]:
+            if len(selected) >= limits["total_max"] or observation_count >= limits["observation_max"]:
+                break
+            if topic_counts.get(topic_id, 0) >= limits["max_per_topic"]:
+                break
             observation_count += 1
-        topic_counts[row["topic_id"]] = topic_counts.get(row["topic_id"], 0) + 1
-        selected.append(row)
+            topic_counts[topic_id] = topic_counts.get(topic_id, 0) + 1
+            selected.append(row)
+    for topic_id, rows in topic_floor_candidates.items():
+        for row in rows:
+            if row not in selected:
+                excluded.append({"id": row["id"], "score": row["score"], "reason": "expanded-v2 capacity"})
+    selected.sort(
+        key=lambda row: (
+            0 if row["item_role"] == "core" else 1,
+            -float(row["score"]),
+            int(row["age_days"]),
+            row["id"],
+        )
+    )
     counts = {"core": core_count, "observations": observation_count, "total": len(selected), "topics": topic_counts}
     return selected, excluded, counts, limits
 
