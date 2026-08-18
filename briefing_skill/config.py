@@ -29,10 +29,10 @@ def _load_topics(paths: Paths) -> dict[str, Any]:
     topic_list = topics.setdefault("topics", [])
     known_ids = {str(topic.get("id") or "") for topic in topic_list}
 
-    # Focused topics live in small extension files so adding one does not require
-    # rewriting the large base taxonomy. Extensions are inserted before the horizontal
-    # Radar topic and otherwise behave exactly like base deep topics.
-    for filename in ("topics-chip.yaml", "topics-media.yaml"):
+    # Focused and exploration topics live in small extension files so adding one does
+    # not require rewriting the large base taxonomy. Extensions are inserted before
+    # the legacy horizontal Radar topic and otherwise behave like normal topics.
+    for filename in ("topics-chip.yaml", "topics-media.yaml", "topics-frontier.yaml"):
         extension_path = paths.config / filename
         if not extension_path.exists():
             continue
@@ -112,6 +112,7 @@ class ConfigBundle:
             "optical_network": "optical-network.md",
             "ai_chip_accelerator": "ai-chip-accelerator.md",
             "storage_media": "storage-media.md",
+            "frontier_exploration": "frontier-exploration.md",
             "ai_infra_horizontal": "ai-infra-horizontal.md",
         }
         try:
