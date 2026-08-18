@@ -49,6 +49,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .relevance_efficiency import install_relevance_efficiency
     from .safe_efficiency import install_safe_efficiency
     from .safe_efficiency_stats import install_safe_efficiency_stats
+    from .selective_fact_check import install_selective_fact_check
     from .session_grouping import install_session_grouping
     from .technology_value import install_technology_value_assessment
     from .telemetry import install_task_telemetry
@@ -75,9 +76,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_fact_cache_fastpath()
     install_evidence_repair()
 
-    # EditorialStage still owns machine-item drafting and verifier-only Fact Check.
-    # New runs no longer rewrite those machine fields for readability; a separate
-    # run-scoped Reader Projection is installed after final issue selection below.
+    # EditorialStage owns machine-item drafting. Existing Fact Check remains available
+    # as a guarded minimal patch verifier, but new runs invoke it only when the
+    # deterministic Evidence Gate finds a semantic risk.
     install_editorial_batching()
     install_issue_style_polish()
     install_minimal_fact_check_patches()
@@ -107,13 +108,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_fact_stage()
 
     # IssueStage owns deterministic final selection. Reader Projection wraps it so
-    # each selected, fact-checked item gets fresh current-run prose even when its
-    # facts were restored from the local SQLite cache. Publication then renders the
-    # sidecar while the machine item remains the durable evidence/roadmap object.
+    # each selected item gets fresh current-run prose even when facts came from local
+    # SQLite. Selective Fact Check is installed after that wrapper so low-risk machine
+    # items pass the deterministic gate without creating another Agent task.
     install_radar_signal_synthesis()
     install_reader_writing_contract()
     install_issue_stage()
     install_reader_projection()
+    install_selective_fact_check()
     install_publication_stage()
     install_illustrated_publication()
     # The final transport owns public image URLs and Agently body+HTML attachment.
