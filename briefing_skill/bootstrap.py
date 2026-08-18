@@ -28,6 +28,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .fact_cache_text_normalization import install_fact_cache_source_normalization
     from .fact_check_minimal_patch import install_minimal_fact_check_patches
     from .fact_stage import install_fact_stage
+    from .frontier_source_lanes import install_frontier_source_lanes
     from .historical_backfill import install_historical_backfill
     from .illustrated_publication import install_illustrated_publication
     from .invalid_repair import install_invalid_targeted_repair
@@ -60,6 +61,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_pipeline_optimizations()
     install_relevance_efficiency()
     install_radar_taxonomy()
+    # Frontier is a separate observation lane: fixed blogs/builders can feed it and
+    # lack of direct project alignment is explicitly not a rejection condition.
+    install_frontier_source_lanes()
     install_quality_guards()
     install_coverage_policy()
     # DiscoveryStage consumes the rolling backlog + coverage policy and creates at
