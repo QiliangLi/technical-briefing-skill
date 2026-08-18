@@ -11,11 +11,16 @@ from briefing_skill.tasks import brief_item_validation_errors
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_config_loads_eight_deep_topics_plus_horizontal_topic():
+def test_config_loads_eight_deep_topics_plus_two_observation_topics():
     config = ConfigBundle.load(Paths(ROOT))
     topic_ids = [topic["id"] for topic in config.topic_list()]
-    assert len(topic_ids) == 9
-    assert topic_ids[-3:] == ["ai_chip_accelerator", "storage_media", "ai_infra_horizontal"]
+    assert len(topic_ids) == 10
+    assert topic_ids[-4:] == [
+        "ai_chip_accelerator",
+        "storage_media",
+        "frontier_exploration",
+        "ai_infra_horizontal",
+    ]
     assert len(config.settings["efficiency"]["deep_topics"]) == 8
 
 
