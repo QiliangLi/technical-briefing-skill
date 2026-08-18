@@ -1,5 +1,9 @@
 import json
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,3 +44,14 @@ def test_roadmap_relations_are_chronology_and_explicit_directions_only():
     assert "item.direction_name || item.direction_id" in js
     assert "firstSeen" in js
     assert "topic_name === topic" in js
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_public_intelligence_javascript_parses():
+    result = subprocess.run(
+        ["node", "--check", str(ROOT / "site" / "intelligence-lab.js")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
