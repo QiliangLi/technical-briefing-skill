@@ -151,5 +151,5 @@ def test_publication_input_moves_assets_to_tracked_publication_directory():
     assert payload["constraints"]["output_directory"] == "published-assets/run-42"
     policy = payload["constraints"]["asset_publication_policy"]
     assert policy["required"] is True
-    assert "<release-tag>" in policy["preferred_url_format"]
-    assert "<40-char-commit-sha>" in policy["accepted_url_format"]
+    assert "<40-char-commit-sha>" in policy["preferred_url_format"]
+    assert "<release-tag>" in policy["backup_url_format"]

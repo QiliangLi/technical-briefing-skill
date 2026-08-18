@@ -77,8 +77,8 @@ def render_publication_html(
         if not _is_immutable_github_asset_url(public_url):
             raise RuntimeError(
                 "Generated briefing illustrations must provide published_asset_url as an "
-                "immutable public URL: a GitHub release download URL or a commit-SHA-pinned "
-                "raw.githubusercontent.com URL"
+                "immutable public URL: the commit-SHA-pinned raw.githubusercontent.com URL "
+                "(or the GitHub release download URL when raw hosting is unavailable)"
             )
         item["generated_asset_path"] = public_url
     return original_render(root, base_html, prepared)
@@ -94,23 +94,25 @@ def publication_illustration_input(original_input, pipeline, issue: dict[str, An
         "required": True,
         "repository": "QiliangLi/technical-briefing-skill",
         "preferred_url_format": (
-            "https://github.com/QiliangLi/technical-briefing-skill/releases/download/"
-            "<release-tag>/<asset-filename>"
-        ),
-        "accepted_url_format": (
             "https://raw.githubusercontent.com/QiliangLi/technical-briefing-skill/"
             "<40-char-commit-sha>/<repo-relative-path>"
         ),
+        "backup_url_format": (
+            "https://github.com/QiliangLi/technical-briefing-skill/releases/download/"
+            "<release-tag>/<asset-filename>"
+        ),
         "hosting_note": (
-            "Prefer release download URLs: raw.githubusercontent.com is unreachable from "
-            "many restricted networks, while github.com release assets resolve for mail "
-            "clients there."
+            "Primary hosting is the commit-SHA-pinned raw URL. Additionally upload each "
+            "asset to a per-run GitHub release and record that download URL in "
+            "backup_asset_url: when raw.githubusercontent.com has an outage or is "
+            "unreachable, the backup URL serves the same immutable bytes and rendering "
+            "can be switched to it."
         ),
         "rule": (
-            "Every generated image must be published (release asset upload or commit+push) "
-            "before the task result is written; return the immutable URL in "
-            "published_asset_url. Never expose workspace/, /home/, /Users/, file://, or a "
-            "relative image path in email HTML."
+            "Every generated image must be committed and pushed before the task result "
+            "is written; return the SHA-pinned raw URL in published_asset_url and the "
+            "release download URL in backup_asset_url. Never expose workspace/, /home/, "
+            "/Users/, file://, or a relative image path in email HTML."
         ),
     }
     return payload

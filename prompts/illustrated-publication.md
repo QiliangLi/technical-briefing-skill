@@ -75,16 +75,17 @@ A local image is **not** a valid email asset. Before returning any illustration 
 
 1. Save it only under the repository-relative `constraints.output_directory`, which is a stable `published-assets/<run_id>/` directory. Do not put publishable images under `workspace/runs`.
 2. Stage only the generated publication assets needed by this issue. Do not stage unrelated working-tree changes.
-3. Publish the assets on GitHub in one of two immutable forms:
-   - Preferred: upload as assets of a GitHub release tagged for this run (for example `illustrations-<run_id>`) and use the release download URL;
-   - Also accepted: commit the assets, push, read the exact 40-character commit SHA, and construct the raw URL described by `constraints.asset_publication_policy.accepted_url_format`.
-4. Construct the immutable URL exactly as described by `constraints.asset_publication_policy.preferred_url_format` (release) or `accepted_url_format` (raw).
-5. Verify that the URL points to the same generated asset and return it as `published_asset_url`.
+3. Publish the assets on GitHub in two immutable forms:
+   - Primary: commit the assets, push, read the exact 40-character commit SHA, and construct the raw URL described by `constraints.asset_publication_policy.preferred_url_format`;
+   - Backup: upload the same files as assets of a GitHub release tagged for this run (for example `illustrations-<run_id>`) and record the release download URL.
+4. Construct both URLs exactly as described by `constraints.asset_publication_policy.preferred_url_format` (raw, primary) and `backup_url_format` (release, backup).
+5. Verify that each URL points to the same generated asset and return them as `published_asset_url` (raw primary) and `backup_asset_url` (release backup).
 
 For a generated item, both are required:
 
 - `generated_asset_path`: repository-relative local path used for generation/QA;
-- `published_asset_url`: either `https://github.com/<owner>/<repo>/releases/download/<release-tag>/<asset-filename>` or `https://raw.githubusercontent.com/<owner>/<repo>/<40-char-commit-sha>/<path>`.
+- `published_asset_url`: `https://raw.githubusercontent.com/<owner>/<repo>/<40-char-commit-sha>/<path>` (primary);
+- `backup_asset_url`: `https://github.com/<owner>/<repo>/releases/download/<release-tag>/<asset-filename>` (backup; may be null only when the release upload genuinely failed, which must be explained in `qa_notes`).
 
 Never return a branch-name URL such as `/main/...`; the email must remain stable even after later commits. Never expose `/home/...`, `/Users/...`, `file://...`, `workspace/...`, or a bare relative path in reader-facing HTML.
 
