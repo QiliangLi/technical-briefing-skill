@@ -64,8 +64,10 @@ def select_expanded_rows(
     """
     limits = _limits(config)
     age_limits = freshness_limits(config)
+    allow_revisit = bool(config.scoring.get("expanded_v2", {}).get("topic_floor_allow_revisit", True))
     eligible: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
+    revisit_pool: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         score = float(row["score"])
         if row.get("fact_check_status") != "PASS":
@@ -83,7 +85,10 @@ def select_expanded_rows(
             excluded.append({"id": row["id"], "score": score, "reason": f"stale source ({age} days old)"})
             continue
         if row.get("last_pushed_at") and not item.get("incremental_update"):
-            excluded.append({"id": row["id"], "score": score, "reason": "previously pushed without incremental update"})
+            if allow_revisit and score >= limits["observation_score"]:
+                revisit_pool.setdefault(row["topic_id"], []).append({**row, "item": item, "age_days": age, "item_role": "observation", "revisit": True})
+            else:
+                excluded.append({"id": row["id"], "score": score, "reason": "previously pushed without incremental update"})
             continue
         has_resolved_a = any(
             source.get("source_level") == "A" and source_url_is_resolved(source.get("url"))
@@ -128,9 +133,12 @@ def select_expanded_rows(
             core_count += 1
             topic_counts[row["topic_id"]] = topic_counts.get(row["topic_id"], 0) + 1
             selected.append(row)
-    for topic_id in sorted(topic_floor_candidates):
+    for topic_id in sorted(set(topic_floor_candidates) | set(revisit_pool)):
         shortfall = limits["topic_target"] - topic_counts.get(topic_id, 0)
-        for row in topic_floor_candidates[topic_id][:max(0, shortfall)]:
+        fill = list(topic_floor_candidates.get(topic_id, [])) + sorted(
+            revisit_pool.get(topic_id, []), key=lambda row: (-float(row["score"]), row["id"])
+        )
+        for row in fill[:max(0, shortfall)]:
             if len(selected) >= limits["total_max"] or observation_count >= limits["observation_max"]:
                 break
             if topic_counts.get(topic_id, 0) >= limits["max_per_topic"]:
@@ -138,7 +146,12 @@ def select_expanded_rows(
             observation_count += 1
             topic_counts[topic_id] = topic_counts.get(topic_id, 0) + 1
             selected.append(row)
+        for row in fill[max(0, shortfall):]:
+            reason = "revisit floor not reached" if row.get("revisit") else "expanded-v2 capacity"
+            excluded.append({"id": row["id"], "score": row["score"], "reason": reason})
     for topic_id, rows in topic_floor_candidates.items():
+        if topic_id in revisit_pool:
+            continue
         for row in rows:
             if row not in selected:
                 excluded.append({"id": row["id"], "score": row["score"], "reason": "expanded-v2 capacity"})
@@ -204,6 +217,8 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
             "fact_check_status": row["fact_check_status"],
             "anchor_id": f"item-{row['id']}",
         }
+        if row.get("revisit"):
+            item["revisit"] = True
         (core_items if row["item_role"] == "core" else observations).append(item)
 
     rebuilt = {

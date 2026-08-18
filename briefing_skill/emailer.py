@@ -226,6 +226,13 @@ class EmailService:
             by_topic.setdefault(item.get("topic_id", "unknown"), []).append(item)
         for item in observations:
             item.setdefault("anchor_id", f"item-{item.get('brief_item_id', '')}")
+            # Supplement cards render the same fact-checked field set as deep
+            # cards so a topic floor fill reads as detailed information.
+            item["compact_conclusion"] = self._clean_text(item.get("core_conclusion"))
+            item["compact_mechanism"] = self._clean_text(item.get("mechanism"))
+            item["compact_result"] = self._clean_text(item.get("result") or item.get("evidence_summary"))
+            item["compact_boundary"] = self._clean_text(item.get("boundary"))
+            item["compact_relevance"] = self._clean_text(item.get("project_relevance"))
             observations_by_topic.setdefault(item.get("topic_id", "unknown"), []).append(item)
         groups = []
         seen = set()

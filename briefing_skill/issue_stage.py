@@ -186,7 +186,12 @@ def install_issue_stage() -> None:
 
         item_rows = self.db.fetchall(
             """
-            SELECT ii.position,ii.item_role,bi.*,e.topic_id,e.direction_id
+            SELECT ii.position,ii.item_role,bi.*,e.topic_id,e.direction_id,
+                   COALESCE(
+                     e.last_pushed_at,
+                     (SELECT MAX(e2.last_pushed_at) FROM events e2
+                      WHERE e.event_key IS NOT NULL AND e2.event_key=e.event_key)
+                   ) AS last_pushed_at
             FROM issue_items ii
             JOIN brief_items bi ON bi.id=ii.brief_item_id
             JOIN events e ON e.id=bi.event_id
@@ -219,6 +224,14 @@ def install_issue_stage() -> None:
                 "fact_check_status": row.get("fact_check_status"),
                 "anchor_id": f"item-{row['id']}",
             }
+            # Supplement fills drawn from previously pushed events are labelled
+            # as revisits so readers can tell them from fresh deep items.
+            if (
+                item_role != "core"
+                and row.get("last_pushed_at")
+                and not item.get("incremental_update")
+            ):
+                rebuilt["revisit"] = True
             issue_data["items"].append(rebuilt)
             issue_data["core_items" if item_role == "core" else "observations"].append(rebuilt)
 
