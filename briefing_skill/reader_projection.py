@@ -196,29 +196,30 @@ def _install_fact_check_first(pipeline_cls) -> None:
         entries = plan_fact_check_entries(self)
         if not entries:
             return
-        policy = _policy(self)
-        batches = _pack_batches(
-            entries,
-            batch_size=policy["fact_check_batch_size"],
-            max_chars=policy["editorial_batch_max_input_chars"],
-        )
-        for index, batch in enumerate(batches):
-            entity_id = stable_hash(self.run_id, "fact_check_batch", str(index))
+        policy = _policy(self.config)
+        batch_size = max(1, int(policy.get("fact_check_batch_size", 4)))
+        char_limit = max(12000, int(policy.get("editorial_batch_max_input_chars", 65000)))
+        for index, batch in enumerate(
+            _pack_batches(entries, max_items=batch_size, max_chars=char_limit),
+            1,
+        ):
+            item_ids = [str(row["payload"]["brief_item_id"]) for row in batch]
+            entity_id = stable_hash(self.run_id, "fact-check-batch", *item_ids)
             self.tasks.create(
                 self.run_id,
                 "fact_check_batch",
                 entity_id,
                 {
-                    "batch_id": entity_id,
-                    "checks": batch,
+                    "batch_id": f"fact-check-{index}",
+                    "checks": [row["payload"] for row in batch],
                     "constraints": {
-                        "independent_per_item": True,
+                        "independent_items": True,
                         "no_cross_item_evidence": True,
                     },
                 },
                 prompt="fact-check-batch.md",
                 schema="fact-check-batch.schema.json",
-                priority=90,
+                priority=max(row["priority"] for row in batch),
             )
         self.db.update_run(self.run_id, stage="AWAITING_FACT_CHECK")
 
