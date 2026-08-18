@@ -54,9 +54,13 @@ Rules for `project_insights`:
 - When a project insight is material enough to keep, its substance must be reflected once in the matching reader-facing `judgements`; do not duplicate it as a separate prose section.
 - Do not use discovery-only/radar material for `judgements` or `project_insights`; those two layers only use final core briefing items.
 
-## Hotspot Radar synthesis
+## Hotspot Radar and 边界探索 synthesis
 
-`radar_candidates` is intentionally lightweight: title, source summary, source metadata, category, and URL only. Do not open full text and do not promote Radar material into the evidence standard of the detailed briefing.
+`radar_candidates` is intentionally lightweight: title, source summary, source metadata, category, source lane, and URL only. Do not open full text and do not promote Radar material into the evidence standard of the detailed briefing.
+
+Candidates may come from `academic_primary` or `industry_builder` source lanes. These lanes are intentionally different: papers/primary technical sources remain the evidence backbone, while technical blogs, official engineering posts and Builder material may be valuable direct observations even without an accompanying paper. Do not silently discard an `industry_builder` signal merely because it is not A-level. When useful candidates exist in both lanes, preserve source diversity rather than selecting an all-arXiv Radar by default.
+
+The `边界探索` category has a distinct purpose: it is allowed to be outside configured project boundaries. Do **not** penalize a candidate because it lacks direct project alignment. Select it when it exposes a transferable mechanism, a counter-intuitive systems result, a new architecture/hardware abstraction, or a direction that could expand the team's hypothesis space. Do not force a fake mapping back to an existing project.
 
 Produce `radar_signals` as a small set of concrete technical signals rather than an article list:
 
@@ -81,4 +85,4 @@ Return:
 - `project_insights`: 0-4 internal trace objects containing exact `topic_id`, exact `topic_name`, exact configured `project_question`, `effect`, `confidence` (`high`/`medium`/`low`), a complete-sentence `insight`, a complete-sentence `next_action`, and 1-4 exact `evidence_item_ids`.
 - `radar_signals`: 0-8 objects containing `category`, a concrete `signal`, an informative `summary`, and 1-3 exact `source_urls` from the supplied Radar candidates.
 
-The detailed items have already passed the single issue-level Chinese style rewrite and independent fact checks before this task. Do not call any writing Skill here. Synthesize directly under the reader contract above; do not add a second unconstrained style-rewrite pass that could drift from the fact-checked item text. Return JSON only.
+The detailed machine items have already passed their evidence gate (and selective semantic verification when triggered). Reader-facing item prose is generated separately. Do not call any writing Skill here. Synthesize directly under the reader contract above and return JSON only.
