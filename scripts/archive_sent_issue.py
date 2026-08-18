@@ -3,7 +3,10 @@
 
 Each archived issue keeps the as-sent email HTML, the structured IssueDocument,
 and a normalized papers.json designed as the substrate for later knowledge-graph
-or paper-tree generation:
+or paper-tree generation. When a date was sent more than once or in several
+variants, the latest sent variant wins: re-running this script overwrites the
+existing archive/issues/<date>/ folder, so the folder always mirrors the newest
+send:
 
     papers.json: [{paper_key, title, url, arxiv_id, topic_id, topic_name,
                    direction_id, role, score, published_at, revisit,
