@@ -43,6 +43,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .quality_guard import install_quality_guards
     from .radar_signal_synthesis import install_radar_signal_synthesis
     from .radar_taxonomy import install_radar_taxonomy
+    from .reader_projection import install_reader_projection
     from .reader_writing_contract import install_reader_writing_contract
     from .release_family import install_release_family_aggregation
     from .relevance_efficiency import install_relevance_efficiency
@@ -74,8 +75,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_fact_cache_fastpath()
     install_evidence_repair()
 
-    # EditorialStage: explicit draft/check planners, one issue-level style pass, then
-    # verifier-only Fact Check with minimal factual patches.
+    # EditorialStage still owns machine-item drafting and verifier-only Fact Check.
+    # New runs no longer rewrite those machine fields for readability; a separate
+    # run-scoped Reader Projection is installed after final issue selection below.
     install_editorial_batching()
     install_issue_style_polish()
     install_minimal_fact_check_patches()
@@ -104,12 +106,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_fact_cache_source_normalization()
     install_fact_stage()
 
-    # IssueStage and PublicationStage are explicit owners. Project Insight and Radar
-    # remain inside the single issue-synthesis Agent; publication assembly is structured
-    # before Jinja and final validation is mutation-free.
+    # IssueStage owns deterministic final selection. Reader Projection wraps it so
+    # each selected, fact-checked item gets fresh current-run prose even when its
+    # facts were restored from the local SQLite cache. Publication then renders the
+    # sidecar while the machine item remains the durable evidence/roadmap object.
     install_radar_signal_synthesis()
     install_reader_writing_contract()
     install_issue_stage()
+    install_reader_projection()
     install_publication_stage()
     install_illustrated_publication()
     # The final transport owns public image URLs and Agently body+HTML attachment.
