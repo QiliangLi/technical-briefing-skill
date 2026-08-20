@@ -10,6 +10,7 @@ from .archive_reader import (
     write_publication_manifest,
 )
 from .editorial_intent import decorate_reader_cards
+from .reader_projection_v2 import decorate_reader_blocks
 from .utils import read_json
 
 
@@ -29,14 +30,24 @@ def render_archive_variant(
     *,
     variant: str,
 ) -> str:
-    """Reproject existing archive prose and add the current editorial card layout."""
+    """Reproject archive prose while preserving the reader contract that produced it."""
 
     base = render_reader_over_original(issue_dir, issue, reader, variant=variant)
     readers = {
         str(item_id): dict(row)
         for item_id, row in (reader.get("items") or {}).items()
     }
-    return decorate_reader_cards(base, _machine_items(issue), readers)
+    v2 = {item_id: row for item_id, row in readers.items() if row.get("blocks")}
+    legacy = {item_id: row for item_id, row in readers.items() if not row.get("blocks")}
+    if legacy:
+        base = decorate_reader_cards(base, _machine_items(issue), legacy)
+    if v2:
+        base = decorate_reader_blocks(
+            base,
+            v2,
+            issue_date=str(reader.get("issue_date") or issue.get("date_to") or ""),
+        )
+    return base
 
 
 def rerender_issue(root: Path, issue_dir: Path) -> list[Path]:
