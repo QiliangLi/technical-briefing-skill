@@ -1,9 +1,9 @@
 name: Apply native archive block persistence fix
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/archive-blocks-native-persistence
+      - main
     paths:
       - '.github/workflows/apply-archive-blocks-native-persistence.yml'
 
@@ -65,19 +65,14 @@ jobs:
 
           python -m pytest -q tests/test_archive_reader.py
 
-      - name: Commit native persistence fix
+      - name: Commit native persistence fix and remove helper workflow
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f .github/workflows/apply-archive-blocks-native-persistence.yml
           git add -- briefing_skill/archive_reader.py briefing_skill/bootstrap.py tests/test_archive_reader.py
-          if git ls-files --error-unmatch briefing_skill/archive_reader_v2.py >/dev/null 2>&1; then
-            git rm -- briefing_skill/archive_reader_v2.py
-          fi
-          if git diff --cached --quiet; then
-            echo 'No changes to commit.'
-            exit 0
-          fi
+          git add -u -- briefing_skill/archive_reader_v2.py .github/workflows/apply-archive-blocks-native-persistence.yml
           git commit -m 'fix: persist reader blocks natively in archives'
           git push origin HEAD:fix/archive-blocks-native-persistence
