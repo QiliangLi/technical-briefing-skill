@@ -16,6 +16,8 @@ from .utils import canonicalize_url, read_json, stable_hash, write_json
 
 SCHEMA_VERSION = 1
 EVIDENCE_SCOPE = "published_archive_only"
+FRONTIER_TOPIC_ID = "frontier_exploration"
+FRONTIER_TOPIC_NAME = "边界探索"
 TASK_BINDING_KEY = "_task"
 ROADMAP_STATUSES = {"supported", "emerging", "contested", "inferred"}
 IDEA_TYPES = {"research_hypothesis", "solution_concept"}
@@ -28,6 +30,13 @@ IDEA_STATUSES = {
     "proposal_candidate",
 }
 IDENTITY_KEY_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
+RADAR_CATEGORY_DIRECTIONS = {
+    "AI Infra": "ai_infra",
+    "Agent生态": "agent_ecosystem",
+    "KVCache生态": "kv_cache_ecosystem",
+    "存储与介质": "storage_media",
+    "其他技术前沿": "other_frontier",
+}
 
 
 def _json_digest(value: Any) -> str:
@@ -56,6 +65,10 @@ def _source_urls(item: dict[str, Any]) -> list[str]:
     if item.get("url"):
         urls.append(canonicalize_url(str(item["url"])))
     return _ordered_unique(urls)
+
+
+def _frontier_direction_id(category: str) -> str:
+    return RADAR_CATEGORY_DIRECTIONS.get(category) or f"radar_{stable_hash(category, length=12)}"
 
 
 def stable_idea_id(identity: dict[str, Any]) -> str:
@@ -175,6 +188,7 @@ class PublishedArchive:
                 continue
             url = canonicalize_url(str(row.get("url") or ""))
             signal = radar_by_url.get(url, {})
+            category = str(signal.get("category") or row.get("topic_name") or "其他技术前沿")
             item_id = str(row.get("item_id") or "").strip() or f"radar_{stable_hash(issue.date, url, length=20)}"
             if item_id in seen_ids:
                 continue
@@ -184,10 +198,11 @@ class PublishedArchive:
                     "item_id": item_id,
                     "issue_date": issue.date,
                     "role": "radar",
-                    "topic_id": str(row.get("topic_id") or ""),
-                    "topic_name": str(row.get("topic_name") or signal.get("category") or ""),
-                    "direction_id": str(row.get("direction_id") or ""),
-                    "direction_name": "",
+                    "topic_id": FRONTIER_TOPIC_ID,
+                    "topic_name": FRONTIER_TOPIC_NAME,
+                    "direction_id": _frontier_direction_id(category),
+                    "direction_name": category,
+                    "frontier_category": category,
                     "title": str(signal.get("signal") or row.get("title") or ""),
                     "published_at": row.get("published_at"),
                     "core_conclusion": str(signal.get("summary") or ""),
@@ -305,19 +320,37 @@ def roadmap_semantic_errors(
     topic_id: str,
     issue_date: str,
     evidence: list[dict[str, Any]],
+    promoted_clusters: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    if topic_id == FRONTIER_TOPIC_ID:
+        return ["frontier_exploration must remain clusters and cannot own a Roadmap"]
     if roadmap.get("topic_id") != topic_id:
         errors.append("roadmap topic_id must match the bounded task")
     if roadmap.get("updated_by_issue") != issue_date:
         errors.append("roadmap updated_by_issue must match the bounded task")
     if roadmap.get("evidence_scope") != EVIDENCE_SCOPE:
         errors.append("roadmap evidence_scope must be published_archive_only")
-    allowed = _evidence_map(item for item in evidence if item.get("topic_id") == topic_id)
+    topic_allowed = _evidence_map(item for item in evidence if item.get("topic_id") == topic_id)
+    frontier_evidence = _evidence_map(
+        item for item in evidence if item.get("topic_id") == FRONTIER_TOPIC_ID
+    )
+    promoted_by_branch: dict[str, set[str]] = {}
+    for cluster in promoted_clusters or []:
+        target = cluster.get("promotion_target") or {}
+        if cluster.get("status") != "promoted" or target.get("topic_id") != topic_id:
+            continue
+        promoted_by_branch.setdefault(str(target.get("branch_id") or ""), set()).update(
+            map(str, cluster.get("evidence_item_ids") or [])
+        )
     branch_ids: set[str] = set()
     all_referenced: set[str] = set()
     for branch_index, branch in enumerate(roadmap.get("branches") or []):
         branch_id = str(branch.get("branch_id") or "")
+        allowed = dict(topic_allowed)
+        for item_id in promoted_by_branch.get(branch_id, set()):
+            if item_id in frontier_evidence:
+                allowed[item_id] = frontier_evidence[item_id]
         if branch_id in branch_ids:
             errors.append(f"duplicate roadmap branch_id {branch_id}")
         branch_ids.add(branch_id)
@@ -459,12 +492,15 @@ def frontier_cluster_semantic_errors(
     *,
     topic_id: str,
     evidence: list[dict[str, Any]],
+    allowed_idea_ids: set[str] | None = None,
+    allowed_target_topic_ids: set[str] | None = None,
 ) -> list[str]:
-    if clusters and topic_id != "frontier_exploration":
+    if clusters and topic_id != FRONTIER_TOPIC_ID:
         return ["frontier clusters may only be changed by a frontier_exploration task"]
     allowed = _evidence_map(
-        item for item in evidence if item.get("topic_id") == "frontier_exploration"
+        item for item in evidence if item.get("topic_id") == FRONTIER_TOPIC_ID
     )
+    known_ideas = allowed_idea_ids or set()
     errors: list[str] = []
     cluster_ids: set[str] = set()
     for index, cluster in enumerate(clusters):
@@ -479,9 +515,23 @@ def frontier_cluster_semantic_errors(
             errors.append(f"frontier cluster {index} references unpublished items: {', '.join(unknown)}")
         allowed_urls = {url for item in items if item for url in item.get("source_urls") or []}
         urls = {canonicalize_url(str(url)) for url in cluster.get("source_urls") or []}
-        if not urls or not urls.issubset(allowed_urls):
-            errors.append(f"frontier cluster {index} source_urls must come from its evidence items")
+        if not urls or urls != allowed_urls:
+            errors.append(f"frontier cluster {index} source_urls must exactly match its evidence items")
         issue_dates = {str(item.get("issue_date")) for item in items if item}
+        if issue_dates and cluster.get("first_seen_issue") != min(issue_dates):
+            errors.append(f"frontier cluster {index} first_seen_issue does not match evidence")
+        if issue_dates and cluster.get("last_seen_issue") != max(issue_dates):
+            errors.append(f"frontier cluster {index} last_seen_issue does not match evidence")
+        evidence_categories = {
+            str(item.get("frontier_category") or item.get("direction_name") or "")
+            for item in items
+            if item
+        }
+        if set(map(str, cluster.get("categories") or [])) != evidence_categories:
+            errors.append(f"frontier cluster {index} categories must exactly match evidence")
+        unknown_ideas = sorted(set(map(str, cluster.get("idea_ids") or [])) - known_ideas)
+        if unknown_ideas:
+            errors.append(f"frontier cluster {index} references unknown Ideas: {', '.join(unknown_ideas)}")
         if (
             cluster.get("status") == "promoted"
             and len(issue_dates) < 2
@@ -492,6 +542,19 @@ def frontier_cluster_semantic_errors(
             )
         if cluster.get("status") == "promoted" and not cluster.get("promotion_reason"):
             errors.append(f"frontier cluster {index} promotion requires promotion_reason")
+        target = cluster.get("promotion_target")
+        if cluster.get("status") == "promoted":
+            if not isinstance(target, dict):
+                errors.append(f"frontier cluster {index} promotion requires a stable target")
+            elif target.get("topic_id") == FRONTIER_TOPIC_ID:
+                errors.append(f"frontier cluster {index} cannot target frontier_exploration Roadmap")
+            elif (
+                allowed_target_topic_ids is not None
+                and target.get("topic_id") not in allowed_target_topic_ids
+            ):
+                errors.append(f"frontier cluster {index} target topic is not a stable Roadmap")
+        elif target is not None:
+            errors.append(f"temporary frontier cluster {index} cannot declare a promotion target")
     return errors
 
 
@@ -511,27 +574,66 @@ def prepare_knowledge_tasks(
     all_evidence = archive.evidence_through(issue_date)
     current_evidence = PublishedArchive.evidence(archive.load_issue(issue_date))
     affected = {row["topic_id"]: row["topic_name"] for row in affected_topics(root, issue_date)}
-    requested = _ordered_unique(topic_ids or affected.keys())
-    unknown = sorted(set(requested) - set(affected))
-    if unknown:
-        raise ValueError(f"topics are not affected by published issue {issue_date}: {', '.join(unknown)}")
-
     knowledge_root = root / "knowledge"
+    frontier_path = knowledge_root / "frontier-clusters.json"
+    frontier_state = read_json(frontier_path, {}) if frontier_path.is_file() else {}
+    all_clusters = frontier_state.get("clusters") or []
+    promoted_targets: dict[str, str] = {}
+    for cluster in all_clusters:
+        target = cluster.get("promotion_target") or {}
+        target_topic = str(target.get("topic_id") or "")
+        if cluster.get("status") != "promoted" or not target_topic:
+            continue
+        previous_target = _current_roadmap(knowledge_root, target_topic)
+        promoted_targets[target_topic] = str(
+            (previous_target or {}).get("topic_name") or target.get("topic_name") or target_topic
+        )
+    allowed_topics = {**promoted_targets, **affected}
+    requested = _ordered_unique(topic_ids or affected.keys())
+    unknown = sorted(set(requested) - set(allowed_topics))
+    if unknown:
+        raise ValueError(
+            "topics are neither affected by this issue nor targeted by an explicit Frontier promotion: "
+            + ", ".join(unknown)
+        )
+
     task_root = root / "workspace" / "knowledge" / "tasks" / issue_date
     ideas = _read_ideas(knowledge_root)
     tasks: list[dict[str, Any]] = []
     for topic_id in requested:
-        previous = _current_roadmap(knowledge_root, topic_id)
+        previous = None if topic_id == FRONTIER_TOPIC_ID else _current_roadmap(knowledge_root, topic_id)
         if previous and any(
             str(row.get("issue_date") or "") == issue_date
             for row in previous.get("change_log") or []
         ):
             continue
+        if topic_id == FRONTIER_TOPIC_ID and any(
+            str(row.get("issue_date") or "") == issue_date
+            for row in frontier_state.get("change_log") or []
+        ):
+            continue
+        relevant_clusters = (
+            all_clusters
+            if topic_id == FRONTIER_TOPIC_ID
+            else [
+                cluster
+                for cluster in all_clusters
+                if cluster.get("status") == "promoted"
+                and (cluster.get("promotion_target") or {}).get("topic_id") == topic_id
+            ]
+        )
+        promoted_item_ids = {
+            str(item_id)
+            for cluster in relevant_clusters
+            for item_id in cluster.get("evidence_item_ids") or []
+        }
         current_ids = [
             str(row["item_id"])
             for row in current_evidence
             if row.get("topic_id") == topic_id
         ]
+        if topic_id != FRONTIER_TOPIC_ID:
+            current_ids = _ordered_unique([*current_ids, *sorted(promoted_item_ids)])
         previous_ideas = [idea for idea in ideas if topic_id in (idea.get("topic_ids") or [])]
         previous_idea_item_ids = {
             str(ref.get("item_id") or "")
@@ -542,23 +644,20 @@ def prepare_knowledge_tasks(
         task_evidence = [
             row
             for row in all_evidence
-            if row.get("topic_id") == topic_id or row.get("item_id") in previous_idea_item_ids
+            if row.get("topic_id") == topic_id
+            or row.get("item_id") in previous_idea_item_ids
+            or row.get("item_id") in promoted_item_ids
         ]
-        frontier_path = knowledge_root / "frontier-clusters.json"
         payload = {
             "schema_version": SCHEMA_VERSION,
             "evidence_scope": EVIDENCE_SCOPE,
             "issue_date": issue_date,
-            "topic": {"topic_id": topic_id, "topic_name": affected[topic_id]},
+            "topic": {"topic_id": topic_id, "topic_name": allowed_topics[topic_id]},
             "current_issue_evidence_item_ids": current_ids,
             "published_evidence": task_evidence,
             "previous_roadmap": previous,
             "previous_ideas": previous_ideas,
-            "previous_frontier_clusters": (
-                read_json(frontier_path, {}).get("clusters", [])
-                if topic_id == "frontier_exploration" and frontier_path.is_file()
-                else []
-            ),
+            "previous_frontier_clusters": relevant_clusters,
             "frontier_policy": {
                 "cluster_before_branch": True,
                 "promote_only_after_recurrence_stable_mechanism_or_idea": True,
@@ -578,6 +677,7 @@ def prepare_knowledge_tasks(
             "issue_date": issue_date,
             "input_digest": input_digest,
             "previous_roadmap_digest": _json_digest(previous) if previous else None,
+            "previous_frontier_digest": _json_digest(frontier_state) if topic_id == FRONTIER_TOPIC_ID else None,
         }
         input_path = task_root / f"{task_id}.input.json"
         output_path = task_root / f"{task_id}.output.json"
@@ -794,34 +894,55 @@ def apply_knowledge_task(root: Path, task_id: str) -> dict[str, Any]:
 
     topic_id = str(binding["entity_id"])
     issue_date = str(binding["issue_date"])
-    previous = _current_roadmap(root / "knowledge", topic_id)
+    previous = None if topic_id == FRONTIER_TOPIC_ID else _current_roadmap(root / "knowledge", topic_id)
     current_digest = _json_digest(previous) if previous else None
     if current_digest != binding.get("previous_roadmap_digest"):
         raise ValueError("stale knowledge task: current roadmap differs from prepared input")
+    frontier_path = root / "knowledge" / "frontier-clusters.json"
+    frontier_state = read_json(frontier_path, {}) if frontier_path.is_file() else {}
+    if topic_id == FRONTIER_TOPIC_ID and _json_digest(frontier_state) != binding.get("previous_frontier_digest"):
+        raise ValueError("stale knowledge task: current Frontier clusters differ from prepared input")
 
     schema_errors = _validate_schema(root, "knowledge-materialization.schema.json", output)
-    schema_errors.extend(
-        _validate_schema(
-            root,
-            "roadmap.schema.json",
-            {
-                **output["roadmap"],
-                "schema_version": SCHEMA_VERSION,
-                "version": int((previous or {}).get("version") or 1),
-                "change_type": "material_change",
-                "history": copy.deepcopy((previous or {}).get("history") or []),
-                "change_log": copy.deepcopy((previous or {}).get("change_log") or []),
-            },
+    roadmap_output = output.get("roadmap")
+    if topic_id == FRONTIER_TOPIC_ID:
+        if roadmap_output is not None:
+            schema_errors.append(
+                "frontier_exploration output roadmap must be null; promote a cluster to a stable target instead"
+            )
+    elif roadmap_output is None:
+        schema_errors.append("a stable Topic knowledge task requires roadmap output")
+    else:
+        schema_errors.extend(
+            _validate_schema(
+                root,
+                "roadmap.schema.json",
+                {
+                    **roadmap_output,
+                    "schema_version": SCHEMA_VERSION,
+                    "version": int((previous or {}).get("version") or 1),
+                    "change_type": "material_change",
+                    "history": copy.deepcopy((previous or {}).get("history") or []),
+                    "change_log": copy.deepcopy((previous or {}).get("change_log") or []),
+                },
+            )
         )
-    )
     for idea in output.get("ideas") or []:
         schema_errors.extend(_validate_schema(root, "idea.schema.json", idea))
     if schema_errors:
         raise ValueError("invalid knowledge output: " + "; ".join(schema_errors[:12]))
     evidence = input_data.get("published_evidence") or []
-    errors = roadmap_semantic_errors(
-        output["roadmap"], topic_id=topic_id, issue_date=issue_date, evidence=evidence
-    )
+    errors: list[str] = []
+    if roadmap_output is not None:
+        errors.extend(
+            roadmap_semantic_errors(
+                roadmap_output,
+                topic_id=topic_id,
+                issue_date=issue_date,
+                evidence=evidence,
+                promoted_clusters=input_data.get("previous_frontier_clusters") or [],
+            )
+        )
     existing_ideas = {idea["idea_id"]: idea for idea in input_data.get("previous_ideas") or []}
     output_ids: set[str] = set()
     for idea in output.get("ideas") or []:
@@ -840,33 +961,56 @@ def apply_knowledge_task(root: Path, task_id: str) -> dict[str, Any]:
                 previous=existing_ideas.get(idea_id),
             )
         )
+    known_idea_ids = {
+        path.stem for path in (root / "knowledge" / "ideas").glob("idea_*.json")
+    } | output_ids
+    stable_topic_ids = {
+        path.stem for path in (root / "knowledge" / "roadmaps").glob("*.json")
+    }
     errors.extend(
         frontier_cluster_semantic_errors(
             output.get("frontier_clusters") or [],
             topic_id=topic_id,
             evidence=evidence,
+            allowed_idea_ids=known_idea_ids,
+            allowed_target_topic_ids=stable_topic_ids,
         )
     )
     if errors:
         raise ValueError("knowledge semantic validation failed: " + "; ".join(errors[:16]))
 
-    roadmap, change_type = _write_roadmap(
-        root,
-        output["roadmap"],
-        previous=previous,
-        task_id=task_id,
-        issue_date=issue_date,
-        current_item_ids=input_data.get("current_issue_evidence_item_ids") or [],
-    )
+    roadmap = None
+    if roadmap_output is not None:
+        roadmap, change_type = _write_roadmap(
+            root,
+            roadmap_output,
+            previous=previous,
+            task_id=task_id,
+            issue_date=issue_date,
+            current_item_ids=input_data.get("current_issue_evidence_item_ids") or [],
+        )
+    else:
+        change_type = "clusters_updated"
     idea_ids = _write_ideas(root, output.get("ideas") or [])
     clusters = output.get("frontier_clusters") or []
-    if topic_id == "frontier_exploration":
+    if topic_id == FRONTIER_TOPIC_ID:
+        old_log = copy.deepcopy(frontier_state.get("change_log") or [])
+        old_log.append(
+            {
+                "event_id": f"frontier_change_{stable_hash(task_id, length=20)}",
+                "issue_date": issue_date,
+                "change_type": "clusters_updated",
+                "cluster_ids": [str(cluster.get("cluster_id") or "") for cluster in clusters],
+            }
+        )
         write_json(
-            root / "knowledge" / "frontier-clusters.json",
+            frontier_path,
             {
                 "schema_version": SCHEMA_VERSION,
                 "evidence_scope": EVIDENCE_SCOPE,
+                "updated_by_issue": issue_date,
                 "clusters": clusters,
+                "change_log": old_log,
             },
         )
     rebuild_knowledge_index(root)
@@ -876,7 +1020,7 @@ def apply_knowledge_task(root: Path, task_id: str) -> dict[str, Any]:
         "issue_date": issue_date,
         "topic_id": topic_id,
         "change_type": change_type,
-        "roadmap_version": roadmap["version"],
+        "roadmap_version": roadmap["version"] if roadmap else None,
         "idea_ids": idea_ids,
         "output_digest": _json_digest(output),
         "applied_at": datetime.now(timezone.utc).isoformat(),
@@ -899,6 +1043,9 @@ def validate_knowledge_store(root: Path) -> list[str]:
     frontier_path = knowledge_root / "frontier-clusters.json"
     if frontier_path.is_file():
         frontier_value = read_json(frontier_path)
+        known_idea_ids = {
+            path.stem for path in (knowledge_root / "ideas").glob("idea_*.json")
+        }
         errors.extend(
             f"{frontier_path}: {error}"
             for error in _validate_schema(root, "frontier-clusters.schema.json", frontier_value)
@@ -907,8 +1054,12 @@ def validate_knowledge_store(root: Path) -> list[str]:
             f"{frontier_path}: {error}"
             for error in frontier_cluster_semantic_errors(
                 frontier_value.get("clusters") or [],
-                topic_id="frontier_exploration",
+                topic_id=FRONTIER_TOPIC_ID,
                 evidence=evidence,
+                allowed_idea_ids=known_idea_ids,
+                allowed_target_topic_ids={
+                    path.stem for path in (knowledge_root / "roadmaps").glob("*.json")
+                },
             )
         )
     for path in sorted((knowledge_root / "roadmaps").glob("*.json")):
@@ -921,6 +1072,7 @@ def validate_knowledge_store(root: Path) -> list[str]:
                 topic_id=str(value.get("topic_id") or ""),
                 issue_date=str(value.get("updated_by_issue") or ""),
                 evidence=evidence,
+                promoted_clusters=(frontier_value.get("clusters") or []) if frontier_path.is_file() else [],
             )
         )
     for path in sorted((knowledge_root / "ideas").glob("*.json")):

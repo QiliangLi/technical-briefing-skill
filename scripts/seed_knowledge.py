@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from briefing_skill.knowledge_materialization import (  # noqa: E402
     EVIDENCE_SCOPE,
+    FRONTIER_TOPIC_ID,
     SCHEMA_VERSION,
     PublishedArchive,
     rebuild_knowledge_index,
@@ -35,7 +36,7 @@ def _ref(item: dict[str, Any], reason: str) -> dict[str, Any]:
 def _roadmaps(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_topic: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in evidence:
-        if item.get("topic_id"):
+        if item.get("topic_id") and item.get("topic_id") != FRONTIER_TOPIC_ID:
             by_topic[str(item["topic_id"])].append(item)
 
     result: list[dict[str, Any]] = []
@@ -114,6 +115,33 @@ def _roadmaps(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         result.append(roadmap)
     return result
+
+
+def _frontier_clusters(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for item in evidence:
+        if item.get("topic_id") != FRONTIER_TOPIC_ID or item.get("role") != "radar":
+            continue
+        category = str(item.get("frontier_category") or item.get("direction_name") or "其他技术前沿")
+        by_category[category].append(item)
+    clusters: list[dict[str, Any]] = []
+    for category, items in sorted(by_category.items()):
+        clusters.append(
+            {
+                "cluster_id": f"frontier_{items[0]['direction_id']}",
+                "name": f"{category}公开信号",
+                "categories": [category],
+                "status": "temporary",
+                "first_seen_issue": min(str(item["issue_date"]) for item in items),
+                "last_seen_issue": max(str(item["issue_date"]) for item in items),
+                "evidence_item_ids": [str(item["item_id"]) for item in items],
+                "source_urls": sorted({url for item in items for url in item.get("source_urls") or []}),
+                "idea_ids": [],
+                "promotion_reason": None,
+                "promotion_target": None,
+            }
+        )
+    return clusters
 
 
 def _idea(
@@ -384,6 +412,7 @@ def seed(root: Path, *, overwrite: bool = False) -> dict[str, int]:
     evidence = archive.evidence_through(dates[-1])
     roadmaps = _roadmaps(evidence)
     ideas = _ideas(evidence)
+    frontier_clusters = _frontier_clusters(evidence)
     knowledge_root = root / "knowledge"
     existing = list((knowledge_root / "roadmaps").glob("*.json")) + list((knowledge_root / "ideas").glob("*.json"))
     if existing and not overwrite:
@@ -396,13 +425,31 @@ def seed(root: Path, *, overwrite: bool = False) -> dict[str, int]:
         write_json(knowledge_root / "ideas" / f"{idea['idea_id']}.json", idea)
     write_json(
         knowledge_root / "frontier-clusters.json",
-        {"schema_version": SCHEMA_VERSION, "evidence_scope": EVIDENCE_SCOPE, "clusters": []},
+        {
+            "schema_version": SCHEMA_VERSION,
+            "evidence_scope": EVIDENCE_SCOPE,
+            "updated_by_issue": dates[-1],
+            "clusters": frontier_clusters,
+            "change_log": [
+                {
+                    "event_id": f"frontier_change_{stable_hash(dates[-1], 'seed', length=20)}",
+                    "issue_date": dates[-1],
+                    "change_type": "clusters_updated",
+                    "cluster_ids": [cluster["cluster_id"] for cluster in frontier_clusters],
+                }
+            ],
+        },
     )
     rebuild_knowledge_index(root)
     errors = validate_knowledge_store(root)
     if errors:
         raise RuntimeError("seed validation failed: " + "; ".join(errors[:12]))
-    return {"roadmaps": len(roadmaps), "ideas": len(ideas), "published_issues": len(dates)}
+    return {
+        "roadmaps": len(roadmaps),
+        "ideas": len(ideas),
+        "frontier_clusters": len(frontier_clusters),
+        "published_issues": len(dates),
+    }
 
 
 def main() -> int:

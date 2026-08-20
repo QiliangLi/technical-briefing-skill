@@ -26,6 +26,9 @@ phase or transition. When evidence only establishes that items appeared, set
 `view_mode=evidence_timeline`, leave `stages` empty, and put the records in each branch's
 `evidence_timeline`. Never manufacture a technology history to make the page look full.
 
+Exception: when `topic.topic_id=frontier_exploration`, return `roadmap: null`. Frontier is
+not a stable technology Topic and must never own a catch-all Roadmap.
+
 Allowed judgement states are:
 
 - `supported`: multiple published records support the judgement;
@@ -63,9 +66,18 @@ result.
 
 ## Frontier clusters
 
-For `frontier_exploration`, group recurring published boundary signals into temporary
-clusters. A cluster is promoted only after recurrence, a stable mechanism, or an Idea.
-Do not create one miscellaneous catch-all Roadmap.
+Every published Radar record is routed to `frontier_exploration`; its original Radar
+category is preserved as `frontier_category` and `direction_name`. For a Frontier task,
+return the complete current cluster list. New clusters use `status=temporary`,
+`promotion_reason=null`, and `promotion_target=null`.
+
+A cluster may become `promoted` only after recurrence across published issues, a stable
+mechanism, or a bound Idea. Promotion must be explicit and must set
+`promotion_target.topic_id`, `promotion_target.topic_name`, and
+`promotion_target.branch_id` to a stable non-Frontier Roadmap destination. Frontier itself
+never becomes a Roadmap. A promoted cluster enters that Roadmap only through a subsequent
+bounded task for its stable target Topic; the evidence may only enter the exact bound
+branch. For stable Topic tasks, do not edit `frontier_clusters`.
 
 Return JSON matching `schemas/knowledge-materialization.schema.json` and echo the exact
 top-level `_task` binding from the input.

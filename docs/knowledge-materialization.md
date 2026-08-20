@@ -56,7 +56,11 @@ python3 briefing.py knowledge validate
   benchmark、原型或持续观察建议，不保存虚构结果。
 - AI 可以将 Idea 标为 `rejected`，但必须有反对证据和追加式决策记录；新证据允许
   用 `reopened` 决策重新打开。
-- 边界探索先形成临时 cluster。只有跨期持续出现或已经产生 Idea 才能升级。
+- 所有已发布 Radar 先作为 `frontier_exploration` 证据，保留原 Radar category，形成
+  temporary cluster。Frontier 任务的 `roadmap` 必须为 `null`。
+- cluster 只有跨期持续出现、形成稳定机制或已经产生 Idea 后才能显式升级；升级时
+  必须绑定一个非 Frontier 的稳定 Topic 和 branch。之后由目标 Topic 的有界任务吸收
+  证据，系统不会创建包罗万象的 `frontier_exploration` Roadmap。
 
 ## 首版数据
 

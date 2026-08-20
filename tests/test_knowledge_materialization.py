@@ -12,12 +12,14 @@ from briefing_skill.knowledge_materialization import (
     PublishedArchive,
     affected_topics,
     apply_knowledge_task,
+    frontier_cluster_semantic_errors,
     idea_semantic_errors,
     prepare_knowledge_tasks,
+    roadmap_semantic_errors,
     stable_idea_id,
     validate_knowledge_store,
 )
-from briefing_skill.utils import read_json, write_json
+from briefing_skill.utils import read_json, stable_hash, write_json
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +85,32 @@ def _set_index(root: Path, dates: list[str]) -> None:
         root / "archive" / "index.json",
         {"issues": [{"date": date, "papers_file": f"issues/{date}/papers.json"} for date in dates]},
     )
+
+
+def _add_radar(root: Path, issue_date: str, *, category: str, url: str, title: str) -> str:
+    issue_path = root / "archive" / "issues" / issue_date / "issue.json"
+    papers_path = root / "archive" / "issues" / issue_date / "papers.json"
+    issue = read_json(issue_path)
+    issue.setdefault("synthesis", {}).setdefault("radar_signals", []).append(
+        {"category": category, "signal": title, "summary": "边界 Radar 公开信号。", "source_urls": [url]}
+    )
+    write_json(issue_path, issue)
+    papers = read_json(papers_path)
+    papers.append(
+        {
+            "paper_key": f"radar-{issue_date}",
+            "title": title,
+            "url": url,
+            "topic_id": None,
+            "topic_name": category,
+            "direction_id": None,
+            "role": "radar",
+            "item_id": None,
+            "issue_date": issue_date,
+        }
+    )
+    write_json(papers_path, papers)
+    return f"radar_{stable_hash(issue_date, url, length=20)}"
 
 
 def _root(tmp_path: Path) -> Path:
@@ -158,6 +186,194 @@ def test_archive_loader_reads_only_published_machine_records(tmp_path: Path):
     assert affected_topics(root, "2026-08-01") == [
         {"topic_id": "topic_a", "topic_name": "专题 A"}
     ]
+
+
+def test_published_radar_is_frontier_evidence_with_category_and_direction(tmp_path: Path):
+    root = _root(tmp_path)
+    _add_radar(
+        root,
+        "2026-08-01",
+        category="Agent生态",
+        url="https://example.com/radar-agent",
+        title="Agent 边界信号",
+    )
+
+    evidence = PublishedArchive(root).evidence_through("2026-08-01")
+    radar = next(item for item in evidence if item["role"] == "radar")
+    assert radar["topic_id"] == "frontier_exploration"
+    assert radar["topic_name"] == "边界探索"
+    assert radar["frontier_category"] == "Agent生态"
+    assert radar["direction_id"] == "agent_ecosystem"
+    assert {row["topic_id"] for row in affected_topics(root, "2026-08-01")} == {
+        "topic_a",
+        "frontier_exploration",
+    }
+
+
+def test_frontier_task_updates_only_clusters_and_is_idempotent(tmp_path: Path):
+    root = _root(tmp_path)
+    radar_id = _add_radar(
+        root,
+        "2026-08-01",
+        category="其他技术前沿",
+        url="https://example.com/radar-frontier",
+        title="前沿信号",
+    )
+    task = prepare_knowledge_tasks(
+        root, issue_date="2026-08-01", topic_ids=["frontier_exploration"]
+    )[0]
+    input_path = root / task["input_path"]
+    output_path = root / task["output_path"]
+    binding = read_json(input_path)["_task"]
+    cluster = {
+        "cluster_id": "frontier_other_frontier",
+        "name": "其他技术前沿公开信号",
+        "categories": ["其他技术前沿"],
+        "status": "temporary",
+        "first_seen_issue": "2026-08-01",
+        "last_seen_issue": "2026-08-01",
+        "evidence_item_ids": [radar_id],
+        "source_urls": ["https://example.com/radar-frontier"],
+        "idea_ids": [],
+        "promotion_reason": None,
+        "promotion_target": None,
+    }
+    write_json(
+        output_path,
+        {"_task": binding, "roadmap": None, "ideas": [], "frontier_clusters": [cluster]},
+    )
+
+    applied = apply_knowledge_task(root, task["task_id"])
+    assert applied["change_type"] == "clusters_updated"
+    assert applied["roadmap_version"] is None
+    assert not (root / "knowledge" / "roadmaps" / "frontier_exploration.json").exists()
+    assert read_json(root / "knowledge" / "frontier-clusters.json")["clusters"] == [cluster]
+    assert apply_knowledge_task(root, task["task_id"])["idempotent"] is True
+    assert prepare_knowledge_tasks(
+        root, issue_date="2026-08-01", topic_ids=["frontier_exploration"]
+    ) == []
+
+
+def test_frontier_rejects_catch_all_roadmap_and_unbound_promotion(tmp_path: Path):
+    root = _root(tmp_path)
+    radar_id = _add_radar(
+        root,
+        "2026-08-01",
+        category="AI Infra",
+        url="https://example.com/radar-ai",
+        title="AI Infra 信号",
+    )
+    task = prepare_knowledge_tasks(
+        root, issue_date="2026-08-01", topic_ids=["frontier_exploration"]
+    )[0]
+    input_path = root / task["input_path"]
+    output_path = root / task["output_path"]
+    binding = read_json(input_path)["_task"]
+    roadmap = _roadmap_output(
+        {"input_path": input_path},
+        refs=[_ref("item_one", "2026-08-01", "https://example.com/one")],
+    )["roadmap"]
+    roadmap["topic_id"] = "frontier_exploration"
+    roadmap["topic_name"] = "边界探索"
+    roadmap["roadmap_id"] = "roadmap_frontier_exploration"
+    write_json(
+        output_path,
+        {"_task": binding, "roadmap": roadmap, "ideas": [], "frontier_clusters": []},
+    )
+    with pytest.raises(ValueError, match="roadmap must be null"):
+        apply_knowledge_task(root, task["task_id"])
+
+    evidence = PublishedArchive(root).evidence_through("2026-08-01")
+    promoted = {
+        "cluster_id": "frontier_ai_infra",
+        "name": "AI Infra 公开信号",
+        "categories": ["AI Infra"],
+        "status": "promoted",
+        "first_seen_issue": "2026-08-01",
+        "last_seen_issue": "2026-08-01",
+        "evidence_item_ids": [radar_id],
+        "source_urls": ["https://example.com/radar-ai"],
+        "idea_ids": [],
+        "promotion_reason": "形成稳定机制。",
+        "promotion_target": None,
+    }
+    errors = frontier_cluster_semantic_errors(
+        [promoted],
+        topic_id="frontier_exploration",
+        evidence=evidence,
+        allowed_idea_ids=set(),
+    )
+    assert "frontier cluster 0 promotion requires a stable target" in errors
+
+
+def test_promoted_frontier_evidence_only_enters_exact_bound_branch(tmp_path: Path):
+    root = _root(tmp_path)
+    radar_id = _add_radar(
+        root,
+        "2026-08-01",
+        category="Agent生态",
+        url="https://example.com/radar-bound",
+        title="可晋升信号",
+    )
+    evidence = PublishedArchive(root).evidence_through("2026-08-01")
+    cluster = {
+        "cluster_id": "frontier_agent_ecosystem",
+        "name": "Agent 公开信号",
+        "categories": ["Agent生态"],
+        "status": "promoted",
+        "first_seen_issue": "2026-08-01",
+        "last_seen_issue": "2026-08-01",
+        "evidence_item_ids": [radar_id],
+        "source_urls": ["https://example.com/radar-bound"],
+        "idea_ids": [],
+        "promotion_reason": "已经形成稳定机制。",
+        "promotion_target": {
+            "topic_id": "topic_a",
+            "topic_name": "专题 A",
+            "branch_id": "direction_a",
+        },
+    }
+    radar_ref = _ref(radar_id, "2026-08-01", "https://example.com/radar-bound")
+    roadmap = {
+        "roadmap_id": "roadmap_topic_a",
+        "topic_id": "topic_a",
+        "topic_name": "专题 A",
+        "evidence_scope": "published_archive_only",
+        "updated_by_issue": "2026-08-01",
+        "summary": "显式晋升证据进入目标分支。",
+        "view_mode": "evidence_timeline",
+        "branches": [
+            {
+                "branch_id": "direction_a",
+                "name": "方向 A",
+                "direction_ids": ["direction_a"],
+                "status": "emerging",
+                "stages": [],
+                "evidence_timeline": [radar_ref],
+                "open_questions": [],
+                "evidence_item_ids": [radar_id],
+                "source_urls": ["https://example.com/radar-bound"],
+            }
+        ],
+    }
+    assert roadmap_semantic_errors(
+        roadmap,
+        topic_id="topic_a",
+        issue_date="2026-08-01",
+        evidence=evidence,
+        promoted_clusters=[cluster],
+    ) == []
+
+    wrong_target = copy.deepcopy(cluster)
+    wrong_target["promotion_target"]["branch_id"] = "another_branch"
+    errors = roadmap_semantic_errors(
+        roadmap,
+        topic_id="topic_a",
+        issue_date="2026-08-01",
+        evidence=evidence,
+        promoted_clusters=[wrong_target],
+    )
+    assert any("out-of-scope item_id" in error for error in errors)
 
 
 def test_incremental_apply_is_topic_scoped_noop_aware_and_idempotent(tmp_path: Path):
@@ -273,6 +489,10 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     assert index["schema_version"] == 1
     assert len(index["roadmaps"]) == 8
     assert len(index["ideas"]) == 6
+    assert len(index["frontier_clusters"]) == 5
+    assert all(cluster["status"] == "temporary" for cluster in index["frontier_clusters"])
+    assert all(cluster["promotion_target"] is None for cluster in index["frontier_clusters"])
+    assert "frontier_exploration" not in {entry["topic_id"] for entry in index["roadmaps"]}
     for entry in [*index["roadmaps"], *index["ideas"]]:
         assert entry["path"].startswith("knowledge/")
         assert (REPO_ROOT / entry["path"]).is_file()
