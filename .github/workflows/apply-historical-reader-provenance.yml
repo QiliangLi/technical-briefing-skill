@@ -33,14 +33,14 @@ jobs:
           p = Path('briefing_skill/archive_reader.py')
           s = p.read_text()
           marker = '''def existing_original_html(issue_dir: Path) -> dict[str, str]:\n'''
-          insert = '''def backup_original_reader(issue_dir: Path) -> str | None:\n    """Preserve the first reader projection before any historical rewrite."""\n\n    source = issue_dir / "reader.json"\n    if not source.is_file():\n        return None\n    target = issue_dir / "original" / "reader.json"\n    if not target.exists():\n        target.parent.mkdir(parents=True, exist_ok=True)\n        shutil.copy2(source, target)\n    return _sha256_file(target)\n\n\n'''
+          insert = '''def backup_original_reader(\n    issue_dir: Path,\n    *,\n    replacement: dict[str, Any] | None = None,\n) -> str | None:\n    """Preserve the reader projection that is about to be replaced."""\n\n    source = issue_dir / "reader.json"\n    if not source.is_file():\n        return None\n    target = issue_dir / "original" / "reader.json"\n    if target.exists():\n        return _sha256_file(target)\n    if replacement is not None and read_json(source, {}) == replacement:\n        return None\n    target.parent.mkdir(parents=True, exist_ok=True)\n    shutil.copy2(source, target)\n    return _sha256_file(target)\n\n\n'''
           if marker not in s:
               raise SystemExit('existing_original_html marker not found')
           if 'def backup_original_reader(' not in s:
               s = s.replace(marker, insert + marker)
 
           old_apply = '''    if reader.get("rewrite_status") != "historical_semantic_rewrite":\n        raise ValueError("historical apply requires rewrite_status=historical_semantic_rewrite")\n    originals = (\n'''
-          new_apply = '''    if reader.get("rewrite_status") != "historical_semantic_rewrite":\n        raise ValueError("historical apply requires rewrite_status=historical_semantic_rewrite")\n    backup_original_reader(issue_dir)\n    originals = (\n'''
+          new_apply = '''    if reader.get("rewrite_status") != "historical_semantic_rewrite":\n        raise ValueError("historical apply requires rewrite_status=historical_semantic_rewrite")\n    backup_original_reader(issue_dir, replacement=reader)\n    originals = (\n'''
           if old_apply not in s:
               raise SystemExit('historical apply marker not found')
           s = s.replace(old_apply, new_apply)
