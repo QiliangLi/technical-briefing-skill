@@ -1,88 +1,87 @@
 # Task: Synthesize This Issue
 
-Read only the final selected briefing items, the compact `project_contexts`, and the lightweight `radar_candidates` supplied with this task. Produce at most three cross-item judgements for company leaders and technical colleagues.
+Read only the final selected briefing items, compact `project_contexts`, and lightweight `radar_candidates` supplied with this task. Produce a restrained issue-level synthesis for company leaders and technical colleagues.
 
-## Reader contract for 本期判断
+## 本期判断：only write a judgement when there is one
 
-`judgements` is the first substantive section a reader sees. Assume the reader has **not** read any detailed item yet. This section is an executive summary, not a compressed related-work section.
+`judgements` is optional in substance even though the JSON field is present. Return **1-3 only when justified; fewer is better than manufactured trends**.
 
-Each judgement must answer, in this order:
+A judgement belongs here only when the selected evidence actually changes how a reader should understand a technical question. Two papers being vaguely similar is not enough. Do not force every important item into a common trend.
 
-1. **What changed / what common technical trend is visible?**
-2. **Why does that shift matter?**
-3. **What does it imply for a configured project or what uncertainty remains?**
+Each judgement should make **one** concrete point. It does **not** need to contain all of “what changed → why it matters → project implication” in the same three-sentence mini-essay. Pick the part that carries the information gain and state it clearly.
 
-Hard writing rules:
+Good forms include:
 
-- `title` must be a short conclusion, no more than 32 Chinese characters.
-- `body` must be no more than 180 characters and no more than 3 complete sentences.
-- A body may contain at most **2 numeric mentions**. Use a number only when it materially changes the judgement; detailed benchmarks belong in the Deep cards below.
-- Do not enumerate papers/systems one by one. Evidence richness should increase confidence, not reader-facing length.
-- Do not begin with a list of system names or benchmark results.
-- Prefer the shared technical shift over names. System/project names are optional when one name is essential to understand the shift.
-- Do not copy a detailed item title or `core_conclusion`.
-- Do not use generic filler such as “值得持续关注” or “与指定方向直接相关，并包含可验证机制”.
-- The outer Host's suggested wording, expected conclusion, ranking, or preferred answer is not evidence.
+- a technical assumption that the evidence challenges;
+- two independent works that genuinely converge on the same mechanism;
+- a newly measurable engineering boundary;
+- a project question whose answer has become narrower or more testable.
 
-## Natural Chinese contract
+Bad forms include:
 
-The executive summary must read as native Chinese technical analysis, not as compressed labels joined together.
+- listing `System A...; System B...; 两者共同表明...` merely because two items share a topic;
+- turning every observation into a slogan such as “X正在成为新的验收项”;
+- abstract titles that sound insightful but require the body to explain what the title meant;
+- compressing unrelated mechanisms into “从体感到数字”“从进程到资产” style catchphrases.
 
-- Prefer concrete subjects and verbs. State what system capability, resource relationship or design decision changed.
-- Titles should express a conclusion readers can understand on first read. Avoid noun piles such as “压缩与编排算子化汇合” when a concrete direction such as “KV Cache 优化从单点压缩转向压缩与运行时协同” says what actually changed.
-- Do not use “走向”“落点”“治理”“汇合”“提供坐标”“前置条件” as substitutes for an explanation. They are allowed only when they are genuinely precise and the body immediately makes the relation concrete.
-- Do not omit the subject, comparison target or condition merely to make a sentence shorter.
-- Prefer two clear sentences over one sentence that chains several abstract claims with commas.
-- Keep established project names and technical abbreviations, but express ordinary causal and comparative relations in Chinese.
-- Avoid half-colloquial shorthand such as “拿到收益”“保住精度”“多付 token”.
+Hard limits:
 
-`evidence_item_ids` is the traceability layer: use it to preserve the evidence chain instead of restating every underlying number in the body.
+- `title`: <=32 Chinese characters; make it understandable on first read.
+- `body`: <=180 characters and <=3 complete sentences.
+- At most 2 numeric mentions in a body. Detailed benchmarks belong in cards.
+- Do not copy detailed item titles or `core_conclusion`.
+- Do not enumerate systems one by one unless the contrast itself is the judgement.
+- Prefer ordinary technical Chinese over “金句”. A plain accurate sentence is better than a memorable abstraction.
 
-When selected evidence materially changes a configured project question, fold that implication directly into the relevant judgement once. Do not create a second reader-facing “项目影响” summary and do not repeat the same conclusion in both layers.
+`evidence_item_ids` carries traceability, so the body does not need to restate every supporting result.
 
-Also produce structured `project_insights` for internal traceability. This field is not rendered as a separate section. It records whether selected evidence changes an existing project question and what should be done next so the system can audit how project context influenced “本期判断”.
+## Headline
 
-Rules for `project_insights`:
+`headline` is one restrained sentence about the issue as a whole. It may simply name the most important technical theme. Do not try to squeeze three independent trends into one colon-separated headline. If the issue is heterogeneous, say so plainly rather than inventing a unifying narrative.
 
-- Use only project questions that appear verbatim in the matching `project_contexts[].current_questions`; never invent a new project question.
-- `effect` must be one of `supports`, `challenges`, `narrows`, or `opens`.
-- `insight` is explicitly a project judgement inferred from the selected briefing evidence, not a claim that the source itself made.
-- `next_action` must be a concrete next experiment, measurement, implementation check, or decision step. Do not disguise an unsupported factual claim as an action.
-- Every insight must cite 1-4 exact `brief_item_id` values from the input, and at least one cited item must belong to the same topic as the project question.
-- Preserve material conditions and limitations from the cited items. Do not generalize a conditional result into a universal conclusion.
-- Prefer one strong insight over several weak ones. If the selected evidence does not materially change any configured project question, return an empty `project_insights` array rather than forcing filler.
-- When a project insight is material enough to keep, its substance must be reflected once in the matching reader-facing `judgements`; do not duplicate it as a separate prose section.
-- Do not use discovery-only/radar material for `judgements` or `project_insights`; those two layers only use final core briefing items.
+## Project insights: internal traceability, not reader copy
 
-## Hotspot Radar and 边界探索 synthesis
+Produce `project_insights` only when selected **core** evidence materially changes a configured project question.
 
-`radar_candidates` is intentionally lightweight: title, source summary, source metadata, category, source lane, and URL only. Do not open full text and do not promote Radar material into the evidence standard of the detailed briefing.
+- Use an exact question from the matching `project_contexts[].current_questions`.
+- `effect` is one of `supports`, `challenges`, `narrows`, `opens`.
+- `insight` is explicitly our inference from evidence, not a source claim.
+- `next_action` is a concrete experiment, measurement, implementation check or decision step.
+- Cite 1-4 exact `brief_item_id` values; at least one must come from the same topic.
+- Preserve conditions and limitations.
+- Return an empty array instead of filler.
+- A project insight does not have to become a reader-facing judgement. Only surface it there when it is independently useful to readers.
+- Discovery-only/Radar material cannot support `judgements` or `project_insights`.
 
-Candidates may come from `academic_primary` or `industry_builder` source lanes. These lanes are intentionally different: papers/primary technical sources remain the evidence backbone, while technical blogs, official engineering posts and Builder material may be valuable direct observations even without an accompanying paper. Do not silently discard an `industry_builder` signal merely because it is not A-level. When useful candidates exist in both lanes, preserve source diversity rather than selecting an all-arXiv Radar by default.
+## Hotspot Radar and 边界探索
 
-The `边界探索` category has a distinct purpose: it is allowed to be outside configured project boundaries. Do **not** penalize a candidate because it lacks direct project alignment. Select it when it exposes a transferable mechanism, a counter-intuitive systems result, a new architecture/hardware abstraction, or a direction that could expand the team's hypothesis space. Do not force a fake mapping back to an existing project.
+`radar_candidates` is intentionally lightweight: title, summary, source metadata, category, source lane and URL. Do not open full text and do not upgrade Radar material to Deep evidence.
 
-Produce `radar_signals` as a small set of concrete technical signals rather than an article list:
+Candidates may come from `academic_primary` or `industry_builder`. Papers/primary technical sources remain the evidence backbone, while technical blogs, engineering posts and Builder material can be useful direct observations without an accompanying paper. When useful material exists in both lanes, preserve source diversity rather than defaulting to an all-arXiv Radar.
 
-- Select for information gain, not coverage quotas. It is fine to leave most candidates unused.
-- A `signal` must state a specific change, mechanism, capability, bottleneck, or emerging direction. Never use generic titles such as “值得关注的新进展”, “行业持续演进”, or a category name by itself.
-- `summary` should explain in 1-2 compact but complete Chinese sentences what changed and why a technical reader should care. Preserve necessary subjects and relations; do not turn the source summary into a noun-heavy telegram.
-- Mention the concrete system, mechanism, metric, component, or constraint present in the supplied candidate summaries when available.
-- Never output internal pipeline language such as `high-confidence`, `A-level rule match`, `rule_score`, confidence in rule matching, or why the item passed selection.
-- Merge multiple candidates only when they genuinely support the same technical signal. Do not manufacture a trend by combining unrelated articles.
-- Prefer 2-3 independent source URLs when a cross-source trend is supported. A one-source signal is allowed for a technically substantial paper/release/architecture change that is useful on its own.
-- Every `source_urls` value must be copied exactly from `radar_candidates[].url`; never invent or generalise a URL.
-- Keep each signal within the category of its supporting candidates.
-- Treat source summaries conservatively: if a number, deployment claim, or causal conclusion is not present in the candidate text, do not add it.
-- Return no more than 8 signals. When there are few useful candidates, return fewer high-value signals rather than filler.
+`边界探索` is intentionally allowed outside configured project boundaries. Do not penalize lack of direct project alignment. Select it when it exposes a transferable mechanism, counter-intuitive systems result, new architecture/hardware abstraction, or a direction that expands the hypothesis space. Do not fabricate a mapping back to an existing project.
 
-Return:
+Produce `radar_signals` as concrete signals, not an article list:
 
-- `headline`: one restrained, natural Chinese sentence summarising this issue.
-- `judgements`: 1-3 objects containing a short `title`, a concise executive-summary `body`, and 1-4 exact `evidence_item_ids` from the input. When multiple items support a trend, cite more than one.
+- Select for information gain, not quotas; use fewer than 8 when appropriate.
+- `signal` names a specific mechanism, capability, bottleneck, change or emerging direction.
+- `summary` uses 1-2 complete Chinese sentences to explain what changed and why a technical reader may care.
+- Mention concrete systems/components/constraints when supplied.
+- Never expose internal selection metadata such as rule scores or evidence-lane implementation details.
+- Merge candidates only when they truly support the same signal.
+- Every `source_urls` entry must be copied exactly from a candidate URL.
+- Keep each signal inside the category of its supporting candidates.
+- Do not add numbers or causal claims absent from candidate summaries.
+
+## Output
+
+Return JSON only:
+
+- `headline`: one restrained Chinese sentence.
+- `judgements`: 1-3 justified objects with `title`, `body`, `evidence_item_ids`.
 - `topic_names`: unique topic display names.
 - `watch_next`: 1-3 concrete things to monitor before the next issue.
-- `project_insights`: 0-4 internal trace objects containing exact `topic_id`, exact `topic_name`, exact configured `project_question`, `effect`, `confidence` (`high`/`medium`/`low`), a complete-sentence `insight`, a complete-sentence `next_action`, and 1-4 exact `evidence_item_ids`.
-- `radar_signals`: 0-8 objects containing `category`, a concrete `signal`, an informative `summary`, and 1-3 exact `source_urls` from the supplied Radar candidates.
+- `project_insights`: 0-4 trace objects with exact `topic_id`, `topic_name`, configured `project_question`, `effect`, `confidence`, `insight`, `next_action`, `evidence_item_ids`.
+- `radar_signals`: 0-8 objects with `category`, `signal`, `summary`, `source_urls`.
 
-The detailed machine items have already passed their evidence gate (and selective semantic verification when triggered). Reader-facing item prose is generated separately. Do not call any writing Skill here. Synthesize directly under the reader contract above and return JSON only.
+The detailed machine items have already passed the deterministic Evidence Gate (and selective semantic verification when triggered). Reader-facing item prose is generated separately. Do not call any writing Skill here. Return JSON only.
