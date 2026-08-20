@@ -89,7 +89,8 @@ def test_reader_contract_does_not_reject_natural_project_verb_title() -> None:
 
 def test_issue_synthesis_keeps_judgements_but_drops_generated_headline() -> None:
     schema = json.loads((ROOT / "schemas" / "issue-synthesis.schema.json").read_text(encoding="utf-8"))
-    assert "headline" not in schema["properties"]
+    # `headline` remains optional only so old/demo outputs can resume. The prompt no
+    # longer requests it and apply-time code overwrites any supplied value.
     assert "headline" not in schema["required"]
     judgements = schema["properties"]["judgements"]
     assert judgements["minItems"] == 1
