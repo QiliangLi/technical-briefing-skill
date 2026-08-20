@@ -175,7 +175,7 @@ function drawNode(g,n){
   if(n.type==='issue'){
     g.appendChild(svgEl('circle',{cx:n.x,cy:n.y,r:14,class:'node-shape issue-node'}));
     textNode(g,n.label.slice(5),n.x+23,n.y+4,11,'node-title');
-    textNode(g,`${(n.data.papers?.length||0)+(n.data.radar?.length||0)} items`,n.x+23,n.y+18,8,'node-sub'); return;
+    textNode(g,`${n.data.papers?.length||0} items`,n.x+23,n.y+18,8,'node-sub'); return;
   }
   if(n.type==='keyword'){
     g.appendChild(svgEl('rect',{x:n.x-n.w/2,y:n.y-n.h/2,width:n.w,height:n.h,rx:20,class:'node-shape keyword-node'}));
@@ -215,7 +215,7 @@ function showTip(ev,n){
 const _baseRenderInspector=renderInspector;
 renderInspector=function(n,model){
   if(n?.type==='aggregate'){
-    const box=$('#graphInspector');
+    const box=$('#detailPane');
     box.innerHTML=`<span class="inspector-kicker">PROGRESSIVE DISCLOSURE</span><h3>${esc(n.data.group.name)}</h3><p>${n.data.action==='expand'?`还有 ${n.data.count} 条${roleName(n.data.role)}被折叠，以避免密集节点互相遮挡。`:`当前已展开 ${n.data.count} 条${roleName(n.data.role)}。`}</p><div class="inspector-tip">点击聚合节点即可${n.data.action==='expand'?'展开':'收起'}；数据始终保留在图谱模型中。</div>`;
     return;
   }
