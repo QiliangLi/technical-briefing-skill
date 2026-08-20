@@ -84,4 +84,4 @@ Return JSON only:
 - `project_insights`: 0-4 trace objects with exact `topic_id`, `topic_name`, configured `project_question`, `effect`, `confidence`, `insight`, `next_action`, `evidence_item_ids`.
 - `radar_signals`: 0-8 objects with `category`, `signal`, `summary`, `source_urls`.
 
-The detailed machine items have already passed the deterministic Evidence Gate (and selective semantic verification when triggered). Reader-facing item prose is generated separately. Do not call another writing Skill here.
+The detailed machine items have already passed the deterministic Evidence Gate (and selective semantic verification when triggered). Reader-facing item prose is generated separately. Do not call any writing Skill here. Return JSON only.
