@@ -53,6 +53,7 @@ DEEP_ENTRY_CONTRACTS: dict[str, dict[str, Any]] = {
             "tool_execution",
             "agent_runtime",
             "state_consistency",
+            "agent_harness",
         ],
         "min_relevance_score": 65,
         "min_technology_value_score": 12,

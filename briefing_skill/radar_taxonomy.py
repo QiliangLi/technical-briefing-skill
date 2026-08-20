@@ -45,6 +45,12 @@ RADAR_CATEGORY_TERMS = (
         (
             "agent",
             "agentic",
+            "harness",
+            "agent harness",
+            "coding harness",
+            "agentic coding",
+            "agentic workflow",
+            "agentic system",
             "mcp",
             "computer use",
             "browser agent",
@@ -132,6 +138,26 @@ def augment_hbf_topic_queries(topics_config: dict[str, Any]) -> None:
             return
 
 
+def augment_agent_harness_queries(topics_config: dict[str, Any]) -> None:
+    """Keep runtime-loaded topic variants aligned with the Agent Harness lane."""
+
+    for topic in topics_config.get("topics") or []:
+        if topic.get("id") != "agent_acceleration":
+            continue
+        _append_unique(
+            topic.setdefault("aihot_boost_terms", []),
+            [
+                "harness",
+                "agent harness",
+                "coding harness",
+                "agentic coding",
+                "agentic workflow",
+                "agentic system",
+            ],
+        )
+        return
+
+
 def install_radar_taxonomy() -> None:
     """Install the shared Radar taxonomy and augment HBF discovery queries."""
 
@@ -147,6 +173,7 @@ def install_radar_taxonomy() -> None:
     def load(cls, paths):
         bundle = original_load(cls, paths)
         augment_hbf_topic_queries(bundle.topics)
+        augment_agent_harness_queries(bundle.topics)
         return bundle
 
     ConfigBundle.load = classmethod(load)

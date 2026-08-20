@@ -105,7 +105,7 @@ def radar_category(title: str, summary: str) -> str:
     groups = (
         ("存储与介质", ("ssd", "nvme", "nand", "qlc", "tlc", "zns", "hdd", "persistent memory", "cxl memory", "hbm", "computational storage", "存储介质", "闪存", "持久内存")),
         ("KVCache生态", ("kv cache", "kvcache", "prefix cache", "lmcache", "cache-aware routing", "remote prefill", "prefill decode", "前缀缓存", "kv缓存")),
-        ("Agent生态", ("agent", "agentic", "mcp", "computer use", "browser agent", "coding agent", "multi-agent", "agent memory", "tool call", "智能体")),
+        ("Agent生态", ("agent", "agentic", "harness", "agent harness", "coding harness", "agentic coding", "agentic workflow", "agentic system", "mcp", "computer use", "browser agent", "coding agent", "multi-agent", "agent memory", "tool call", "智能体")),
         ("AI Infra", ("serving", "inference", "runtime", "compiler", "kernel", "gpu", "accelerator", "distributed training", "collective", "cluster", "observability", "interconnect", "fabric", "推理", "运行时", "编译器", "加速器", "集群", "互联")),
     )
     for name, terms in groups:

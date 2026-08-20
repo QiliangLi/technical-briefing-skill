@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Archive one sent briefing issue into archive/issues/<date>/.
+"""Archive one sent briefing issue or migrate one historical reader layer.
 
-Each archived issue keeps the as-sent email HTML, the structured IssueDocument,
-and a normalized papers.json designed as the substrate for later knowledge-graph
-or paper-tree generation. When a date was sent more than once or in several
-variants, the latest sent variant wins: re-running this script overwrites the
-existing archive/issues/<date>/ folder, so the folder always mirrors the newest
-send:
+Each archived issue keeps immutable generated/sent HTML snapshots under
+``original/``. The stable root names are the current public reader projection:
+``email.html`` and ``email-illustrated.html``. Re-running with unchanged inputs is
+idempotent; this command never overwrites an existing original snapshot.
 
     papers.json: [{paper_key, title, url, arxiv_id, topic_id, topic_name,
                    direction_id, role, score, published_at, revisit,
@@ -16,7 +14,9 @@ role is one of: core | supplement | radar. Rebuild archive/index.json after
 every archival so the folder stays a complete, ordered history.
 
 Usage:
-    python scripts/archive_sent_issue.py --run 2026-08-17-092529 [--root .]
+    python scripts/archive_sent_issue.py archive --run 2026-08-17-092529
+    python scripts/archive_sent_issue.py prepare-rewrite --date 2026-08-17 --output rewrite-input.json
+    python scripts/archive_sent_issue.py apply-rewrite --date 2026-08-17 --input reader-output.json
 """
 
 from __future__ import annotations
@@ -25,7 +25,24 @@ import argparse
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
+
+from bs4 import BeautifulSoup
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from briefing_skill.archive_reader import (
+    apply_historical_rewrite,
+    backup_original_html,
+    build_reader_from_run,
+    prepare_rewrite_payload,
+    validate_reader_document,
+    write_publication_manifest,
+)
+from briefing_skill.utils import read_json, write_json
 
 
 def _paper_key(url: str) -> str:
@@ -86,7 +103,46 @@ def _row(issue_date: str, item: dict, role: str) -> dict:
     }
 
 
-def archive_issue(root: Path, run_id: str, *, email_name: str | None = None) -> Path:
+def _require_reader_html(path: Path, reader: dict) -> None:
+    if not path.is_file():
+        raise ValueError(f"missing required public variant: {path}")
+    text = BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser").get_text(" ", strip=True)
+    required_text = [str(reader.get("headline") or "")]
+    required_text.extend(
+        str(item.get("title") or "") for item in (reader.get("items") or {}).values()
+    )
+    missing = [
+        item_id
+        for item_id, item in (reader.get("items") or {}).items()
+        if str(item.get("title") or "") not in text
+    ]
+    if required_text[0] and required_text[0] not in text:
+        missing.insert(0, "headline")
+    if missing:
+        raise ValueError(f"{path.name} is not rendered from current reader sidecars: {missing}")
+
+
+def _copy_original_variants(run_dir: Path, target: Path) -> dict[str, str]:
+    original_dir = target / "original"
+    result: dict[str, str] = {}
+    for name in ("email.html", "email-illustrated.html"):
+        source = run_dir / name
+        if not source.is_file():
+            raise ValueError(f"new archive requires both email variants; missing {source}")
+        destination = original_dir / name
+        if destination.exists():
+            if destination.read_bytes() != source.read_bytes():
+                raise ValueError(f"refusing to replace immutable original variant: {destination}")
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        import hashlib
+
+        result[name] = hashlib.sha256(destination.read_bytes()).hexdigest()
+    return result
+
+
+def archive_issue(root: Path, run_id: str) -> Path:
     run_dir = root / "workspace" / "runs" / run_id
     issue_path = run_dir / "issue" / "issue.json"
     if not issue_path.is_file():
@@ -97,17 +153,29 @@ def archive_issue(root: Path, run_id: str, *, email_name: str | None = None) -> 
     target = root / "archive" / "issues" / issue_date
     target.mkdir(parents=True, exist_ok=True)
 
-    email = run_dir / (email_name or "email-illustrated.html")
-    if not email.is_file():
-        email = run_dir / "email.html"
-    if email.is_file():
-        shutil.copy2(email, target / "email.html")
+    reader = build_reader_from_run(root, run_id, issue)
+    validate_reader_document(root, issue, reader, require_current_sidecar=True)
+    for name in ("email.html", "email-illustrated.html"):
+        _require_reader_html(run_dir / name, reader)
+
+    # If this date already contains a legacy archive, preserve only the variants
+    # that truly exist before replacing the stable public names.
+    if not (target / "publication-manifest.json").exists():
+        legacy_originals = backup_original_html(target)
+    else:
+        legacy_originals = {}
+    originals = legacy_originals or _copy_original_variants(run_dir, target)
+
     shutil.copy2(issue_path, target / "issue.json")
+    write_json(target / "reader.json", reader)
+    for name in ("email.html", "email-illustrated.html"):
+        shutil.copy2(run_dir / name, target / name)
 
     papers = _paper_rows(issue_date, issue)
     (target / "papers.json").write_text(
         json.dumps(papers, ensure_ascii=False, indent=1), encoding="utf-8"
     )
+    write_publication_manifest(target, reader, originals=originals)
     _rebuild_index(root)
     return target
 
@@ -121,10 +189,11 @@ def _rebuild_index(root: Path) -> None:
         roles: dict[str, int] = {}
         for row in papers:
             roles[row["role"]] = roles.get(row["role"], 0) + 1
+        reader = read_json(papers_path.parent / "reader.json", {})
         entries.append({
             "date": papers_path.parent.name,
             "run_id": issue.get("run_id"),
-            "headline": (issue.get("synthesis") or {}).get("headline"),
+            "headline": reader.get("headline") or (issue.get("synthesis") or {}).get("headline"),
             "layout_mode": issue.get("layout_mode"),
             "counts": roles,
             "papers_file": f"issues/{papers_path.parent.name}/papers.json",
@@ -134,13 +203,48 @@ def _rebuild_index(root: Path) -> None:
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    commands = {"archive", "prepare-rewrite", "apply-rewrite"}
+    if "--run" in raw_args and not any(value in commands for value in raw_args):
+        raw_args.insert(0, "archive")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run", required=True, help="sent run id, e.g. 2026-08-17-092529")
     parser.add_argument("--root", default=".", help="repository root")
-    args = parser.parse_args()
-    target = archive_issue(Path(args.root), args.run)
-    print(f"archived to {target}")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    archive_parser = subparsers.add_parser("archive", help="archive a completed current run")
+    archive_parser.add_argument("--root", dest="root", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    archive_parser.add_argument("--run", required=True, help="sent run id, e.g. 2026-08-17-092529")
+    prepare_parser = subparsers.add_parser("prepare-rewrite", help="prepare one bounded legacy rewrite input")
+    prepare_parser.add_argument("--root", dest="root", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    prepare_parser.add_argument("--date", required=True, help="archive issue date")
+    prepare_parser.add_argument("--output", required=True, help="exact JSON output path")
+    apply_parser = subparsers.add_parser("apply-rewrite", help="validate and apply one legacy reader output")
+    apply_parser.add_argument("--root", dest="root", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    apply_parser.add_argument("--date", required=True, help="archive issue date")
+    apply_parser.add_argument("--input", required=True, help="completed reader JSON")
+    args = parser.parse_args(raw_args)
+    root = Path(args.root).resolve()
+    if args.command == "archive":
+        target = archive_issue(root, args.run)
+        print(f"archived to {target}")
+        return
+    issue_dir = root / "archive" / "issues" / args.date
+    issue_path = issue_dir / "issue.json"
+    if not issue_path.is_file():
+        raise SystemExit(f"archived issue not found: {args.date}")
+    issue = read_json(issue_path, {})
+    if args.command == "prepare-rewrite":
+        payload = prepare_rewrite_payload(issue)
+        output = Path(args.output)
+        if not output.is_absolute():
+            output = root / output
+        write_json(output, payload)
+        print(f"rewrite input written to {output}")
+        return
+    reader = read_json(Path(args.input) if Path(args.input).is_absolute() else root / args.input, {})
+    apply_historical_rewrite(root, issue_dir, reader)
+    _rebuild_index(root)
+    print(f"reader rewrite applied to {issue_dir}")
 
 
 if __name__ == "__main__":
