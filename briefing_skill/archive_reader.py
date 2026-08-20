@@ -136,8 +136,11 @@ def build_reader_from_run(root: Path, run_id: str, issue: dict[str, Any]) -> dic
             raise ValueError(f"{item_id}: reader sidecar version is missing or stale")
         if str(provenance.get("run_id") or "") != run_id:
             raise ValueError(f"{item_id}: reader sidecar belongs to another run")
+        expected_hash = machine_item_hash(item)
         if not source_hash or source_hash not in machine_hashes:
             raise ValueError(f"{item_id}: reader sidecar is not bound to a current machine item")
+        if source_hash != expected_hash:
+            raise ValueError(f"{item_id}: reader sidecar is bound to a different machine item")
         sidecars[item_id] = _reader_item(role, item, sidecar)
 
     synthesis = issue.get("synthesis") or {}

@@ -229,3 +229,35 @@ def test_future_archive_keeps_email_variants_separate_and_checks_reader_hash(tmp
     write_json(run_dir / "reader_items" / f"{item_id}.json", sidecar)
     with pytest.raises(ValueError, match="not bound to a current machine item"):
         archive_issue(tmp_path, run_id)
+
+
+def test_future_archive_rejects_sidecar_bound_to_another_current_item(tmp_path: Path) -> None:
+    _install_schema(tmp_path)
+    run_id = "2026-08-20-094500"
+    first = _machine_item(stable_hash(run_id, "item", "event-1"))
+    second = _machine_item(stable_hash(run_id, "item", "event-2"))
+    second["title"] = "另一个当前运行条目"
+    issue = _issue(run_id, first)
+    issue["observations"] = [second]
+    run_dir = tmp_path / "workspace" / "runs" / run_id
+    write_json(run_dir / "issue" / "issue.json", issue)
+    write_json(run_dir / "items" / "event-1.json", first)
+    write_json(run_dir / "items" / "event-2.json", second)
+    for item, bound_item in ((first, second), (second, second)):
+        write_json(
+            run_dir / "reader_items" / f"{item['brief_item_id']}.json",
+            {
+                "reader_version": 1,
+                "title": item["title"],
+                "lead": "摘要",
+                "body": ["正文"],
+                "takeaway": None,
+                "_provenance": {
+                    "run_id": run_id,
+                    "source_item_hash": machine_item_hash(bound_item),
+                },
+            },
+        )
+
+    with pytest.raises(ValueError, match="bound to a different machine item"):
+        archive_issue(tmp_path, run_id)
