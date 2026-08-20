@@ -20,6 +20,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .deep_selection_guard import install_deep_selection_guard
     from .discovery_stage import install_discovery_stage
     from .editorial_batch import install_editorial_batching
+    from .editorial_intent import install_editorial_intent
     from .efficiency import install_pipeline_optimizations
     from .evidence_repair import install_evidence_repair
     from .execution_envelope import install_execution_envelope_contract
@@ -114,12 +115,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # IssueStage owns deterministic final selection. Reader Projection wraps it so
     # each selected item gets fresh current-run prose even when facts came from local
-    # SQLite. Selective Fact Check is installed after that wrapper so low-risk machine
-    # items pass the deterministic gate without creating another Agent task.
+    # SQLite. Editorial Intent then decides what each visible card should foreground
+    # and supplies deterministic section headings without changing the fact model.
     install_radar_signal_synthesis()
     install_reader_writing_contract()
     install_issue_stage()
     install_reader_projection()
+    install_editorial_intent()
     install_selective_fact_check()
     install_publication_stage()
     install_illustrated_publication()
