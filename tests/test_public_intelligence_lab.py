@@ -32,6 +32,8 @@ def test_public_site_is_a_routed_three_pane_workbench():
     assert 'data-route="atlas"' in html
     assert "height:calc(100vh - 62px)" in css
     assert "grid-template-columns:var(--sidebar) minmax(0,1fr) var(--detail)" in css
+    assert ".compact-list{grid-template-columns:minmax(0,1fr);min-width:0}" in css
+    assert ".compact-row{min-width:0}" in css
     assert "平均评分" not in html
 
 
