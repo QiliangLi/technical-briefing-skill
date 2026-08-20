@@ -166,6 +166,35 @@ def test_historical_rewrite_rejects_changed_identity_and_invented_number(tmp_pat
     assert not (issue_dir / "original").exists()
 
 
+def test_historical_rewrite_preserves_original_layout_and_images(tmp_path: Path) -> None:
+    _install_schema(tmp_path)
+    run_id = "2026-08-20-094500"
+    item_id = stable_hash(run_id, "item", "event-1")
+    issue = _issue(run_id, _machine_item(item_id))
+    issue_dir = tmp_path / "archive" / "issues" / "2026-08-20"
+    write_json(issue_dir / "issue.json", issue)
+    write_json(issue_dir / "papers.json", [])
+    original = f"""<!doctype html><html><head><title>旧标题</title><style>.mail-shell{{max-width:700px}}</style></head>
+    <body class=\"mail-shell\"><h1>旧标题</h1><img src=\"https://example.org/figure.png\">
+    <table data-reader-role=\"judgement\"><tr><td><div style=\"font-weight:700\">旧判断</div><div>旧判断正文</div></td></tr></table>
+    <table><tr><td id=\"item-{item_id}\"><h2><a href=\"https://example.org/harness\">旧条目</a></h2>
+    <p>旧摘要</p><div><b>机制</b>旧机制</div><div><b>证据</b>旧证据</div>
+    <div><b>边界</b>旧边界</div><div><b>启发</b>旧启发</div></td></tr></table></body></html>"""
+    (issue_dir / "email.html").write_text(original, encoding="utf-8")
+
+    apply_historical_rewrite(tmp_path, issue_dir, _reader(issue))
+    html = (issue_dir / "email.html").read_text(encoding="utf-8")
+
+    assert "https://example.org/figure.png" in html
+    assert ".mail-shell{max-width:700px}" in html
+    assert "Harness正在成为长任务Agent的独立系统层" in html
+    assert "Agent跑得久以后，状态不该只留在进程里" in html
+    assert "新状态只有通过接受门才会提交" in html
+    assert "旧摘要" not in html
+    assert 'href="https://example.org/harness"' in html
+    assert html.count("<img") == original.count("<img")
+
+
 def test_prepare_rewrite_is_one_issue_and_exposes_locked_output(tmp_path: Path) -> None:
     run_id = "2026-08-20-094500"
     item_id = stable_hash(run_id, "item", "event-1")

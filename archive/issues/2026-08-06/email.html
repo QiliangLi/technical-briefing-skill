@@ -1,7 +1,315 @@
-<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>基础设施的缺口正在被逐一补上，但“能安装、能调用、局部更快”还不等于生产收益</title><style>
-body{margin:0;background:#ecece8;color:#171717;font-family:-apple-system,BlinkMacSystemFont,'Microsoft YaHei',sans-serif}main{max-width:760px;margin:18px auto;background:#fafaf7;padding:28px;box-sizing:border-box}h1{font-size:28px}article,.judgement{background:white;border:1px solid #d7d7d0;padding:16px;margin:12px 0}.meta{font-size:11px;color:#526aa0}.lead{font-size:15px}p{line-height:1.65}.takeaway{background:#f2f3ef;padding:10px}.sources{font-size:12px;color:#666;margin-top:10px}a{color:#002fa7}@media(max-width:620px){main{margin:0;padding:18px}}
-</style></head><body><main data-reader-contract="1"><div class="meta">2026-08-06</div>
-<h1>基础设施的缺口正在被逐一补上，但“能安装、能调用、局部更快”还不等于生产收益</h1><section class="judgement"><h3>LMCache的兼容矩阵继续扩张，性能账单还是空白</h3><p>CUDA 12.9、CUDA 13.0和ROCm 7.2的预发布轮子让NVIDIA与AMD环境更容易搭起来，但三份材料都只有构建和安装信息。正式比较仍要锁定CUDA、PyTorch、vLLM与驱动版本，再补KVCache吞吐、传输时延和网络利用率。</p></section><section class="judgement"><h3>工具接进来以后，难点转向调用决策与状态处理</h3><p>参数probe能识别高风险字段，功能级工作流图把流程规划和工具选择拆开，GUI-MCP则说明模型拿到工具后未必会主动使用。验收时需要把参数正确率、工具选择、调用后的状态整合和上下文Token一起看。</p></section><section class="judgement"><h3>缓存与运行时的局部改善，还要经过端到端联合测量</h3><p>TaskPress通过任务指南复用并压缩KV，SAKI保护低秩检索的top-k召回，PhyAI统一了端侧与云端运行时，AOS补上跨区域状态治理框架。它们各自提供了局部证据，但任务漂移、WAN、多租户和生产P95仍待验证。</p></section><h2>专题解读</h2><article id="item-068575391f234da90cbb7a43" data-reader-role="core"><div class="meta">状态感知网络、TPN · 2026-08-04</div><h2>LMCache rc2让CUDA 12.9环境更容易搭起来，性能还没有结论</h2><p class="lead">v0.5.3rc2提供了CUDA 12.9轮子和对应的PyTorch cu129安装方式，解决的是实验环境前置，而不是KVCache传输性能。</p><p>安装通过uv pip完成，并用unsafe-best-match处理多个包索引。发布页没有吞吐、传输时延、网络利用率或Serving结果。</p><p>它仍是release candidate，驱动、PyTorch、vLLM和GPU组合都需要在锁定环境里重新验证。</p><div class="takeaway"><b>值得看的是</b> 可以用它缩短CUDA 12.9实验准备，但不能把安装成功写成调度或网络收益。</div><div class="sources">阅读原文：<a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc2-cu129">LMCache GitHub Release</a></div></article><article id="item-8bf107abf55b68e31d01b324" data-reader-role="core"><div class="meta">状态感知网络、TPN · 2026-08-05</div><h2>LMCache rc4把ROCm 7.2轮子带到MI300和MI350系列</h2><p class="lead">这个预发布轮子面向AMD Instinct gfx942与gfx950，并与上游vLLM ROCm镜像里的Torch 2.11、CPython 3.12 ABI对齐。</p><p>覆盖范围包括MI300X、MI325X、MI350X和MI355X，安装时通过expanded-assets链接并使用pip --no-deps。</p><p>材料只证明打包组合存在，没有多节点网络、KVCache吞吐或端到端时延数据，API和轮子稳定性也仍可能变化。</p><div class="takeaway"><b>值得看的是</b> 它适合当AMD环境的实验入口；验收时还要检查原生扩展，并单独测网络与Token时延。</div><div class="sources">阅读原文：<a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc4-rocm">LMCache GitHub Release</a></div></article><article id="item-d99c57f01ce926c63bcb5b00" data-reader-role="core"><div class="meta">状态感知网络、TPN · 2026-08-05</div><h2>CUDA 13.0的LMCache nightly适合预研，不适合拿来证明收益</h2><p class="lead">这份轮子构建于2026年8月5日，代码来自dev分支，目标是让最新CUDA环境提前试用LMCache变化。</p><p>安装需要预发布包、PyTorch cu130索引和nightly expanded-assets链接。发布页没有说明具体功能变化，也没有KV传输、吞吐或时延结果。</p><p>nightly本身可能不稳定，依赖矩阵和性能影响都要结合实际构建版本另行记录。</p><div class="takeaway"><b>值得看的是</b> 可用于CUDA 13.0基础设施预研，正式对比前必须固定依赖，不能把可安装等同于可用或更快。</div><div class="sources">阅读原文：<a href="https://github.com/LMCache/LMCache/releases/tag/nightly">LMCache GitHub Release</a></div></article><article id="item-33a8189b5b967c08d218ad00" data-reader-role="core"><div class="meta">Agent语义加速 · 2026-08-04</div><h2>一个轻量probe，可以提前识别工具调用里最容易填错的参数</h2><p class="lead">论文发现，模型在生成参数前的隐藏状态已经带有正确性信号。PBT利用这个信号筛训练数据，PGR则在多个候选之间重排。</p><p>ParamBench按嵌套深度和依赖关系划分L1到L5；probe既可以判断整个调用，也可以判断单个字段或字段组合。</p><p>五个开放模型上，平均exact match从零样本19.7%升到普通微调51.6%，PBT再到59.6%。不过数据来自云网络工具场景，跨域要重训，额外采样也会增加Token和时延。</p><div class="takeaway"><b>值得看的是</b> 可以先把probe用于嵌套和跨调用参数，但必须在自己的工具schema上重新校准，并用任务成功率而非离线EM验收。</div><div class="sources">阅读原文：<a href="https://arxiv.org/abs/2608.03071v1">arXiv</a></div></article><article id="item-b46ee6b4ba83be566132a513" data-reader-role="core"><div class="meta">AI Infra横向动态 · 2026-08-04</div><h2>PhyAI把模型适配和公共执行层拆开，让端侧与云端共用一套运行时</h2><p class="lead">模型自己的conditioning、solver和输出逻辑留在adapter里，图执行、GPU kernel、内存管理和并行服务则进入共享运行时。</p><p>控制时间Roofline把策略推理和环境执行分开，帮助判断瓶颈究竟在模型还是系统。11个测量配对都获得1.40到4.65倍加速。</p><p>Cosmos3-Nano-Policy在8张H20上从2.46秒降到1.18秒；但专用runtime在部分配置仍更快，评估也主要集中在Physical AI和模拟环境。</p><div class="takeaway"><b>值得看的是</b> 值得借鉴的是模型逻辑与共享执行层的边界；端到端基线比kernel级speedup更能说明运行时价值。</div><div class="sources">阅读原文：<a href="https://arxiv.org/abs/2608.03682v1">arXiv</a></div></article><article id="item-a40c0647c925a6ca5dc369d1" data-reader-role="core"><div class="meta">Agent语义加速 · 2026-08-04</div><h2>ToolLIFT先规划“要完成什么功能”，再决定具体调用哪个工具</h2><p class="lead">具体工具会变化，但任务流程往往更稳定。ToolLIFT把调用轨迹提升成功能级工作流图，把全局步骤规划与工具选择分开。</p><p>工作流图表示跨工具共享的步骤和数据流，planner先决定流程，selector再选实现；扰动训练让模型适应工具变化。</p><p>DailyLifeAPIs上完整模型准确率为69.30%，移除工作流图后降到60.92%。不过实验仍是离线规划和模拟工具集合，没有真实tool call、Token或端到端时延。</p><div class="takeaway"><b>值得看的是</b> 可以用功能级流程减少对单一工具轨迹的绑定，但最终要在真实Read、Grep和工具链里验收。</div><div class="sources">阅读原文：<a href="https://arxiv.org/abs/2608.03468v1">arXiv</a></div></article><article id="item-db043815937797af933527be" data-reader-role="core"><div class="meta">AI Infra横向动态 · 2026-08-04</div><h2>开源仓库里vLLM使用最广，但采用量不能替代性能对比</h2><p class="lead">研究从GitHub脚本中识别五类LLM serving框架及其API调用，过滤后与vLLM相关的仓库达到1821个，明显多于其他框架。</p><p>并行计算出现在1010个仓库，内存管理出现在451个；FlashInfer仓库中88%使用kernel fusion，vLLM仓库中53%使用并行计算。</p><p>这些数字反映生态采用，不代表生产部署质量。数据截至2025年11月，也没有统一硬件上的吞吐、时延或GPU利用率。</p><div class="takeaway"><b>值得看的是</b> 可用作选型背景，但最终仍要按目标模型实测KV、TPOT、P95、网络和运维成本。</div><div class="sources">阅读原文：<a href="https://arxiv.org/abs/2608.03036v1">arXiv</a></div></article><article id="item-235b8db3e8cb591f5a153a4d" data-reader-role="core"><div class="meta">AI Infra横向动态 · 2026-08-04</div><h2>EffiHolmes用两组负载的差分剖析，帮Agent找到真正值得改的热点</h2><p class="lead">默认负载里的慢点不一定重要。EffiHolmes把默认和放大负载的剖析结果相减，再沿调用路径筛出会随负载增长的真实热点。</p><p>系统保留层级调用树与时间戳，压缩重复调用链，再结合热点覆盖、入口距离、差分成本和源码证据给LLM排序。</p><p>140个真实Python仓库问题上，GPT-5.1文件级Acc@5为90.71%；移除关键路径后，函数Acc@3下降39.29个百分点。原生算子、跨语言和生产GPU服务仍未验证。</p><div class="takeaway"><b>值得看的是</b> 差分剖析适合做Agent修复前的定位层，接入GPU服务时要先测剖析开销、跨进程可见性和负载代表性。</div><div class="sources">阅读原文：<a href="https://arxiv.org/abs/2608.03558v1">arXiv</a></div></article><article id="item-3a0299284356222e9f6e9221" data-reader-role="core"><div class="meta">Agent语义加速 · 2026-08-04</div><h2>工具已经注册，不代表Agent会在正确的时候调用它</h2><p class="lead">OSWorld-MCP显示，reasoning模型获得工具后准确率提高4.0个百分点，non-reasoning模型反而下降5.9个百分点。工具可用性和使用决策必须分开测。</p><p>实验还把成功调用后的冗余截图从历史里删除，缩短图像窗口，避免无效观测持续增加输入。重训后的压缩Agent准确率为37.8%，输入成本降到53%。</p><p>reasoning policy在309个任务中只对55个调用工具；单纯提高工具采用率也没有同步提高held-out准确率。</p><div class="takeaway"><b>值得看的是</b> 验收应分别看工具选择、状态整合和上下文成本；删除冗余观测时还要保持准确率与tool-call次数可见。</div><div class="sources">阅读原文：<a href="https://arxiv.org/abs/2608.03327v1">arXiv</a></div></article><article id="item-c45076b95754d3828df7ba63" data-reader-role="core"><div class="meta">跨域传输 · 2026-08-04</div><h2>TaskPress用一份任务指南筛KV，让压缩缓存服务同类查询</h2><p class="lead">TaskPress不是为每个查询重新压缩，而是用任务指南在prefill阶段给Token打分，生成一份可跨查询复用的缓存。</p><p>cross-attention负责驱逐无关Token，int4 per-token scale识别Value outlier。默认int4提供4×压缩，配合75%驱逐时可到16×。</p><p>64K上下文、单A100上，75%驱逐把TPOT从50.1降到32.8 ms/token，吞吐从19.9升到30.5 tokens/s。任务漂移或高密度needle会造成误驱逐，WAN和多租户尚未测试。</p><div class="takeaway"><b>值得看的是</b> 任务指南可以成为Agent Cache的复用边界，但要测指南稳定性、复用次数、压缩字节，并在漂移时回退到完整缓存。</div><div class="sources">阅读原文：<a href="https://arxiv.org/abs/2608.03276v1">arXiv</a></div></article><article id="item-32a6a8442ed6bb80eda30ec9" data-reader-role="core"><div class="meta">跨域传输 · 2026-08-04</div><h2>SAKI优化的不是KV重建误差，而是检索时真正会用到的注意力分数</h2><p class="lead">普通低秩压缩可能保住整体数值，却破坏top-k检索。SAKI直接围绕attention score畸变设计分解目标，优先保护相关Key。</p><p>方法在query-key算子上做非对称闭式分解，并按head生成映射；理论margin条件用来判断top-k recall何时安全。</p><p>LLaMA-3.1-8B的4K文本、rank32测试中，top-64 recall为0.799，高于key-PCA的0.748。证据仍局限于4K校准域和召回指标，没有端到端生成或WAN结果。</p><div class="takeaway"><b>值得看的是</b> 跨域KV压缩除了字节数，还应看注意力分数畸变、top-k命中率和端到端P95，并为低margin情况设置回退。</div><div class="sources">阅读原文：<a href="https://arxiv.org/abs/2608.03228v1">arXiv</a></div></article><article id="item-9c3c1121c0f97dba985dc9cc" data-reader-role="core"><div class="meta">跨域传输 · 2026-08-04</div><h2>AOS把分布式Agent拆成治理控制面和运行协调面</h2><p class="lead">AOS试图把授权、审计与意图管理留在控制面，把生命周期、路由、上下文和调度放到运行面，从而让跨区域Agent有一条可追溯的治理链。</p><p>能力请求先经过授权、驻留、协议和信任等硬约束，再按语义适配、可靠性、时延、成本和地域排序；失败时支持重试、回退、跨区转移或人工升级。</p><p>它强调上下文状态与权威状态分离，冲突不能静默平均。但这仍是参考架构，没有WAN RTT、命中率、传输字节或P95实测。</p><div class="takeaway"><b>值得看的是</b> 设计跨域Agent Cache时，应先定义权威状态、版本溯源和缓存安全行为，再用真实网络和租户隔离数据验证。</div><div class="sources">阅读原文：<a href="https://arxiv.org/abs/2608.03214v1">arXiv</a></div></article>
-<h2>热点雷达</h2><h2>接下来关注</h2><ul><li>继续跟踪LMCache三类预发布轮子何时稳定，并在锁定依赖后补测KVCache吞吐、传输时延和网络利用率。</li><li>把probe、工作流规划和观测压缩放进真实工具任务，同时记录参数exact match、成功率、tool call、上下文Token与端到端P95。</li><li>在长上下文、任务漂移、WAN和多租户条件下复测TaskPress与SAKI，并观察AOS是否出现可以运行的实现。</li></ul></main></body></html>
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>基础设施的缺口正在被逐一补上，但“能安装、能调用、局部更快”还不等于生产收益</title>
+<style>
+    @media only screen and (max-width:620px) {
+      .mail-shell { width:100% !important; }
+      .pad-x { padding-left:18px !important; padding-right:18px !important; }
+      .stack-col { display:block !important; width:100% !important; box-sizing:border-box !important; }
+      .card-gap { padding-right:0 !important; padding-left:0 !important; padding-bottom:10px !important; }
+      .topic-nav a { display:inline-block !important; margin-bottom:6px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;background:#e9e9e5;color:#151515;font-family:'Microsoft YaHei','微软雅黑',Arial,sans-serif;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">本期最清楚的变化是，AI基础设施正在补齐运行环境、工具调用和缓存利用中的具体缺口，但多数结果仍需端到端验证。</div>
+<table border="0" cellpadding="0" cellspacing="0" role="presentation" style="background:#e9e9e5" width="100%"><tr><td align="center">
+<table border="0" cellpadding="0" cellspacing="0" class="mail-shell" role="presentation" style="width:100%;max-width:720px;background:#f8f8f5;margin:16px auto" width="720">
+<tr><td class="pad-x" style="padding:24px 28px 20px;border-bottom:3px solid #002fa7">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col" valign="top">
+<div style="font-size:11px;letter-spacing:1.6px;font-family:'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;font-weight:bold">TECHNICAL BRIEFING</div>
+<h1 style="font-size:28px;line-height:1.15;font-weight:600;margin:8px 0 7px">基础设施的缺口正在被逐一补上，但“能安装、能调用、局部更快”还不等于生产收益</h1>
+<div style="font-size:13px;line-height:1.4;color:#666">2026-08-06</div>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x topic-nav" style="padding:12px 28px 10px;background:#f0f1ed;border-bottom:1px solid #d5d5cf;font-size:12px;line-height:1.8">
+<b style="color:#555;margin-right:8px">专题导航</b>
+<a href="#topic-tpn" style="color:#002fa7;text-decoration:none;margin-right:12px">状态感知网络、TPN（3）</a><a href="#topic-agent_acceleration" style="color:#002fa7;text-decoration:none;margin-right:12px">Agent语义加速（3）</a><a href="#topic-cross_region" style="color:#002fa7;text-decoration:none;margin-right:12px">跨域传输（3）</a><a href="#topic-ai_infra_horizontal" style="color:#002fa7;text-decoration:none;margin-right:12px">AI Infra横向动态（3）</a>
+</td></tr>
+<tr><td class="pad-x" style="padding:18px 28px 8px">
+<div style="font-size:11px;letter-spacing:1.4px;font-family:'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;font-weight:bold;margin-bottom:5px">本期判断</div>
+<table cellpadding="0" cellspacing="0" data-judgement-ref-count="3" role="presentation" style="border-top:1px solid #c8c8c2" width="100%"><tr>
+<td style="padding:9px 0;color:#002fa7;font:700 12px 'Microsoft YaHei','微软雅黑',Arial,sans-serif" valign="top" width="30">01</td>
+<td style="padding:9px 0;font-size:14px;line-height:1.45;color:#222">
+<div style="font-weight:700;margin-bottom:3px">兼容矩阵扩张，性能证据仍待补齐</div>
+<div>兼容范围正在向更新的NVIDIA和AMD软件栈延伸。LMCache连续提供面向CUDA 12.9、CUDA 13.0和ROCm 7.2的预发布轮子，覆盖PyTorch cu129、cu130以及AMD Instinct gfx942和gfx950等环境。三份发布材料都停留在构建与安装层面，没有KVCache吞吐、传输延迟或网络利用率数据。现阶段可先用这些轮子缩短环境准备时间，正式比较仍需锁定CUDA、PyTorch、vLLM和驱动版本，再补端到端测量。</div>
+<div style="margin-top:5px;font-size:11px;line-height:1.5;color:#777">相关解读：<a href="#item-068575391f234da90cbb7a43" style="color:#002fa7;text-decoration:none">LMCache rc2提供CUDA 12.9兼容轮子</a> · <a href="#item-8bf107abf55b68e31d01b324" style="color:#002fa7;text-decoration:none">LMCache rc4提供MI300与MI350的ROCm兼容轮子</a> · <a href="#item-d99c57f01ce926c63bcb5b00" style="color:#002fa7;text-decoration:none">LMCache Nightly提供CUDA 13.0开发版轮子</a></div>
+</td>
+</tr></table>
+<table cellpadding="0" cellspacing="0" data-judgement-ref-count="3" role="presentation" style="border-top:1px solid #c8c8c2" width="100%"><tr>
+<td style="padding:9px 0;color:#002fa7;font:700 12px 'Microsoft YaHei','微软雅黑',Arial,sans-serif" valign="top" width="30">02</td>
+<td style="padding:9px 0;font-size:14px;line-height:1.45;color:#222">
+<div style="font-weight:700;margin-bottom:3px">工具可用之后，瓶颈落在调用决策和状态处理</div>
+<div>几项Agent研究把问题推进到了工具接入之后。参数probe能识别高风险字段并筛选或重排候选，功能级工作流图把流程规划与具体工具选择分开，GUI-MCP实验则显示模型拿到工具后未必会主动调用，冗余观测还会增加输入成本。项目验收需要把参数正确率、工具选择、调用后的状态整合和上下文Token放在一起，不能只检查工具是否注册成功。</div>
+<div style="margin-top:5px;font-size:11px;line-height:1.5;color:#777">相关解读：<a href="#item-33a8189b5b967c08d218ad00" style="color:#002fa7;text-decoration:none">Probe筛选和重排提升复杂工具调用参数正确率</a> · <a href="#item-a40c0647c925a6ca5dc369d1" style="color:#002fa7;text-decoration:none">ToolLIFT用功能级工作流图解耦工具规划</a> · <a href="#item-3a0299284356222e9f6e9221" style="color:#002fa7;text-decoration:none">GUI-MCP研究显示工具可用不等于Agent会用</a></div>
+</td>
+</tr></table>
+<table cellpadding="0" cellspacing="0" data-judgement-ref-count="4" role="presentation" style="border-top:1px solid #c8c8c2" width="100%"><tr>
+<td style="padding:9px 0;color:#002fa7;font:700 12px 'Microsoft YaHei','微软雅黑',Arial,sans-serif" valign="top" width="30">03</td>
+<td style="padding:9px 0;font-size:14px;line-height:1.45;color:#222">
+<div style="font-weight:700;margin-bottom:3px">缓存与运行时优化需要端到端验收</div>
+<div>缓存和运行时的局部指标已经出现进展，离生产收益仍隔着一轮联合测量。TaskPress用任务指南支持跨查询复用KV并降低TPOT，SAKI从attention score畸变出发保护低秩检索的top-k召回；两者的边界分别落在任务漂移、高密度信息和缺少WAN实测上。PhyAI的统一运行时在11个测量配对中均有加速，但专用运行时在部分配置仍更快。AOS补上了跨区域授权、路由和状态治理的架构框架，却尚无基准实现。这些方向进入项目后，应同时记录准确率、压缩字节、复用次数、TPOT、P95和跨区域成本。</div>
+<div style="margin-top:5px;font-size:11px;line-height:1.5;color:#777">相关解读：<a href="#item-c45076b95754d3828df7ba63" style="color:#002fa7;text-decoration:none">TaskPress用任务指南压缩可复用KV缓存</a> · <a href="#item-32a6a8442ed6bb80eda30ec9" style="color:#002fa7;text-decoration:none">SAKI按注意力分数优化低秩KV检索</a> · <a href="#item-b46ee6b4ba83be566132a513" style="color:#002fa7;text-decoration:none">PhyAI用统一运行时连接Physical AI端侧与云端推理</a> · <a href="#item-9c3c1121c0f97dba985dc9cc" style="color:#002fa7;text-decoration:none">AOS以控制面和运行面组织分布式Agent治理与协调</a></div>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-tpn"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">状态感知网络、TPN</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">3 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-068575391f234da90cbb7a43" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">版本发布 · 2026-08-04 · 100分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc2-cu129" style="color:#151515;text-decoration:none">LMCache rc2让CUDA 12.9环境更容易搭起来，性能还没有结论</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">v0.5.3rc2提供了CUDA 12.9轮子和对应的PyTorch cu129安装方式，解决的是实验环境前置，而不是KVCache传输性能。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 安装通过uv pip完成，并用unsafe-best-match处理多个包索引。发布页没有吞吐、传输时延、网络利用率或Serving结果。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 它仍是release candidate，驱动、PyTorch、vLLM和GPU组合都需要在锁定环境里重新验证。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可以用它缩短CUDA 12.9实验准备，但不能把安装成功写成调度或网络收益。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc2-cu129" style="color:#002fa7">LMCache GitHub Release</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-8bf107abf55b68e31d01b324" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">版本发布 · 2026-08-05 · 100分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc4-rocm" style="color:#151515;text-decoration:none">LMCache rc4把ROCm 7.2轮子带到MI300和MI350系列</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">这个预发布轮子面向AMD Instinct gfx942与gfx950，并与上游vLLM ROCm镜像里的Torch 2.11、CPython 3.12 ABI对齐。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 覆盖范围包括MI300X、MI325X、MI350X和MI355X，安装时通过expanded-assets链接并使用pip --no-deps。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 材料只证明打包组合存在，没有多节点网络、KVCache吞吐或端到端时延数据，API和轮子稳定性也仍可能变化。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 它适合当AMD环境的实验入口；验收时还要检查原生扩展，并单独测网络与Token时延。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc4-rocm" style="color:#002fa7">LMCache GitHub Release</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-d99c57f01ce926c63bcb5b00" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">Nightly版本 · 2026-08-05 · 100分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://github.com/LMCache/LMCache/releases/tag/nightly" style="color:#151515;text-decoration:none">CUDA 13.0的LMCache nightly适合预研，不适合拿来证明收益</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">这份轮子构建于2026年8月5日，代码来自dev分支，目标是让最新CUDA环境提前试用LMCache变化。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 安装需要预发布包、PyTorch cu130索引和nightly expanded-assets链接。发布页没有说明具体功能变化，也没有KV传输、吞吐或时延结果。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> nightly本身可能不稳定，依赖矩阵和性能影响都要结合实际构建版本另行记录。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用于CUDA 13.0基础设施预研，正式对比前必须固定依赖，不能把可安装等同于可用或更快。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://github.com/LMCache/LMCache/releases/tag/nightly" style="color:#002fa7">LMCache GitHub Release</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-agent_acceleration"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">Agent语义加速</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">3 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-33a8189b5b967c08d218ad00" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-04 · 86分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.03071v1" style="color:#151515;text-decoration:none">一个轻量probe，可以提前识别工具调用里最容易填错的参数</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">论文发现，模型在生成参数前的隐藏状态已经带有正确性信号。PBT利用这个信号筛训练数据，PGR则在多个候选之间重排。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> ParamBench按嵌套深度和依赖关系划分L1到L5；probe既可以判断整个调用，也可以判断单个字段或字段组合。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 五个开放模型上，平均exact match从零样本19.7%升到普通微调51.6%，PBT再到59.6%。不过数据来自云网络工具场景，跨域要重训，额外采样也会增加Token和时延。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可以先把probe用于嵌套和跨调用参数，但必须在自己的工具schema上重新校准，并用任务成功率而非离线EM验收。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.03071v1" style="color:#002fa7">arXiv</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-a40c0647c925a6ca5dc369d1" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-04 · 83分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.03468v1" style="color:#151515;text-decoration:none">ToolLIFT先规划“要完成什么功能”，再决定具体调用哪个工具</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">具体工具会变化，但任务流程往往更稳定。ToolLIFT把调用轨迹提升成功能级工作流图，把全局步骤规划与工具选择分开。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 工作流图表示跨工具共享的步骤和数据流，planner先决定流程，selector再选实现；扰动训练让模型适应工具变化。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> DailyLifeAPIs上完整模型准确率为69.30%，移除工作流图后降到60.92%。不过实验仍是离线规划和模拟工具集合，没有真实tool call、Token或端到端时延。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可以用功能级流程减少对单一工具轨迹的绑定，但最终要在真实Read、Grep和工具链里验收。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.03468v1" style="color:#002fa7">arXiv</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-3a0299284356222e9f6e9221" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-04 · 82分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.03327v1" style="color:#151515;text-decoration:none">工具已经注册，不代表Agent会在正确的时候调用它</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">OSWorld-MCP显示，reasoning模型获得工具后准确率提高4.0个百分点，non-reasoning模型反而下降5.9个百分点。工具可用性和使用决策必须分开测。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 实验还把成功调用后的冗余截图从历史里删除，缩短图像窗口，避免无效观测持续增加输入。重训后的压缩Agent准确率为37.8%，输入成本降到53%。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> reasoning policy在309个任务中只对55个调用工具；单纯提高工具采用率也没有同步提高held-out准确率。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 验收应分别看工具选择、状态整合和上下文成本；删除冗余观测时还要保持准确率与tool-call次数可见。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.03327v1" style="color:#002fa7">arXiv</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-cross_region"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">跨域传输</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">3 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-c45076b95754d3828df7ba63" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-04 · 82分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.03276v1" style="color:#151515;text-decoration:none">TaskPress用一份任务指南筛KV，让压缩缓存服务同类查询</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">TaskPress不是为每个查询重新压缩，而是用任务指南在prefill阶段给Token打分，生成一份可跨查询复用的缓存。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> cross-attention负责驱逐无关Token，int4 per-token scale识别Value outlier。默认int4提供4×压缩，配合75%驱逐时可到16×。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 64K上下文、单A100上，75%驱逐把TPOT从50.1降到32.8 ms/token，吞吐从19.9升到30.5 tokens/s。任务漂移或高密度needle会造成误驱逐，WAN和多租户尚未测试。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 任务指南可以成为Agent Cache的复用边界，但要测指南稳定性、复用次数、压缩字节，并在漂移时回退到完整缓存。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.03276v1" style="color:#002fa7">arXiv</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-32a6a8442ed6bb80eda30ec9" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-04 · 80分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.03228v1" style="color:#151515;text-decoration:none">SAKI优化的不是KV重建误差，而是检索时真正会用到的注意力分数</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">普通低秩压缩可能保住整体数值，却破坏top-k检索。SAKI直接围绕attention score畸变设计分解目标，优先保护相关Key。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 方法在query-key算子上做非对称闭式分解，并按head生成映射；理论margin条件用来判断top-k recall何时安全。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> LLaMA-3.1-8B的4K文本、rank32测试中，top-64 recall为0.799，高于key-PCA的0.748。证据仍局限于4K校准域和召回指标，没有端到端生成或WAN结果。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 跨域KV压缩除了字节数，还应看注意力分数畸变、top-k命中率和端到端P95，并为低margin情况设置回退。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.03228v1" style="color:#002fa7">arXiv</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-9c3c1121c0f97dba985dc9cc" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">架构论文 · 2026-08-04 · 75分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.03214v1" style="color:#151515;text-decoration:none">AOS把分布式Agent拆成治理控制面和运行协调面</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">AOS试图把授权、审计与意图管理留在控制面，把生命周期、路由、上下文和调度放到运行面，从而让跨区域Agent有一条可追溯的治理链。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 能力请求先经过授权、驻留、协议和信任等硬约束，再按语义适配、可靠性、时延、成本和地域排序；失败时支持重试、回退、跨区转移或人工升级。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 它强调上下文状态与权威状态分离，冲突不能静默平均。但这仍是参考架构，没有WAN RTT、命中率、传输字节或P95实测。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 设计跨域Agent Cache时，应先定义权威状态、版本溯源和缓存安全行为，再用真实网络和租户隔离数据验证。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.03214v1" style="color:#002fa7">arXiv</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:18px 28px 6px"><a id="topic-ai_infra_horizontal"></a>
+<table cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:2px solid #002fa7" width="100%"><tr>
+<td style="padding:0 0 7px"><span style="font-size:19px;line-height:1.25;font-weight:700">AI Infra横向动态</span></td>
+<td align="right" style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7" width="60">3 ITEMS</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-b46ee6b4ba83be566132a513" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-04 · 84分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.03682v1" style="color:#151515;text-decoration:none">PhyAI把模型适配和公共执行层拆开，让端侧与云端共用一套运行时</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">模型自己的conditioning、solver和输出逻辑留在adapter里，图执行、GPU kernel、内存管理和并行服务则进入共享运行时。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 控制时间Roofline把策略推理和环境执行分开，帮助判断瓶颈究竟在模型还是系统。11个测量配对都获得1.40到4.65倍加速。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> Cosmos3-Nano-Policy在8张H20上从2.46秒降到1.18秒；但专用runtime在部分配置仍更快，评估也主要集中在Physical AI和模拟环境。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 值得借鉴的是模型逻辑与共享执行层的边界；端到端基线比kernel级speedup更能说明运行时价值。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.03682v1" style="color:#002fa7">arXiv</a></div>
+</td></tr></table>
+</td>
+<td class="stack-col card-gap" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-db043815937797af933527be" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-04 · 83分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.03036v1" style="color:#151515;text-decoration:none">开源仓库里vLLM使用最广，但采用量不能替代性能对比</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">研究从GitHub脚本中识别五类LLM serving框架及其API调用，过滤后与vLLM相关的仓库达到1821个，明显多于其他框架。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 并行计算出现在1010个仓库，内存管理出现在451个；FlashInfer仓库中88%使用kernel fusion，vLLM仓库中53%使用并行计算。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 这些数字反映生态采用，不代表生产部署质量。数据截至2025年11月，也没有统一硬件上的吞吐、时延或GPU利用率。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 可用作选型背景，但最终仍要按目标模型实测KV、TPOT、P95、网络和运维成本。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.03036v1" style="color:#002fa7">arXiv</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px">
+<table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#fff;border:1px solid #d2d2cc" width="100%"><tr><td id="item-235b8db3e8cb591f5a153a4d" style="padding:12px 13px 11px">
+<div style="font:700 10px/1.35 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;letter-spacing:.5px">论文 · 2026-08-04 · 82分</div>
+<h2 style="font-size:16px;line-height:1.32;font-weight:700;margin:5px 0 7px"><a href="https://arxiv.org/abs/2608.03558v1" style="color:#151515;text-decoration:none">EffiHolmes用两组负载的差分剖析，帮Agent找到真正值得改的热点</a></h2>
+<p style="font-size:13px;line-height:1.45;margin:0 0 8px;color:#333">默认负载里的慢点不一定重要。EffiHolmes把默认和放大负载的剖析结果相减，再沿调用路径筛出会随负载增长的真实热点。</p>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;border-top:1px solid #e4e4df;padding-top:7px"><b style="color:#002fa7">机制</b> 系统保留层级调用树与时间戳，压缩重复调用链，再结合热点覆盖、入口距离、差分成本和源码证据给LLM排序。</div>
+<div style="font-size:12px;line-height:1.42;color:#4a4a4a;margin-top:4px"><b style="color:#002fa7">证据</b> 140个真实Python仓库问题上，GPT-5.1文件级Acc@5为90.71%；移除关键路径后，函数Acc@3下降39.29个百分点。原生算子、跨语言和生产GPU服务仍未验证。</div>
+<div style="font-size:12px;line-height:1.42;color:#666;margin-top:4px"><b>边界</b> </div>
+<div style="font-size:12px;line-height:1.42;color:#333;margin-top:4px"><b>启发</b> 差分剖析适合做Agent修复前的定位层，接入GPU服务时要先测剖析开销、跨进程可见性和负载代表性。</div>
+<div style="margin-top:7px;font-size:11px;line-height:1.35;color:#777">阅读原文：<a href="https://arxiv.org/abs/2608.03558v1" style="color:#002fa7">arXiv</a></div>
+</td></tr></table>
+</td>
+</tr></table>
+</td></tr>
+<tr><td class="pad-x" style="padding:20px 28px 6px">
+<div style="border-top:3px solid #111;padding-top:10px">
+<span style="font-size:19px;font-weight:700">热点雷达</span>
+<div style="font-size:11px;line-height:1.45;color:#777;margin-top:3px">以下为近7天跨领域热点线索，未经本简报深度核验，不参与本期判断与证据评分。</div>
+</div>
+</td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px"><table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#f0f0ed;border-top:3px solid #002fa7" width="100%"><tr><td style="padding:10px 12px">
+<div style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;margin-bottom:6px">Agent与开发工具</div>
+<div style="padding:0">
+<a href="https://github.com/anthropics/claude-code/releases/tag/v2.1.221" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Claude Code v2.1.221 发布：新增 Focus view、沙箱凭据掩码与多项修复</a>
+<div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">Claude Code v2.1.221 发布，为 VSCode 新增 Focus view 聊天菜单开关，可隐藏工具活动并显示实时运行指示器。</div>
+<div style="font-size:10px;color:#888;margin-top:3px">2026-08-04 · 阅读原文：<a href="https://github.com/anthropics/claude-code/releases/tag/v2.1.221" style="color:#002fa7">github.com</a></div>
+</div><div style="padding:7px 0 0;border-top:1px solid #d2d2cc;margin-top:7px">
+<a href="https://blog.cloudflare.com/cloudflare-computer" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Cloudflare 推出 @cloudflare/computer 预览版：为智能体提供虚拟文件系统与多执行环境</a>
+<div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">Cloudflare 发布 @cloudflare/computer 早期预览版，这是一个开源智能体运行时，为每个智能体提供虚拟文件系统，并支持在 isolate、容器沙箱或浏览器中执行代码。</div>
+<div style="font-size:10px;color:#888;margin-top:3px">2026-08-03 · 阅读原文：<a href="https://blog.cloudflare.com/cloudflare-computer" style="color:#002fa7">blog.cloudflare.com</a></div>
+</div>
+</td></tr></table>
+</td><td class="stack-col card-gap" style="padding:0 0 0 5px" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#f0f0ed;border-top:3px solid #002fa7" width="100%"><tr><td style="padding:10px 12px">
+<div style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;margin-bottom:6px">推理与系统</div>
+<div style="padding:0">
+<a href="https://www.lmsys.org/blog/2026-08-04-specforge-v0-3" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">SpecForge v0.3.0 发布：统一解耦与共置投机解码栈，新增开放 SpecBundle 草稿模型</a>
+<div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">SpecForge v0.3.0 将目标模型推理与草稿模型训练分离，支持 EAGLE3、EAGLE3.1、P-EAGLE、DFlash、Domino、DSpark 等多种投机解码算法，并统一在线、离线与解耦工作流。</div>
+<div style="font-size:10px;color:#888;margin-top:3px">2026-08-04 · 阅读原文：<a href="https://www.lmsys.org/blog/2026-08-04-specforge-v0-3" style="color:#002fa7">lmsys.org</a></div>
+</div><div style="padding:7px 0 0;border-top:1px solid #d2d2cc;margin-top:7px">
+<a href="https://github.com/leonickson1/Swiftlet" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">Swiftlet：在 Mac 上运行 80B 版 Qwen（内存 4.3 GB），在 iPhone 上运行 35B 版</a>
+<div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">Swiftlet 是一个 Swift + Metal 运行时，可在普通 Apple 设备上运行 Qwen3-Next 和 Qwen3.5/3.6 MoE 混合模型，仅将小型稠密核心驻留内存，按需从存储流式加载路由专家权重。</div>
+<div style="font-size:10px;color:#888;margin-top:3px">2026-08-04 · 阅读原文：<a href="https://github.com/leonickson1/Swiftlet" style="color:#002fa7">github.com</a></div>
+</div>
+</td></tr></table>
+</td>
+</tr></table></td></tr>
+<tr><td class="pad-x" style="padding:0 28px 10px"><table cellpadding="0" cellspacing="0" role="presentation" width="100%"><tr>
+<td class="stack-col card-gap" style="padding:0 5px 0 0" valign="top" width="50%">
+<table cellpadding="0" cellspacing="0" role="presentation" style="background:#f0f0ed;border-top:3px solid #002fa7" width="100%"><tr><td style="padding:10px 12px">
+<div style="font:700 11px 'Microsoft YaHei','微软雅黑',Arial,sans-serif;color:#002fa7;margin-bottom:6px">芯片、内存与网络</div>
+<div style="padding:0">
+<a href="https://engineering.fb.com/2026/08/03/ml-applications/training-gem-at-llm-scale-meta-ads-recommendation-foundation-model" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">GEM 训练：Meta 如何将 LLM 规模广告基础模型效率翻倍</a>
+<div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">Meta 通过内核、精度、并行、网络与内存的协同设计，将广告推荐基础模型 GEM 的端到端训练效率翻倍至 20-25% MFU，并在 12 个月内将训练 FLOPs 扩展 4 倍。</div>
+<div style="font-size:10px;color:#888;margin-top:3px">2026-08-03 · 阅读原文：<a href="https://engineering.fb.com/2026/08/03/ml-applications/training-gem-at-llm-scale-meta-ads-recommendation-foundation-model" style="color:#002fa7">engineering.fb.com</a></div>
+</div><div style="padding:7px 0 0;border-top:1px solid #d2d2cc;margin-top:7px">
+<a href="https://www.marktechpost.com/2026/08/01/accelerating-transformer-training-with-nvidia-transformer-engine-fused-kernels-bf16-fp8-and-gpu-benchmarking" style="font-size:13px;line-height:1.35;font-weight:700;color:#222;text-decoration:none">NVIDIA Transformer Engine 如何加速 Transformer 训练：融合内核、BF16 与 FP8 实战教程</a>
+<div style="font-size:11px;line-height:1.4;color:#666;margin-top:3px">本教程演示 NVIDIA Transformer Engine 如何通过融合 GPU 内核、BF16 计算与硬件感知的 FP8 执行加速 Transformer 训练。</div>
+<div style="font-size:10px;color:#888;margin-top:3px">2026-08-01 · 阅读原文：<a href="https://www.marktechpost.com/2026/08/01/accelerating-transformer-training-with-nvidia-transformer-engine-fused-kernels-bf16-fp8-and-gpu-benchmarking" style="color:#002fa7">marktechpost.com</a></div>
+</div>
+</td></tr></table>
+</td>
+</tr></table></td></tr>
+<tr><td class="pad-x" style="padding:20px 28px;color:#777;font-size:11px;line-height:1.5;border-top:1px solid #c8c8c2">本简报由自动化信息采集与人工审核共同生成。技术数据请以原始论文、官方文档或项目仓库为准。</td></tr>
+</table></td></tr></table>
+</body></html>
