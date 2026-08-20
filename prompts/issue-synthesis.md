@@ -2,42 +2,35 @@
 
 Read only the final selected briefing items, compact `project_contexts`, and lightweight `radar_candidates` supplied with this task. Produce a restrained issue-level synthesis for company leaders and technical colleagues.
 
-## 本期判断：only write a judgement when there is one
+## 本期判断：必须有，但不要强造共同趋势
 
-`judgements` is optional in substance even though the JSON field is present. Return **1-3 only when justified; fewer is better than manufactured trends**.
+Return **1-3 judgements; usually 2-3**. The briefing has already selected useful evidence, so readers should get a small number of conclusions before reading the detailed cards.
 
-A judgement belongs here only when the selected evidence actually changes how a reader should understand a technical question. Two papers being vaguely similar is not enough. Do not force every important item into a common trend.
+Each judgement should make **one** concrete technical point that is worth remembering. It may be supported by:
 
-Each judgement should make **one** concrete point. It does **not** need to contain all of “what changed → why it matters → project implication” in the same three-sentence mini-essay. Pick the part that carries the information gain and state it clearly.
+- one strong item that challenges an assumption or gives a counter-intuitive result;
+- multiple independent works that genuinely converge on the same mechanism;
+- a previously vague engineering question that now has a measurable boundary;
+- evidence that supports, challenges or narrows a technical assumption;
+- a new direction that is concrete enough to test next.
 
-Good forms include:
+A judgement does **not** need to combine multiple items. Do not add a second paper merely to make a statement look like a trend. Conversely, when several works really do converge, explain the shared mechanism rather than just listing systems.
 
-- a technical assumption that the evidence challenges;
-- two independent works that genuinely converge on the same mechanism;
-- a newly measurable engineering boundary;
-- a project question whose answer has become narrower or more testable.
+A judgement also does **not** need to contain all of “what changed -> why it matters -> project implication”. State the part that carries the information gain. Do not force every judgement back to a configured project question.
 
-Bad forms include:
+Avoid:
 
-- listing `System A...; System B...; 两者共同表明...` merely because two items share a topic;
-- turning every observation into a slogan such as “X正在成为新的验收项”;
-- abstract titles that sound insightful but require the body to explain what the title meant;
-- compressing unrelated mechanisms into “从体感到数字”“从进程到资产” style catchphrases.
+- `System A...; System B...; 两者共同表明...` when the works only share a broad topic;
+- slogans such as “X正在成为新的验收项”;
+- compressed catchphrases such as “从体感到数字”“从进程到资产”;
+- abstract titles that require the body to decode what the title meant;
+- repeating all benchmark numbers already visible in detailed cards.
 
-Hard limits:
+Keep the title understandable on first read. The body may use ordinary technical prose instead of being compressed into a fixed sentence count. `evidence_item_ids` provides traceability, so include only the evidence that actually supports the judgement.
 
-- `title`: <=32 Chinese characters; make it understandable on first read.
-- `body`: <=180 characters and <=3 complete sentences.
-- At most 2 numeric mentions in a body. Detailed benchmarks belong in cards.
-- Do not copy detailed item titles or `core_conclusion`.
-- Do not enumerate systems one by one unless the contrast itself is the judgement.
-- Prefer ordinary technical Chinese over “金句”. A plain accurate sentence is better than a memorable abstraction.
+## No generated issue headline
 
-`evidence_item_ids` carries traceability, so the body does not need to restate every supporting result.
-
-## Headline
-
-`headline` is one restrained sentence about the issue as a whole. It may simply name the most important technical theme. Do not try to squeeze three independent trends into one colon-separated headline. If the issue is heterogeneous, say so plainly rather than inventing a unifying narrative.
+Do **not** generate a `headline`. The publication layer owns the fixed briefing title and date. Your job starts with `judgements`.
 
 ## Project insights: internal traceability, not reader copy
 
@@ -77,8 +70,7 @@ Produce `radar_signals` as concrete signals, not an article list:
 
 Return JSON only:
 
-- `headline`: one restrained Chinese sentence.
-- `judgements`: 1-3 justified objects with `title`, `body`, `evidence_item_ids`.
+- `judgements`: 1-3 concrete objects with `title`, `body`, `evidence_item_ids`; normally 2-3.
 - `topic_names`: unique topic display names.
 - `watch_next`: 1-3 concrete things to monitor before the next issue.
 - `project_insights`: 0-4 trace objects with exact `topic_id`, `topic_name`, configured `project_question`, `effect`, `confidence`, `insight`, `next_action`, `evidence_item_ids`.
