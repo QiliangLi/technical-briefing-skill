@@ -7,7 +7,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Install briefing quality, coverage, and cost-control policies."""
 
     from .agently_transport import install_agently_transport
-    from .archive_reader_v2 import install_archive_reader_v2_persistence
     from .balanced_evidence import install_balanced_evidence
     from .cache_fastpath import install_fact_cache_fastpath
     from .candidate_assessment import install_candidate_assessment
@@ -127,7 +126,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_reader_projection_v2()
     install_reader_quality_guard_v2()
     install_reader_blocks_renderer_v2()
-    install_archive_reader_v2_persistence()
     install_selective_fact_check()
     install_publication_stage()
     install_illustrated_publication()

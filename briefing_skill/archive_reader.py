@@ -63,8 +63,22 @@ def _sources(item: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(source) for source in item.get("sources") or []]
 
 
+def _reader_blocks(value: Any) -> list[dict[str, str | None]]:
+    blocks: list[dict[str, str | None]] = []
+    for row in value or []:
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or "").strip()
+        if not text:
+            continue
+        raw_key = row.get("heading_key")
+        key = str(raw_key).strip() if raw_key is not None else None
+        blocks.append({"heading_key": key or None, "text": text})
+    return blocks
+
+
 def _reader_item(role: str, item: dict[str, Any], prose: dict[str, Any]) -> dict[str, Any]:
-    return {
+    result = {
         "source_item_hash": str(
             (prose.get("_provenance") or {}).get("source_item_hash")
             or machine_item_hash(item)
@@ -80,6 +94,10 @@ def _reader_item(role: str, item: dict[str, Any], prose: dict[str, Any]) -> dict
         "body": [str(value or "").strip() for value in prose.get("body") or []],
         "takeaway": (str(prose.get("takeaway") or "").strip() or None),
     }
+    blocks = _reader_blocks(prose.get("blocks"))
+    if blocks:
+        result["blocks"] = blocks
+    return result
 
 
 def _judgements(value: Any) -> list[dict[str, Any]]:
@@ -288,7 +306,7 @@ def validate_reader_document(
             raise ValueError(f"{item_id}: source_item_hash changed")
         prose = {
             key: output.get(key)
-            for key in ("title", "lead", "body", "takeaway")
+            for key in ("title", "lead", "body", "takeaway", "blocks")
         }
         invented = sorted(_numbers(prose) - _numbers(item))
         if invented:

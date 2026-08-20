@@ -242,14 +242,26 @@ def test_future_archive_keeps_email_variants_separate_and_checks_reader_hash(tmp
     write_json(run_dir / "issue" / "issue.json", issue)
     write_json(run_dir / "items" / f"{event_id}.json", machine)
     title = "Agent跑得久以后，状态不该只留在进程里"
+    blocks = [
+        {
+            "heading_key": None,
+            "text": "这项工作把长任务状态保存为外部版本对象，失败后可以恢复。",
+        },
+        {
+            "heading_key": "mechanism",
+            "text": "新状态只有通过接受门才会提交，因此回滚和继续执行都有明确边界。",
+        },
+    ]
     write_json(
         run_dir / "reader_items" / f"{item_id}.json",
         {
             "brief_item_id": item_id,
             "reader_version": 1,
+            "reader_shape": "blocks_v2",
             "title": title,
-            "lead": "这项工作把长任务状态保存为外部版本对象，失败后可以恢复。",
-            "body": ["新状态只有通过接受门才会提交，因此回滚和继续执行都有明确边界。"],
+            "blocks": blocks,
+            "lead": blocks[0]["text"],
+            "body": [blocks[1]["text"]],
             "takeaway": None,
             "used_fields": ["core_conclusion", "mechanism"],
             "_provenance": {
@@ -274,7 +286,9 @@ def test_future_archive_keeps_email_variants_separate_and_checks_reader_hash(tmp
     assert (target / "original" / "email.html").read_text(encoding="utf-8") == plain
     assert (target / "original" / "email-illustrated.html").read_text(encoding="utf-8") == illustrated
     assert (target / "publication-manifest.json").read_bytes() == manifest_before
-    assert json.loads((target / "reader.json").read_text(encoding="utf-8"))["items"][item_id]["title"] == title
+    archived_item = json.loads((target / "reader.json").read_text(encoding="utf-8"))["items"][item_id]
+    assert archived_item["title"] == title
+    assert archived_item["blocks"] == blocks
 
     sidecar = json.loads((run_dir / "reader_items" / f"{item_id}.json").read_text(encoding="utf-8"))
     sidecar["_provenance"]["source_item_hash"] = "stale"
