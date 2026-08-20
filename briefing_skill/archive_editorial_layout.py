@@ -10,7 +10,7 @@ from .archive_reader import (
     write_publication_manifest,
 )
 from .editorial_intent import decorate_reader_cards
-from .reader_projection_v2 import decorate_reader_blocks
+from .reader_blocks_renderer_v2 import render_blocks_native
 from .utils import read_json
 
 
@@ -41,16 +41,14 @@ def render_archive_variant(
     legacy = {item_id: row for item_id, row in readers.items() if not row.get("blocks")}
 
     if v2:
-        base = decorate_reader_blocks(
+        base = render_blocks_native(
             base,
             v2,
             issue_date=str(reader.get("issue_date") or issue.get("date_to") or ""),
         )
-    # A current-run v2 sent original already contains the model-selected headings.
-    # Archive reader v1 stores compatibility lead/body fields, so do not erase those
-    # headings and re-infer them from keywords merely because the archive JSON has not
-    # yet been migrated to blocks. Truly old originals have no such marker and keep
-    # using the legacy deterministic decorator.
+    # Truly old reader documents have no blocks and keep using the legacy deterministic
+    # decorator. V2 archives are rebuilt from persisted blocks instead of re-inferring
+    # headings or treating lead/body as the display source of truth.
     if legacy and 'data-reader-section-heading="1"' not in base:
         base = decorate_reader_cards(base, _machine_items(issue), legacy)
     return base
