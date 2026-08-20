@@ -32,6 +32,8 @@ ENGINEERING_TERMS = ("release", "Release", "版本", "轮子", "CUDA", "ROCm", "
 HEADING_OVERRIDES: dict[str, dict[int, str | None]] = {
     # 2026-08-17 ZCube: the second paragraph explains the counter-intuitive cause.
     "0aaf1f8c19ef8c0026d594cd": {1: "contradiction"},
+    # 2026-08-17 Kairos: the second paragraph is the request-level scheduling rule.
+    "7da61876dce53e3e91656558": {1: "scheduling"},
     # 2026-08-02 DPDK 26.07: the second paragraph enumerates concrete release changes.
     "e869af2f2aac101341cb16d2": {1: "engineering"},
 }
