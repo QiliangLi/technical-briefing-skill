@@ -48,6 +48,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .radar_taxonomy import install_radar_taxonomy
     from .reader_projection import install_reader_projection
     from .reader_projection_v2 import install_reader_projection_v2
+    from .reader_quality_guard_v2 import install_reader_quality_guard_v2
     from .reader_writing_contract import install_reader_writing_contract
     from .release_family import install_release_family_aggregation
     from .relevance_efficiency import install_relevance_efficiency
@@ -123,6 +124,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_issue_stage()
     install_reader_projection()
     install_reader_projection_v2()
+    install_reader_quality_guard_v2()
     install_archive_reader_v2_persistence()
     install_selective_fact_check()
     install_publication_stage()
