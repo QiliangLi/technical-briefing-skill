@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_08f0269ef7fd181c9968",
+  "identity": {
+    "problem_key": "cross_node_prefix_reuse",
+    "mechanism_key": "hot_prefix_replication",
+    "target_key": "distributed_kv_placement"
+  },
+  "idea_type": "solution_concept",
+  "title": "把热前缀当作可复制对象，联合路由与跨节点 KV 放置",
+  "problem": "跨节点前缀复用若只依赖请求落点，会因缓存位置与路由割裂而重复计算或远程搬移。",
+  "hypothesis": "根据前缀热度复制 KV，并让路由读取同一放置状态，可以提高跨节点复用并降低 TTFT。",
+  "mechanism": "维护前缀热度、复制预算和节点目录，由路由与分布式张量池共同决定放置与检索。",
+  "expected_effect": "减少重复 Prefill 和跨节点冷检索，同时控制复制带来的内存与更新成本。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "69f88e7cf73dab2f22f7e6f3",
+      "issue_date": "2026-08-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.22648v1"
+      ],
+      "reason": "PTStore 以 CDN 式热前缀复制验证了跨节点分布式检索路径。"
+    },
+    {
+      "item_id": "a93564bff4afb59e45ade272",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.06007v1"
+      ],
+      "reason": "TensorCast 展示了把路由与 KV 放置放入统一张量生命周期层。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "热度变化下的复制抖动与目录一致性成本。",
+    "多租户隔离和前缀隐私边界。"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "带有限显存、前缀流行度和请求路由的多节点缓存模拟器。",
+    "inputs": [
+      "Zipf 热度参数",
+      "复制因子",
+      "缓存容量",
+      "节点数",
+      "前缀更新率"
+    ],
+    "baselines": [
+      "无复制的一致性哈希",
+      "本地 LRU",
+      "固定复制因子"
+    ],
+    "metrics": [
+      "P95 TTFT",
+      "跨节点传输字节",
+      "重复 Prefill 次数",
+      "显存占用",
+      "复制写放大"
+    ],
+    "support_criteria": [
+      "在显存预算内持续降低重复 Prefill 和尾 TTFT，复制写放大保持可控。"
+    ],
+    "reject_criteria": [
+      "热度漂移使复制抖动抵消检索收益，或目录/同步成本高于重算。"
+    ],
+    "limitations": [
+      "模拟不能覆盖真实模型前缀可共享性、租户安全和网络故障恢复。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-10",
+  "last_updated_issue": "2026-08-11",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_fd86a73915d0aa587361",
+      "issue_date": "2026-08-10",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "已发布证据给出了明确问题和可检验机制，因此建立 Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "a93564bff4afb59e45ade272"
+      ]
+    },
+    {
+      "event_id": "idea_decision_3f8d857fffb0610a3cd5",
+      "issue_date": "2026-08-11",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "69f88e7cf73dab2f22f7e6f3"
+      ]
+    }
+  ]
+}

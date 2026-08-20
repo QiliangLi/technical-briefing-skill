@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_d994d97852383184acfe",
+  "identity": {
+    "problem_key": "wan_state_transfer_volume",
+    "mechanism_key": "delta_residual_compression",
+    "target_key": "kv_and_model_state"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "增量与残差压缩能否把跨域状态同步从带宽瓶颈变成可调度开销",
+  "problem": "KV 和模型状态跨域发布体积大，但不同状态的稀疏变化与可压缩结构并不相同。",
+  "hypothesis": "对权重变化做稀疏增量、对 KV 做锚点残差，可显著减少传输字节，但 WAN 尾延迟收益仍取决于编解码和按需访问。",
+  "mechanism": "按状态类型选择变化检测或锚点残差表示，并在传输前后保留可恢复或可按需访问的结构。",
+  "expected_effect": "降低跨域同步字节并形成可以纳入调度的压缩率、编解码开销和链路时延权衡。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "d88d425cdec8fce0d0f46755",
+      "issue_date": "2026-08-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.00455v1"
+      ],
+      "reason": "AReaL-DTE 证明稀疏增量可压缩频繁发布的模型权重，但 WAN 时延仍非实测。"
+    },
+    {
+      "item_id": "90adc6a59fb3586708fdb7e7",
+      "issue_date": "2026-08-15",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.02901v1"
+      ],
+      "reason": "AnchorKV 给出保留 token 可达性的锚点残差 KV 表示。"
+    },
+    {
+      "item_id": "a097b982991694268bbb55b3",
+      "issue_date": "2026-08-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.17715v1"
+      ],
+      "reason": "C²KV 提供面向非前缀 KV 搬移的可组合压缩证据。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "真实 WAN RTT、抖动和丢包下的尾延迟。",
+    "压缩表示对随机访问与更新频率的影响。"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "记录真实状态变化轨迹，在可控 WAN 仿真链路上回放传输与恢复。",
+    "inputs": [
+      "权重更新稀疏度",
+      "KV 长度与可压缩率",
+      "RTT、带宽、丢包率",
+      "编解码并发度"
+    ],
+    "baselines": [
+      "全量传输",
+      "通用无损压缩",
+      "只做应用层分片"
+    ],
+    "metrics": [
+      "传输字节",
+      "P95 完成时间",
+      "编码与恢复时间",
+      "随机访问开销",
+      "恢复正确性"
+    ],
+    "support_criteria": [
+      "在多档 WAN 条件下端到端完成时间稳定低于全量传输，且恢复结果满足正确性约束。"
+    ],
+    "reject_criteria": [
+      "编解码或随机访问开销抵消带宽节省，或收益只存在于不现实的高稀疏度。"
+    ],
+    "limitations": [
+      "链路回放不能覆盖跨云对象存储、拥塞控制和故障重试的全部行为。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-02",
+  "last_updated_issue": "2026-08-15",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_cbe7507728f18fb83733",
+      "issue_date": "2026-08-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "已发布证据给出了明确问题和可检验机制，因此建立 Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "a097b982991694268bbb55b3"
+      ]
+    },
+    {
+      "event_id": "idea_decision_ec99701d18d590ec1640",
+      "issue_date": "2026-08-11",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "d88d425cdec8fce0d0f46755"
+      ]
+    },
+    {
+      "event_id": "idea_decision_d18a9a946e57e3245a50",
+      "issue_date": "2026-08-15",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "90adc6a59fb3586708fdb7e7"
+      ]
+    }
+  ]
+}

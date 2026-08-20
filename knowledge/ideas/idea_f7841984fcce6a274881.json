@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_f7841984fcce6a274881",
+  "identity": {
+    "problem_key": "kv_transfer_tail_latency",
+    "mechanism_key": "transfer_recompute_locality_selection",
+    "target_key": "pd_disaggregated_inference"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "KV 传输、重算与就地计算存在随带宽和命中率变化的交叉点",
+  "problem": "PD 解耦推理并非总该完整传输 KV；链路带宽、KV 重要性和请求放置会改变最优选择。",
+  "hypothesis": "在统一负载下，必要 KV 优先传输、带宽感知重算和解码节点就地 Prefill 会在不同网络条件下各自占优。",
+  "mechanism": "按请求估算 KV 传输、局部重算和就地计算代价，再选择执行位置与传输粒度。",
+  "expected_effect": "在不牺牲输出正确性的前提下降低尾部 TTFT，并减少无效 KV 搬移。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "081c683d89c0a8496e81e918",
+      "issue_date": "2026-08-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.28150v1"
+      ],
+      "reason": "SmartGen 展示了必要 KV 先行和后台补全在受限带宽下的收益。"
+    },
+    {
+      "item_id": "d68187e106469502469bd400",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.02043v1"
+      ],
+      "reason": "Kairos 通过 Decode 节点就地 Prefill 删除一类跨节点 KV 传输。"
+    },
+    {
+      "item_id": "ee715d6b89c2722b10eafa3e",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.10987v1"
+      ],
+      "reason": "AAFLOW+ 将传输或重算作为带宽感知选择。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "多租户 P95/P99 下的交叉点是否稳定。",
+    "代价预测错误与画像漂移会造成多大回退。"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "离散事件模型覆盖 Prefill、KV 传输、Decode 排队和可选重算。",
+    "inputs": [
+      "RTT 与带宽扫描",
+      "KV 大小与可选比例",
+      "缓存命中率",
+      "Prefill/Decode 到达率"
+    ],
+    "baselines": [
+      "完整 KV 传输",
+      "始终重算",
+      "固定请求放置"
+    ],
+    "metrics": [
+      "P50/P95/P99 TTFT",
+      "TPOT",
+      "传输字节",
+      "GPU 与网络利用率"
+    ],
+    "support_criteria": [
+      "联合选择策略在一段可解释参数区间内同时改善尾 TTFT 和传输量。"
+    ],
+    "reject_criteria": [
+      "策略只在极窄参数点获益，或预测开销使尾延迟不优于固定基线。"
+    ],
+    "limitations": [
+      "模拟不能覆盖真实通信栈抖动、GPU 内核干扰和调度实现开销。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-02",
+  "last_updated_issue": "2026-08-10",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_4f7da6ed9342bd9a8339",
+      "issue_date": "2026-08-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "已发布证据给出了明确问题和可检验机制，因此建立 Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "081c683d89c0a8496e81e918"
+      ]
+    },
+    {
+      "event_id": "idea_decision_978ab100396b02c699e9",
+      "issue_date": "2026-08-10",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "d68187e106469502469bd400",
+        "ee715d6b89c2722b10eafa3e"
+      ]
+    }
+  ]
+}
