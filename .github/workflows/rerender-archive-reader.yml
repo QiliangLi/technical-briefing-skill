@@ -6,9 +6,13 @@ on:
     paths:
       - 'briefing_skill/editorial_intent.py'
       - 'briefing_skill/archive_editorial_layout.py'
+      - 'briefing_skill/archive_reader.py'
+      - 'briefing_skill/archive_reader_v2.py'
+      - 'briefing_skill/reader_projection_v2.py'
       - 'prompts/reader-item-writing.md'
       - 'prompts/issue-synthesis.md'
       - 'schemas/reader-item-writing.schema.json'
+      - 'schemas/archive-reader.schema.json'
       - 'scripts/rerender_archive_reader_layout.py'
       - '.github/workflows/rerender-archive-reader.yml'
   workflow_dispatch:
@@ -60,6 +64,7 @@ jobs:
           mkdir -p "$publish_dir"
           cp -R site/. "$publish_dir/"
           cp -R archive "$publish_dir/archive"
+          cp -R knowledge "$publish_dir/knowledge"
           cp -R pics "$publish_dir/pics"
           touch "$publish_dir/.nojekyll"
 
@@ -72,7 +77,9 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch --orphan pages-publish
-          git rm -rf .
+          # An orphan branch starts with an empty index. Clean the checkout before
+          # copying the assembled publication tree, matching the primary Pages workflow.
+          git clean -fdx
           cp -R "$publish_dir/." .
           git add -A
           git commit -m "pages: publish archive reader ${published_from}"
