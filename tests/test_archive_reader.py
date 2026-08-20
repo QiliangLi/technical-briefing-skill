@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 
 from briefing_skill.archive_reader import (
     apply_historical_rewrite,
@@ -191,8 +192,15 @@ def test_historical_rewrite_preserves_original_layout_and_images(tmp_path: Path)
     assert "Agent跑得久以后，状态不该只留在进程里" in html
     assert "新状态只有通过接受门才会提交" in html
     assert "旧摘要" not in html
+    assert "旧机制" not in html
+    assert "旧证据" not in html
+    assert "旧边界" not in html
+    assert "旧启发" not in html
     assert 'href="https://example.org/harness"' in html
     assert html.count("<img") == original.count("<img")
+    item_node = BeautifulSoup(html, "html.parser").find(id=f"item-{item_id}")
+    assert item_node is not None
+    assert not item_node.find("b", string=lambda value: value and value.strip() in {"机制", "证据", "边界", "启发"})
 
 
 def test_prepare_rewrite_is_one_issue_and_exposes_locked_output(tmp_path: Path) -> None:

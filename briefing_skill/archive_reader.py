@@ -480,21 +480,46 @@ def _rewrite_original_html(
         if lead is not None:
             _set_tag_text(lead, row.get("lead"))
 
-        fields = {}
+        fields: dict[str, Tag] = {}
+        field_nodes: list[Tag] = []
         for field in node.find_all("div", recursive=False):
             label = field.find("b", recursive=False)
             if label is not None:
                 fields[label.get_text(" ", strip=True)] = field
+                field_nodes.append(field)
+
         # The new reader contract intentionally does not expose fixed machine
-        # slots.  Put its one-to-three paragraphs into the first slots, map an
-        # optional project takeaway to 启发, and clear any old prose that has no
-        # corresponding reader text instead of leaking stale wording.
-        slot_values = {"机制": None, "证据": None, "边界": None, "启发": row.get("takeaway")}
-        for label, value in zip(("机制", "证据", "边界"), row.get("body") or []):
-            slot_values[label] = value
-        for label, field in fields.items():
-            if label in slot_values:
-                _set_labeled_text(field, slot_values[label])
+        # slots. Replace the old labelled field cluster with exactly the
+        # reader's paragraphs and optional takeaway. The enclosing card/table,
+        # typography, links and images remain untouched, but empty legacy slots
+        # cannot leave large blank areas or stale machine wording behind.
+        source_block = next(
+            (
+                field
+                for field in node.find_all("div", recursive=False)
+                if field not in field_nodes and "阅读原文" in field.get_text(" ", strip=True)
+            ),
+            None,
+        )
+        styles = [str(field.get("style") or "") for field in field_nodes]
+        for field in field_nodes:
+            field.decompose()
+        replacement_values = [str(value or "").strip() for value in row.get("body") or []]
+        takeaway = str(row.get("takeaway") or "").strip()
+        if takeaway:
+            replacement_values.append(takeaway)
+        for index, value in enumerate(replacement_values):
+            if not value:
+                continue
+            replacement = soup.new_tag("div")
+            replacement["style"] = styles[min(index, len(styles) - 1)] if styles else (
+                "font-size:12px;line-height:1.42;color:#444;margin-top:4px"
+            )
+            replacement.string = value
+            if source_block is not None:
+                source_block.insert_before(replacement)
+            else:
+                node.append(replacement)
 
         # A malformed legacy item should not cause a migration to silently
         # replace the whole email.  The immutable source remains available for
