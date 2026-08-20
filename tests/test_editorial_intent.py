@@ -59,25 +59,44 @@ def test_deep_card_gets_at_most_two_semantic_sections() -> None:
     assert len(sections) == 2
 
 
-def test_real_release_keeps_engineering_focus() -> None:
+def test_official_release_keeps_engineering_focus() -> None:
     item = {
-        "type": "Release",
-        "title": "vLLM v0.27.1正式发布",
-        "core_conclusion": "本次版本发布主要包含兼容性和接口更新。",
-        "mechanism": "运行时增加新的配置入口。",
+        "type": "官方发布",
+        "title": "DPDK 26.07",
+        "core_conclusion": "这个版本把mlx5硬件Steering接口转为稳定API。",
+        "mechanism": "selective Rx减少无用包段的mempool分配。",
         "result": "",
         "boundary": "",
         "project_relevance": "",
     }
-    intent = derive_editorial_intent(item, item_role="supplement", brief_item_id="vllm-release")
+    intent = derive_editorial_intent(item, item_role="supplement", brief_item_id="dpdk-release")
     assert intent["primary_focus"] == "engineering"
     sections = reader_sections(
-        {"body": ["运行时增加新的配置入口。"]},
+        {"body": ["selective Rx减少无用包段的mempool分配。"]},
         item,
         item_role="supplement",
-        brief_item_id="vllm-release",
+        brief_item_id="dpdk-release",
     )
     assert sections[0]["heading"] == "实际改了什么"
+
+
+def test_code_relation_mechanism_does_not_fall_into_cache_heading() -> None:
+    item = {
+        "type": "论文",
+        "title": "OwlPath",
+        "core_conclusion": "把多轮代码探索压成一次可查询的结构关系。",
+        "mechanism": "把CodeGraph符号和关系边映射到OWL2，用SPARQL查询多跳传递闭包。",
+        "result": "Token和API调用均下降。",
+        "boundary": "首次索引仍有构建成本。",
+        "project_relevance": "",
+    }
+    sections = reader_sections(
+        {"body": ["把CodeGraph符号和四类关系边映射到OWL2，SPARQL负责查询传递闭包。"]},
+        item,
+        item_role="supplement",
+        brief_item_id="owlpath",
+    )
+    assert sections[0]["heading"] == "关系怎么查询"
 
 
 def test_issue_wide_repetition_guard_detects_project_verb_rhythm() -> None:
@@ -131,7 +150,16 @@ def test_2026_08_17_archive_can_be_reprojected_with_specific_headings() -> None:
     html = render_archive_variant(issue_dir, issue, reader, variant="email.html")
     assert 'data-reader-section-heading="1"' in html
     assert "为什么会这样" in html  # ZCube
-    assert "调度怎么判断" in html  # Kairos
-    assert "缓存怎么处理" in html  # AAFLOW+/PTStore family
+    assert "调度怎么判断" in html  # Kairos / AAFLOW+
+    assert "缓存怎么处理" in html  # PTStore family
     assert "Genesis把长时程开发的记忆留在项目里" in html
     assert (issue_dir / "original" / "email.html").is_file()
+
+
+def test_2026_08_02_archive_keeps_release_and_code_graph_headings_distinct() -> None:
+    issue_dir = ROOT / "archive" / "issues" / "2026-08-02"
+    issue = read_json(issue_dir / "issue.json", {})
+    reader = read_json(issue_dir / "reader.json", {})
+    html = render_archive_variant(issue_dir, issue, reader, variant="email.html")
+    assert "实际改了什么" in html  # DPDK official release
+    assert "关系怎么查询" in html  # OwlPath code-relation mechanism

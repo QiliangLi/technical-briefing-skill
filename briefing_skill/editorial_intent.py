@@ -18,11 +18,14 @@ ENGINEERING_TERMS = (
     "production deployment", "生产部署", "接口新增", "新增接口", "runtime更新", "运行时更新",
 )
 SCHEDULING_TERMS = ("调度", "scheduler", "路由", "routing", "队列", "排队")
-CACHE_TERMS = ("kv", "cache", "缓存", "前缀")
+CODE_RELATION_TERMS = (
+    "代码图", "关系图", "本体", "sparql", "owl2", "调用链", "继承链", "多跳", "符号关系",
+)
 BOUNDARY_TERMS = ("但", "仅", "只", "没有", "未", "缺少", "依赖", "局限")
 TITLE_FAMILY_RE = re.compile(
     r"^[A-Za-z][A-Za-z0-9+._-]{1,28}(?:用|让|把|靠|按|以|通过|借|将|去掉|取消)[^：:]{4,}$"
 )
+CACHE_ENGLISH_RE = re.compile(r"(?<![a-z0-9])(?:kv(?:\s*cache)?|kvcache|cache)(?![a-z0-9])", re.I)
 
 
 def _text(item: dict[str, Any], *fields: str) -> str:
@@ -41,9 +44,14 @@ def _is_engineering_event(machine_item: dict[str, Any]) -> bool:
 
     item_type = _text(machine_item, "type")
     title_and_conclusion = _text(machine_item, "title", "core_conclusion")
-    if any(token in item_type for token in ("release", "版本", "工程", "产品")):
+    if any(token in item_type for token in ("release", "发布", "版本", "工程", "产品", "更新")):
         return True
     return any(term in title_and_conclusion for term in ENGINEERING_TERMS)
+
+
+def _has_cache_signal(text: str) -> bool:
+    lowered = str(text or "").lower()
+    return "缓存" in lowered or "前缀" in lowered or bool(CACHE_ENGLISH_RE.search(lowered))
 
 
 def derive_editorial_intent(
@@ -122,9 +130,11 @@ def section_heading(role: str, machine_item: dict[str, Any], paragraph: str = ""
     if role == "implication":
         return "值得试什么"
     if role == "mechanism":
+        if any(term in text for term in CODE_RELATION_TERMS):
+            return "关系怎么查询"
         if any(term in text for term in SCHEDULING_TERMS):
             return "调度怎么判断"
-        if any(term in text for term in CACHE_TERMS):
+        if _has_cache_signal(text):
             return "缓存怎么处理"
         return "怎么做的"
     return "具体怎么回事"
