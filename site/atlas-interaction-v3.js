@@ -8,12 +8,17 @@ function canonicalIdentity(item) {
     try {
       const u = new URL(rawUrl, window.location.href);
       u.hash = '';
-      u.search = '';
+      [...u.searchParams.keys()].forEach(key => {
+        if (/^(?:utm_.+|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid|igshid)$/i.test(key)) {
+          u.searchParams.delete(key);
+        }
+      });
+      u.searchParams.sort();
       let path = u.pathname.replace(/\/$/, '');
       if (/arxiv\.org$/i.test(u.hostname)) path = path.replace(/v\d+$/i, '');
-      return `url:${u.hostname.toLowerCase()}${path.toLowerCase()}`;
+      return `url:${u.hostname.toLowerCase()}${path.toLowerCase()}${u.search}`;
     } catch (_) {
-      return `url:${rawUrl.replace(/[?#].*$/, '').replace(/\/$/, '').toLowerCase()}`;
+      return `url:${rawUrl.replace(/#.*$/, '').replace(/\/$/, '').toLowerCase()}`;
     }
   }
   if (item.paper_key) return `key:${String(item.paper_key).toLowerCase()}`;
@@ -143,14 +148,18 @@ function initPanZoom(){
   },{passive:false});
   svg.addEventListener('pointerdown',e=>{
     if(e.button!==0)return;
-    svg.setPointerCapture(e.pointerId);
+    if(e.target?.closest?.('.node'))return;
     state.drag={pointerId:e.pointerId,x:e.clientX,y:e.clientY,view:{...state.view},moved:false};
   });
   svg.addEventListener('pointermove',e=>{
     if(!state.drag||state.drag.pointerId!==e.pointerId)return;
     const total=Math.hypot(e.clientX-state.drag.x,e.clientY-state.drag.y);
     if(!state.drag.moved&&total<5)return;
-    if(!state.drag.moved){state.drag.moved=true;svg.classList.add('dragging')}
+    if(!state.drag.moved){
+      state.drag.moved=true;
+      svg.setPointerCapture(e.pointerId);
+      svg.classList.add('dragging');
+    }
     const r=svg.getBoundingClientRect();
     const dx=(e.clientX-state.drag.x)/r.width*state.drag.view.w;
     const dy=(e.clientY-state.drag.y)/r.height*state.drag.view.h;

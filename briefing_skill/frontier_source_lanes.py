@@ -80,7 +80,39 @@ def _candidate_from_row(radar, row: dict[str, Any], category: str) -> dict[str, 
     }
 
 
-def _extra_observation_candidates(radar, task_service, run_id: str) -> list[dict[str, Any]]:
+def _radar_exclusions(
+    task_service,
+    issue_input: dict[str, Any],
+) -> tuple[set[str], set[str]]:
+    urls = {
+        canonicalize_url(source.get("url"))
+        for item in issue_input.get("items") or []
+        for source in item.get("sources") or []
+        if source.get("url")
+    }
+    history = task_service.db.fetchall(
+        "SELECT canonical_url,normalized_title FROM radar_history"
+    )
+    urls.update(
+        canonicalize_url(row.get("canonical_url"))
+        for row in history
+        if row.get("canonical_url")
+    )
+    titles = {
+        str(row.get("normalized_title") or "").lower()
+        for row in history
+        if row.get("normalized_title")
+    }
+    return {value for value in urls if value}, titles
+
+
+def _extra_observation_candidates(
+    radar,
+    task_service,
+    run_id: str,
+    issue_input: dict[str, Any],
+) -> list[dict[str, Any]]:
+    excluded_urls, excluded_titles = _radar_exclusions(task_service, issue_input)
     rows = task_service.db.fetchall(
         """
         SELECT r.id,r.title,r.summary,r.original_url,r.canonical_url,r.published_at,r.priority,
@@ -94,14 +126,18 @@ def _extra_observation_candidates(radar, task_service, run_id: str) -> list[dict
         (run_id, run_id, FRONTIER_TOPIC_ID),
     )
     result: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    seen_urls: set[str] = set(excluded_urls)
+    seen_titles: set[str] = set(excluded_titles)
     for row in rows:
         age = published_age_days(row.get("published_at"))
         if age is None or age > 7:
             continue
         url = str(row.get("original_url") or row.get("canonical_url") or "").strip()
         canonical = canonicalize_url(url)
-        if not canonical or canonical in seen:
+        if not canonical or canonical in seen_urls:
+            continue
+        title_key = radar._normalise_title(row.get("title"))
+        if title_key and title_key in seen_titles:
             continue
         category = (
             FRONTIER_CATEGORY
@@ -112,7 +148,9 @@ def _extra_observation_candidates(radar, task_service, run_id: str) -> list[dict
         if candidate is None:
             continue
         result.append(candidate)
-        seen.add(canonical)
+        seen_urls.add(canonical)
+        if title_key:
+            seen_titles.add(title_key)
     return result
 
 
@@ -181,7 +219,7 @@ def install_frontier_source_lanes() -> None:
 
     def build_radar_candidates(task_service, run_id: str, issue_input: dict[str, Any]):
         base = original_build(task_service, run_id, issue_input)
-        extra = _extra_observation_candidates(radar, task_service, run_id)
+        extra = _extra_observation_candidates(radar, task_service, run_id, issue_input)
         return _rebalance_candidates(radar, base, extra)
 
     radar.build_radar_candidates = build_radar_candidates
