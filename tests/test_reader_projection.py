@@ -33,7 +33,7 @@ def _machine_item() -> dict:
     }
 
 
-def test_reader_schema_makes_takeaway_optional_and_body_variable() -> None:
+def test_reader_schema_uses_optional_semantic_headings_and_variable_blocks() -> None:
     root = Path(__file__).resolve().parents[1]
     schema = json.loads((root / "schemas" / "reader-item-writing.schema.json").read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
@@ -42,14 +42,25 @@ def test_reader_schema_makes_takeaway_optional_and_body_variable() -> None:
             {
                 "brief_item_id": "item-1",
                 "title": "ZhuLong：让Agent自己试出文档里没有写的API用法",
-                "lead": "内部工具的API文档经常不完整，ZhuLong尝试让Agent在沙箱里自己验证API行为。",
-                "body": ["系统把试出来的参数约束和错误经验重新写入增强文档，后续任务可以直接复用这些经验。"],
+                "blocks": [
+                    {
+                        "heading_key": None,
+                        "text": "内部工具的API文档经常不完整，ZhuLong尝试让Agent在沙箱里自己验证API行为。",
+                    },
+                    {
+                        "heading_key": "mechanism",
+                        "text": "系统把试出来的参数约束和错误经验重新写入增强文档，后续任务可以直接复用这些经验。",
+                    },
+                ],
                 "used_fields": ["core_conclusion", "mechanism"],
             }
         ]
     }
     assert list(validator.iter_errors(payload)) == []
-    assert "takeaway" not in schema["properties"]["results"]["items"]["required"]
+    block_schema = schema["properties"]["results"]["items"]["properties"]["blocks"]
+    assert block_schema["minItems"] == 1
+    assert block_schema["maxItems"] == 3
+    assert None in block_schema["items"]["properties"]["heading_key"]["enum"]
 
 
 def test_reader_contract_rejects_formulaic_slot_shaped_ai_prose() -> None:
@@ -107,7 +118,6 @@ def test_reader_projection_is_run_scoped_even_when_facts_came_from_sqlite_cache(
         }
     ]
     payload = _reader_projection_payload(Pipeline(), selected)
-
     assert payload["items"][0]["brief_item_id"] == "item-1"
     assert "_provenance" not in payload["items"][0]["machine_item"]
     assert payload["constraints"]["facts_may_come_from_local_sqlite_cache_but_reader_copy_must_be_current_run"] is True
