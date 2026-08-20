@@ -9,8 +9,13 @@ from bs4 import BeautifulSoup, Tag
 CONTRADICTION_TERMS = (
     "反而", "却", "悖论", "反直觉", "更少", "去掉", "取消", "不增反降", "不需要",
 )
+# Engineering is intentionally narrow. Generic words such as “实现” occur in
+# almost every systems paper and used to collapse unrelated cards into the same
+# “实际改了什么” heading. These terms indicate an actual release/deployment or
+# interface/runtime engineering event rather than merely describing an algorithm.
 ENGINEERING_TERMS = (
-    "release", "版本", "实现", "部署", "工程", "开源", "接口", "runtime", "运行时",
+    "release", "版本发布", "发布版本", "正式发布", "候选发布", "开源", "上线",
+    "production deployment", "生产部署", "接口新增", "新增接口", "runtime更新", "运行时更新",
 )
 SCHEDULING_TERMS = ("调度", "scheduler", "路由", "routing", "队列", "排队")
 CACHE_TERMS = ("kv", "cache", "缓存", "前缀")
@@ -29,6 +34,16 @@ def _stable_variant(value: str, options: tuple[str, ...]) -> str:
         return "plain"
     score = sum((index + 1) * ord(ch) for index, ch in enumerate(str(value or "")))
     return options[score % len(options)]
+
+
+def _is_engineering_event(machine_item: dict[str, Any]) -> bool:
+    """Recognize actual release/deployment events without matching generic paper prose."""
+
+    item_type = _text(machine_item, "type")
+    title_and_conclusion = _text(machine_item, "title", "core_conclusion")
+    if any(token in item_type for token in ("release", "版本", "工程", "产品")):
+        return True
+    return any(term in title_and_conclusion for term in ENGINEERING_TERMS)
 
 
 def derive_editorial_intent(
@@ -51,7 +66,7 @@ def derive_editorial_intent(
 
     if any(term in all_text for term in CONTRADICTION_TERMS):
         primary = "contradiction"
-    elif any(term in all_text for term in ENGINEERING_TERMS):
+    elif _is_engineering_event(machine_item):
         primary = "engineering"
     elif mechanism:
         primary = "mechanism"
