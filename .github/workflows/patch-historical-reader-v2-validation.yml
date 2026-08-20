@@ -1,0 +1,74 @@
+name: Patch archive Reader v2 validation invariants
+
+on:
+  push:
+    branches: [feat/migrate-historical-reader-v2]
+    paths:
+      - '.github/workflows/patch-historical-reader-v2-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/migrate-historical-reader-v2
+      - name: Patch focused invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('briefing_skill/archive_reader.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''        prose = {
+            key: output.get(key)
+            for key in ("title", "lead", "body", "takeaway")
+        }
+        invented = sorted(_numbers(prose) - _numbers(item))
+        if invented:
+            raise ValueError(f"{item_id}: reader text introduces numbers {invented}")
+'''
+          new = '''        prose = {
+            key: output.get(key)
+            for key in ("title", "lead", "body", "takeaway", "blocks")
+        }
+        invented = sorted(_numbers(prose) - _numbers(item))
+        if invented:
+            raise ValueError(f"{item_id}: reader text introduces numbers {invented}")
+        blocks = [row for row in output.get("blocks") or [] if isinstance(row, dict)]
+        if blocks:
+            block_texts = [str(row.get("text") or "").strip() for row in blocks]
+            if str(output.get("lead") or "").strip() != block_texts[0]:
+                raise ValueError(f"{item_id}: lead must mirror the first reader block")
+            if [str(value or "").strip() for value in output.get("body") or []] != block_texts[1:]:
+                raise ValueError(f"{item_id}: body must mirror the remaining reader blocks")
+            if str(output.get("takeaway") or "").strip():
+                raise ValueError(f"{item_id}: v2 block reader must not persist a separate takeaway")
+'''
+          if old not in text:
+              raise SystemExit('archive validation target not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          test = Path('tests/test_archive_reader.py')
+          text = test.read_text(encoding='utf-8')
+          text = text.replace(
+              'match="bound to a different current item"',
+              'match="bound to a different machine item"',
+          )
+          test.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit patch and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/patch-historical-reader-v2-validation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- briefing_skill/archive_reader.py tests/test_archive_reader.py .github/workflows/patch-historical-reader-v2-validation.yml
+          git commit -m 'fix: validate archived reader blocks as source of truth'
+          git push origin HEAD:feat/migrate-historical-reader-v2
