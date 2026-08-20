@@ -311,5 +311,5 @@ def test_future_archive_rejects_sidecar_bound_to_another_current_item(tmp_path: 
             },
         )
 
-    with pytest.raises(ValueError, match="bound to a different current item"):
+    with pytest.raises(ValueError, match="bound to a different machine item"):
         archive_issue(tmp_path, run_id)
