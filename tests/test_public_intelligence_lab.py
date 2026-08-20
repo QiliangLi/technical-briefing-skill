@@ -56,6 +56,7 @@ def test_reader_projection_and_original_email_contract_are_visible():
 
     assert "reader.json" in app
     assert "mergeReaderItem" in app
+    assert "reader?.radar" in app
     assert "Machine IDs" in views
     assert "查看实际发送版" in views
     assert "issue.original_href" in views
@@ -81,11 +82,15 @@ def test_route_reader_merge_and_radar_dedupe_contracts():
           {{item_id:'a1', title:'机器标题', summary:'机器摘要'}},
           {{brief_item_id:'a1', title:'读者标题', lead:'读者导语'}}
         );
+        const bodyMerged = data.mergeReaderItem(
+          {{item_id:'a2', title:'机器标题'}},
+          {{title:'读者标题', body:['第一段','第二段']}}
+        );
         const rows = data.mergeRadarWithoutDuplicates(
           [{{role:'radar', arxiv_id:'2608.10000', title:'同一信号', url:'https://arxiv.org/abs/2608.10000v2?utm_source=a'}}],
           [{{role:'radar', title:'同一信号', url:'https://arxiv.org/abs/2608.10000v1'}}]
         );
-        process.stdout.write(JSON.stringify({{route, merged, count:rows.length}}));
+        process.stdout.write(JSON.stringify({{route, merged, bodyMerged, count:rows.length}}));
         """
     )
 
@@ -93,6 +98,7 @@ def test_route_reader_merge_and_radar_dedupe_contracts():
     assert output["merged"]["title"] == "读者标题"
     assert output["merged"]["summary"] == "读者导语"
     assert output["merged"]["machine_title"] == "机器标题"
+    assert output["bodyMerged"]["summary"] == "第一段\n\n第二段"
     assert output["count"] == 1
 
 

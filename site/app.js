@@ -67,7 +67,10 @@ async function loadArchiveIssue(meta) {
     return merged;
   });
   const derivedRadar = BriefingData.radarFromIssue(issueDoc, meta.date).map(row => {
-    const readerRow = readerMap.get(row.item_id);
+    const radarIdentity = BriefingData.canonicalIdentity(row, location.href);
+    const readerRow = (reader?.radar || []).find(candidate =>
+      BriefingData.canonicalIdentity(candidate, location.href) === radarIdentity
+    );
     const merged = BriefingData.mergeReaderItem(row, readerRow);
     merged.keywords = inferKeywords(merged);
     return merged;
@@ -231,6 +234,7 @@ async function bootWorkbench() {
   window.addEventListener('hashchange',renderRoute);
   try { await loadData(); }
   catch(error){ $('#loadBanner').hidden=false;$('#loadBanner').textContent=`站点数据加载失败：${error.message}`;return; }
+  renderKeywordChips();
   if(state.knowledgeError){$('#loadBanner').hidden=false;$('#loadBanner').textContent='Roadmap / Idea 物化数据尚不可用；日报与证据图谱仍可查看。';}
   renderRoute();
 }

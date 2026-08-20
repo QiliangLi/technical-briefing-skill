@@ -64,9 +64,10 @@
   function readerSummary(readerItem) {
     if (!readerItem || typeof readerItem !== 'object') return '';
     const paragraphs = Array.isArray(readerItem.paragraphs) ? readerItem.paragraphs.filter(Boolean) : [];
+    const body = Array.isArray(readerItem.body) ? readerItem.body.filter(Boolean).join('\n\n') : readerItem.body;
     return text(
       readerItem.summary || readerItem.lead || readerItem.core_conclusion || readerItem.signal_summary ||
-      readerItem.body || paragraphs.join('\n\n') || readerItem.takeaway
+      body || paragraphs.join('\n\n') || readerItem.takeaway
     );
   }
 
