@@ -80,6 +80,20 @@ def _issue(run_id: str, item: dict) -> dict:
 def _reader(issue: dict) -> dict:
     item = issue["core_items"][0]
     item_id = item["brief_item_id"]
+    blocks = [
+        {
+            "heading_key": None,
+            "text": "这项工作把长任务状态保存为外部版本对象，失败后可以恢复。",
+        },
+        {
+            "heading_key": "mechanism",
+            "text": "新状态只有通过接受门才会提交，因此回滚和继续执行都有明确边界。",
+        },
+        {
+            "heading_key": "implication",
+            "text": "可先验证状态恢复是否真的减少重复工作。",
+        },
+    ]
     return {
         "schema_version": 1,
         "reader_contract_version": 1,
@@ -104,9 +118,10 @@ def _reader(issue: dict) -> dict:
                 "score": item["score"],
                 "sources": item["sources"],
                 "title": "Agent跑得久以后，状态不该只留在进程里",
-                "lead": "这项工作把长任务状态保存为外部版本对象，失败后可以恢复。",
-                "body": ["新状态只有通过接受门才会提交，因此回滚和继续执行都有明确边界。"],
-                "takeaway": "可以先验证状态恢复是否真的减少重复工作。",
+                "lead": blocks[0]["text"],
+                "body": [blocks[1]["text"], blocks[2]["text"]],
+                "takeaway": None,
+                "blocks": blocks,
             }
         },
         "radar": [],
@@ -296,5 +311,5 @@ def test_future_archive_rejects_sidecar_bound_to_another_current_item(tmp_path: 
             },
         )
 
-    with pytest.raises(ValueError, match="bound to a different machine item"):
+    with pytest.raises(ValueError, match="bound to a different current item"):
         archive_issue(tmp_path, run_id)
