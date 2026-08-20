@@ -1,0 +1,89 @@
+name: Apply native archive block persistence fix v2
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-archive-blocks-native-persistence-v2.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/archive-blocks-native-persistence
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: python -m pip install -e . pytest
+      - name: Apply source and regression-test changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('briefing_skill/archive_reader.py')
+          s = p.read_text()
+          old = '''def _reader_item(role: str, item: dict[str, Any], prose: dict[str, Any]) -> dict[str, Any]:\n    return {\n        "source_item_hash": str(\n            (prose.get("_provenance") or {}).get("source_item_hash")\n            or machine_item_hash(item)\n        ),\n        "role": role,\n        "topic_id": item.get("topic_id"),\n        "direction_id": item.get("direction_id"),\n        "published_at": item.get("published_at"),\n        "score": item.get("score"),\n        "sources": _sources(item),\n        "title": str(prose.get("title") or "").strip(),\n        "lead": str(prose.get("lead") or "").strip(),\n        "body": [str(value or "").strip() for value in prose.get("body") or []],\n        "takeaway": (str(prose.get("takeaway") or "").strip() or None),\n    }\n'''
+          new = '''def _reader_blocks(value: Any) -> list[dict[str, str | None]]:\n    blocks: list[dict[str, str | None]] = []\n    for row in value or []:\n        if not isinstance(row, dict):\n            continue\n        text = str(row.get("text") or "").strip()\n        if not text:\n            continue\n        raw_key = row.get("heading_key")\n        key = str(raw_key).strip() if raw_key is not None else None\n        blocks.append({"heading_key": key or None, "text": text})\n    return blocks\n\n\ndef _reader_item(role: str, item: dict[str, Any], prose: dict[str, Any]) -> dict[str, Any]:\n    result = {\n        "source_item_hash": str(\n            (prose.get("_provenance") or {}).get("source_item_hash")\n            or machine_item_hash(item)\n        ),\n        "role": role,\n        "topic_id": item.get("topic_id"),\n        "direction_id": item.get("direction_id"),\n        "published_at": item.get("published_at"),\n        "score": item.get("score"),\n        "sources": _sources(item),\n        "title": str(prose.get("title") or "").strip(),\n        "lead": str(prose.get("lead") or "").strip(),\n        "body": [str(value or "").strip() for value in prose.get("body") or []],\n        "takeaway": (str(prose.get("takeaway") or "").strip() or None),\n    }\n    blocks = _reader_blocks(prose.get("blocks"))\n    if blocks:\n        result["blocks"] = blocks\n    return result\n'''
+          if old not in s:
+              raise SystemExit('archive_reader _reader_item target not found')
+          s = s.replace(old, new)
+          old_prose = '''        prose = {\n            key: output.get(key)\n            for key in ("title", "lead", "body", "takeaway")\n        }\n'''
+          new_prose = '''        prose = {\n            key: output.get(key)\n            for key in ("title", "lead", "body", "takeaway", "blocks")\n        }\n'''
+          if old_prose not in s:
+              raise SystemExit('archive_reader validation target not found')
+          s = s.replace(old_prose, new_prose)
+          p.write_text(s)
+
+          p = Path('briefing_skill/bootstrap.py')
+          s = p.read_text()
+          s = s.replace('    from .archive_reader_v2 import install_archive_reader_v2_persistence\n', '')
+          s = s.replace('    install_archive_reader_v2_persistence()\n', '')
+          p.write_text(s)
+
+          legacy = Path('briefing_skill/archive_reader_v2.py')
+          if legacy.exists():
+              legacy.unlink()
+
+          p = Path('tests/test_archive_reader.py')
+          s = p.read_text()
+          old_test = '''    title = "Agent跑得久以后，状态不该只留在进程里"\n    write_json(\n        run_dir / "reader_items" / f"{item_id}.json",\n        {\n            "brief_item_id": item_id,\n            "reader_version": 1,\n            "title": title,\n            "lead": "这项工作把长任务状态保存为外部版本对象，失败后可以恢复。",\n            "body": ["新状态只有通过接受门才会提交，因此回滚和继续执行都有明确边界。"],\n            "takeaway": None,\n'''
+          new_test = '''    title = "Agent跑得久以后，状态不该只留在进程里"\n    blocks = [\n        {\n            "heading_key": None,\n            "text": "这项工作把长任务状态保存为外部版本对象，失败后可以恢复。",\n        },\n        {\n            "heading_key": "mechanism",\n            "text": "新状态只有通过接受门才会提交，因此回滚和继续执行都有明确边界。",\n        },\n    ]\n    write_json(\n        run_dir / "reader_items" / f"{item_id}.json",\n        {\n            "brief_item_id": item_id,\n            "reader_version": 1,\n            "reader_shape": "blocks_v2",\n            "title": title,\n            "blocks": blocks,\n            "lead": blocks[0]["text"],\n            "body": [blocks[1]["text"]],\n            "takeaway": None,\n'''
+          if old_test not in s:
+              raise SystemExit('archive test sidecar target not found')
+          s = s.replace(old_test, new_test)
+          old_assert = '''    assert json.loads((target / "reader.json").read_text(encoding="utf-8"))["items"][item_id]["title"] == title\n'''
+          new_assert = '''    archived_item = json.loads((target / "reader.json").read_text(encoding="utf-8"))["items"][item_id]\n    assert archived_item["title"] == title\n    assert archived_item["blocks"] == blocks\n'''
+          if old_assert not in s:
+              raise SystemExit('archive test assertion target not found')
+          s = s.replace(old_assert, new_assert)
+          p.write_text(s)
+          PY
+
+          python -m pytest -q tests/test_archive_reader.py
+
+      - name: Commit fix and remove helper workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f \
+            .github/workflows/apply-archive-blocks-native-persistence.yml \
+            .github/workflows/apply-archive-blocks-native-persistence-v2.yml
+          git add -- briefing_skill/archive_reader.py briefing_skill/bootstrap.py tests/test_archive_reader.py
+          git add -u -- \
+            briefing_skill/archive_reader_v2.py \
+            .github/workflows/apply-archive-blocks-native-persistence.yml \
+            .github/workflows/apply-archive-blocks-native-persistence-v2.yml
+          git commit -m 'fix: persist reader blocks natively in archives'
+          git push origin HEAD:fix/archive-blocks-native-persistence
