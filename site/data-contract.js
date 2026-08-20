@@ -152,13 +152,18 @@
 
   function originalEmailPath(manifest, date) {
     if (!manifest || typeof manifest !== 'object') return '';
+    const flatFileKeys = manifest.files && !Array.isArray(manifest.files) && typeof manifest.files === 'object'
+      ? Object.keys(manifest.files)
+      : [];
     const candidates = [
+      ...(Array.isArray(manifest.original_variants) ? manifest.original_variants.map(name => `original/${name}`) : []),
       ...(Array.isArray(manifest.original_files) ? manifest.original_files : []),
       ...(Array.isArray(manifest.files?.original) ? manifest.files.original : []),
+      ...flatFileKeys.filter(path => /^original\/email(?:-illustrated)?\.html$/i.test(path)),
       manifest.original_email,
       manifest.artifacts?.original_email,
     ].filter(Boolean).map(value => typeof value === 'string' ? value : value.path).filter(Boolean);
-    const match = candidates.find(path => /(?:^|\/)email(?:-illustrated)?\.html$/i.test(path));
+    const match = candidates.find(path => /(?:^|\/)email\.html$/i.test(path)) || candidates.find(path => /(?:^|\/)email-illustrated\.html$/i.test(path));
     if (!match) return '';
     if (/^https?:\/\//i.test(match)) return match;
     if (match.startsWith('archive/')) return `./${match}`;

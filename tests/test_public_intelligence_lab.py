@@ -97,6 +97,29 @@ def test_route_reader_merge_and_radar_dedupe_contracts():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_original_email_path_uses_publication_manifest_contract():
+    output = _run_node(
+        f"""
+        const data = require({json.dumps(str(SITE / 'data-contract.js'))});
+        const manifest = {{
+          original_variants: ['email.html', 'email-illustrated.html'],
+          files: {{
+            'original/email.html': 'sha256:plain',
+            'original/email-illustrated.html': 'sha256:illustrated',
+            'email.html': 'sha256:public'
+          }}
+        }};
+        const href = data.originalEmailPath(manifest, '2026-08-17');
+        const absent = data.originalEmailPath({{original_variants:[],files:{{'email.html':'sha'}}}}, '2026-08-17');
+        process.stdout.write(JSON.stringify({{href,absent}}));
+        """
+    )
+
+    assert output["href"] == "./archive/issues/2026-08-17/original/email.html"
+    assert output["absent"] == ""
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_local_feedback_toggle_switch_export_and_clear():
     output = _run_node(
         f"""
