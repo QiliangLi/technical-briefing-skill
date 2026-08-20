@@ -126,10 +126,10 @@ def test_bootstrap_uses_v2_and_keeps_legacy_editorial_intent_out_of_current_run(
     assert "install_editorial_intent()" not in source
 
 
-def test_archive_rerender_preserves_sent_v2_heading_markers() -> None:
+def test_archive_rerender_uses_persisted_v2_blocks() -> None:
     source = (ROOT / "briefing_skill" / "archive_editorial_layout.py").read_text(encoding="utf-8")
-    assert "sent original already contains the model-selected headings" in source
-    assert "data-reader-section-heading" in source
+    assert "render_blocks_native" in source
+    assert "decorate_reader_blocks" not in source
 
 
 def test_fixed_publication_title_is_code_owned() -> None:
