@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from briefing_skill.archive_reader import _reader_item
+from briefing_skill import archive_reader
 from briefing_skill.archive_reader_v2 import install_archive_reader_v2_persistence
 
 
@@ -28,7 +28,7 @@ def test_reader_item_preserves_v2_blocks() -> None:
         "takeaway": None,
     }
 
-    reader = _reader_item("core", item, prose)
+    reader = archive_reader._reader_item("core", item, prose)
 
     assert reader["blocks"] == prose["blocks"]
     assert reader["lead"] == prose["lead"]
