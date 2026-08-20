@@ -59,7 +59,24 @@ async function renderRoadmaps(route){
     $('#leftContext').insertAdjacentHTML('beforeend',`<div class="context-title secondary">技术分支</div><div class="context-list branch-list">${branches.map(row=>`<button data-branch="${esc(row.branch_id)}" class="${row===selectedBranch?'active':''}"><b>${esc(row.name)}</b><small>${esc(row.status||'')}</small></button>`).join('')||'<span class="quiet">尚未形成稳定分支</span>'}</div>`);
     $$('#leftContext [data-branch]').forEach(button=>button.addEventListener('click',()=>go('roadmaps',{topic:selected.topic_id,branch:button.dataset.branch})));
     renderRoadmapObject(roadmap,selectedBranch,selected);
+    renderFrontierClusters();
   }catch(error){if(token===viewRenderToken){$('#roadmapMain').innerHTML=emptyBlock(`Roadmap 加载失败：${error.message}`);}}
+}
+
+function renderFrontierClusters(){
+  const clusters=state.knowledge?.frontier_clusters||[];
+  if(!clusters.length)return;
+  $('#roadmapMain').insertAdjacentHTML('beforeend',`<section class="frontier-section"><div class="section-heading"><div><p class="eyebrow">FRONTIER EXPLORATION</p><h2>边界观察 · 尚未进入 Roadmap</h2></div><span class="quiet">${clusters.length} 个临时聚类</span></div><p class="frontier-note">这些公开信号先按语义聚类；只有形成稳定机制并显式绑定目标分支后，才会晋升为 Roadmap 证据。</p><div class="frontier-grid">${clusters.map((cluster,index)=>`<button data-frontier="${index}"><span>${esc(cluster.status==='promoted'?'已晋升':'临时观察')}</span><b>${esc(cluster.name)}</b><small>${esc(cluster.first_seen_issue)} → ${esc(cluster.last_seen_issue)} · ${(cluster.evidence_item_ids||[]).length} 条信号</small></button>`).join('')}</div></section>`);
+  $$('#roadmapMain [data-frontier]').forEach(button=>button.addEventListener('click',()=>renderFrontierDetail(clusters[+button.dataset.frontier])));
+}
+
+function renderFrontierDetail(cluster){
+  const sources=(cluster.source_urls||[]).map(url=>{
+    const canonical=BriefingData.canonicalIdentity({url},location.href);
+    const item=state.items.find(row=>BriefingData.canonicalIdentity(row,location.href)===canonical);
+    return `<a href="${esc(url)}" target="_blank" rel="noreferrer"><b>${esc(item?.title||url)}</b><small>${esc(item?.issue_date||'已发布公开来源')}</small></a>`;
+  }).join('');
+  setDetail(`<div class="detail-kicker">FRONTIER CLUSTER · ${esc(cluster.status||'temporary')}</div><h2>${esc(cluster.name)}</h2><p class="detail-lead">当前仍是边界观察聚类，不代表已形成稳定 Roadmap 阶段。</p><dl class="detail-fields"><dt>观察区间</dt><dd>${esc(cluster.first_seen_issue)} → ${esc(cluster.last_seen_issue)}</dd><dt>分类</dt><dd>${esc((cluster.categories||[]).join('；')||'未分类')}</dd><dt>晋升记录</dt><dd>${esc(cluster.promotion_reason||'尚未晋升；需要稳定机制与明确目标分支。')}</dd></dl><h3 class="detail-section-title">公开信号来源</h3><div class="evidence-links">${sources||'<span class="quiet">暂无来源</span>'}</div>`);
 }
 
 function renderRoadmapObject(roadmap,branch,indexRow){

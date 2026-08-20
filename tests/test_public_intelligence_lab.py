@@ -51,6 +51,9 @@ def test_roadmap_and_idea_views_only_read_materialized_knowledge():
     assert "row.item_id?[row]" in views
     assert "row.reason" in views
     assert "row.mechanisms" in views
+    assert "边界观察 · 尚未进入 Roadmap" in views
+    assert "state.knowledge?.frontier_clusters" in views
+    assert "renderFrontierDetail" in views
 
 
 def test_reader_projection_and_original_email_contract_are_visible():
@@ -93,7 +96,8 @@ def test_route_reader_merge_and_radar_dedupe_contracts():
           [{{role:'radar', arxiv_id:'2608.10000', title:'同一信号', url:'https://arxiv.org/abs/2608.10000v2?utm_source=a'}}],
           [{{role:'radar', title:'同一信号', url:'https://arxiv.org/abs/2608.10000v1'}}]
         );
-        process.stdout.write(JSON.stringify({{route, merged, bodyMerged, count:rows.length}}));
+        const inferredArxiv = data.canonicalIdentity({{url:'https://arxiv.org/abs/2608.10000v3'}});
+        process.stdout.write(JSON.stringify({{route, merged, bodyMerged, inferredArxiv, count:rows.length}}));
         """
     )
 
@@ -102,6 +106,7 @@ def test_route_reader_merge_and_radar_dedupe_contracts():
     assert output["merged"]["summary"] == "读者导语"
     assert output["merged"]["machine_title"] == "机器标题"
     assert output["bodyMerged"]["summary"] == "第一段\n\n第二段"
+    assert output["inferredArxiv"] == "arxiv:2608.10000"
     assert output["count"] == 1
 
 

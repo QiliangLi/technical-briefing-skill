@@ -28,7 +28,11 @@
         });
         url.searchParams.sort();
         let path = url.pathname.replace(/\/$/, '');
-        if (/arxiv\.org$/i.test(url.hostname)) path = path.replace(/v\d+$/i, '');
+        if (/arxiv\.org$/i.test(url.hostname)) {
+          path = path.replace(/v\d+$/i, '');
+          const match = path.match(/^\/(?:abs|pdf)\/([^/]+?)(?:\.pdf)?$/i);
+          if (match) return `arxiv:${match[1].toLowerCase()}`;
+        }
         return `url:${url.hostname.toLowerCase()}${path.toLowerCase()}${url.search}`;
       } catch (_) {
         return `url:${rawUrl.replace(/#.*$/, '').replace(/\/$/, '').toLowerCase()}`;
