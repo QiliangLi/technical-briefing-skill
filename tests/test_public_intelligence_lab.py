@@ -48,6 +48,9 @@ def test_roadmap_and_idea_views_only_read_materialized_knowledge():
     assert "系统不会用日期列表或 next_action 临时拼装替代品" in views
     assert "验证建议 · 尚未执行" in views
     assert "不是仿真或实验结果" in views
+    assert "row.item_id?[row]" in views
+    assert "row.reason" in views
+    assert "row.mechanisms" in views
 
 
 def test_reader_projection_and_original_email_contract_are_visible():
