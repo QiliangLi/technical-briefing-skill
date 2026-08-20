@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from briefing_skill.archive_reader import (
     apply_historical_rewrite,
+    backup_original_reader,
     issue_hash,
     machine_item_hash,
     prepare_rewrite_payload,
@@ -128,6 +129,19 @@ def _reader(issue: dict) -> dict:
         "generated_at": "2026-08-20T09:45:00+08:00",
         "rewrite_status": "historical_semantic_rewrite",
     }
+
+
+def test_original_reader_backup_is_immutable(tmp_path: Path) -> None:
+    issue_dir = tmp_path / "archive" / "issues" / "2026-08-20"
+    write_json(issue_dir / "reader.json", {"version": "legacy", "takeaway": "完整旧内容"})
+
+    first_hash = backup_original_reader(issue_dir)
+    original = (issue_dir / "original" / "reader.json").read_bytes()
+    write_json(issue_dir / "reader.json", {"version": "new"})
+    second_hash = backup_original_reader(issue_dir)
+
+    assert (issue_dir / "original" / "reader.json").read_bytes() == original
+    assert first_hash == second_hash
 
 
 def test_historical_rewrite_preserves_only_real_original_and_is_idempotent(tmp_path: Path) -> None:

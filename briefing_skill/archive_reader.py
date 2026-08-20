@@ -368,6 +368,26 @@ def backup_original_html(issue_dir: Path) -> dict[str, str]:
     return originals
 
 
+def backup_original_reader(
+    issue_dir: Path,
+    *,
+    replacement: dict[str, Any] | None = None,
+) -> str | None:
+    """Preserve the reader projection that is about to be replaced."""
+
+    source = issue_dir / "reader.json"
+    if not source.is_file():
+        return None
+    target = issue_dir / "original" / "reader.json"
+    if target.exists():
+        return _sha256_file(target)
+    if replacement is not None and read_json(source, {}) == replacement:
+        return None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    return _sha256_file(target)
+
+
 def existing_original_html(issue_dir: Path) -> dict[str, str]:
     return {
         name: _sha256_file(issue_dir / "original" / name)
@@ -598,6 +618,7 @@ def apply_historical_rewrite(root: Path, issue_dir: Path, reader: dict[str, Any]
     validate_reader_document(root, issue, reader)
     if reader.get("rewrite_status") != "historical_semantic_rewrite":
         raise ValueError("historical apply requires rewrite_status=historical_semantic_rewrite")
+    backup_original_reader(issue_dir, replacement=reader)
     originals = (
         existing_original_html(issue_dir)
         if (issue_dir / "publication-manifest.json").is_file()
@@ -627,6 +648,8 @@ def _manifest_files(issue_dir: Path) -> dict[str, str]:
         "email-illustrated.html",
         "original/email.html",
         "original/email-illustrated.html",
+        "original/reader.json",
+        "original/provenance.json",
     )
     return {name: _sha256_file(issue_dir / name) for name in names if (issue_dir / name).is_file()}
 
