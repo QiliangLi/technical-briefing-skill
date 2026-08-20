@@ -1,0 +1,127 @@
+name: Apply reader v2 archive fix
+
+on:
+  push:
+    branches: [fix/reader-v2-archive-persistence]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/reader-v2-archive-persistence
+      - name: Apply focused patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('briefing_skill/archive_reader.py')
+          text = path.read_text(encoding='utf-8')
+          old = '''def _reader_item(role: str, item: dict[str, Any], prose: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_item_hash": str(
+            (prose.get("_provenance") or {}).get("source_item_hash")
+            or machine_item_hash(item)
+        ),
+        "role": role,
+        "topic_id": item.get("topic_id"),
+        "direction_id": item.get("direction_id"),
+        "published_at": item.get("published_at"),
+        "score": item.get("score"),
+        "sources": _sources(item),
+        "title": str(prose.get("title") or "").strip(),
+        "lead": str(prose.get("lead") or "").strip(),
+        "body": [str(value or "").strip() for value in prose.get("body") or []],
+        "takeaway": (str(prose.get("takeaway") or "").strip() or None),
+    }
+'''
+          new = '''def _reader_item(role: str, item: dict[str, Any], prose: dict[str, Any]) -> dict[str, Any]:
+    result = {
+        "source_item_hash": str(
+            (prose.get("_provenance") or {}).get("source_item_hash")
+            or machine_item_hash(item)
+        ),
+        "role": role,
+        "topic_id": item.get("topic_id"),
+        "direction_id": item.get("direction_id"),
+        "published_at": item.get("published_at"),
+        "score": item.get("score"),
+        "sources": _sources(item),
+        "title": str(prose.get("title") or "").strip(),
+        "lead": str(prose.get("lead") or "").strip(),
+        "body": [str(value or "").strip() for value in prose.get("body") or []],
+        "takeaway": (str(prose.get("takeaway") or "").strip() or None),
+    }
+    blocks = [
+        {
+            "heading_key": (str(row.get("heading_key") or "").strip() or None),
+            "text": str(row.get("text") or "").strip(),
+        }
+        for row in prose.get("blocks") or []
+        if isinstance(row, dict) and str(row.get("text") or "").strip()
+    ]
+    if blocks:
+        result["blocks"] = blocks
+    return result
+'''
+          if old not in text:
+              raise SystemExit('archive _reader_item target not found')
+          text = text.replace(old, new, 1)
+          old_validation = '''        prose = {
+            key: output.get(key)
+            for key in ("title", "lead", "body", "takeaway")
+        }
+'''
+          new_validation = '''        prose = {
+            key: output.get(key)
+            for key in ("title", "lead", "body", "takeaway", "blocks")
+        }
+'''
+          if old_validation not in text:
+              raise SystemExit('archive validation target not found')
+          text = text.replace(old_validation, new_validation, 1)
+          path.write_text(text, encoding='utf-8')
+
+          workflow = Path('.github/workflows/rerender-archive-reader.yml')
+          text = workflow.read_text(encoding='utf-8')
+          text = text.replace(
+              "      - 'briefing_skill/archive_editorial_layout.py'\n",
+              "      - 'briefing_skill/archive_editorial_layout.py'\n      - 'briefing_skill/archive_reader.py'\n      - 'briefing_skill/reader_projection_v2.py'\n",
+              1,
+          )
+          text = text.replace(
+              "      - 'schemas/reader-item-writing.schema.json'\n",
+              "      - 'schemas/reader-item-writing.schema.json'\n      - 'schemas/archive-reader.schema.json'\n",
+              1,
+          )
+          text = text.replace(
+              "          cp -R archive \"$publish_dir/archive\"\n          cp -R pics \"$publish_dir/pics\"\n",
+              "          cp -R archive \"$publish_dir/archive\"\n          cp -R knowledge \"$publish_dir/knowledge\"\n          cp -R pics \"$publish_dir/pics\"\n",
+              1,
+          )
+          text = text.replace(
+              "          git switch --orphan pages-publish\n          git rm -rf .\n",
+              "          git switch --orphan pages-publish\n          # An orphan branch starts with an empty index. Clean the checkout before\n          # copying the assembled publication tree, matching the primary Pages workflow.\n          git clean -fdx\n",
+              1,
+          )
+          workflow.write_text(text, encoding='utf-8')
+
+          test = Path('tests/test_reader_v2_archive_persistence.py')
+          test.write_text('''from pathlib import Path\n\nfrom briefing_skill.archive_reader import _reader_item\n\n\nROOT = Path(__file__).resolve().parents[1]\n\n\ndef test_reader_item_preserves_v2_blocks() -> None:\n    item = {\n        "topic_id": "tpn",\n        "direction_id": "kv_transfer",\n        "published_at": "2026-08-20",\n        "score": 88.0,\n        "sources": [],\n    }\n    prose = {\n        "_provenance": {"source_item_hash": "0123456789abcdef"},\n        "title": "测试标题",\n        "blocks": [\n            {"heading_key": None, "text": "先说发生了什么。"},\n            {"heading_key": "mechanism", "text": "再解释它怎么实现。"},\n        ],\n        "lead": "先说发生了什么。",\n        "body": ["再解释它怎么实现。"],\n        "takeaway": None,\n    }\n\n    reader = _reader_item("core", item, prose)\n\n    assert reader["blocks"] == prose["blocks"]\n    assert reader["lead"] == prose["lead"]\n    assert reader["body"] == prose["body"]\n\n\ndef test_rerender_pages_workflow_keeps_complete_site_and_safe_orphan_publish() -> None:\n    source = (ROOT / ".github/workflows/rerender-archive-reader.yml").read_text(encoding="utf-8")\n\n    assert "cp -R knowledge" in source\n    assert "git clean -fdx" in source\n    assert "git rm -rf ." not in source\n    assert "briefing_skill/archive_reader.py" in source\n    assert "briefing_skill/reader_projection_v2.py" in source\n    assert "schemas/archive-reader.schema.json" in source\n''', encoding='utf-8')
+
+          Path('.github/workflows/apply-reader-v2-archive-fix.yml').unlink()
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- briefing_skill/archive_reader.py .github/workflows/rerender-archive-reader.yml tests/test_reader_v2_archive_persistence.py .github/workflows/apply-reader-v2-archive-fix.yml
+          git commit -m 'fix: persist reader v2 blocks in archives'
+          git push origin HEAD:fix/reader-v2-archive-persistence
