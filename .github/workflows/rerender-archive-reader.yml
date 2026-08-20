@@ -41,10 +41,39 @@ jobs:
           set -euo pipefail
           if git diff --quiet -- archive/issues; then
             echo 'Archive reader views already current.'
-            exit 0
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add archive/issues/*/email.html archive/issues/*/email-illustrated.html archive/issues/*/publication-manifest.json
+            git commit -m 'chore: rerender archived reader emails'
+            git push origin HEAD:main
           fi
+
+      # A push made with GITHUB_TOKEN does not trigger another workflow. Publish
+      # Pages here directly so the archive commit above cannot leave gh-pages stale.
+      - name: Assemble current static site
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_dir="$RUNNER_TEMP/technical-intel-site"
+          rm -rf "$publish_dir"
+          mkdir -p "$publish_dir"
+          cp -R site/. "$publish_dir/"
+          cp -R archive "$publish_dir/archive"
+          cp -R pics "$publish_dir/pics"
+          touch "$publish_dir/.nojekyll"
+
+      - name: Publish current archive to gh-pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_dir="$RUNNER_TEMP/technical-intel-site"
+          published_from="$(git rev-parse HEAD)"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add archive/issues/*/email.html archive/issues/*/email-illustrated.html archive/issues/*/publication-manifest.json
-          git commit -m 'chore: rerender archived reader emails'
-          git push origin HEAD:main
+          git switch --orphan pages-publish
+          git rm -rf .
+          cp -R "$publish_dir/." .
+          git add -A
+          git commit -m "pages: publish archive reader ${published_from}"
+          git push --force origin HEAD:gh-pages
