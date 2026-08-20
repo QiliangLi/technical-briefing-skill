@@ -20,7 +20,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .deep_selection_guard import install_deep_selection_guard
     from .discovery_stage import install_discovery_stage
     from .editorial_batch import install_editorial_batching
-    from .editorial_intent import install_editorial_intent
     from .efficiency import install_pipeline_optimizations
     from .evidence_repair import install_evidence_repair
     from .execution_envelope import install_execution_envelope_contract
@@ -47,6 +46,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .radar_signal_synthesis import install_radar_signal_synthesis
     from .radar_taxonomy import install_radar_taxonomy
     from .reader_projection import install_reader_projection
+    from .reader_projection_v2 import install_reader_projection_v2
     from .reader_writing_contract import install_reader_writing_contract
     from .release_family import install_release_family_aggregation
     from .relevance_efficiency import install_relevance_efficiency
@@ -113,15 +113,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     install_fact_cache_source_normalization()
     install_fact_stage()
 
-    # IssueStage owns deterministic final selection. Reader Projection wraps it so
-    # each selected item gets fresh current-run prose even when facts came from local
-    # SQLite. Editorial Intent then decides what each visible card should foreground
-    # and supplies deterministic section headings without changing the fact model.
+    # IssueStage owns deterministic final selection. Reader Projection still binds
+    # prose to the final fact-checked item, while Reader v2 lets the model choose the
+    # card's natural paragraph order and semantic heading keys. The legacy Editorial
+    # Intent module remains available only for v1 archive/interrupted-run rendering.
     install_radar_signal_synthesis()
     install_reader_writing_contract()
     install_issue_stage()
     install_reader_projection()
-    install_editorial_intent()
+    install_reader_projection_v2()
     install_selective_fact_check()
     install_publication_stage()
     install_illustrated_publication()
