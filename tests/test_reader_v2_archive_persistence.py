@@ -1,14 +1,12 @@
 from pathlib import Path
 
 from briefing_skill import archive_reader
-from briefing_skill.archive_reader_v2 import install_archive_reader_v2_persistence
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_reader_item_preserves_v2_blocks() -> None:
-    install_archive_reader_v2_persistence()
+def test_reader_item_preserves_v2_blocks_without_runtime_patch() -> None:
     item = {
         "topic_id": "tpn",
         "direction_id": "kv_transfer",
@@ -41,6 +39,7 @@ def test_rerender_pages_workflow_keeps_complete_site_and_safe_orphan_publish() -
     assert "cp -R knowledge" in source
     assert "git clean -fdx" in source
     assert "git rm -rf ." not in source
-    assert "briefing_skill/archive_reader_v2.py" in source
+    assert "briefing_skill/archive_reader.py" in source
+    assert "briefing_skill/archive_reader_v2.py" not in source
     assert "briefing_skill/reader_projection_v2.py" in source
     assert "schemas/archive-reader.schema.json" in source
