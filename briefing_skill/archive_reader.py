@@ -613,15 +613,43 @@ def _write_if_changed(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _atomic_swap_directory(temp_dir: Path, target: Path) -> None:
-    """Replace target with temp_dir atomically; target is untouched on failure."""
+def _recover_stale_backup(target: Path) -> None:
+    """Restore the sole surviving copy if a swap was interrupted by a crash.
+
+    A crash between "rename target -> backup" and "rename temp -> target"
+    leaves the public directory missing; the newest backup is the only
+    recoverable copy and must be restored (and older leftovers cleaned)
+    BEFORE any new attempt could delete it.
+    """
     import os
 
-    backup = target.with_name(f".{target.name}.backup")
-    if backup.exists():
-        shutil.rmtree(backup)
     if target.exists():
-        os.rename(target, backup)
+        for stale in target.parent.glob(f".{target.name}.backup-*"):
+            shutil.rmtree(stale, ignore_errors=True)
+        return
+    backups = sorted(target.parent.glob(f".{target.name}.backup-*"))
+    if backups:
+        os.rename(backups[-1], target)
+        for stale in backups[:-1]:
+            shutil.rmtree(stale, ignore_errors=True)
+
+
+def _atomic_swap_directory(temp_dir: Path, target: Path) -> None:
+    """Replace target with temp_dir atomically; target is untouched on failure.
+
+    Uses a unique backup name per attempt so an interrupted previous swap can
+    never delete the only surviving copy of the published directory.
+    """
+    import os
+    import time
+
+    _recover_stale_backup(target)
+    if not target.exists():
+        # First publication for this date: nothing to preserve.
+        os.rename(temp_dir, target)
+        return
+    backup = target.with_name(f".{target.name}.backup-{os.getpid()}-{int(time.time() * 1000)}")
+    os.rename(target, backup)
     try:
         os.rename(temp_dir, target)
     except Exception:
@@ -641,6 +669,7 @@ def apply_historical_rewrite(root: Path, issue_dir: Path, reader: dict[str, Any]
     """
     from .public_trace_scan import archive_public_files, public_text_trace_errors, public_upstream_trace_errors
 
+    _recover_stale_backup(issue_dir)
     issue = read_json(issue_dir / "issue.json", {})
     validate_reader_document(root, issue, reader)
     if reader.get("rewrite_status") != "historical_semantic_rewrite":

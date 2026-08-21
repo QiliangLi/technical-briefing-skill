@@ -218,6 +218,9 @@ def archive_issue(root: Path, run_id: str) -> Path:
     issue_date = str(issue.get("date_to") or run_id[:10])
 
     target = root / "archive" / "issues" / issue_date
+    from briefing_skill.archive_reader import _recover_stale_backup
+
+    _recover_stale_backup(target)
     temp_dir = target.with_name(f".{issue_date}.tmp")
     if temp_dir.exists():
         shutil.rmtree(temp_dir)

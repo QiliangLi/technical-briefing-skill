@@ -12,7 +12,7 @@ AI Hot 是不可见的上游编辑与发现服务：
 
 ## 栏目与采集
 
-连接器版本：`briefing_skill/adapters/aihot.py::AIHOT_CONNECTOR_VERSION`（当前 2）。
+连接器版本：`briefing_skill/adapters/aihot.py::AIHOT_CONNECTOR_VERSION`（当前 3）。
 
 | Lane | 接口 | 用途 |
 |---|---|---|
@@ -47,8 +47,8 @@ AI Hot 是不可见的上游编辑与发现服务：
 - 技术范围过滤、跨期去重（`radar_history` 的 URL、统一规范化标题、upstream item ID 与 story ID——同一事件换报道/URL/标题也无法重复发布）、深度/附录 URL 冲突排除后按确定性权重排序（hot +40 / selected +30 / daily +20 / Direction 0-20 / A 级 URL +10 / 多栏目 +5 / 24 小时内 +5）；
 - 数量约束：最多 8 条、每类最多 2 条、同一 story/GitHub 项目最多 1 条；合法候选不足时允许少于 5 条并记录 underfill 原因；
 - 公开文案 = 冻结上游标题 + 完整摘要（或 1-2 个连续完整句子）；run 目录 `issue/radar-direct.json` 保存每条标题与摘要的 source_field/source_text_hash/span/public_text_hash，`selection_hash` 绑定冻结输入 hash、规则版本和全部公开字段 hash；
-- 发布门从冻结输入向外单向重算整条链：真实 freeze 文件 hash 必须与记录的 `frozen_input_sha256` 一致，每条 AI Hot 卡片必须能按 item ID/URL 在 freeze 中定位到其声称的原始字段文本，`selection_hash` 会按记录的公开字段重算比对，manifest 的 `summary_sha256` 与 radar-direct 交叉核验，最终 DOM 的标题/摘要 hash 必须逐条匹配；direct-copy 模式下缺失 provenance 记录、卡片缺失/多出/重复（含 multiplicity）或文案被改写都会使发布失败，联合篡改 radar-direct 与 DOM 无法绕过 freeze 锚定；
-- 发送历史由 canonical `record_delivery` 写入跨期 story/item 身份，同一事件换 URL/标题也无法在下一期重复发布；
+- 发布门从冻结输入向外单向重算整条链：真实 freeze 文件 hash 必须与记录的 `frozen_input_sha256` 一致（含 AI Hot 条目时该 hash 必填），每条 AI Hot 卡片必须能按 item ID/URL 在 freeze 中定位到其声称的原始字段文本（支持 daily 的 `report.sections[].items` 嵌套结构和跨 lane 文案回退：定位会扫描全部同身份观察直到文本精确匹配，copy variant 记录精确 lane key），`selection_hash`（绑定 run/报告日/时区/冻结输入/规则版本/全部公开字段）必须存在并按记录重算一致，manifest 携带同一 `selection_hash` 形成回链；direct、manifest、DOM 三层的记录数、radar_id 与 URL 唯一性、分类、标题、发布日期逐项交叉一致，任何一层缺失/多余/重复、hash 缺失或联合篡改都使发布失败；
+- 发送历史由 canonical `record_delivery` 写入跨期 story/item 身份（只投影实际出现在最终邮件 HTML 中的 Radar URL——以 publication truth 为准，未发送的数据库残留不会成为幻影历史）；内部台账采集期写失败会记入 freeze 的 `ledger_error` 并在发布门阻断该期发布；
 - `issue_synthesis` 不再读取 radar_candidates，也不再生成 radar_signals；确定性 finalize 负责写入兼容的 `synthesis.radar_signals`（archive/Pages 继续可用）。
 
 ## 公开痕迹负向扫描
@@ -66,7 +66,7 @@ AI Hot 是不可见的上游编辑与发现服务：
 - 热点榜无法解析到单条摘要：只记录内部命中，不发布空摘要卡片，不使用 story digest 冒充单一来源摘要；
 - 上游摘要非中文或不完整：尝试其他栏目同一 item 的中文摘要，仍不可用则淘汰；
 - 上游更正/撤回：未发布的 run 重新 collect 产生新冻结版本；已发布归档不静默改写；
-- 归档与历史重写全部走临时目录原子替换：组装、校验、痕迹扫描全部通过后才一次性换入正式目录，失败时已发布目录字节不变；
+- 归档与历史重写全部走临时目录原子替换：组装、校验、痕迹扫描全部通过后才一次性换入正式目录，失败时已发布目录字节不变；交换使用每次唯一的备份名，入口先恢复上一次被中断的 stale 备份，进程崩溃后不会丢失唯一可恢复副本；
 - 公开 URL 必须是具体的原始页面（绝对 http(s)、非上游域名、非站点根地址）。
 
 ## 灰度与回滚

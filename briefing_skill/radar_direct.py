@@ -237,13 +237,21 @@ def _ordered_variants(payload: dict[str, Any], primary_summary: str, primary_fie
     variants = [
         {
             "lane": str(variant.get("lane") or ""),
+            "lane_key": str(variant.get("lane_key") or ""),
             "source_field": str(variant.get("source_field") or ""),
             "summary": str(variant.get("summary") or ""),
         }
         for variant in payload.get("aihot_copy_variants") or []
     ]
     if primary_summary and not any(variant["summary"] == primary_summary for variant in variants):
-        variants.append({"lane": str(payload.get("aihot_lane") or ""), "source_field": primary_field, "summary": primary_summary})
+        variants.append(
+            {
+                "lane": str(payload.get("aihot_lane") or ""),
+                "lane_key": "",
+                "source_field": primary_field,
+                "summary": primary_summary,
+            }
+        )
     variants.sort(key=lambda variant: VARIANT_LANE_ORDER.get(variant["lane"], 9))
     return variants
 
@@ -350,7 +358,7 @@ def _candidate_from_row(
                 if " ".join(str(raw.get(field) or "").split()) == primary_summary:
                     primary_field = field
                     break
-    copy: tuple[str, int, int, str] | None = None
+    copy: tuple[str, int, int, str, str] | None = None
     for variant in _ordered_variants(payload, primary_summary, primary_field):
         if variant["source_field"] not in ("summary", "description"):
             # `reason` is the upstream editorial recommendation: internal only.
@@ -358,11 +366,11 @@ def _candidate_from_row(
         selected = select_public_summary(variant["summary"])
         if selected is not None:
             public_summary, span_start, span_end = selected
-            copy = (public_summary, span_start, span_end, variant["source_field"])
+            copy = (public_summary, span_start, span_end, variant["source_field"], variant.get("lane_key") or "")
             break
     if copy is None:
         return None
-    public_summary, span_start, span_end, source_field = copy
+    public_summary, span_start, span_end, source_field, variant_lane_key = copy
     source_text = " ".join(str(variant["summary"]).split())
     published_source = "upstream_item" if row.get("published_at") else "none"
     candidate = {
@@ -398,6 +406,7 @@ def _candidate_from_row(
         },
         "copy_provenance": {
             "source_field": source_field,
+            "lane_key": variant_lane_key,
             "source_text": source_text,
             "source_text_hash": f"sha256:{content_hash(source_text)}",
             "selected_span_start": span_start,
@@ -557,6 +566,15 @@ def _run_candidates(service, run_id: str, issue_data: dict[str, Any] | None) -> 
         service._radar_direct_cache = cache
     if run_id not in cache:
         cache[run_id] = normalized_radar_candidates(service, run_id, issue_data)
+        reference = getattr(service, "_radar_direct_reference", None)
+        if reference is None:
+            reference = {}
+            service._radar_direct_reference = reference
+        settings = dict(getattr(service.config, "settings", None) or {})
+        reference[run_id] = {
+            "date": str((issue_data or {}).get("date_to") or ""),
+            "timezone": str(settings.get("timezone") or "Asia/Shanghai"),
+        }
     return cache[run_id]
 
 
@@ -639,6 +657,10 @@ def record_direct_publication(
 
     _write_provenance_file(service, run_id, final_items, contract)
     _write_compat_synthesis(service, issue_id, run_id, final_items)
+    # Link the manifest back to this exact provenance document.
+    document = read_json(service.root / "workspace" / "runs" / run_id / "issue" / "radar-direct.json", {}) or {}
+    if document.get("selection_hash"):
+        contract["selection_hash"] = document["selection_hash"]
     # The candidate pool is only needed for ledger decisions; reuse the
     # same-build cache instead of rebuilding (which would need issue_data).
     pool = (getattr(service, "_radar_direct_cache", None) or {}).get(run_id) or []
@@ -664,6 +686,9 @@ def _selection_binding(document: dict[str, Any]) -> dict[str, Any]:
         "direct_copy_version": RADAR_DIRECT_COPY_VERSION,
         "taxonomy_version": RADAR_TAXONOMY_VERSION,
         "selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
+        "run_id": document.get("run_id"),
+        "reference_date": document.get("reference_date"),
+        "timezone": document.get("timezone"),
         "frozen_input_sha256": document.get("frozen_input_sha256"),
         "contract": document.get("selection_contract"),
         "items": [
@@ -687,8 +712,12 @@ def _selection_hash(service, run_id: str, final_items: list[dict[str, Any]], con
     and selection-policy versions, and the public field hashes — not just the
     URL list, so an upstream copy change under a stable URL invalidates it.
     """
+    reference = (getattr(service, "_radar_direct_reference", None) or {}).get(run_id) or {}
     binding = _selection_binding(
         {
+            "run_id": run_id,
+            "reference_date": reference.get("date") or "",
+            "timezone": reference.get("timezone") or "",
             "frozen_input_sha256": _frozen_input_sha256(service, run_id),
             "selection_contract": contract,
             "items": [
@@ -719,12 +748,44 @@ def freeze_file_sha256(root, run_id: str) -> str | None:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def locate_frozen_source(freeze: dict[str, Any], item: dict[str, Any]) -> dict[str, str] | None:
+def _lane_observations(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every raw upstream observation in one lane payload.
+
+    Item lanes expose ``items``/``data`` at the top level; the daily report
+    nests them under ``report.sections[].items``.
+    """
+    observations: list[dict[str, Any]] = []
+    for raw in payload.get("items") or payload.get("data") or []:
+        if isinstance(raw, dict):
+            observations.append(raw)
+    report = payload.get("report") if isinstance(payload.get("report"), dict) else None
+    for section in (report or {}).get("sections") or []:
+        for raw in section.get("items") or []:
+            if isinstance(raw, dict):
+                observations.append(raw)
+    return observations
+
+
+def _observation_identity(raw: dict[str, Any]) -> tuple[str, str]:
+    links = raw.get("links") or {}
+    raw_id = str(raw.get("publicId") or raw.get("id") or "")
+    from .adapters.aihot import AIHOT_ITEM_ID_RE
+
+    if not raw_id:
+        match = AIHOT_ITEM_ID_RE.search(str(links.get("aihot") or ""))
+        raw_id = match.group(1) if match else ""
+    return raw_id, canonicalize_url(links.get("original") or raw.get("url") or "")
+
+
+def locate_frozen_source(freeze: dict[str, Any], item: dict[str, Any]) -> dict[str, str | None] | None:
     """Locate the true upstream title/summary text for an item inside the freeze.
 
-    Matches the item by upstream item id or original URL across every frozen
-    lane payload, then reads the exact field the provenance claims. ``None``
-    means the claimed source cannot be located in the frozen input.
+    The item may appear in several lanes with different copy variants; the
+    chosen public copy can come from any of them. Every identity-matching
+    observation is therefore scanned until one whose field text equals the
+    recorded provenance is found, so cross-lane Chinese fallbacks anchor to
+    the lane that actually produced the copy. Returns ``None`` when no
+    identity-matching observation exists at all.
     """
     item_id = str(item.get("upstream_item_id") or "")
     url = canonicalize_url((item.get("source_urls") or [None])[0])
@@ -732,26 +793,38 @@ def locate_frozen_source(freeze: dict[str, Any], item: dict[str, Any]) -> dict[s
     title_provenance = item.get("title_provenance") or {}
     summary_field = str(provenance.get("source_field") or "summary")
     title_field = str(title_provenance.get("source_field") or "title")
-    for lane in (freeze.get("lanes") or {}).values():
+    wanted_summary = " ".join(str(provenance.get("source_text") or "").split())
+    wanted_title = " ".join(str(title_provenance.get("source_text") or "").split())
+
+    matched = False
+    summary_text: str | None = None
+    title_text: str | None = None
+    preferred_lane_key = str(provenance.get("lane_key") or "")
+    ordered_lanes = sorted(
+        (freeze.get("lanes") or {}).items(),
+        key=lambda pair: 0 if pair[0] == preferred_lane_key else 1,
+    )
+    for _, lane in ordered_lanes:
         payload = lane.get("payload") if isinstance(lane, dict) else None
         if not isinstance(payload, dict):
             continue
-        for raw in payload.get("items") or payload.get("data") or []:
-            if not isinstance(raw, dict):
+        for raw in _lane_observations(payload):
+            raw_id, raw_url = _observation_identity(raw)
+            if not ((item_id and raw_id == item_id) or (url and raw_url == url)):
                 continue
-            links = raw.get("links") or {}
-            raw_id = str(raw.get("publicId") or raw.get("id") or "")
-            raw_url = canonicalize_url(links.get("original") or raw.get("url") or "")
-            if (item_id and raw_id == item_id) or (url and raw_url == url):
-                return {
-                    "summary": " ".join(str(raw.get(summary_field) or "").split()),
-                    "title": " ".join(str(raw.get(title_field) or "").split()),
-                }
-    return None
+            matched = True
+            if summary_text is None and " ".join(str(raw.get(summary_field) or "").split()) == wanted_summary:
+                summary_text = wanted_summary
+            if title_text is None and " ".join(str(raw.get(title_field) or "").split()) == wanted_title:
+                title_text = wanted_title
+    if not matched:
+        return None
+    return {"summary": summary_text, "title": title_text}
 
 
 def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any]], contract: dict[str, Any]) -> None:
     path = service.root / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
+    reference = (getattr(service, "_radar_direct_reference", None) or {}).get(run_id) or {}
     write_json(
         path,
         {
@@ -759,6 +832,8 @@ def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any
             "run_id": run_id,
             "radar_taxonomy_version": RADAR_TAXONOMY_VERSION,
             "radar_selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
+            "reference_date": reference.get("date") or "",
+            "timezone": reference.get("timezone") or "",
             "frozen_input_sha256": _frozen_input_sha256(service, run_id),
             "selection_hash": _selection_hash(service, run_id, final_items, contract),
             "selection_contract": contract,

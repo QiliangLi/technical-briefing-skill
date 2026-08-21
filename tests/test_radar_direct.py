@@ -70,10 +70,13 @@ def insert_raw(
     story_id: str = "",
     age_days: float = 1,
     published_at: str | None = None,
+    no_published_at: bool = False,
     source_id: str = "aihot",
     source_level: str = "B",
     topic_hint: str = "",
     raw_extra: dict[str, Any] | None = None,
+    copy_variants: list[dict[str, Any]] | None = None,
+    daily_date: str = "",
 ) -> str:
     from briefing_skill.utils import stable_hash
 
@@ -97,6 +100,10 @@ def insert_raw(
     }
     if story_id:
         payload["aihot_story_id"] = story_id
+    if copy_variants is not None:
+        payload["aihot_copy_variants"] = copy_variants
+    if daily_date:
+        payload["aihot_daily_date"] = daily_date
     db.execute(
         """
         INSERT OR IGNORE INTO raw_items(
@@ -118,7 +125,7 @@ def insert_raw(
             url,
             f"https://aihot.virxact.com/items/{external_id or raw_id}",
             canonical,
-            published_at or _days_ago(age_days),
+            None if no_published_at else (published_at or _days_ago(age_days)),
             _days_ago(age_days),
             "[]",
             external_id,
@@ -581,10 +588,12 @@ def _radar_html(final_groups) -> str:
             f'<div data-reader-role="radar-card" data-radar-category="{group["name"]}">'
         )
         for item in group["items"]:
+            date_segment = f'{item.get("published_at") or ""} · ' if item.get("published_at") else ""
             parts.append(
                 '<div data-reader-role="radar-item">'
                 f'<a href="{item["url"]}">{item["title"]}</a>'
                 f'<div data-reader-role="radar-summary">{item["summary"]}</div>'
+                f'<div>{date_segment}阅读原文：<a href="{item["url"]}">source</a></div>'
                 "</div>"
             )
         parts.append("</div>")
@@ -689,7 +698,7 @@ def test_release_gate_verifies_dom_summary_and_title_provenance(tmp_path: Path) 
         "</div></div>"
     ) + html[html.find("</body>"):]
     errors = publication_provenance_errors(tmp_path, run_id, forged_html)
-    assert any("differs from the frozen field" in error for error in errors), errors
+    assert any("differs from every frozen field" in error for error in errors), errors
     assert any("selection hash does not match" in error for error in errors), errors
     assert any("manifest summary hash disagrees" in error for error in errors), errors
 
@@ -754,3 +763,170 @@ def test_site_root_url_is_not_a_specific_original_page(tmp_path: Path) -> None:
         service, run_id, {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE}
     )
     assert [c["url"] for c in candidates] == ["https://example.com/page"]
+
+
+def _build_release_chain(tmp_path: Path, *, freeze_lanes: dict, raw_rows: list[dict]):
+    """Full finalize + manifest chain over the given frozen input and raw rows."""
+    from briefing_skill.publication_manifest import (
+        publication_provenance_errors,
+        write_publication_manifest,
+    )
+
+    service, db = make_service(tmp_path)
+    run_id, issue_id = "run-chain", "issue-chain"
+    seed_issue(db, tmp_path, run_id, issue_id)
+    freeze_dir = tmp_path / "workspace" / "runs" / run_id / "source-cache" / "aihot"
+    write_json(
+        freeze_dir / "freeze.json",
+        {"connector_version": 3, "run_id": run_id, "lane_plan_hash": "plan", "lanes": freeze_lanes},
+    )
+    for row in raw_rows:
+        insert_raw(db, run_id, **row)
+    issue_data = {"run_id": run_id, "id": issue_id, "items": [], "date_to": REFERENCE_DATE}
+    groups = direct_copy_groups(service, issue_id, issue_data)
+    final_groups, contract = finalize_radar_groups(
+        service, groups, issue_id=issue_id, issue_data=issue_data
+    )
+    write_publication_manifest(service, issue_data, final_groups, contract)
+    html = _radar_html(final_groups)
+    return service, db, run_id, final_groups, html, publication_provenance_errors
+
+
+def test_daily_only_radar_passes_release_gate(tmp_path: Path) -> None:
+    # Reviewer repro: a legitimate daily-only item passes collection and
+    # selection but the freeze lookup only read top-level items, so the gate
+    # wrongly rejected it. Daily payloads nest under report.sections[].items.
+    title = "投机解码草稿模型推理提速三倍"
+    summary = "通过投机解码在不改变输出质量的前提下提升 GPU 吞吐，草稿模型约三亿参数。"
+    entry = {
+        "title": title,
+        "summary": summary,
+        "links": {
+            "aihot": "https://aihot.virxact.com/items/cmt-daily",
+            "original": "https://huggingface.co/blog/dspark",
+        },
+    }
+    service, db, run_id, final_groups, html, gate = _build_release_chain(
+        tmp_path,
+        freeze_lanes={
+            "daily": {
+                "url": "https://aihot.virxact.com/api/v1/dailies/latest",
+                "payload": {"report": {"date": REFERENCE_DATE, "sections": [{"label": "模型发布/更新", "items": [entry]}]}},
+            }
+        },
+        raw_rows=[
+            {
+                "url": "https://huggingface.co/blog/dspark",
+                "title": title,
+                "summary": summary,
+                "external_id": "cmt-daily",
+                "lanes": ["daily"],
+                "no_published_at": True,
+                "daily_date": REFERENCE_DATE,
+            }
+        ],
+    )
+    assert gate(tmp_path, run_id, html) == []
+    assert final_groups
+
+
+def test_cross_lane_chinese_fallback_passes_release_gate(tmp_path: Path) -> None:
+    # Reviewer repro: selected carries an English summary, a later lane the
+    # usable Chinese copy; the gate used to anchor to the first identity
+    # match (English) and reject the Chinese fallback.
+    title = "KVCache 跨节点预填调度器开源"
+    english = "An English abstract with no complete Chinese sentence."
+    chinese = "调度器把长尾预填请求偏转到解码节点分块执行，实测收益显著。"
+    original = "https://example.com/multi"
+    service, db, run_id, final_groups, html, gate = _build_release_chain(
+        tmp_path,
+        freeze_lanes={
+            "selected": {"url": "s", "payload": {"items": [
+                {"id": "cmt-multi", "title": title, "summary": english,
+                 "links": {"aihot": "https://aihot.virxact.com/items/cmt-multi", "original": original}}
+            ]}},
+            "all:tpn:kv:q": {"url": "a", "payload": {"items": [
+                {"id": "cmt-multi", "title": title, "summary": chinese,
+                 "links": {"aihot": "https://aihot.virxact.com/items/cmt-multi", "original": original}}
+            ]}},
+        },
+        raw_rows=[
+            {
+                "url": original,
+                "title": title,
+                "summary": english,
+                "external_id": "cmt-multi",
+                "lanes": ["selected", "all"],
+                "copy_variants": [
+                    {"lane": "selected", "lane_key": "selected", "source_field": "summary", "summary": english},
+                    {"lane": "all", "lane_key": "all:tpn:kv:q", "source_field": "summary", "summary": chinese},
+                ],
+            }
+        ],
+    )
+    item = final_groups[0]["items"][0]
+    assert item["summary"] == chinese
+    assert item["copy_provenance"]["lane_key"] == "all:tpn:kv:q"
+    assert gate(tmp_path, run_id, html) == []
+
+
+
+
+def test_missing_hashes_and_category_joint_rewrite_fail_closed(tmp_path: Path) -> None:
+    from briefing_skill.radar_direct import recompute_selection_hash
+    from briefing_skill.utils import read_json as load_json
+
+    title = "推理调度器开源发布"
+    summary = "该推理调度器把长尾请求偏转到空闲解码节点，实测收益显著。"
+    original = "https://example.com/chain"
+    raw = {"id": "cmt-chain", "title": title, "summary": summary,
+           "links": {"aihot": "https://aihot.virxact.com/items/cmt-chain", "original": original}}
+    service, db, run_id, final_groups, html, gate = _build_release_chain(
+        tmp_path,
+        freeze_lanes={"selected": {"url": "s", "payload": {"items": [raw]}}},
+        raw_rows=[{"url": original, "title": title, "summary": summary, "external_id": "cmt-chain"}],
+    )
+    assert gate(tmp_path, run_id, html) == []
+
+    provenance_path = tmp_path / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
+    manifest_path = tmp_path / "workspace" / "runs" / run_id / "publication-manifest.json"
+
+    # Jointly rewriting the manifest AND DOM category while radar-direct and
+    # the selection hash keep the old category must fail.
+    manifest = load_json(manifest_path, {})
+    manifest["radar"][0]["category"] = "存储与介质"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    joint_html = html.replace('data-radar-category="AI Infra"', 'data-radar-category="存储与介质"')
+    errors = gate(tmp_path, run_id, joint_html)
+    assert any("category in HTML does not match radar-direct" in error for error in errors), errors
+
+    # Restore the manifest category before the next scenario.
+    manifest = load_json(manifest_path, {})
+    manifest["radar"][0]["category"] = "AI Infra"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+
+    # Duplicating a direct record with a legitimately recomputed selection
+    # hash still fails on layer counts / duplicate identity.
+    document = load_json(provenance_path, {})
+    duplicated = dict(document["items"][0])
+    duplicated["radar_id"] = duplicated["radar_id"] + "-copy"
+    document["items"].append(duplicated)
+    document["selection_hash"] = recompute_selection_hash(document)
+    provenance_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, html)
+    assert any("layers disagree on records" in error for error in errors), errors
+
+    # Deleting required hash fields is a failure, not "nothing to check".
+    document = load_json(provenance_path, {})
+    del document["selection_hash"]
+    provenance_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, html)
+    assert any("missing required field 'selection_hash'" in error for error in errors)
+
+    document = load_json(provenance_path, {})
+    del document["frozen_input_sha256"]
+    provenance_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, html)
+    assert any("missing required field 'frozen_input_sha256'" in error for error in errors)
+
+

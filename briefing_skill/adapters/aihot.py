@@ -419,10 +419,16 @@ class AIHotCollector:
             "aihot_lane": lane["lane"],
             "aihot_lanes": [lane["lane"]],
             "aihot_canonical_original": canonicalize_url(original),
-            # Every lane's copy candidate is kept so direct-copy can fall back
-            # to another lane's usable Chinese summary when this one is not.
+            # Every lane's copy candidate is kept (with its precise lane key)
+            # so direct-copy can fall back to another lane's usable Chinese
+            # summary and later prove exactly which frozen lane produced it.
             "aihot_copy_variants": [
-                {"lane": lane["lane"], "source_field": variant["source_field"], "summary": summary}
+                {
+                    "lane": lane["lane"],
+                    "lane_key": lane["key"],
+                    "source_field": variant["source_field"],
+                    "summary": summary,
+                }
             ]
             if variant
             else [],
@@ -566,7 +572,11 @@ class AIHotCollector:
         merged: list[dict[str, str]] = []
         seen: set[tuple[str, str, str]] = set()
         for variant in [*(target.get("aihot_copy_variants") or []), *(other.get("aihot_copy_variants") or [])]:
-            key = (str(variant.get("lane") or ""), str(variant.get("source_field") or ""), str(variant.get("summary") or ""))
+            key = (
+                str(variant.get("lane_key") or ""),
+                str(variant.get("source_field") or ""),
+                str(variant.get("summary") or ""),
+            )
             if key in seen:
                 continue
             seen.add(key)

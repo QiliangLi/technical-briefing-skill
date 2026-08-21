@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from briefing_skill.utils import write_json
 from briefing_skill.public_trace_scan import (
     archive_public_files,
     public_upstream_trace_errors,
@@ -148,3 +149,20 @@ def test_publication_manifest_records_radar_identity_and_hash(tmp_path: Path) ->
     assert record["urls"] == ["https://example.com/news"]
     assert record["summary_sha256"].startswith("sha256:")
     assert "aihot" not in json.dumps(manifest).lower()
+
+
+def test_ledger_error_blocks_release_gate(tmp_path: Path) -> None:
+    from briefing_skill.db import Database
+    from briefing_skill.publication_stage import _upstream_ledger_errors
+
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    run_id = "run-ledger-gate"
+    freeze = tmp_path / "workspace" / "runs" / run_id / "source-cache" / "aihot" / "freeze.json"
+    _write(freeze.parent / "noop", "")
+    write_json(freeze, {"connector_version": 3, "run_id": run_id, "ledger_error": "IntegrityError: boom", "lanes": {}})
+    service = SimpleNamespace(db=db, root=tmp_path)
+    assert any("upstream ledger is incomplete" in error.lower() for error in _upstream_ledger_errors(service, run_id))
+
+    write_json(freeze, {"connector_version": 3, "run_id": run_id, "ledger_error": None, "lanes": {}})
+    assert _upstream_ledger_errors(service, run_id) == []

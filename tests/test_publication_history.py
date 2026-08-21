@@ -243,3 +243,37 @@ def test_record_delivery_persists_radar_story_identity(tmp_path: Path) -> None:
         {"run_id": run2, "items": [], "date_to": now_iso()[:10]},
     )
     assert all(candidate["story_id"] != "story-77" for candidate in candidates)
+
+
+def test_stale_unsent_radar_is_not_recorded_as_published(tmp_path: Path) -> None:
+    """Reviewer repro: issue_radar_items leftovers must not become phantom history."""
+    db, service = _service(tmp_path)
+    issue = _issue(
+        db,
+        tmp_path,
+        html="""
+        <html><body><table>
+        <tr data-reader-row="radar-row"><td data-reader-role="radar-card" data-radar-category="AI Infra">
+        <div data-reader-role="radar-item"><a href="https://example.com/sent-a">已发送的雷达条目</a></div>
+        </td></tr>
+        </table></body></html>
+        """,
+    )
+    db.execute(
+        "INSERT INTO issue_radar_items(issue_id,canonical_url,normalized_title,category,title,"
+        "summary,source_name,published_at,position,upstream_item_id,story_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (issue["id"], "https://example.com/sent-a", "已发送", "AI Infra", "已发送的雷达条目",
+         "摘要。", "example.com", "2026-08-21", 1, "item-a", "story-a"),
+    )
+    db.execute(
+        "INSERT INTO issue_radar_items(issue_id,canonical_url,normalized_title,category,title,"
+        "summary,source_name,published_at,position,upstream_item_id,story_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (issue["id"], "https://example.com/stale-b", "未发送", "AI Infra", "从未进入最终邮件的残留条目",
+         "摘要。", "example.com", "2026-08-21", 2, "item-b", "story-b"),
+    )
+
+    record_delivery(service, issue, now_iso(), "test@example.com", "mid-2")
+
+    rows = {row["canonical_url"]: row for row in db.fetchall("SELECT canonical_url, upstream_item_id, story_id FROM radar_history")}
+    assert set(rows) == {"https://example.com/sent-a"}
+    assert rows["https://example.com/sent-a"]["upstream_item_id"] == "item-a"

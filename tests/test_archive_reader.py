@@ -425,3 +425,29 @@ def test_dirty_run_email_blocks_archive_without_partial_writes(tmp_path: Path) -
 
     assert not (tmp_path / "archive" / "issues" / "2026-08-20").exists()
     assert list((tmp_path / "archive" / "issues").glob(".*")) == []
+
+
+def test_interrupted_swap_is_recovered_on_next_run(tmp_path: Path) -> None:
+    _install_schema(tmp_path)
+    run_id = "2026-08-20-094500"
+    item_id = stable_hash(run_id, "item", "event-1")
+    issue = _issue(run_id, _machine_item(item_id))
+    issue_dir = tmp_path / "archive" / "issues" / "2026-08-20"
+    write_json(issue_dir / "issue.json", issue)
+    write_json(issue_dir / "papers.json", [])
+    (issue_dir / "email.html").write_bytes(b"<html><body>legacy artifact</body></html>")
+    apply_historical_rewrite(tmp_path, issue_dir, _reader(issue))
+
+    # Simulate a crash between "target -> backup" and "temp -> target": the
+    # public directory is gone and the backup is the only surviving copy.
+    import os
+
+    backup = issue_dir.with_name(".2026-08-20.backup-999-123456")
+    os.rename(issue_dir, backup)
+    assert not issue_dir.exists()
+
+    # The next entry point recovers the stale backup instead of deleting it.
+    apply_historical_rewrite(tmp_path, issue_dir, _reader(issue))
+    assert issue_dir.is_dir()
+    assert (issue_dir / "reader.json").is_file()
+    assert not backup.exists()

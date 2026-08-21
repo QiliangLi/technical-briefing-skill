@@ -118,6 +118,27 @@ def _structured_provenance_errors(service, run_id: str) -> list[str]:
     ]
 
 
+def _upstream_ledger_errors(service, run_id: str) -> list[str]:
+    """An incomplete upstream audit ledger blocks the release.
+
+    The internal ledger is a hard requirement of the invisible-upstream
+    contract; a collection-time write failure recorded in the freeze must be
+    visible at the gate instead of silently shipping without provenance.
+    """
+    from .utils import read_json
+
+    freeze = read_json(
+        service.root / "workspace" / "runs" / run_id / "source-cache" / "aihot" / "freeze.json",
+        {},
+    )
+    if freeze and freeze.get("ledger_error"):
+        return [
+            "AI Hot upstream ledger is incomplete for this run: "
+            + str(freeze.get("ledger_error"))
+        ]
+    return []
+
+
 def _public_upstream_trace_errors(service, run_id: str) -> list[str]:
     """Published artifacts must not expose the invisible upstream anywhere."""
     from .public_trace_scan import public_upstream_trace_errors, run_public_files
@@ -218,6 +239,7 @@ def install_publication_stage() -> None:
         failures.extend(_publication_quality_errors(self, run_id))
         failures.extend(_structured_provenance_errors(self, run_id))
         failures.extend(_public_upstream_trace_errors(self, run_id))
+        failures.extend(_upstream_ledger_errors(self, run_id))
         report["failures"] = list(dict.fromkeys(failures))
         report["warnings"] = list(dict.fromkeys(report.get("warnings") or []))
         if report["failures"]:

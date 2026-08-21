@@ -235,14 +235,20 @@ def _project_compatibility(conn, issue_id: str, sources: Iterable[PublishedSourc
         )
     # The HTML-derived source rows carry no upstream identity; project the
     # final radar cards' item/story ids so cross-period dedup can block the
-    # same event republished under a new report URL and title.
+    # same event republished under a new report URL and title. The final
+    # email is the publication truth: only radar URLs that actually appear
+    # in the sent HTML (already materialized as published_sources) receive
+    # identity, so stale never-sent leftovers cannot poison future dedup.
     conn.execute(
         """
         INSERT INTO radar_history(
             canonical_url,normalized_title,last_pushed_at,issue_id,upstream_item_id,story_id
         )
-        SELECT canonical_url,normalized_title,?,issue_id,upstream_item_id,story_id
-        FROM issue_radar_items WHERE issue_id=?
+        SELECT iri.canonical_url,iri.normalized_title,?,iri.issue_id,iri.upstream_item_id,iri.story_id
+        FROM issue_radar_items iri
+        JOIN published_sources ps
+          ON ps.issue_id=iri.issue_id AND ps.canonical_url=iri.canonical_url
+        WHERE iri.issue_id=?
         ON CONFLICT(canonical_url) DO UPDATE SET
           last_pushed_at=excluded.last_pushed_at,
           issue_id=excluded.issue_id,
