@@ -415,6 +415,15 @@ const fs = require('fs');
         issue_date = str(data.get("date_to") or "")
         if issue_date and issue_date not in visible_text:
             report["failures"].append("Expanded email issue date is missing")
+        public_site_url = "https://qiliangli.github.io/technical-briefing-skill/"
+        public_site_links = [
+            str(link.get("href") or "")
+            for link in soup.find_all("a", attrs={"data-public-site-link": "1"})
+        ]
+        if public_site_links != [public_site_url]:
+            report["failures"].append("Expanded email public-site link is missing or incorrect")
+        else:
+            report["passes"].append("Expanded email links to the public GitHub Pages site")
         if visible_text.count("阅读原文：") < len(data.get("items", [])):
             report["failures"].append("Expanded email is missing per-item original-source labels")
         else:

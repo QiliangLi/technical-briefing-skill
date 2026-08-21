@@ -175,12 +175,15 @@ def test_email_template_contains_no_item_images() -> None:
     assert "stack-col" in template
     assert "对应：" not in template
     assert "相关解读：" in template
+    assert 'data-public-site-link="1"' in template
+    assert 'href="https://qiliangli.github.io/technical-briefing-skill/"' in template
 
 
 def test_expanded_email_validator_checks_the_deliverable_not_unused_cards(tmp_path: Path) -> None:
     email_path = tmp_path / "email.html"
     email_path.write_text(
         '<header>TECHNICAL BRIEFING AI语义Fabric技术情报（公测版） 2026-08-02</header>'
+        '<a data-public-site-link="1" href="https://qiliangli.github.io/technical-briefing-skill/">GitHub Pages</a>'
         '<div>本期判断 <span data-judgement-ref-count="1"><a href="#item-a1">对应</a></span></div>'
         '<section id="topic-tpn"><article id="item-a1">内容 阅读原文：<a href="https://example.com/a">原始来源</a></article></section>'
         '<footer>热点雷达 · 未经本简报深度核验</footer>',
@@ -196,6 +199,7 @@ def test_expanded_email_validator_checks_the_deliverable_not_unused_cards(tmp_pa
     assert report["failures"] == []
     assert "Expanded email contains no item images" in report["passes"]
     assert "Expanded email judgements expose concrete item references" in report["passes"]
+    assert "Expanded email links to the public GitHub Pages site" in report["passes"]
 
 
 def test_expanded_selection_excludes_items_without_resolved_a_level_source(tmp_path: Path) -> None:
