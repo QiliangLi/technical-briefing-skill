@@ -43,6 +43,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .publication_history_runtime import install_publication_history_runtime
     from .publication_stage import install_publication_stage
     from .quality_guard import install_quality_guards
+    from .radar_direct import install_radar_direct_copy
     from .radar_signal_synthesis import install_radar_signal_synthesis
     from .radar_taxonomy import install_radar_taxonomy
     from .reader_blocks_renderer_v2 import install_reader_blocks_renderer_v2
@@ -120,6 +121,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # card's natural paragraph order and semantic heading keys. The legacy Editorial
     # Intent module remains available only for v1 archive/interrupted-run rendering.
     install_radar_signal_synthesis()
+    # Deterministic direct-copy radar wraps the synthesis path before the
+    # publication stage takes the final groups through filter/finalize.
+    install_radar_direct_copy()
     install_reader_writing_contract()
     install_issue_stage()
     install_reader_projection()

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .radar_direct import direct_copy_reserve_candidates, record_direct_publication
 from .radar_signal_synthesis import build_radar_candidates
 from .reader_writing_contract import text_contains_chinese
 from .utils import canonicalize_url, normalize_text, read_json, write_json
@@ -171,11 +172,18 @@ def finalize_radar_groups(
 
     # Build a current-run reserve pool after Deep + Appendix are final. This replaces
     # the historical-reference refill path that could silently import old Radar cards.
-    candidates = build_radar_candidates(service, str(issue_data.get("run_id") or ""), issue_data)
+    run_id = str(issue_data.get("run_id") or "")
+    direct_candidates = direct_copy_reserve_candidates(service, run_id, issue_data)
+    if direct_candidates is not None:
+        # Direct-copy candidates already carry verbatim public copy and an
+        # original-host source name, so they are used as reserve items as-is.
+        reserve_iterable = direct_candidates
+    else:
+        reserve_iterable = build_radar_candidates(service, run_id, issue_data)
     reserve: list[tuple[str, dict[str, Any]]] = []
     available_by_category: defaultdict[str, int] = defaultdict(int)
     viable_unique: set[str] = set(seen)
-    for candidate in candidates:
+    for candidate in reserve_iterable:
         if not text_contains_chinese(candidate.get("summary")):
             # English-only discovery abstracts can enter the Radar lane only through
             # the synthesis Agent, which writes Chinese signals; they must not be
@@ -187,7 +195,10 @@ def finalize_radar_groups(
         if _github_projects({url}) & forbidden_projects:
             continue
         name = str(candidate.get("category") or "其他技术前沿")
-        reserve.append((name, candidate))
+        if direct_candidates is not None:
+            reserve.append((name, dict(candidate)))
+        else:
+            reserve.append((name, _candidate_to_item(candidate)))
         viable_unique.add(url)
         available_by_category[name] += 1
 
@@ -203,10 +214,10 @@ def finalize_radar_groups(
     raw_eligible = total + len(reserve)
     required = radar_required_minimum(raw_eligible, capacity)
 
-    for name, candidate in reserve:
+    for name, item in reserve:
         if total >= required:
             break
-        add(name, _candidate_to_item(candidate))
+        add(name, item)
 
     contract = {
         "raw_eligible": raw_eligible,
@@ -245,7 +256,17 @@ def finalize_radar_groups(
                         position,
                     ),
                 )
-    return [group for group in final_groups if group.get("items")], contract
+    final_result = [group for group in final_groups if group.get("items")]
+    # The final card set is now immutable: record direct-copy provenance,
+    # compat radar_signals and upstream ledger decisions for exactly this set.
+    record_direct_publication(
+        service,
+        issue_id=issue_id,
+        run_id=run_id,
+        final_groups=final_result,
+        contract=contract,
+    )
+    return final_result, contract
 
 
 def _rendered_item_urls(item: dict[str, Any]) -> list[str]:

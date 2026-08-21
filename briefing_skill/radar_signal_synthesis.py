@@ -5,6 +5,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .freshness import published_age_days
+from .radar_direct import direct_copy_enabled
 from .radar_taxonomy import classify_radar_category
 from .reader_writing_contract import summary_is_reader_chinese, text_contains_chinese
 from .utils import canonicalize_url, read_json
@@ -306,7 +307,9 @@ def install_radar_signal_synthesis() -> None:
         values = list(args)
         run_id = str(values[0] if values else kwargs.get("run_id") or "")
         task_type = values[1] if len(values) > 1 else kwargs.get("task_type")
-        if task_type == "issue_synthesis":
+        if task_type == "issue_synthesis" and not direct_copy_enabled(self):
+            # Direct-copy mode owns radar end to end; the synthesis Agent only
+            # writes judgements/watch-next/insights and never sees radar input.
             if len(values) > 3:
                 values[3] = enrich_issue_synthesis_with_radar(self, run_id, dict(values[3]))
             else:

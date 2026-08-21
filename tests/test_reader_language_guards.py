@@ -267,7 +267,9 @@ class _RecorderDB:
 class _RadarService:
     def __init__(self) -> None:
         self.db = _RecorderDB()
-        self.config = SimpleNamespace(scoring={})
+        # This suite exercises the legacy synthesis reserve path; direct-copy
+        # mode has its own dedicated tests.
+        self.config = SimpleNamespace(scoring={"radar": {"direct_copy": False}})
         self._topic_appendix_cache = {}
 
     def _normalise_reference(self, value: str) -> str:
