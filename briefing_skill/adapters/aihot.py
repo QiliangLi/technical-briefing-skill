@@ -554,16 +554,41 @@ class AIHotCollector:
         )
 
     def _write_ledger(self) -> None:
-        if not self.run_id or not self._upstream_records:
+        """Persist the audit ledger and record the attempt in a status sidecar.
+
+        The frozen responses are immutable, so the ledger status lives in its
+        own sidecar that is rewritten on EVERY collect (fresh or replay):
+        a resume that succeeds clears a previous error, and a resume that
+        fails records it — the release gate reads the sidecar, not the
+        freeze, so neither direction can silently diverge.
+        """
+        if not self.run_id:
             return
-        try:
-            self.db.upsert_radar_upstream_records(self._upstream_records)
-        except Exception as exc:  # noqa: BLE001
-            # The audit ledger must never zero out successfully collected
-            # public candidates: record the failure for the freeze/telemetry
-            # and keep the collected items.
-            self._ledger_error = f"{type(exc).__name__}: {exc}"
-            LOGGER.exception("AI HOT upstream ledger write failed (continuing with collected items)")
+        error: str | None = None
+        if self._upstream_records:
+            try:
+                self.db.upsert_radar_upstream_records(self._upstream_records)
+            except Exception as exc:  # noqa: BLE001
+                # The audit ledger must never zero out successfully collected
+                # public candidates: record the failure for the sidecar and
+                # keep the collected items.
+                error = f"{type(exc).__name__}: {exc}"
+                self._ledger_error = error
+                LOGGER.exception("AI HOT upstream ledger write failed (continuing with collected items)")
+        self._write_ledger_status(error)
+
+    def _write_ledger_status(self, error: str | None) -> None:
+        if self.run_dir is None:
+            return
+        write_json(
+            self.run_dir / "source-cache" / "aihot" / "ledger-status.json",
+            {
+                "run_id": self.run_id,
+                "updated_at": now_iso(),
+                "records_attempted": len(self._upstream_records),
+                "last_error": error,
+            },
+        )
 
     # ------------------------------------------------------------------ dedup
 

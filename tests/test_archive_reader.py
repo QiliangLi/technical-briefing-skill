@@ -451,3 +451,23 @@ def test_interrupted_swap_is_recovered_on_next_run(tmp_path: Path) -> None:
     assert issue_dir.is_dir()
     assert (issue_dir / "reader.json").is_file()
     assert not backup.exists()
+
+
+def test_multi_backup_recovery_picks_newest_by_timestamp(tmp_path: Path) -> None:
+    # String ordering of ".backup-PID-TIMESTAMP" prefers high PIDs; recovery
+    # must pick the newest TIMESTAMP instead and keep it until restored.
+    from briefing_skill.archive_reader import _recover_stale_backup
+
+    target = tmp_path / "archive" / "issues" / "2026-08-20"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    older = target.with_name(".2026-08-20.backup-9999-100")
+    newer = target.with_name(".2026-08-20.backup-1000-200")
+    older.mkdir(parents=True)
+    (older / "marker.txt").write_text("old", encoding="utf-8")
+    newer.mkdir(parents=True)
+    (newer / "marker.txt").write_text("new", encoding="utf-8")
+
+    _recover_stale_backup(target)
+
+    assert (target / "marker.txt").read_text(encoding="utf-8") == "new"
+    assert not older.exists() and not newer.exists()

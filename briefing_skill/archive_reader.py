@@ -627,9 +627,22 @@ def _recover_stale_backup(target: Path) -> None:
         for stale in target.parent.glob(f".{target.name}.backup-*"):
             shutil.rmtree(stale, ignore_errors=True)
         return
-    backups = sorted(target.parent.glob(f".{target.name}.backup-*"))
+
+    def backup_stamp(path: Path) -> tuple[int, int]:
+        parts = path.name.rsplit("-", 2)
+        try:
+            return int(parts[2]), int(parts[1])
+        except (IndexError, ValueError):
+            return -1, -1
+
+    backups = sorted(
+        target.parent.glob(f".{target.name}.backup-*"),
+        key=backup_stamp,
+    )
     if backups:
-        os.rename(backups[-1], target)
+        newest = backups[-1]
+        os.rename(newest, target)
+        # Other leftovers are removed only after the newest copy is restored.
         for stale in backups[:-1]:
             shutil.rmtree(stale, ignore_errors=True)
 

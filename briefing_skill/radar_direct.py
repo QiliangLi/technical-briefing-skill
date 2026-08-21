@@ -73,6 +73,18 @@ _SENTENCE_END_RE = re.compile(r"[。！？!?]|\.(?=\s|$)")
 _COMPLETE_END_RE = re.compile(r"[。！？.!?](?:[”’\"』」）)\]]*)$")
 
 
+def configured_timezone(root) -> str | None:
+    """The configured timezone name, or None when no config is readable."""
+    from .config import ConfigError
+    from .paths import Paths
+
+    try:
+        settings = dict(ConfigBundle.load(Paths(Path(root))).settings or {})
+    except (ConfigError, OSError):
+        return None
+    return str(settings.get("timezone") or "Asia/Shanghai")
+
+
 def direct_copy_mode(service_or_root) -> bool | None:
     """Direct-copy mode from config; ``None`` when no config is readable.
 
@@ -296,8 +308,14 @@ def _public_url_error(url: str) -> str | None:
         return "not an absolute http(s) URL"
     if host == "aihot.virxact.com" or host.endswith(".aihot.virxact.com"):
         return "upstream discovery URL"
-    if not (parsed.path or "").strip("/"):
+    path = (parsed.path or "").strip("/")
+    query = (parsed.query or "").strip()
+    if not path and not query:
         return "site-root URL, not a specific original page"
+    if not path and query:
+        # Query-routed article URLs (e.g. example.com/?p=123) are specific
+        # pages even though the path is empty.
+        return None
     return None
 
 
@@ -678,14 +696,21 @@ def _frozen_input_sha256(service, run_id: str) -> str | None:
 
 
 def _selection_binding(document: dict[str, Any]) -> dict[str, Any]:
+    """Bind over the PERSISTED version fields, not live code constants.
+
+    Old runs keep verifying against the versions that produced them, and a
+    tampered version field changes the recomputed hash instead of passing.
+    """
     from .adapters.aihot import AIHOT_CONNECTOR_VERSION
 
     items = document.get("items") or []
     return {
-        "connector_version": AIHOT_CONNECTOR_VERSION,
-        "direct_copy_version": RADAR_DIRECT_COPY_VERSION,
-        "taxonomy_version": RADAR_TAXONOMY_VERSION,
-        "selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
+        "connector_version": document.get("connector_version", AIHOT_CONNECTOR_VERSION),
+        "direct_copy_version": document.get("direct_copy_version", RADAR_DIRECT_COPY_VERSION),
+        "taxonomy_version": document.get("radar_taxonomy_version", RADAR_TAXONOMY_VERSION),
+        "selection_policy_version": document.get(
+            "radar_selection_policy_version", RADAR_SELECTION_POLICY_VERSION
+        ),
         "run_id": document.get("run_id"),
         "reference_date": document.get("reference_date"),
         "timezone": document.get("timezone"),
@@ -824,12 +849,16 @@ def locate_frozen_source(freeze: dict[str, Any], item: dict[str, Any]) -> dict[s
 
 def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any]], contract: dict[str, Any]) -> None:
     path = service.root / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
+    from .adapters.aihot import AIHOT_CONNECTOR_VERSION
+
     reference = (getattr(service, "_radar_direct_reference", None) or {}).get(run_id) or {}
     write_json(
         path,
         {
             "version": RADAR_DIRECT_COPY_VERSION,
             "run_id": run_id,
+            "connector_version": AIHOT_CONNECTOR_VERSION,
+            "direct_copy_version": RADAR_DIRECT_COPY_VERSION,
             "radar_taxonomy_version": RADAR_TAXONOMY_VERSION,
             "radar_selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
             "reference_date": reference.get("date") or "",
@@ -843,6 +872,7 @@ def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any
                     "category": item.get("category"),
                     "title": item.get("title"),
                     "summary": item.get("summary"),
+                    "source_name": item.get("source_name"),
                     "source_urls": [item.get("url")],
                     "published_at": item.get("published_at"),
                     "published_at_source": item.get("published_at_source") or "upstream_item",

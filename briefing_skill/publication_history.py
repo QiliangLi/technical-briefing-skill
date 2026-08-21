@@ -248,6 +248,7 @@ def _project_compatibility(conn, issue_id: str, sources: Iterable[PublishedSourc
         FROM issue_radar_items iri
         JOIN published_sources ps
           ON ps.issue_id=iri.issue_id AND ps.canonical_url=iri.canonical_url
+          AND ps.section='radar-item'
         WHERE iri.issue_id=?
         ON CONFLICT(canonical_url) DO UPDATE SET
           last_pushed_at=excluded.last_pushed_at,

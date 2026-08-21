@@ -593,7 +593,7 @@ def _radar_html(final_groups) -> str:
                 '<div data-reader-role="radar-item">'
                 f'<a href="{item["url"]}">{item["title"]}</a>'
                 f'<div data-reader-role="radar-summary">{item["summary"]}</div>'
-                f'<div>{date_segment}阅读原文：<a href="{item["url"]}">source</a></div>'
+                f'<div>{date_segment}阅读原文：<a href="{item["url"]}">{item.get("source_name") or ""}</a></div>'
                 "</div>"
             )
         parts.append("</div>")
@@ -930,3 +930,105 @@ def test_missing_hashes_and_category_joint_rewrite_fail_closed(tmp_path: Path) -
     assert any("missing required field 'frozen_input_sha256'" in error for error in errors)
 
 
+def test_empty_radar_state_rejects_injected_cards(tmp_path: Path) -> None:
+    # Reviewer repro: a legitimately-empty direct document plus one injected
+    # manifest+DOM card used to pass because empty layers skipped comparison.
+    import shutil
+
+    from briefing_skill.radar_direct import recompute_selection_hash
+    from briefing_skill.utils import read_json as load_json
+
+    service, db, run_id, final_groups, html, gate = _build_release_chain(
+        tmp_path,
+        freeze_lanes={"selected": {"url": "s", "payload": {"items": []}}},
+        raw_rows=[],
+    )
+    assert final_groups == []
+    assert gate(tmp_path, run_id, html) == []
+
+    manifest_path = tmp_path / "workspace" / "runs" / run_id / "publication-manifest.json"
+    provenance_path = tmp_path / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
+    injected_html = (
+        '<html><body><div data-reader-role="radar-card" data-radar-category="AI Infra">'
+        '<div data-reader-role="radar-item"><a href="https://example.com/injected">注入卡片</a>'
+        '<div data-reader-role="radar-summary">一段没有任何冻结来源的注入摘要。</div></div></div></body></html>'
+    )
+    manifest = load_json(manifest_path, {})
+    manifest["radar"].append(
+        {"radar_id": "radar-x", "category": "AI Infra", "title": "注入卡片",
+         "source_name": "example.com", "urls": ["https://example.com/injected"],
+         "summary_sha256": "sha256:x"}
+    )
+    manifest["radar_contract"]["final_count"] = 1
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, injected_html)
+    assert any("layers disagree" in error for error in errors), errors
+
+    # Clearing a non-empty direct document and recomputing its hash must not
+    # let the original manifest/DOM cards through either.
+    service, db, run_id2, final_groups2, html2, gate2 = _build_release_chain(
+        tmp_path / "shadow-empty",
+        freeze_lanes={"selected": {"url": "s", "payload": {"items": [
+            {"id": "cmt-e", "title": "推理调度器开源发布", "summary": "该推理调度器把长尾请求偏转到空闲解码节点，实测收益显著。",
+             "links": {"aihot": "https://aihot.virxact.com/items/cmt-e", "original": "https://example.com/e"}}
+        ]}}},
+        raw_rows=[{"url": "https://example.com/e", "title": "推理调度器开源发布",
+                   "summary": "该推理调度器把长尾请求偏转到空闲解码节点，实测收益显著。", "external_id": "cmt-e"}],
+    )
+    assert gate2(tmp_path / "shadow-empty", run_id2, html2) == []
+    provenance2 = tmp_path / "shadow-empty" / "workspace" / "runs" / run_id2 / "issue" / "radar-direct.json"
+    document = load_json(provenance2, {})
+    document["items"] = []
+    document["selection_contract"]["final_count"] = 0
+    document["selection_hash"] = recompute_selection_hash(document)
+    provenance2.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    errors = gate2(tmp_path / "shadow-empty", run_id2, html2)
+    assert any("layers disagree" in error for error in errors), errors
+
+
+def test_copied_run_directory_cannot_replay_into_another_run(tmp_path: Path) -> None:
+    import shutil
+
+    title = "推理调度器开源发布"
+    summary = "该推理调度器把长尾请求偏转到空闲解码节点，实测收益显著。"
+    original = "https://example.com/replay"
+    raw = {"id": "cmt-replay", "title": title, "summary": summary,
+           "links": {"aihot": "https://aihot.virxact.com/items/cmt-replay", "original": original}}
+    root_a = tmp_path / "run-a-root"
+    service, db, run_a, final_groups, html, gate = _build_release_chain(
+        root_a,
+        freeze_lanes={"selected": {"url": "s", "payload": {"items": [raw]}}},
+        raw_rows=[{"url": original, "title": title, "summary": summary, "external_id": "cmt-replay"}],
+    )
+    assert gate(root_a, run_a, html) == []
+
+    # Copy run A's ENTIRE artifact set into a run-B directory: internally
+    # consistent files from another run must not validate against run B.
+    root_b = tmp_path / "run-b-root"
+    (root_b / "workspace" / "runs").mkdir(parents=True)
+    shutil.copytree(root_a / "workspace" / "runs" / run_a, root_b / "workspace" / "runs" / "run-B")
+    errors = gate(root_b, "run-B", html)
+    assert any("belongs to another run" in error for error in errors), errors
+
+
+def test_tampered_rule_version_fails(tmp_path: Path) -> None:
+    from briefing_skill.utils import read_json as load_json
+
+    title = "推理调度器开源发布"
+    summary = "该推理调度器把长尾请求偏转到空闲解码节点，实测收益显著。"
+    original = "https://example.com/ver"
+    raw = {"id": "cmt-ver", "title": title, "summary": summary,
+           "links": {"aihot": "https://aihot.virxact.com/items/cmt-ver", "original": original}}
+    service, db, run_id, final_groups, html, gate = _build_release_chain(
+        tmp_path,
+        freeze_lanes={"selected": {"url": "s", "payload": {"items": [raw]}}},
+        raw_rows=[{"url": original, "title": title, "summary": summary, "external_id": "cmt-ver"}],
+    )
+    assert gate(tmp_path, run_id, html) == []
+    provenance_path = tmp_path / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
+    document = load_json(provenance_path, {})
+    document["radar_taxonomy_version"] = 999
+    provenance_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, html)
+    assert any("newer than this code supports" in error for error in errors), errors
+    assert any("selection hash does not match" in error for error in errors), errors

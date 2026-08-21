@@ -277,3 +277,34 @@ def test_stale_unsent_radar_is_not_recorded_as_published(tmp_path: Path) -> None
     rows = {row["canonical_url"]: row for row in db.fetchall("SELECT canonical_url, upstream_item_id, story_id FROM radar_history")}
     assert set(rows) == {"https://example.com/sent-a"}
     assert rows["https://example.com/sent-a"]["upstream_item_id"] == "item-a"
+
+
+def test_deep_source_url_does_not_carry_radar_identity(tmp_path: Path) -> None:
+    """A stale radar URL that only appears in a Deep card gets no radar identity."""
+    db, service = _service(tmp_path)
+    issue = _issue(
+        db,
+        tmp_path,
+        html="""
+        <html><body><table>
+        <tr data-reader-row="deep-row"><td data-reader-role="deep-card">
+        <a href="https://example.com/deep-only">正文引用了该来源</a>
+        </td></tr>
+        </table></body></html>
+        """,
+    )
+    db.execute(
+        "INSERT INTO issue_radar_items(issue_id,canonical_url,normalized_title,category,title,"
+        "summary,source_name,published_at,position,upstream_item_id,story_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        (issue["id"], "https://example.com/deep-only", "正文来源", "AI Infra", "正文里出现的来源",
+         "摘要。", "example.com", "2026-08-21", 1, "item-deep", "story-deep"),
+    )
+
+    record_delivery(service, issue, now_iso(), "test@example.com", "mid-3")
+
+    row = db.fetchone(
+        "SELECT upstream_item_id, story_id FROM radar_history WHERE canonical_url=?",
+        ("https://example.com/deep-only",),
+    )
+    assert row is not None  # generic URL dedup row may exist
+    assert row["upstream_item_id"] is None and row["story_id"] is None

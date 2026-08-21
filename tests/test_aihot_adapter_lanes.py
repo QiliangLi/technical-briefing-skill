@@ -664,3 +664,51 @@ def test_ledger_write_failure_keeps_collected_items(tmp_path: Path) -> None:
         (collector.run_dir / "source-cache" / "aihot" / "freeze.json").read_text(encoding="utf-8")
     )
     assert "simulated ledger failure" in str(freeze_doc.get("ledger_error"))
+
+
+def test_ledger_status_sidecar_resolves_and_records_across_resume(tmp_path: Path) -> None:
+    shared = upstream_item("cmt-resume", "可恢复的KV条目", "该条目在 resume 路径下验证台账状态。", "https://example.com/resume")
+    http = FakeHttp(lane_responses(selected=[shared]))
+    collector, db, run_dir = make_collector(http, tmp_path, run_id="run-resume")
+
+    import briefing_skill.db as db_module
+
+    original = db_module.Database.upsert_radar_upstream_records
+
+    def broken_upsert(self, rows):
+        raise sqlite3.IntegrityError("simulated ledger failure")
+
+    db_module.Database.upsert_radar_upstream_records = broken_upsert
+    try:
+        items = collector.collect()
+    finally:
+        db_module.Database.upsert_radar_upstream_records = original
+    assert [item.external_id for item in items] == ["cmt-resume"]
+    status_path = run_dir / "source-cache" / "aihot" / "ledger-status.json"
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert "simulated ledger failure" in status["last_error"]
+
+    # Resume replays the frozen responses with a healthy ledger: the sidecar
+    # must clear the error even though the freeze itself is immutable.
+    replay = AIHotCollector(
+        config(),
+        db,
+        FakeHttp({}),  # any HTTP attempt raises
+        run_id="run-resume",
+        run_dir=run_dir,
+    )
+    resumed = replay.collect()
+    assert [item.external_id for item in resumed] == ["cmt-resume"]
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert status["last_error"] is None
+    assert status["records_attempted"] > 0
+
+    # A failing resume re-records the error on the immutable freeze.
+    db_module.Database.upsert_radar_upstream_records = broken_upsert
+    try:
+        failing = AIHotCollector(config(), db, FakeHttp({}), run_id="run-resume", run_dir=run_dir)
+        failing.collect()
+    finally:
+        db_module.Database.upsert_radar_upstream_records = original
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    assert "simulated ledger failure" in status["last_error"]

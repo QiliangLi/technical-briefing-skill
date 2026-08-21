@@ -310,6 +310,7 @@ def write_publication_manifest(
                     "radar_id": stable_hash("radar", run_id, primary) if primary else None,
                     "category": str(group.get("name") or "其他技术前沿"),
                     "title": str(item.get("title") or ""),
+                    "source_name": str(item.get("source_name") or "") or None,
                     # The template renders only hot.url even when one synthesized
                     # signal was grounded by multiple source URLs.
                     "urls": [primary] if primary else [],
@@ -404,12 +405,16 @@ def _radar_dom_items(soup) -> list[dict[str, str]]:
                         summary_node = div
                         break
             date = ""
+            source_name = ""
             for div in node.find_all("div"):
                 meta_text = " ".join(div.get_text(" ", strip=True).split())
-                if "阅读原文" in meta_text:
+                if "阅读原文" in div.get_text(" ", strip=True):
                     head = meta_text.split("·", 1)[0].strip()
                     if head and "阅读原文" not in head:
                         date = head
+                    source_link = div.find_all("a", href=True)
+                    if source_link:
+                        source_name = " ".join(source_link[-1].get_text(" ", strip=True).split())
                     break
             result.append(
                 {
@@ -418,6 +423,7 @@ def _radar_dom_items(soup) -> list[dict[str, str]]:
                     "summary": " ".join(summary_node.get_text(" ", strip=True).split()) if summary_node else "",
                     "category": category,
                     "date": date,
+                    "source_name": source_name,
                 }
             )
     return result
@@ -454,6 +460,31 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict
     errors: list[str] = []
     direct_items = list(document.get("items") or [])
 
+    # External anchors: the provenance must belong to THIS active run, its
+    # report date and the currently configured timezone. Internal
+    # self-consistency of a copied sidecar from another run is not enough.
+    if str(document.get("run_id") or "") != run_id:
+        errors.append(
+            "radar-direct provenance belongs to another run "
+            f"({document.get('run_id')!r} != active {run_id!r})"
+        )
+    issue_document = read_json(root / "workspace" / "runs" / run_id / "issue" / "issue.json", {}) or {}
+    active_date = str(issue_document.get("date_to") or "")
+    if active_date and str(document.get("reference_date") or "") != active_date:
+        errors.append(
+            f"radar-direct reference date {document.get('reference_date')!r} does not match the active issue date {active_date!r}"
+        )
+    from .radar_direct import configured_timezone
+
+    expected_timezone = configured_timezone(root)
+    if expected_timezone is not None and str(document.get("timezone") or "") != expected_timezone:
+        errors.append(
+            f"radar-direct timezone {document.get('timezone')!r} does not match the configured {expected_timezone!r}"
+        )
+    manifest_run_id = str(manifest.get("run_id") or "")
+    if manifest_run_id and manifest_run_id != run_id:
+        errors.append(f"publication manifest belongs to another run ({manifest_run_id!r})")
+
     for item in direct_items:
         errors.extend(
             f"radar-direct record {item.get('radar_id')}: {error}"
@@ -476,6 +507,8 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict
     if stored_freeze_hash is not None and stored_freeze_hash != actual_freeze_hash:
         errors.append("radar-direct provenance is not anchored to the current frozen AI Hot input")
     freeze_document = read_json(freeze_path, {}) if freeze_exists else {}
+    if freeze_exists and str(freeze_document.get("run_id") or "") != run_id:
+        errors.append("frozen AI Hot input belongs to another run")
     for item in direct_items:
         if not (item.get("upstream_lanes") or []):
             continue  # non-AI-Hot discovery rows have no freeze anchor
@@ -509,21 +542,55 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict
             "category": normalize_text(record.get("category") or ""),
             "title": normalize_text(record.get("title") or ""),
             "summary_sha256": record.get("summary_sha256"),
+            "radar_id": record.get("radar_id"),
+            "source_name": record.get("source_name"),
         }
         for record in manifest.get("radar") or []
     ]
 
-    # The manifest must link back to the exact provenance document.
-    manifest_contract = manifest.get("radar_contract") or {}
-    if document.get("selection_hash") and manifest_contract.get("selection_hash") not in (
-        None,
-        document["selection_hash"],
-    ):
-        errors.append("publication manifest selection hash does not match radar-direct")
+    # Persisted rule versions must stay within the supported range: a value
+    # from the future is rejected rather than silently re-bound.
+    from .adapters.aihot import AIHOT_CONNECTOR_VERSION
+    from .radar_direct import (
+        RADAR_DIRECT_COPY_VERSION,
+        RADAR_SELECTION_POLICY_VERSION,
+        RADAR_TAXONOMY_VERSION,
+    )
 
-    # Layer counts and uniqueness: direct == manifest == DOM == final_count.
-    contract = document.get("selection_contract") or manifest_contract
-    final_count = int(contract.get("final_count") or 0)
+    supported_versions = {
+        "connector_version": AIHOT_CONNECTOR_VERSION,
+        "direct_copy_version": RADAR_DIRECT_COPY_VERSION,
+        "radar_taxonomy_version": RADAR_TAXONOMY_VERSION,
+        "radar_selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
+    }
+    for field, current in supported_versions.items():
+        value = document.get(field)
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError):
+            errors.append(f"radar-direct provenance field '{field}' is not a version number")
+            continue
+        if numeric > current:
+            errors.append(
+                f"radar-direct provenance field '{field}' ({numeric}) is newer than this code supports ({current})"
+            )
+
+    # The manifest must link back to the exact provenance document; a missing
+    # link is a failure, not an acceptable value.
+    manifest_contract = manifest.get("radar_contract") or {}
+    if document.get("selection_hash") and manifest_contract.get("selection_hash") != document["selection_hash"]:
+        errors.append("publication manifest selection hash is missing or does not match radar-direct")
+
+    # Layer counts and uniqueness: direct == manifest == DOM == final_count,
+    # unconditionally — an empty layer must still agree with the others.
+    contract = document.get("selection_contract") or {}
+    try:
+        final_count = int(contract.get("final_count"))
+    except (TypeError, ValueError):
+        final_count = None
+    if final_count is None:
+        errors.append("radar-direct selection contract is missing a numeric final_count")
+        final_count = -1
     dom_items = _radar_dom_items(soup)
     direct_urls = Counter(canonicalize_url((item.get("source_urls") or [None])[0]) for item in direct_items)
     manifest_urls = Counter(record["url"] for record in manifest_records)
@@ -533,12 +600,12 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict
         errors.append("radar-direct records contain duplicate radar_id values")
     if any(count > 1 for count in direct_urls.values()):
         errors.append("radar-direct records contain duplicate canonical URLs")
-    if len(direct_items) and (direct_urls != manifest_urls or direct_urls != dom_urls):
+    if direct_urls != manifest_urls or direct_urls != dom_urls:
         errors.append(
             "Radar layers disagree on records (count/multiplicity): "
             f"direct={len(direct_items)} manifest={len(manifest_records)} dom={len(dom_items)}"
         )
-    if final_count and len(dom_items) != final_count:
+    if len(dom_items) != final_count:
         errors.append(f"Radar DOM count {len(dom_items)} does not equal the contract final_count {final_count}")
 
     # Field-level chain: direct -> manifest -> DOM for category, title and date.
@@ -562,8 +629,16 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict
             errors.append(f"Radar title in manifest does not match radar-direct for {url}")
         if manifest_record["summary_sha256"] != (direct_item.get("copy_provenance") or {}).get("public_text_hash"):
             errors.append(f"publication manifest summary hash disagrees with radar-direct for {url}")
+        if str(direct_item.get("radar_id") or "") != str(manifest_record.get("radar_id") or ""):
+            errors.append(f"publication manifest radar_id disagrees with radar-direct for {url}")
         if str(direct_item.get("published_at") or "") != rendered["date"]:
             errors.append(f"Radar published date in HTML does not match radar-direct for {url}")
+        if normalize_text(direct_item.get("source_name") or "") != normalize_text(rendered.get("source_name") or ""):
+            errors.append(f"Radar source name in HTML does not match radar-direct for {url}")
+        if manifest_record.get("source_name") is not None and normalize_text(
+            manifest_record.get("source_name") or ""
+        ) != normalize_text(direct_item.get("source_name") or ""):
+            errors.append(f"publication manifest source name disagrees with radar-direct for {url}")
 
         provenance = direct_item.get("copy_provenance") or {}
         title_provenance = direct_item.get("title_provenance") or {}

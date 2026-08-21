@@ -127,10 +127,18 @@ def _upstream_ledger_errors(service, run_id: str) -> list[str]:
     """
     from .utils import read_json
 
-    freeze = read_json(
-        service.root / "workspace" / "runs" / run_id / "source-cache" / "aihot" / "freeze.json",
-        {},
-    )
+    base = service.root / "workspace" / "runs" / run_id / "source-cache" / "aihot"
+    status = read_json(base / "ledger-status.json", None)
+    if status is not None:
+        # The sidecar is the truth: it is rewritten on every collect, so a
+        # successful resume clears the error and a failing one records it.
+        if status.get("last_error"):
+            return [
+                "AI Hot upstream ledger is incomplete for this run: "
+                + str(status.get("last_error"))
+            ]
+        return []
+    freeze = read_json(base / "freeze.json", {})
     if freeze and freeze.get("ledger_error"):
         return [
             "AI Hot upstream ledger is incomplete for this run: "
