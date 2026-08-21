@@ -311,3 +311,79 @@ def test_freeze_from_other_run_is_not_reused(tmp_path: Path) -> None:
 )
 def test_story_id_only_from_official_links(links, expected) -> None:
     assert upstream_story_id({"links": links}) == expected
+
+
+def test_all_query_lane_collects_with_direction_hint_and_story(tmp_path: Path) -> None:
+    query = "KV cache prefill"
+    # Build the exact keys the adapter produces for the all/paper lanes.
+    from urllib.parse import urlencode as _encode
+
+    all_key = f"{ENDPOINT}?{_encode({'mode': 'all', 'window': '7d', 'by': 'timeline', 'limit': 15, 'q': query})}"
+    paper_key = (
+        f"{ENDPOINT}?{_encode({'mode': 'all', 'category': 'paper', 'window': '7d', 'by': 'timeline', 'limit': 15, 'q': query})}"
+    )
+    queried = upstream_item(
+        "cmt7",
+        "KVCache 预填分段传输论文",
+        "论文提出把预填阶段 KV cache 分段跨节点传输，降低首 token 延迟。",
+        "https://arxiv.org/abs/2608.11111",
+        story="story-7",
+    )
+    http = FakeHttp(
+        {
+            SELECTED_URL: Response({"items": []}),
+            all_key: Response({"items": [queried]}),
+            paper_key: Response({"items": [queried]}),
+            DAILY_URL: Response({"report": {"date": "2026-08-21", "sections": []}}),
+            HOT_URL: Response({"items": []}),
+        }
+    )
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    run_dir = tmp_path / "runs" / "run-all"
+    run_dir.mkdir(parents=True)
+    db.create_run("run-all", "COLLECTING")
+    topic_config = ConfigBundle(
+        topics={
+            "topics": [
+                {
+                    "id": "tpn",
+                    "name": "TPN",
+                    "aihot_priority": "medium",
+                    "directions": [{"id": "kv", "aihot_queries": [query]}],
+                }
+            ]
+        },
+        sources={
+            "sources": [
+                {
+                    "id": "aihot",
+                    "type": "aihot",
+                    "enabled": True,
+                    "endpoint": ENDPOINT,
+                    "api_base": API_BASE,
+                    "window": "7d",
+                    "base_selected_limit": 50,
+                    "query_limits": {"medium": 15},
+                    "hot_topics_enabled": True,
+                    "daily_enabled": True,
+                }
+            ]
+        },
+        scoring={},
+        settings={},
+        email={},
+    )
+    collector = AIHotCollector(topic_config, db, http, run_id="run-all", run_dir=run_dir)
+
+    items = collector.collect()
+
+    assert [item.external_id for item in items] == ["cmt7"]
+    merged = items[0]
+    assert merged.topic_hint == "tpn" and merged.direction_hint == "kv"
+    assert set(merged.payload["aihot_lanes"]) == {"all", "paper"}
+    assert merged.payload["aihot_story_id"] == "story-7"
+    assert merged.priority > 15.0  # query boost applied
+    lanes = {record["upstream_lane"] for record in db.list_radar_upstream_records("run-all")}
+    # Empty lanes record no observations; only lanes with items appear.
+    assert lanes == {"all", "paper"}

@@ -189,17 +189,23 @@ python scripts/estimate_efficiency.py
 
 ## 信息源规则
 
-### AI HOT
+### AI HOT（不可见上游）
 
-AI HOT对以下方向提高优先级：
+AI HOT是隐形上游编辑与发现服务，接入四条栏目lane：
 
-- Agent语义加速；
-- Coding Agent、CodeGraph、仓库索引和工具链；
-- KVCache、Prefill/Decode、LLM Serving和Token性能网络；
-- AI芯片、加速器架构、Chiplet、先进封装和内存接口；
-- 跨域KVCache和Agent Cache。
+- `selected`：最近24小时精选，主要Radar直出候选池；
+- `all`：按Direction关键词查询最近7天，作为专题补漏和候补池；
+- `daily`：AI 日报结构化条目，补充精选与关键词查询的遗漏；
+- `hot`：热点榜，只提供热点权重与story身份，本身不产出公开卡片；无法解析到单条摘要的热点仅计入内部覆盖统计。
 
-但AI HOT永远是发现源：
+连接器行为：
+
+- 每个run把全部lane响应冻结在`workspace/runs/<run_id>/source-cache/aihot/freeze.json`，resume/重渲染只读冻结数据，绝不重新请求上游；
+- ETag 304从跨运行响应缓存物化内容，新run不会因为上游未变化而拿到空Radar；
+- 每条lane观察都写入内部`radar_upstream_records`台账（provider、item/story ID、内容hash、原始payload、是否采用与原因），该台账永不进入归档或Pages；
+- AI HOT对Agent语义加速、Coding Agent、KVCache/Prefill-Decode、AI芯片与跨域Cache等方向提高查询优先级。
+
+AI HOT对深度通道永远是发现源：
 
 ```text
 AI HOT候选
@@ -210,7 +216,7 @@ AI HOT候选
 → 事实抽取 / 必要时一次Evidence Repair / 缓存复用
 ```
 
-不得把AI HOT的AI摘要直接当作技术证据。
+不得把AI HOT的AI摘要直接当作技术证据。Radar通道则直接采用冻结的上游单条标题与摘要（见"跨期去重与热点Radar"），不调用Agent改写。
 
 ### Follow Builders与YeeKal AI Daily
 
@@ -299,10 +305,13 @@ relevance复用的目标是避免60天滚动池中同一个不可变版本反复
 - 同一稳定身份的历史事件共享`last_pushed_at`，标题语言、版本号或摘要变化不得绕过去重；
 - relevance cache和facts cache都比事件去重更严格：外部版本号/内容指纹或对应评审/抽取版本发生变化时不得复用旧结果，即使事件身份仍属于同一论文或项目；
 - 专题补充与Radar共享推送URL历史，已经以短摘要展示的内容后续不得无变化重复出现；
-- Radar独立按原始URL和规范化标题跨期去重；
+- Radar独立按原始URL和规范化标题跨期去重；同一story的多篇报道按story身份合并，每期最多一条；
 - Radar最多8条、每类最多2条，只允许AI系统、Agent、KVCache、芯片、内存、存储介质、网络和开发工具；
 - 排除融资财报、股价、高管言论、政治政策、版权诉讼、游戏娱乐和消费应用；
-- Radar只链接原始来源，内部发现源不得出现在邮件文字或链接中。
+- Radar卡片由确定性代码直接采用冻结上游的单条标题与摘要（整段或连续完整句子），不做生成式改写；每条公开文案保存hash/span溯源，可证明发布字符全部来自冻结上游字段；
+- `issue_synthesis`不读写Radar；`radar.direct_copy`（默认开启）控制确定性直出，关闭则回退到综合Agent写作radar_signals的旧路径；
+- Radar只链接并展示原始网页来源；发布前对邮件、归档公开JSON和Pages数据做上游痕迹负向扫描（品牌、域名、provider字段），任何AI HOT可见痕迹都会使发布失败；
+- Radar在知识层固定为`evidence_kind=discovery_signal`、`claim_strength=unverified`，只能聚类与计数，不得直接支持或否决Roadmap阶段与Idea。
 
 ## 视觉规则
 

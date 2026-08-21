@@ -482,6 +482,16 @@ def record_direct_publication(
     _update_ledger_decisions(run_id, pool, final_items, service)
 
 
+def _frozen_input_sha256(service, run_id: str) -> str | None:
+    """Bind the selection to the exact frozen AI Hot responses it was derived from."""
+    import hashlib
+
+    path = service.root / "workspace" / "runs" / run_id / "source-cache" / "aihot" / "freeze.json"
+    if not path.is_file():
+        return None
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any]], contract: dict[str, Any]) -> None:
     path = service.root / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
     write_json(
@@ -491,6 +501,7 @@ def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any
             "run_id": run_id,
             "radar_taxonomy_version": RADAR_TAXONOMY_VERSION,
             "radar_selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
+            "frozen_input_sha256": _frozen_input_sha256(service, run_id),
             "selection_hash": stable_hash(
                 run_id, *[canonicalize_url(item.get("url")) for item in final_items], length=32
             ),
