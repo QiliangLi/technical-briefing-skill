@@ -341,3 +341,21 @@ def test_future_archive_rejects_sidecar_bound_to_another_current_item(tmp_path: 
 
     with pytest.raises(ValueError, match="bound to a different machine item"):
         archive_issue(tmp_path, run_id)
+
+
+def test_historical_rewrite_blocked_by_upstream_trace_scan(tmp_path: Path) -> None:
+    _install_schema(tmp_path)
+    run_id = "2026-08-20-094500"
+    item_id = stable_hash(run_id, "item", "event-1")
+    issue = _issue(run_id, _machine_item(item_id))
+    issue_dir = tmp_path / "archive" / "issues" / "2026-08-20"
+    write_json(issue_dir / "issue.json", issue)
+    write_json(issue_dir / "papers.json", [])
+    (issue_dir / "email.html").write_bytes(b"<html><body>legacy artifact</body></html>")
+
+    reader = _reader(issue)
+    reader["watch_next"] = ["接下来关注来自 AI HOT 精选的调度信号。"]
+    with pytest.raises(ValueError, match="upstream trace scan"):
+        apply_historical_rewrite(tmp_path, issue_dir, reader)
+    # No public file was replaced by the blocked rewrite.
+    assert (issue_dir / "reader.json").exists() is False

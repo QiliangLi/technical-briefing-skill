@@ -614,6 +614,8 @@ def _write_if_changed(path: Path, text: str) -> None:
 
 
 def apply_historical_rewrite(root: Path, issue_dir: Path, reader: dict[str, Any]) -> dict[str, Any]:
+    from .public_trace_scan import archive_public_files, public_text_trace_errors, public_upstream_trace_errors
+
     issue = read_json(issue_dir / "issue.json", {})
     validate_reader_document(root, issue, reader)
     if reader.get("rewrite_status") != "historical_semantic_rewrite":
@@ -624,6 +626,11 @@ def apply_historical_rewrite(root: Path, issue_dir: Path, reader: dict[str, Any]
         if (issue_dir / "publication-manifest.json").is_file()
         else backup_original_html(issue_dir)
     )
+    # Every public archive write path shares the invisible-upstream contract:
+    # the proposed reader and both rendered variants are scanned BEFORE any
+    # public file is replaced (only internal original/ snapshots may exist
+    # already), so a rewrite can never reintroduce an upstream trace into
+    # reader.json, the emails or Pages data.
     html = render_reader_over_original(issue_dir, issue, reader)
     illustrated_source = issue_dir / "original" / "email-illustrated.html"
     illustrated_html = (
@@ -631,12 +638,25 @@ def apply_historical_rewrite(root: Path, issue_dir: Path, reader: dict[str, Any]
         if illustrated_source.is_file()
         else html
     )
+    trace_errors = public_text_trace_errors(
+        {
+            "reader.json": json.dumps(reader, ensure_ascii=False),
+            "email.html": html,
+            "email-illustrated.html": illustrated_html,
+        }
+    )
+    if trace_errors:
+        raise ValueError("historical rewrite blocked by upstream trace scan:\n" + "\n".join(trace_errors))
     write_json(issue_dir / "reader.json", reader)
     _write_if_changed(issue_dir / "email.html", html)
     # A legacy archive may not preserve enough provenance to recover an illustrated
     # variant. Publish the same complete reader view instead of inventing images.
     _write_if_changed(issue_dir / "email-illustrated.html", illustrated_html)
-    return write_publication_manifest(issue_dir, reader, originals=originals)
+    manifest = write_publication_manifest(issue_dir, reader, originals=originals)
+    post_errors = public_upstream_trace_errors(archive_public_files(issue_dir))
+    if post_errors:
+        raise ValueError("archived issue failed post-write upstream trace scan:\n" + "\n".join(post_errors))
+    return manifest
 
 
 def _manifest_files(issue_dir: Path) -> dict[str, str]:

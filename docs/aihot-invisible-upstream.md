@@ -25,17 +25,27 @@ AI Hot 是不可见的上游编辑与发现服务：
 
 ## 冻结、缓存与幂等
 
-- 每个 run 的全部 lane 响应冻结在 `workspace/runs/<run_id>/source-cache/aihot/freeze.json`；重复 collect 同一 run 时直接回放冻结数据，不再请求上游；
+- 每个 run 的全部 lane 响应与 lane 计划 hash 一起冻结在 `workspace/runs/<run_id>/source-cache/aihot/freeze.json`；重复 collect 同一 run 时直接回放冻结数据，不再请求上游；配置改变了 lane 计划时旧 freeze 整体失效并重新抓取，绝不部分回放、部分联网；
+- 单个 lane 失败只记录错误并继续（结果与错误状态一并冻结），已成功 lane 的结果不受影响；全部 lane 失败才视为 provider 级失败；
 - 跨运行响应体缓存在 SQLite `source_state.payload.body`；304 时回放缓存体，新 run 不会拿到空 Radar；旧缓存无响应体时强制重新拉取；
-- `radar_upstream_records` 台账记录每条 lane 观察（含是否被采用、radar_id、决策原因），按 run 隔离、upsert 幂等。
+- `radar_upstream_records` 台账按完整 lane key 记录每条观察（query/topic/direction、ETag、首次抓取时间、是否被采用、radar_id、决策原因），按 run 隔离、upsert 幂等，resume 不覆盖原始抓取身份。
+
+## 日期与文案纪律
+
+- Radar 新鲜度以 active run 的报告日期（issue `date_to`）为唯一基准，同一冻结 run 任何时候 resume/render 结果一致；缺失报告日期直接报错，绝不回退墙上时钟；
+- AI 日报日期只是内部召回边界：日报条目缺少自己的原始发布日期时，公开卡片不显示日期，绝不把日报日期伪装成原始发布日期；
+- 上游 `reason`（编辑推荐理由）永不进入公开文案，只保留在内部台账；公开摘要只接受 `summary`/`description` 字段；
+- 公开标题不截断：超出上限（160 字符）的标题整条淘汰；
+- 同一 item 的多 lane 文案变体全部保留，直出时按 selected > daily > all > paper 顺序回退到第一个可用的中文完整句版本。
 
 ## 确定性直出
 
 - 开关：`config/scoring.yaml` → `radar.direct_copy`（默认 true）；
 - 候选合并身份顺序：story ID → item ID → 规范化原始 URL → 稳定身份（arXiv/DOI/GitHub）→ 规范化标题；
-- 技术范围过滤、跨期去重（`radar_history`）、深度/附录 URL 冲突排除后按确定性权重排序（hot +40 / selected +30 / daily +20 / Direction 0-20 / A 级 URL +10 / 多栏目 +5 / 24 小时内 +5）；
+- 技术范围过滤、跨期去重（`radar_history` 的 URL、统一规范化标题、upstream item ID 与 story ID——同一事件换报道/URL/标题也无法重复发布）、深度/附录 URL 冲突排除后按确定性权重排序（hot +40 / selected +30 / daily +20 / Direction 0-20 / A 级 URL +10 / 多栏目 +5 / 24 小时内 +5）；
 - 数量约束：最多 8 条、每类最多 2 条、同一 story/GitHub 项目最多 1 条；合法候选不足时允许少于 5 条并记录 underfill 原因；
-- 公开文案 = 冻结上游标题 + 完整摘要（或 1-2 个连续完整句子）；run 目录 `issue/radar-direct.json` 保存每条的 source_field/source_text_hash/span/public_text_hash，可机器验证发布字符全部来自冻结字段；
+- 公开文案 = 冻结上游标题 + 完整摘要（或 1-2 个连续完整句子）；run 目录 `issue/radar-direct.json` 保存每条标题与摘要的 source_field/source_text_hash/span/public_text_hash，`selection_hash` 绑定冻结输入 hash、规则版本和全部公开字段 hash；
+- 发布门不只是记录溯源：`Renderer.validate` 会逐条执行 hash/span 验证、从最终 DOM 提取每张卡片的标题与摘要并与冻结 provenance 比对；direct-copy 模式下缺失 provenance 记录、卡片缺失/多出或文案被改写都会使发布失败；
 - `issue_synthesis` 不再读取 radar_candidates，也不再生成 radar_signals；确定性 finalize 负责写入兼容的 `synthesis.radar_signals`（archive/Pages 继续可用）。
 
 ## 公开痕迹负向扫描
@@ -56,7 +66,7 @@ AI Hot 是不可见的上游编辑与发现服务：
 
 ## 灰度与回滚
 
-- 回滚到旧的 Agent 写作路径：`config/scoring.yaml` 设 `radar.direct_copy: false`（`issue_synthesis` 会自动恢复注入 radar_candidates）；
+- 回滚到旧的 Agent 写作路径：`config/scoring.yaml` 设 `radar.direct_copy: false`（`issue_synthesis` 会自动恢复注入 radar_candidates，并切换到 `prompts/issue-synthesis-legacy-radar.md`——与输入契约一致的 legacy 版本化 Prompt）；
 - 建议先跑一期 shadow run：collect 后用冻结输入分别对比新旧 Radar 的信息量、重复率、类别覆盖与公开文案，再默认启用。
 
 ## 使用范围边界

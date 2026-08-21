@@ -615,3 +615,59 @@ def test_radar_evidence_is_unverified_and_cannot_support_ideas(tmp_path: Path) -
     }
     errors = idea_semantic_errors(idea, issue_date="2026-08-01", evidence=evidence)
     assert any("unverified discovery signal" in error for error in errors)
+
+
+def test_promoted_radar_fits_timeline_but_never_stage_evidence(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    radar_id = _add_radar(
+        root, "2026-08-01", category="AI Infra", url="https://example.com/radar-x", title="Radar 推理信号"
+    )
+    evidence = PublishedArchive(root).evidence_through("2026-08-01")
+    timeline_ref = {"item_id": radar_id, "issue_date": "2026-08-01", "source_urls": ["https://example.com/radar-x"]}
+    promoted = [
+        {
+            "status": "promoted",
+            "promotion_target": {"topic_id": "topic_a", "branch_id": "direction_a"},
+            "evidence_item_ids": [radar_id],
+        }
+    ]
+    roadmap = {
+        "roadmap_id": "roadmap_topic_a",
+        "topic_id": "topic_a",
+        "topic_name": "专题 A",
+        "evidence_scope": "published_archive_only",
+        "updated_by_issue": "2026-08-01",
+        "summary": "Radar 只进时间线。",
+        "view_mode": "evidence_timeline",
+        "branches": [
+            {
+                "branch_id": "direction_a",
+                "name": "方向 A",
+                "direction_ids": ["direction_a"],
+                "status": "emerging",
+                "stages": [],
+                "evidence_timeline": [timeline_ref],
+                "open_questions": [],
+                "evidence_item_ids": [radar_id],
+                "source_urls": ["https://example.com/radar-x"],
+            }
+        ],
+    }
+    errors = roadmap_semantic_errors(
+        roadmap, topic_id="topic_a", issue_date="2026-08-01", evidence=evidence, promoted_clusters=promoted
+    )
+    assert not any("unverified radar" in error for error in errors), errors
+
+    roadmap["branches"][0]["stages"] = [
+        {
+            "stage_id": "s1",
+            "name": "阶段一",
+            "status": "hypothesis",
+            "evidence_for": [dict(timeline_ref)],
+            "evidence_against": [],
+        }
+    ]
+    errors = roadmap_semantic_errors(
+        roadmap, topic_id="topic_a", issue_date="2026-08-01", evidence=evidence, promoted_clusters=promoted
+    )
+    assert any("unverified radar discovery signal" in error for error in errors)

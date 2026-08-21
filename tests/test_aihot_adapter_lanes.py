@@ -14,7 +14,20 @@ from briefing_skill.db import Database
 
 ENDPOINT = "https://aihot.virxact.com/api/v1/items"
 API_BASE = "https://aihot.virxact.com/api/v1"
-SELECTED_URL = f"{ENDPOINT}?mode=selected&window=24h&by=timeline&limit=50"
+
+
+def _request_key(url: str, params: dict | None) -> str:
+    if not params:
+        return url
+    from urllib.parse import parse_qsl
+
+    base, _, existing = url.partition("?")
+    merged = dict(parse_qsl(existing, keep_blank_values=True))
+    merged.update({str(k): str(v) for k, v in params.items()})
+    return f"{base}?{urlencode(sorted(merged.items()))}"
+
+
+SELECTED_URL = _request_key(ENDPOINT, {"mode": "selected", "window": "24h", "by": "timeline", "limit": 50})
 HOT_URL = f"{API_BASE}/hot-topics"
 DAILY_URL = f"{API_BASE}/dailies/latest"
 
@@ -39,7 +52,7 @@ class FakeHttp:
         self.calls: list[tuple[str, dict]] = []
 
     def get(self, url, *, params=None, headers=None, retries=3):
-        key = f"{url}?{urlencode(params)}" if params else url
+        key = _request_key(url, params)
         self.calls.append((key, dict(headers or {})))
         value = self.responses[key]
         if isinstance(value, Exception):
@@ -175,7 +188,10 @@ def test_daily_and_hot_lanes_merge_into_single_candidates(tmp_path: Path) -> Non
     daily_item = next(item for item in items if item.external_id == "cmt2")
     assert daily_item.payload["aihot_lane"] == "daily"
     assert daily_item.payload["aihot_daily_section"] == "模型发布/更新"
-    assert daily_item.published_at == "2026-08-21"
+    # The daily date is an internal recall bound only; it must never be
+    # presented as the original page's publication date.
+    assert daily_item.published_at is None
+    assert daily_item.payload["aihot_daily_date"] == "2026-08-21"
 
     records = db.list_radar_upstream_records("run-1")
     by_lane = {}
@@ -224,7 +240,7 @@ def test_304_without_cached_body_forces_refetch(tmp_path: Path) -> None:
 
     class TwoPhaseHttp(FakeHttp):
         def get(self, url, *, params=None, headers=None, retries=3):
-            key = f"{url}?{urlencode(params)}" if params else url
+            key = _request_key(url, params)
             if key == SELECTED_URL:
                 self.calls.append((key, dict(headers or {})))
                 if headers:
@@ -315,12 +331,14 @@ def test_story_id_only_from_official_links(links, expected) -> None:
 
 def test_all_query_lane_collects_with_direction_hint_and_story(tmp_path: Path) -> None:
     query = "KV cache prefill"
-    # Build the exact keys the adapter produces for the all/paper lanes.
-    from urllib.parse import urlencode as _encode
-
-    all_key = f"{ENDPOINT}?{_encode({'mode': 'all', 'window': '7d', 'by': 'timeline', 'limit': 15, 'q': query})}"
-    paper_key = (
-        f"{ENDPOINT}?{_encode({'mode': 'all', 'category': 'paper', 'window': '7d', 'by': 'timeline', 'limit': 15, 'q': query})}"
+    # Build normalized keys the same way the fake matches request params.
+    all_key = _request_key(
+        ENDPOINT,
+        {"mode": "all", "window": "7d", "by": "timeline", "limit": 15, "q": query},
+    )
+    paper_key = _request_key(
+        ENDPOINT,
+        {"mode": "all", "category": "paper", "window": "7d", "by": "timeline", "limit": 15, "q": query},
     )
     queried = upstream_item(
         "cmt7",
@@ -387,3 +405,119 @@ def test_all_query_lane_collects_with_direction_hint_and_story(tmp_path: Path) -
     lanes = {record["upstream_lane"] for record in db.list_radar_upstream_records("run-all")}
     # Empty lanes record no observations; only lanes with items appear.
     assert lanes == {"all", "paper"}
+
+
+def test_config_lane_plan_change_invalidates_freeze(tmp_path: Path) -> None:
+    shared = upstream_item("cmt1", "冻结条目一", "该条目在旧 lane 计划下已冻结。", "https://example.com/frozen-1")
+    http = FakeHttp(lane_responses(selected=[shared]))
+    collector, db, run_dir = make_collector(http, tmp_path, run_id="run-plan")
+    first = collector.collect()
+    assert [item.external_id for item in first] == ["cmt1"]
+
+    # Same connector version but a changed query-lane plan: the freeze is
+    # invalid as a whole and must be refetched, never partially replayed.
+    extra_query = "agent harness"
+    extra_key = _request_key(
+        ENDPOINT,
+        {"mode": "all", "window": "7d", "by": "timeline", "limit": 15, "q": extra_query},
+    )
+    extra_item = upstream_item("cmt2", "新查询条目", "新 lane 计划下的补充条目。", "https://example.com/frozen-2")
+
+    def config_with_extra_query():
+        return ConfigBundle(
+            topics={
+                "topics": [
+                    {
+                        "id": "tpn",
+                        "name": "TPN",
+                        "aihot_priority": "medium",
+                        "directions": [{"id": "kv", "aihot_queries": [extra_query]}],
+                    }
+                ]
+            },
+            sources={
+                "sources": [
+                    {
+                        "id": "aihot",
+                        "type": "aihot",
+                        "enabled": True,
+                        "endpoint": ENDPOINT,
+                        "api_base": API_BASE,
+                        "window": "7d",
+                        "base_selected_limit": 50,
+                        "query_limits": {"medium": 15},
+                        "hot_topics_enabled": True,
+                        "daily_enabled": True,
+                    }
+                ]
+            },
+            scoring={},
+            settings={},
+            email={},
+        )
+
+    http2 = FakeHttp(
+        {
+            **lane_responses(selected=[shared]),
+            extra_key: Response({"items": [extra_item]}),
+        }
+    )
+    replay = AIHotCollector(config_with_extra_query(), db, http2, run_id="run-plan", run_dir=run_dir)
+    second = replay.collect()
+    assert {item.external_id for item in second} == {"cmt1", "cmt2"}
+    assert any(call[0] == SELECTED_URL for call in http2.calls)
+    freeze_doc = json.loads((run_dir / "source-cache" / "aihot" / "freeze.json").read_text(encoding="utf-8"))
+    assert extra_key in freeze_doc["lanes"]["all:tpn:kv:agent harness"]["url"]
+
+
+def test_single_lane_failure_keeps_successful_lanes(tmp_path: Path) -> None:
+    good = upstream_item("cmt-ok", "可用的推理条目", "该条目来自精选 lane，摘要完整可用。", "https://example.com/ok")
+    http = FakeHttp(
+        {
+            SELECTED_URL: Response({"items": [good]}),
+            DAILY_URL: RuntimeError("daily 429"),
+            HOT_URL: Response({"items": []}),
+        }
+    )
+    collector, db, _ = make_collector(http, tmp_path)
+    items = collector.collect()
+    assert [item.external_id for item in items] == ["cmt-ok"]
+
+    # Every planned lane failing is a provider-level failure.
+    http_all_down = FakeHttp(
+        {
+            SELECTED_URL: RuntimeError("selected down"),
+            DAILY_URL: RuntimeError("daily down"),
+            HOT_URL: RuntimeError("hot down"),
+        }
+    )
+    collector2, _, _ = make_collector(http_all_down, tmp_path, run_id="run-all-down")
+    with pytest.raises(RuntimeError, match="provider failure"):
+        collector2.collect()
+
+
+def test_reason_only_item_never_carries_public_summary(tmp_path: Path) -> None:
+    reason_only = {
+        "id": "cmt-reason",
+        "title": "只有推荐理由的条目",
+        "reason": "上游编辑认为该推理调度变化值得关注，推荐理由不是原文摘要。",
+        "links": {"aihot": "https://aihot.virxact.com/items/cmt-reason", "original": "https://example.com/reason"},
+    }
+    http = FakeHttp(
+        lane_responses(
+            selected=[reason_only],
+            daily=daily_payload({"label": "模型发布/更新", "items": [reason_only]}),
+        )
+    )
+    collector, db, _ = make_collector(http, tmp_path)
+
+    items = collector.collect()
+
+    # The item survives as an internal observation but carries NO public
+    # copy: reason is never promoted into the summary field.
+    assert len(items) == 1 and items[0].summary == ""
+    assert items[0].payload["aihot_copy_variants"] == []
+    records = {r["upstream_lane"]: r for r in db.list_radar_upstream_records("run-1")}
+    # The reason is preserved internally for audit, but no public copy exists.
+    assert records["selected"]["reason"].startswith("上游编辑认为")
+    assert records["selected"]["summary"] is None

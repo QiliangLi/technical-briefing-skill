@@ -352,10 +352,15 @@ def roadmap_semantic_errors(
     all_referenced: set[str] = set()
     for branch_index, branch in enumerate(roadmap.get("branches") or []):
         branch_id = str(branch.get("branch_id") or "")
-        allowed = dict(topic_allowed)
+        # Promoted radar may only appear in this branch's precise evidence
+        # timeline as an unverified discovery signal. Stage conclusions stay
+        # restricted to evidence that re-entered through the original-source
+        # fact pipeline (design §13.2: radar can never support stage claims).
+        timeline_allowed = dict(topic_allowed)
         for item_id in promoted_by_branch.get(branch_id, set()):
             if item_id in frontier_evidence:
-                allowed[item_id] = frontier_evidence[item_id]
+                timeline_allowed[item_id] = frontier_evidence[item_id]
+        stage_allowed = dict(topic_allowed)
         if branch_id in branch_ids:
             errors.append(f"duplicate roadmap branch_id {branch_id}")
         branch_ids.add(branch_id)
@@ -368,7 +373,7 @@ def roadmap_semantic_errors(
             errors.extend(
                 _validate_evidence_ref(
                     ref,
-                    allowed=allowed,
+                    allowed=timeline_allowed,
                     context=f"branch {branch_id} timeline {ref_index}",
                 )
             )
@@ -387,11 +392,18 @@ def roadmap_semantic_errors(
                     errors.extend(
                         _validate_evidence_ref(
                             ref,
-                            allowed=allowed,
+                            allowed=stage_allowed,
                             context=f"branch {branch_id} stage {stage_index} {field} {ref_index}",
                         )
                     )
-                    all_referenced.add(str(ref.get("item_id") or ""))
+                    item_id = str(ref.get("item_id") or "")
+                    if item_id and item_id in frontier_evidence:
+                        errors.append(
+                            f"branch {branch_id} stage {stage_index} {field} {ref_index} cites an "
+                            "unverified radar discovery signal; stages require evidence that "
+                            "re-entered the original-source fact pipeline"
+                        )
+                    all_referenced.add(item_id)
                     stage_refs.append(ref)
         declared_ids = set(map(str, branch.get("evidence_item_ids") or []))
         referenced_ids = {

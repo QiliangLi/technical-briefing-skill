@@ -18,6 +18,9 @@ class _Config:
         "subject_template": "AI语义Fabric技术情报（公测版）",
         "footer": "fixture footer",
     }
+    # This suite exercises the legacy synthesized-radar roundtrip; direct-copy
+    # provenance gates have their own dedicated tests.
+    scoring = {"radar": {"direct_copy": False}}
 
     @staticmethod
     def topic_list():

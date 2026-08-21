@@ -241,8 +241,8 @@ def finalize_radar_groups(
                     """
                     INSERT OR REPLACE INTO issue_radar_items(
                       issue_id,canonical_url,normalized_title,category,title,
-                      summary,source_name,published_at,position
-                    ) VALUES (?,?,?,?,?,?,?,?,?)
+                      summary,source_name,published_at,position,upstream_item_id,story_id
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (
                         issue_id,
@@ -254,6 +254,8 @@ def finalize_radar_groups(
                         item.get("source_name") or "source",
                         item.get("published_at") or "",
                         position,
+                        item.get("upstream_item_id") or None,
+                        item.get("story_id") or None,
                     ),
                 )
     final_result = [group for group in final_groups if group.get("items")]
@@ -376,6 +378,86 @@ def _radar_records_from_html(soup) -> set[tuple[str, str, str]]:
     return records
 
 
+def _radar_dom_items(soup) -> dict[str, dict[str, str]]:
+    """Extract {canonical_url: {title, summary}} from the rendered radar cards."""
+    result: dict[str, dict[str, str]] = {}
+    for node in soup.select('[data-reader-role="radar-item"]'):
+        link = node.find("a", href=True)
+        if link is None:
+            continue
+        url = canonicalize_url(link.get("href"))
+        if not url:
+            continue
+        summary_node = node.select_one('[data-reader-role="radar-summary"]')
+        if summary_node is None:
+            # Structural fallback for DOM produced before the marker existed:
+            # the summary is the first inner div that is not the meta line.
+            for div in node.find_all("div"):
+                text = div.get_text(" ", strip=True)
+                if text and "阅读原文" not in text:
+                    summary_node = div
+                    break
+        result[url] = {
+            "title": " ".join(link.get_text(" ", strip=True).split()),
+            "summary": " ".join(summary_node.get_text(" ", strip=True).split()) if summary_node else "",
+        }
+    return result
+
+
+def _direct_copy_provenance_errors(root: Path, run_id: str, soup) -> list[str]:
+    """Fail closed unless every rendered radar character is a frozen upstream span.
+
+    In direct-copy mode the release must verify — not merely record — that each
+    DOM card's title and summary hash-match the frozen-field provenance, that
+    no card is missing or extra, and that no copy came from the internal-only
+    upstream ``reason`` field.
+    """
+    from .radar_direct import direct_copy_mode, verify_copy_integrity
+
+    mode = direct_copy_mode(root)
+    path = root / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
+    if mode is False:
+        return []
+    if mode is None and not path.is_file():
+        # No readable config and no direct records: a legacy-synthesis run.
+        return []
+    if not path.is_file():
+        return ["Direct-copy radar provenance record is missing for final validation"]
+    document = read_json(path, {}) or {}
+    errors: list[str] = []
+    recorded = {}
+    for item in document.get("items") or []:
+        url = canonicalize_url((item.get("source_urls") or [None])[0])
+        if url:
+            recorded[url] = item
+        errors.extend(
+            f"radar-direct record {item.get('radar_id')}: {error}"
+            for error in verify_copy_integrity(item)
+        )
+    dom_items = _radar_dom_items(soup)
+    if set(dom_items) != set(recorded):
+        missing = sorted(set(recorded) - set(dom_items))[:3]
+        extra = sorted(set(dom_items) - set(recorded))[:3]
+        errors.append(
+            f"Radar DOM does not match direct-copy provenance records: missing={missing} extra={extra}"
+        )
+    for url, rendered in dom_items.items():
+        item = recorded.get(url)
+        if item is None:
+            continue
+        provenance = item.get("copy_provenance") or {}
+        if provenance.get("public_text_hash") != f"sha256:{content_hash(rendered['summary'])}":
+            errors.append(
+                f"Radar summary in HTML does not match the frozen copy provenance for {url}"
+            )
+        title_provenance = item.get("title_provenance") or {}
+        if title_provenance.get("public_text_hash") != f"sha256:{content_hash(rendered['title'])}":
+            errors.append(
+                f"Radar title in HTML does not match the frozen title provenance for {url}"
+            )
+    return errors
+
+
 def publication_provenance_errors(root: Path, run_id: str, email_html: str) -> list[str]:
     """Prove that the final DOM is the structured publication, not a hand-edited lookalike."""
 
@@ -413,6 +495,7 @@ def publication_provenance_errors(root: Path, run_id: str, email_html: str) -> l
         errors.append(
             f"Radar HTML provenance mismatch: missing={missing[:3]} extra={extra[:3]}"
         )
+    errors.extend(_direct_copy_provenance_errors(root, run_id, soup))
 
     contract = manifest.get("radar_contract") or {}
     required = int(contract.get("required_minimum") or 0)

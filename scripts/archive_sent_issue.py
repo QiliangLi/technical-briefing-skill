@@ -173,12 +173,22 @@ def archive_issue(root: Path, run_id: str) -> Path:
         shutil.copy2(run_dir / name, target / name)
 
     papers = _paper_rows(issue_date, issue)
+    # Scan the generated public JSON before anything is written, then rescan
+    # the assembled directory: both must be free of upstream discovery traces.
+    from briefing_skill.public_trace_scan import public_text_trace_errors
+
+    pre_errors = public_text_trace_errors(
+        {
+            "papers.json": json.dumps(papers, ensure_ascii=False),
+            "reader.json": json.dumps(reader, ensure_ascii=False),
+        }
+    )
+    if pre_errors:
+        raise SystemExit("upstream trace scan failed before archive write:\n" + "\n".join(pre_errors))
     (target / "papers.json").write_text(
         json.dumps(papers, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     write_publication_manifest(target, reader, originals=originals)
-    # The archive is a public artifact: it must leave with zero upstream
-    # discovery traces (brand, domain, provider fields) before it ships.
     trace_errors = public_upstream_trace_errors(archive_public_files(target))
     if trace_errors:
         raise SystemExit("upstream trace scan failed:\n" + "\n".join(trace_errors))

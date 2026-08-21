@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -24,7 +25,7 @@ from .config import ConfigBundle
 from .freshness import published_age_days
 from .radar_taxonomy import classify_radar_category
 from .reader_writing_contract import text_contains_chinese
-from .utils import canonicalize_url, content_hash, normalize_text, read_json, stable_hash, write_json
+from .utils import canonicalize_url, content_hash, read_json, stable_hash, write_json
 
 RADAR_DIRECT_COPY_VERSION = 1
 RADAR_TAXONOMY_VERSION = 1
@@ -72,18 +73,38 @@ _SENTENCE_END_RE = re.compile(r"[。！？!?]|\.(?=\s|$)")
 _COMPLETE_END_RE = re.compile(r"[。！？.!?](?:[”’\"』」）)\]]*)$")
 
 
+def direct_copy_mode(service_or_root) -> bool | None:
+    """Direct-copy mode from config; ``None`` when no config is readable.
+
+    ``None`` callers (e.g. the release gate on a bare fixture tree) must treat
+    the presence of radar-direct.json as "direct records exist and must
+    verify" instead of assuming either mode.
+    """
+    if isinstance(service_or_root, (str, Path)):
+        from .config import ConfigError
+        from .paths import Paths
+
+        try:
+            bundle = ConfigBundle.load(Paths(Path(service_or_root)))
+        except (ConfigError, OSError):
+            return None
+        policy = dict(bundle.scoring.get("radar") or {})
+    else:
+        config = getattr(service_or_root, "config", None)
+        scoring = getattr(config, "scoring", None)
+        if scoring is None:
+            return None
+        policy = dict(scoring.get("radar") or {})
+    return bool(policy.get("direct_copy", True))
+
+
 def direct_copy_enabled(service_or_root) -> bool:
     """Read the ``radar.direct_copy`` switch (default on once installed)."""
-    config = getattr(service_or_root, "config", None)
-    scoring = dict(getattr(config, "scoring", None) or {})
-    if not scoring:
-        root = getattr(service_or_root, "root", None)
-        if root is not None:
-            from .paths import Paths
-
-            scoring = dict(ConfigBundle.load(Paths(root)).scoring or {})
-    policy = dict(scoring.get("radar") or {})
-    return bool(policy.get("direct_copy", True))
+    mode = direct_copy_mode(service_or_root)
+    if mode is not None:
+        return mode
+    # Unreadable config: keep the default-on, fail-closed posture.
+    return True
 
 
 def _clean_text(value: Any, limit: int | None = None) -> str:
@@ -91,8 +112,13 @@ def _clean_text(value: Any, limit: int | None = None) -> str:
     return text if limit is None or len(text) <= limit else text[:limit].rstrip()
 
 
-def _normalise_title(value: Any) -> str:
-    return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
+# Same normalization the send path uses for radar_history titles, so cross-period
+# title dedup cannot be bypassed by whitespace/casing differences.
+_REFERENCE_STRIP_RE = re.compile(r"[^0-9a-zA-Z\u4e00-\u9fff²]+")
+
+
+def _normalise_reference(value: Any) -> str:
+    return _REFERENCE_STRIP_RE.sub("", str(value or "")).lower()
 
 
 def public_source_name(url: str) -> str:
@@ -175,16 +201,9 @@ def _payload(row: dict[str, Any]) -> dict[str, Any]:
         return {}
 
 
-def _summary_source_field(row: dict[str, Any]) -> str:
-    payload = _payload(row)
-    raw = payload.get("aihot")
-    if isinstance(raw, dict):
-        normalized = " ".join(str(row.get("summary") or "").split())
-        for field in ("summary", "description", "reason"):
-            value = " ".join(str(raw.get(field) or "").split())
-            if value and value == normalized:
-                return field
-    return "summary"
+# Copy variants are tried in this lane order so a boost-driven English or
+# truncated winner never silently kills another lane's usable Chinese copy.
+VARIANT_LANE_ORDER = {"selected": 0, "daily": 1, "all": 2, "paper": 3}
 
 
 def _category(title: str, summary: str, *, frontier: bool) -> str:
@@ -214,44 +233,113 @@ def _internal_priority(candidate: dict[str, Any]) -> float:
     return score
 
 
-def _identity(candidate: dict[str, Any]) -> str:
-    for key in ("story_id", "upstream_item_id", "canonical_url", "identity_key"):
-        value = str(candidate.get(key) or "").strip()
-        if value:
-            return f"{key}:{value}"
-    return f"title:{candidate.get('normalized_title') or ''}"
+def _ordered_variants(payload: dict[str, Any], primary_summary: str, primary_field: str) -> list[dict[str, Any]]:
+    variants = [
+        {
+            "lane": str(variant.get("lane") or ""),
+            "source_field": str(variant.get("source_field") or ""),
+            "summary": str(variant.get("summary") or ""),
+        }
+        for variant in payload.get("aihot_copy_variants") or []
+    ]
+    if primary_summary and not any(variant["summary"] == primary_summary for variant in variants):
+        variants.append({"lane": str(payload.get("aihot_lane") or ""), "source_field": primary_field, "summary": primary_summary})
+    variants.sort(key=lambda variant: VARIANT_LANE_ORDER.get(variant["lane"], 9))
+    return variants
+
+
+def _title_source_field(payload: dict[str, Any], title: str) -> str:
+    raw = payload.get("aihot")
+    if isinstance(raw, dict):
+        normalized = " ".join(str(title or "").split())
+        for field in ("title", "originalTitle"):
+            if " ".join(str(raw.get(field) or "").split()) == normalized:
+                return field
+    return "title"
+
+
+def _public_url_error(url: str) -> str | None:
+    """Public radar cards link to an absolute original page, never the upstream."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme not in {"http", "https"} or not host:
+        return "not an absolute http(s) URL"
+    if host == "aihot.virxact.com" or host.endswith(".aihot.virxact.com"):
+        return "upstream discovery URL"
+    return None
 
 
 def _candidate_from_row(
     row: dict[str, Any],
     *,
     run_id: str,
+    reference_date: str,
     frontier: bool,
-    topic_priority: dict[str, str],
+    context: dict[str, Any],
 ) -> dict[str, Any] | None:
     payload = _payload(row)
     raw = payload.get("aihot") if isinstance(payload.get("aihot"), dict) else {}
-    url = str(row.get("original_url") or row.get("canonical_url") or "").strip()
+    # The public URL must be the original web page; aihot-only or relative
+    # fallbacks stay internal observations.
+    url = str(row.get("original_url") or "").strip()
+    url_error = _public_url_error(url) if url else "missing original URL"
+    if url_error:
+        return None
     canonical = canonicalize_url(url)
     if not canonical:
         return None
-    age = published_age_days(row.get("published_at"))
+
+    # Freshness is measured against the active run's report date so the same
+    # frozen run replays identically no matter when it is resumed. Daily items
+    # without their own upstream date use the daily window as an internal
+    # recall bound only — the public card shows no fabricated date.
+    recall_reference = str(row.get("published_at") or "") or str(payload.get("aihot_daily_date") or "")
+    age = published_age_days(recall_reference or None, reference=reference_date)
     if age is None or age > RADAR_MAX_AGE_DAYS:
         return None
-    title = _clean_text(row.get("title"), RADAR_TITLE_MAX_CHARS)
-    if not title or len(title) < RADAR_TITLE_MIN_CHARS:
+
+    # Titles are never hard-truncated: a title that does not fit the public
+    # contract is dropped rather than cut mid-structure.
+    title = _clean_text(row.get("title"))
+    if not title or len(title) < RADAR_TITLE_MIN_CHARS or len(title) > RADAR_TITLE_MAX_CHARS:
         return None
-    if canonical in topic_priority["history_urls"]:
+    if canonical in context["history_urls"]:
         return None
-    title_key = _normalise_title(title)
-    if title_key and normalize_text(title_key) in topic_priority["history_titles"]:
+    title_key = _normalise_reference(title)
+    if title_key and title_key in context["history_titles"]:
         return None
-    summary = str(row.get("summary") or "").strip()
-    copy = select_public_summary(summary)
+    # Cross-period identity also covers the upstream story/item ids so the
+    # same event cannot republish under a new report URL and title.
+    upstream_item_id = str(row.get("external_id") or "") if row.get("source_id") == "aihot" else ""
+    story_id = str(payload.get("aihot_story_id") or "")
+    if upstream_item_id and upstream_item_id in context["history_item_ids"]:
+        return None
+    if story_id and story_id in context["history_story_ids"]:
+        return None
+
+    primary_summary = " ".join(str(row.get("summary") or "").split())
+    primary_field = "summary"
+    if primary_summary:
+        if isinstance(raw, dict):
+            for field in ("summary", "description"):
+                if " ".join(str(raw.get(field) or "").split()) == primary_summary:
+                    primary_field = field
+                    break
+    copy: tuple[str, int, int, str] | None = None
+    for variant in _ordered_variants(payload, primary_summary, primary_field):
+        if variant["source_field"] not in ("summary", "description"):
+            # `reason` is the upstream editorial recommendation: internal only.
+            continue
+        selected = select_public_summary(variant["summary"])
+        if selected is not None:
+            public_summary, span_start, span_end = selected
+            copy = (public_summary, span_start, span_end, variant["source_field"])
+            break
     if copy is None:
         return None
-    public_summary, span_start, span_end = copy
-    source_text = " ".join(summary.split())
+    public_summary, span_start, span_end, source_field = copy
+    source_text = " ".join(str(variant["summary"]).split())
+    published_source = "upstream_item" if row.get("published_at") else "none"
     candidate = {
         "candidate_id": str(row.get("id") or ""),
         "run_id": run_id,
@@ -262,21 +350,29 @@ def _candidate_from_row(
         "source_level": str(row.get("source_level") or "C").upper(),
         "source_id": str(row.get("source_id") or ""),
         "published_at": str(row.get("published_at") or "")[:10],
+        "published_at_source": published_source,
         "category": _category(title, public_summary, frontier=frontier),
         "age_days": age,
         "upstream_lanes": list(payload.get("aihot_lanes") or []),
-        "upstream_item_id": str(row.get("external_id") or "") if row.get("source_id") == "aihot" else "",
-        "story_id": str(payload.get("aihot_story_id") or ""),
+        "upstream_item_id": upstream_item_id,
+        "story_id": story_id,
         "canonical_url": canonical,
         "identity_key": str(row.get("identity_key") or ""),
         "github_project": _github_project(url),
         "normalized_title": title_key,
-        "topic_priority": topic_priority["topics"].get(str(row.get("topic_hint") or ""), "low"),
+        "topic_priority": context["topics"].get(str(row.get("topic_hint") or ""), "low"),
         "upstream_score": raw.get("score"),
         "evidence_kind": "discovery_signal",
         "reader_copy_mode": "upstream_verbatim",
+        "title_provenance": {
+            "source_field": _title_source_field(payload, title),
+            "source_text": title,
+            "selected_span_start": 0,
+            "selected_span_end": len(title),
+            "public_text_hash": f"sha256:{content_hash(title)}",
+        },
         "copy_provenance": {
-            "source_field": _summary_source_field(row),
+            "source_field": source_field,
             "source_text": source_text,
             "source_text_hash": f"sha256:{content_hash(source_text)}",
             "selected_span_start": span_start,
@@ -293,14 +389,22 @@ def _candidate_from_row(
 def normalized_radar_candidates(service, run_id: str, issue_data: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Normalize this run's discovery rows into direct-copy candidates.
 
-    Scope, freshness, history dedup and Chinese-copy checks happen here so the
-    ``raw_eligible`` publication contract only counts legal candidates. Deep
-    and appendix collisions are filtered by the caller once the final issue
-    content is known.
+    Scope, freshness (relative to the active run's report date), history dedup
+    and Chinese-copy checks happen here so the ``raw_eligible`` publication
+    contract only counts legal candidates. Deep and appendix collisions are
+    filtered by the caller once the final issue content is known.
     """
+    reference_date = str((issue_data or {}).get("date_to") or "")
+    if not reference_date:
+        raise ValueError(
+            "direct-copy radar requires the active run report date (issue date_to); "
+            "refusing to fall back to the wall clock"
+        )
     db = service.db
     rows = db.fetchall("SELECT * FROM raw_items WHERE run_id=?", (run_id,))
-    history = db.fetchall("SELECT canonical_url, normalized_title FROM radar_history")
+    history = db.fetchall(
+        "SELECT canonical_url, normalized_title, upstream_item_id, story_id FROM radar_history"
+    )
     frontier_ids = {
         str(row.get("raw_item_id"))
         for row in db.fetchall(
@@ -316,9 +420,9 @@ def normalized_radar_candidates(service, run_id: str, issue_data: dict[str, Any]
         "history_urls": {
             canonicalize_url(row.get("canonical_url")) for row in history if row.get("canonical_url")
         },
-        "history_titles": {
-            normalize_text(row.get("normalized_title")) for row in history if row.get("normalized_title")
-        },
+        "history_titles": {_normalise_reference(row.get("normalized_title")) for row in history if row.get("normalized_title")},
+        "history_item_ids": {str(row.get("upstream_item_id")) for row in history if row.get("upstream_item_id")},
+        "history_story_ids": {str(row.get("story_id")) for row in history if row.get("story_id")},
     }
 
     merged: dict[str, dict[str, Any]] = {}
@@ -326,8 +430,9 @@ def normalized_radar_candidates(service, run_id: str, issue_data: dict[str, Any]
         candidate = _candidate_from_row(
             row,
             run_id=run_id,
+            reference_date=reference_date,
             frontier=str(row.get("id")) in frontier_ids,
-            topic_priority=context,
+            context=context,
         )
         if candidate is None:
             continue
@@ -357,6 +462,14 @@ def normalized_radar_candidates(service, run_id: str, issue_data: dict[str, Any]
         )
     )
     return candidates
+
+
+def _identity(candidate: dict[str, Any]) -> str:
+    for key in ("story_id", "upstream_item_id", "canonical_url", "identity_key"):
+        value = str(candidate.get(key) or "").strip()
+        if value:
+            return f"{key}:{value}"
+    return f"title:{candidate.get('normalized_title') or ''}"
 
 
 def select_radar_items(candidates: list[dict[str, Any]], *, total_max: int, per_category: int) -> list[dict[str, Any]]:
@@ -436,7 +549,8 @@ def direct_copy_reserve_candidates(
 
 
 def verify_copy_integrity(item: dict[str, Any]) -> list[str]:
-    """Prove the public summary is an exact substring of a frozen upstream field."""
+    """Prove the public title and summary are exact spans of frozen upstream fields."""
+    errors: list[str] = []
     provenance = item.get("copy_provenance") or {}
     source_text = str(provenance.get("source_text") or "")
     public_text = str(item.get("summary") or "")
@@ -444,7 +558,8 @@ def verify_copy_integrity(item: dict[str, Any]) -> list[str]:
     end = int(provenance.get("selected_span_end") or 0)
     if not source_text or not public_text:
         return ["missing copy provenance text"]
-    errors: list[str] = []
+    if provenance.get("source_field") == "reason":
+        errors.append("public summary comes from the upstream editorial `reason`, which is internal-only")
     if source_text[start:end] != public_text:
         errors.append("public summary is not the recorded span of the frozen source text")
     if provenance.get("source_text_hash") != f"sha256:{content_hash(source_text)}":
@@ -453,6 +568,19 @@ def verify_copy_integrity(item: dict[str, Any]) -> list[str]:
         errors.append("public text hash mismatch")
     if not _COMPLETE_END_RE.search(public_text):
         errors.append("public summary ends with dangling punctuation")
+
+    title_provenance = item.get("title_provenance")
+    public_title = str(item.get("title") or "")
+    if not title_provenance or not public_title:
+        errors.append("missing title provenance")
+    else:
+        t_start = int(title_provenance.get("selected_span_start") or 0)
+        t_end = int(title_provenance.get("selected_span_end") or 0)
+        title_source = str(title_provenance.get("source_text") or "")
+        if not title_source or title_source[t_start:t_end] != public_title:
+            errors.append("public title is not the recorded span of the frozen title field")
+        if title_provenance.get("public_text_hash") != f"sha256:{content_hash(public_title)}":
+            errors.append("public title hash mismatch")
     return errors
 
 
@@ -467,18 +595,23 @@ def record_direct_publication(
     """Persist provenance, compat radar_signals and ledger decisions for the FINAL set.
 
     Called by the publication finalize stage after deep/appendix dedup so the
-    recorded selection can no longer drift from the rendered cards. No-op when
-    the final cards are not direct-copy candidates.
+    recorded selection can no longer drift from the rendered cards. In direct
+    mode the provenance file is written even for an empty final set so the
+    release gate can fail closed on a missing record.
     """
+    if not direct_copy_enabled(service):
+        return
     final_items = [dict(item) for group in final_groups or [] for item in group.get("items") or []]
-    if not final_items or not all(item.get("copy_provenance") for item in final_items):
+    if final_items and not all(item.get("copy_provenance") for item in final_items):
         return
     for item in final_items:
         item.setdefault("radar_id", stable_hash("radar", run_id, canonicalize_url(item.get("url"))))
 
     _write_provenance_file(service, run_id, final_items, contract)
     _write_compat_synthesis(service, issue_id, run_id, final_items)
-    pool = _run_candidates(service, run_id, None) or []
+    # The candidate pool is only needed for ledger decisions; reuse the
+    # same-build cache instead of rebuilding (which would need issue_data).
+    pool = (getattr(service, "_radar_direct_cache", None) or {}).get(run_id) or []
     _update_ledger_decisions(run_id, pool, final_items, service)
 
 
@@ -492,6 +625,37 @@ def _frozen_input_sha256(service, run_id: str) -> str | None:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _selection_hash(service, run_id: str, final_items: list[dict[str, Any]], contract: dict[str, Any]) -> str:
+    """Bind the selection to frozen input, rule versions and every public field.
+
+    Design §7.4: the selection hash must cover the frozen input hash, taxonomy
+    and selection-policy versions, and the public field hashes — not just the
+    URL list, so an upstream copy change under a stable URL invalidates it.
+    """
+    from .adapters.aihot import AIHOT_CONNECTOR_VERSION
+
+    binding = {
+        "connector_version": AIHOT_CONNECTOR_VERSION,
+        "direct_copy_version": RADAR_DIRECT_COPY_VERSION,
+        "taxonomy_version": RADAR_TAXONOMY_VERSION,
+        "selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
+        "frozen_input_sha256": _frozen_input_sha256(service, run_id),
+        "contract": contract,
+        "items": [
+            {
+                "radar_id": item.get("radar_id"),
+                "category": item.get("category"),
+                "title_hash": content_hash(item.get("title")),
+                "summary_hash": content_hash(item.get("summary")),
+                "url": canonicalize_url(item.get("url")),
+                "published_at": item.get("published_at"),
+            }
+            for item in final_items
+        ],
+    }
+    return stable_hash(json.dumps(binding, ensure_ascii=False, sort_keys=True), length=32)
+
+
 def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any]], contract: dict[str, Any]) -> None:
     path = service.root / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
     write_json(
@@ -502,9 +666,7 @@ def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any
             "radar_taxonomy_version": RADAR_TAXONOMY_VERSION,
             "radar_selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
             "frozen_input_sha256": _frozen_input_sha256(service, run_id),
-            "selection_hash": stable_hash(
-                run_id, *[canonicalize_url(item.get("url")) for item in final_items], length=32
-            ),
+            "selection_hash": _selection_hash(service, run_id, final_items, contract),
             "selection_contract": contract,
             "items": [
                 {
@@ -514,10 +676,12 @@ def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any
                     "summary": item.get("summary"),
                     "source_urls": [item.get("url")],
                     "published_at": item.get("published_at"),
+                    "published_at_source": item.get("published_at_source") or "upstream_item",
                     "upstream_item_id": item.get("upstream_item_id") or None,
                     "story_id": item.get("story_id") or None,
                     "upstream_lanes": item.get("upstream_lanes") or [],
                     "internal_priority": item.get("internal_priority"),
+                    "title_provenance": item.get("title_provenance"),
                     "copy_provenance": item.get("copy_provenance"),
                 }
                 for item in final_items
@@ -637,6 +801,8 @@ def direct_copy_groups(service, issue_id: str | None, issue_data: dict[str, Any]
                 "category_key": candidate["category"],
                 "canonical_url": candidate["canonical_url"],
                 "copy_provenance": candidate["copy_provenance"],
+                "title_provenance": candidate["title_provenance"],
+                "published_at_source": candidate["published_at_source"],
                 "upstream_lanes": candidate["upstream_lanes"],
                 "upstream_item_id": candidate["upstream_item_id"],
                 "story_id": candidate["story_id"],

@@ -17,8 +17,16 @@ LOGGER = logging.getLogger(__name__)
 
 # Bump when lane coverage, freeze layout, or ledger fields change so a stale
 # freeze file from an older connector is refetched instead of replayed.
-AIHOT_CONNECTOR_VERSION = 2
+AIHOT_CONNECTOR_VERSION = 3
 AIHOT_PROVIDER = "aihot"
+
+# Public copy may only come from these upstream fields. `reason` is the AI Hot
+# editorial recommendation: internal ordering/ledger only, never reader copy.
+PUBLIC_SUMMARY_FIELDS = ("summary", "description")
+
+# Copy variants are preferred in this lane order when several lanes carry the
+# same item but only some have a usable Chinese complete-sentence summary.
+VARIANT_LANE_PREFERENCE = ("selected", "daily", "all", "paper")
 
 # Upstream item/story identities are only taken from officially returned links.
 AIHOT_ITEM_ID_RE = re.compile(r"/items/([A-Za-z0-9_-]+)")
@@ -43,20 +51,31 @@ def upstream_story_id(raw: dict[str, Any]) -> str:
     return ""
 
 
+def _summary_variant(raw: dict[str, Any]) -> dict[str, str] | None:
+    """The one public copy candidate this raw item contributes, if any."""
+    for field in PUBLIC_SUMMARY_FIELDS:
+        text = " ".join(str(raw.get(field) or "").split())
+        if text:
+            return {"source_field": field, "summary": text}
+    return None
+
+
 class AIHotCollector:
     """AI HOT v1 multi-lane collector.
 
-    Lanes: ``selected`` (24h editor picks), ``all`` (per-direction keyword
-    queries), ``paper`` (all + category=paper), ``daily`` (daily report items)
-    and ``hot`` (hot-topic ranks). The hot lane never publishes cards by
-    itself; it only adds rank/story identity to items seen in other lanes.
+    Lanes: ``selected`` (24h editor picks), ``all``/``paper`` (per-direction
+    keyword queries), ``daily`` (daily report items) and ``hot`` (hot-topic
+    ranks). The hot lane never publishes cards by itself; it only adds
+    rank/story identity to items seen in other lanes.
 
-    Every run freezes the fetched responses under the run directory and, when
-    the run is collected again (resume), replays the frozen payloads instead
-    of re-requesting the upstream. A 304 response replays the cached body from
-    ``source_state`` so unchanged content is still materialized into the new
-    run. All lane observations are recorded in ``radar_upstream_records`` for
-    internal traceability; nothing upstream is published.
+    Every run freezes the full lane plan plus responses under the run
+    directory; a valid freeze replays every lane offline (a lane missing from
+    a valid freeze is an error, never a live request). A 304 response replays
+    the cached body from ``source_state`` so unchanged content is still
+    materialized into the new run. Individual lane failures never discard the
+    results of lanes that already succeeded; only a total provider failure
+    raises. All lane observations land in ``radar_upstream_records`` with the
+    full lane key/query context for internal traceability.
     """
 
     def __init__(
@@ -81,20 +100,24 @@ class AIHotCollector:
         self._lane_fetches: dict[str, dict[str, Any]] = {}
         self._upstream_records: list[dict[str, Any]] = []
 
-    def collect(self) -> list[CollectedItem]:
-        self._load_frozen()
-        items: list[CollectedItem] = []
+    # ------------------------------------------------------------------ plan
 
+    def _planned_lanes(self) -> list[dict[str, Any]]:
+        """Deterministic lane plan derived only from versioned config."""
+        lanes: list[dict[str, Any]] = []
         base_limit = int(self.source.get("base_selected_limit", 50))
-        selected_params = {"mode": "selected", "window": "24h", "by": "timeline", "limit": base_limit}
-        items.extend(
-            self._collect_items_lane(
-                self._fetch_lane("selected", self.endpoint, selected_params),
-                lane="selected",
-                topic_hint="",
-            )
+        lanes.append(
+            {
+                "key": "selected",
+                "lane": "selected",
+                "url": self.endpoint,
+                "params": {"mode": "selected", "window": "24h", "by": "timeline", "limit": base_limit},
+                "topic_hint": "",
+                "direction_hint": "",
+                "query": "",
+                "boost": 0.0,
+            }
         )
-
         query_limits = self.source.get("query_limits", {})
         for topic in self.config.topic_list():
             priority_name = str(topic.get("aihot_priority", "low"))
@@ -107,58 +130,129 @@ class AIHotCollector:
                 for query in direction.get("aihot_queries", [])[:4]:
                     queries.append((direction["id"], query))
             for direction_id, query in queries:
-                lane_key = f"all:{topic['id']}:{direction_id}:{query}"
-                request_items = self._collect_items_lane(
-                    self._fetch_lane(
-                        lane_key,
-                        self.endpoint,
-                        {"mode": "all", "window": self.source.get("window", "7d"), "by": "timeline", "limit": limit, "q": query},
-                    ),
-                    lane="all",
-                    topic_hint=topic["id"],
-                    direction_hint=direction_id,
+                base_params = {
+                    "mode": "all",
+                    "window": self.source.get("window", "7d"),
+                    "by": "timeline",
+                    "limit": limit,
+                    "q": query,
+                }
+                lanes.append(
+                    {
+                        "key": f"all:{topic['id']}:{direction_id}:{query}",
+                        "lane": "all",
+                        "url": self.endpoint,
+                        "params": dict(base_params),
+                        "topic_hint": topic["id"],
+                        "direction_hint": direction_id,
+                        "query": query,
+                        "boost": 20.0 * boost,
+                    }
                 )
-                for item in request_items:
-                    item.priority += 20.0 * boost
-                items.extend(request_items)
                 # AI HOT public pool excludes arXiv unless paper is requested.
                 if any(term in query.lower() for term in ("paper", "agent", "kv cache", "prefill", "code graph")):
-                    paper_items = self._collect_items_lane(
-                        self._fetch_lane(
-                            f"paper:{topic['id']}:{direction_id}:{query}",
-                            self.endpoint,
-                            {
-                                "mode": "all",
-                                "category": "paper",
-                                "window": self.source.get("window", "7d"),
-                                "by": "timeline",
-                                "limit": min(limit, 30),
-                                "q": query,
-                            },
-                        ),
-                        lane="paper",
-                        topic_hint=topic["id"],
-                        direction_hint=direction_id,
+                    paper_params = dict(base_params, category="paper", limit=min(limit, 30))
+                    lanes.append(
+                        {
+                            "key": f"paper:{topic['id']}:{direction_id}:{query}",
+                            "lane": "paper",
+                            "url": self.endpoint,
+                            "params": paper_params,
+                            "topic_hint": topic["id"],
+                            "direction_hint": direction_id,
+                            "query": query,
+                            "boost": 22.0 * boost,
+                        }
                     )
-                    for item in paper_items:
-                        item.priority += 22.0 * boost
-                    items.extend(paper_items)
+        if self.source.get("daily_enabled", True):
+            lanes.append(
+                {
+                    "key": "daily",
+                    "lane": "daily",
+                    "url": f"{self.api_base}/dailies/latest",
+                    "params": {},
+                    "topic_hint": "",
+                    "direction_hint": "",
+                    "query": "",
+                    "boost": 0.0,
+                }
+            )
+        if self.source.get("hot_topics_enabled", True):
+            lanes.append(
+                {
+                    "key": "hot",
+                    "lane": "hot",
+                    "url": f"{self.api_base}/hot-topics",
+                    "params": {},
+                    "topic_hint": "",
+                    "direction_hint": "",
+                    "query": "",
+                    "boost": 0.0,
+                }
+            )
+        return lanes
 
-        items.extend(self._collect_daily_lane())
-        hot_entries = self._collect_hot_lane()
+    def _lane_plan_hash(self, lanes: list[dict[str, Any]]) -> str:
+        plan = [
+            {"key": lane["key"], "url": lane["url"], "params": lane["params"]}
+            for lane in lanes
+        ]
+        return stable_hash(json.dumps(plan, ensure_ascii=False, sort_keys=True), length=32)
+
+    # --------------------------------------------------------------- collect
+
+    def collect(self) -> list[CollectedItem]:
+        self._load_frozen()
+        plan = self._planned_lanes()
+        plan_hash = self._lane_plan_hash(plan)
+        if self._frozen_lanes is not None:
+            frozen = getattr(self, "_frozen_doc", {}) or {}
+            if frozen.get("lane_plan_hash") != plan_hash:
+                # Config now plans different lanes: the old freeze is invalid
+                # as a whole and a new one is fetched, never partially replayed.
+                LOGGER.warning("AI HOT freeze lane plan changed, refetching run %s", self.run_id)
+                self._frozen_lanes = None
+
+        items: list[CollectedItem] = []
+        hot_entries: list[dict[str, Any]] = []
+        lane_errors: dict[str, str] = {}
+        succeeded_lanes: set[str] = set()
+        for lane in plan:
+            try:
+                payload = self._fetch_lane(lane)
+                if self._lane_fetches.get(lane["key"], {}).get("error"):
+                    lane_errors[lane["key"]] = str(self._lane_fetches[lane["key"]]["error"])
+                    continue
+                succeeded_lanes.add(lane["key"])
+                if lane["lane"] == "hot":
+                    hot_entries = self._collect_hot_lane(payload)
+                elif lane["lane"] == "daily":
+                    items.extend(self._collect_daily_lane(lane, payload))
+                else:
+                    items.extend(self._collect_items_lane(lane, payload))
+            except Exception as exc:
+                lane_errors[lane["key"]] = f"{type(exc).__name__}: {exc}"
+                self._lane_fetches[lane["key"]] = {
+                    "url": lane["url"],
+                    "retrieved_at": now_iso(),
+                    "error": lane_errors[lane["key"]],
+                }
+                LOGGER.warning("AI HOT lane %s failed: %s", lane["key"], exc)
+
+        if plan and not succeeded_lanes:
+            raise RuntimeError(
+                f"AI Hot provider failure: every planned lane failed ({'; '.join(sorted(lane_errors))})"
+            )
 
         items = self._deduplicate(items)
         self._apply_hot_matches(items, hot_entries)
         self._write_ledger()
-        self._write_freeze()
+        self._write_freeze(plan_hash)
         return items
 
     # ------------------------------------------------------------------ lanes
 
-    def _collect_daily_lane(self) -> list[CollectedItem]:
-        if not self.source.get("daily_enabled", True):
-            return []
-        payload = self._fetch_lane("daily", f"{self.api_base}/dailies/latest", {})
+    def _collect_daily_lane(self, lane: dict[str, Any], payload: dict[str, Any]) -> list[CollectedItem]:
         report = payload.get("report") if isinstance(payload.get("report"), dict) else payload
         daily_date = str(report.get("date") or "")
         items: list[CollectedItem] = []
@@ -169,15 +263,14 @@ class AIHotCollector:
                 if label:
                     entry["daily_section"] = label
                 if daily_date:
-                    entry.setdefault("daily_date", daily_date)
-                    # Daily entries carry no per-item publishedAt; the report
-                    # window date is the best available publication date.
-                    entry.setdefault("publishedAt", daily_date)
-                self._record_upstream(entry, lane="daily")
-                # A daily entry needs a complete title/summary/original triple
-                # before it may become a radar candidate; partial entries stay
-                # internal-only observations.
-                if not (str(entry.get("title") or "").strip() and str(entry.get("summary") or "").strip()):
+                    # The daily date is the recall window, never the original
+                    # publication date: it must not leak into publishedAt.
+                    entry["daily_date"] = daily_date
+                self._record_upstream(entry, lane)
+                # A daily entry needs a complete title/public-copy/original
+                # triple before it may become a radar candidate; partial
+                # entries stay internal-only observations.
+                if not (str(entry.get("title") or "").strip() and _summary_variant(entry)):
                     continue
                 links = entry.get("links") or {}
                 original = links.get("original") or entry.get("url") or ""
@@ -185,21 +278,17 @@ class AIHotCollector:
                     continue
                 item = self._item_from_raw(
                     entry,
-                    lane="daily",
-                    topic_hint="",
+                    lane=lane,
                     extra_payload={"aihot_daily_section": label, "aihot_daily_date": daily_date},
                 )
                 if item is not None:
                     items.append(item)
         return items
 
-    def _collect_hot_lane(self) -> list[dict[str, Any]]:
-        if not self.source.get("hot_topics_enabled", True):
-            return []
-        payload = self._fetch_lane("hot", f"{self.api_base}/hot-topics", {})
+    def _collect_hot_lane(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         entries: list[dict[str, Any]] = []
         for raw in payload.get("items") or payload.get("data") or []:
-            self._record_upstream(raw, lane="hot")
+            self._record_upstream(raw, self._hot_lane)
             links = raw.get("links") or {}
             original = str(links.get("original") or raw.get("url") or "")
             entry = {
@@ -236,13 +325,24 @@ class AIHotCollector:
 
     # ------------------------------------------------------------------ fetch
 
-    def _fetch_lane(self, lane_key: str, url: str, params: dict[str, Any]) -> dict[str, Any]:
+    def _fetch_lane(self, lane: dict[str, Any]) -> dict[str, Any]:
+        lane_key = lane["key"]
+        url = lane["url"]
+        params = lane["params"]
         if self._frozen_lanes is not None:
             frozen = self._frozen_lanes.get(lane_key)
             if frozen is not None:
                 self._lane_fetches[lane_key] = dict(frozen, from_cache=True)
                 return frozen.get("payload") or {}
-        full_url = f"{url}?{urlencode(params)}" if params else url
+            # A valid freeze must cover the whole planned lane set; a missing
+            # lane is recorded as an error instead of silently going online.
+            self._lane_fetches[lane_key] = {
+                "url": url,
+                "retrieved_at": now_iso(),
+                "error": "missing_from_freeze",
+            }
+            return {}
+        full_url = f"{url}?{urlencode(sorted(params.items()))}" if params else url
         state_key = f"aihot:{full_url}"
         state = self.db.get_source_state(state_key) or {}
         headers = {"If-None-Match": state["etag"]} if state.get("etag") else None
@@ -265,6 +365,7 @@ class AIHotCollector:
         else:
             response.raise_for_status()
             payload = response.json()
+        etag = state.get("etag") if from_cache else response.headers.get("ETag")
         if not from_cache:
             self.db.upsert_source_state(
                 state_key,
@@ -273,26 +374,21 @@ class AIHotCollector:
             )
         self._lane_fetches[lane_key] = {
             "url": full_url,
-            "etag": response.headers.get("ETag") if not from_cache else state.get("etag"),
+            "etag": etag,
             "retrieved_at": now_iso(),
             "from_cache": from_cache,
             "payload": payload,
         }
         return payload
 
-    def _collect_items_lane(
-        self,
-        payload: dict[str, Any],
-        *,
-        lane: str,
-        topic_hint: str,
-        direction_hint: str = "",
-    ) -> list[CollectedItem]:
+    def _collect_items_lane(self, lane: dict[str, Any], payload: dict[str, Any]) -> list[CollectedItem]:
         result: list[CollectedItem] = []
         for raw in payload.get("items") or payload.get("data") or []:
-            self._record_upstream(raw, lane=lane)
-            item = self._item_from_raw(raw, lane=lane, topic_hint=topic_hint, direction_hint=direction_hint)
+            self._record_upstream(raw, lane)
+            item = self._item_from_raw(raw, lane=lane)
             if item is not None:
+                if lane["boost"]:
+                    item.priority += lane["boost"]
                 result.append(item)
         return result
 
@@ -300,9 +396,7 @@ class AIHotCollector:
         self,
         raw: dict[str, Any],
         *,
-        lane: str,
-        topic_hint: str,
-        direction_hint: str = "",
+        lane: dict[str, Any],
         extra_payload: dict[str, Any] | None = None,
     ) -> CollectedItem | None:
         links = raw.get("links") or {}
@@ -311,14 +405,22 @@ class AIHotCollector:
         aihot_url = links.get("aihot") or raw.get("permalink") or ""
         if not original and not aihot_url:
             return None
-        summary = raw.get("summary") or raw.get("description") or raw.get("reason") or ""
+        variant = _summary_variant(raw)
+        summary = variant["summary"] if variant else ""
         source_name = source.get("name") if isinstance(source, dict) else str(source or "AI HOT")
         payload: dict[str, Any] = {
             "aihot": raw,
             "upstream_source": source_name,
-            "aihot_lane": lane,
-            "aihot_lanes": [lane],
+            "aihot_lane": lane["lane"],
+            "aihot_lanes": [lane["lane"]],
             "aihot_canonical_original": canonicalize_url(original),
+            # Every lane's copy candidate is kept so direct-copy can fall back
+            # to another lane's usable Chinese summary when this one is not.
+            "aihot_copy_variants": [
+                {"lane": lane["lane"], "source_field": variant["source_field"], "summary": summary}
+            ]
+            if variant
+            else [],
         }
         if raw.get("category") is not None:
             payload["aihot_category"] = raw.get("category")
@@ -341,8 +443,8 @@ class AIHotCollector:
             discovered_at=raw.get("discoveredAt") or raw.get("discovered_at"),
             authors=raw.get("authors") or [],
             external_id=upstream_item_id(raw),
-            topic_hint=topic_hint,
-            direction_hint=direction_hint,
+            topic_hint=lane["topic_hint"],
+            direction_hint=lane["direction_hint"],
             priority=15.0,
             payload=payload,
         )
@@ -350,6 +452,7 @@ class AIHotCollector:
     # ------------------------------------------------------- freeze and ledger
 
     def _load_frozen(self) -> None:
+        self._frozen_doc = {}
         if self.freeze_path is None or not self.freeze_path.exists():
             return
         frozen = read_json(self.freeze_path, {}) or {}
@@ -359,9 +462,10 @@ class AIHotCollector:
         if frozen.get("run_id") != self.run_id:
             LOGGER.warning("AI HOT freeze belongs to another run, refetching")
             return
+        self._frozen_doc = frozen
         self._frozen_lanes = frozen.get("lanes") or {}
 
-    def _write_freeze(self) -> None:
+    def _write_freeze(self, plan_hash: str) -> None:
         if self.freeze_path is None or self._frozen_lanes is not None:
             return
         write_json(
@@ -371,11 +475,25 @@ class AIHotCollector:
                 "provider": AIHOT_PROVIDER,
                 "run_id": self.run_id,
                 "frozen_at": now_iso(),
+                "lane_plan_hash": plan_hash,
                 "lanes": self._lane_fetches,
             },
         )
 
-    def _record_upstream(self, raw: dict[str, Any], *, lane: str) -> None:
+    @property
+    def _hot_lane(self) -> dict[str, Any]:
+        return {
+            "key": "hot",
+            "lane": "hot",
+            "url": f"{self.api_base}/hot-topics",
+            "params": {},
+            "topic_hint": "",
+            "direction_hint": "",
+            "query": "",
+            "boost": 0.0,
+        }
+
+    def _record_upstream(self, raw: dict[str, Any], lane: dict[str, Any]) -> None:
         """Append one internal ledger observation; never published anywhere."""
         if not self.run_id:
             return
@@ -388,21 +506,28 @@ class AIHotCollector:
         summary = str(raw.get("summary") or raw.get("description") or "")
         if not (item_id or canonical or title):
             return
+        fetched = self._lane_fetches.get(lane["key"]) or {}
+        retrieved_at = now_iso()
         self._upstream_records.append(
             {
-                "record_id": stable_hash(self.run_id, "aihot-upstream", lane, item_id or canonical or title),
+                "record_id": stable_hash(self.run_id, "aihot-upstream", lane["key"], item_id or canonical or title),
                 "run_id": self.run_id,
                 "provider": AIHOT_PROVIDER,
-                "upstream_lane": lane,
+                "upstream_lane": lane["lane"],
+                "lane_key": lane["key"],
+                "lane_query": lane["query"] or None,
+                "topic_hint": lane["topic_hint"] or None,
+                "direction_hint": lane["direction_hint"] or None,
                 "upstream_item_id": item_id or None,
                 "upstream_story_id": upstream_story_id(raw) or None,
                 "upstream_url": aihot_url or None,
                 "original_url": original or None,
                 "canonical_original_url": canonical or None,
-                "published_at": raw.get("publishedAt") or raw.get("published_at") or raw.get("daily_date"),
+                "published_at": raw.get("publishedAt") or raw.get("published_at"),
                 "discovered_at": raw.get("discoveredAt") or raw.get("discovered_at"),
-                "retrieved_at": now_iso(),
-                "etag": None,
+                "retrieved_at": retrieved_at,
+                "retrieved_at_first": retrieved_at,
+                "etag": fetched.get("etag"),
                 "title": title or None,
                 "summary": summary or None,
                 "reason": str(raw.get("reason") or "") or None,
@@ -424,6 +549,18 @@ class AIHotCollector:
     # ------------------------------------------------------------------ dedup
 
     @staticmethod
+    def _merge_variants(target: dict[str, Any], other: dict[str, Any]) -> None:
+        merged: list[dict[str, str]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for variant in [*(target.get("aihot_copy_variants") or []), *(other.get("aihot_copy_variants") or [])]:
+            key = (str(variant.get("lane") or ""), str(variant.get("source_field") or ""), str(variant.get("summary") or ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(variant)
+        target["aihot_copy_variants"] = merged
+
+    @staticmethod
     def _deduplicate(items: list[CollectedItem]) -> list[CollectedItem]:
         best: dict[str, CollectedItem] = {}
         for item in items:
@@ -431,21 +568,26 @@ class AIHotCollector:
             existing = best.get(key)
             if not existing or item.priority > existing.priority:
                 if existing is not None:
-                    item.payload["aihot_lanes"] = unique_preserve(
-                        [*(existing.payload.get("aihot_lanes") or []), *(item.payload.get("aihot_lanes") or [])]
-                    )
-                    item.payload["aihot_story_id"] = existing.payload.get("aihot_story_id") or item.payload.get("aihot_story_id")
-                    item.topic_hint = item.topic_hint or existing.topic_hint
-                    item.direction_hint = item.direction_hint or existing.direction_hint
+                    AIHotCollector._merge_into(item, existing)
                 best[key] = item
-            elif existing:
-                existing.payload["aihot_lanes"] = unique_preserve(
-                    [*(existing.payload.get("aihot_lanes") or []), *(item.payload.get("aihot_lanes") or [])]
-                )
-                existing.payload["aihot_story_id"] = existing.payload.get("aihot_story_id") or item.payload.get("aihot_story_id")
-                existing.topic_hint = existing.topic_hint or item.topic_hint
-                existing.direction_hint = existing.direction_hint or item.direction_hint
-                existing.payload["matched_topics"] = unique_preserve(
-                    [*(existing.payload.get("matched_topics") or []), item.topic_hint]
-                )
+            else:
+                AIHotCollector._merge_into(existing, item)
         return list(best.values())
+
+    @staticmethod
+    def _merge_into(target: CollectedItem, other: CollectedItem) -> None:
+        target.payload["aihot_lanes"] = unique_preserve(
+            [*(target.payload.get("aihot_lanes") or []), *(other.payload.get("aihot_lanes") or [])]
+        )
+        target.payload["aihot_story_id"] = target.payload.get("aihot_story_id") or other.payload.get("aihot_story_id")
+        target.topic_hint = target.topic_hint or other.topic_hint
+        target.direction_hint = target.direction_hint or other.direction_hint
+        target.payload["matched_topics"] = unique_preserve(
+            [*(target.payload.get("matched_topics") or []), other.topic_hint]
+        )
+        AIHotCollector._merge_variants(target.payload, other.payload)
+        # If the weaker record carries a usable public copy and the stronger
+        # one does not, keep the weaker copy as the reader-facing summary so a
+        # boost-driven English winner cannot silently kill a Chinese summary.
+        if not str(target.summary or "").strip() and str(other.summary or "").strip():
+            target.summary = other.summary

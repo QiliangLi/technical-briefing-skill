@@ -16,6 +16,9 @@ from typing import Mapping
 
 # (error label, compiled pattern). Patterns are matched case-insensitively
 # against the raw text of the artifact so JSON keys are caught as well.
+# `discovery_source`/`upstream_provider` are banned as FIELD NAMES on purpose:
+# no public artifact may carry any internal discovery metadata at all, even
+# when its value names a different, legitimate source.
 FORBIDDEN_PUBLIC_TRACE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("AI HOT", re.compile(r"\bai\s*hot\b", re.IGNORECASE)),
     ("AIHOT", re.compile(r"\baihot\b", re.IGNORECASE)),
@@ -24,6 +27,16 @@ FORBIDDEN_PUBLIC_TRACE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("upstream_provider", re.compile(r"upstream_provider", re.IGNORECASE)),
     ("discovery_source=AI HOT", re.compile(r"discovery_source", re.IGNORECASE)),
 )
+
+
+def public_text_trace_errors(texts: Mapping[str, str]) -> list[str]:
+    """Scan raw artifact texts (e.g. serialized JSON or rendered HTML) directly."""
+    errors: list[str] = []
+    for label, text in texts.items():
+        for name, pattern in FORBIDDEN_PUBLIC_TRACE_PATTERNS:
+            if pattern.search(str(text or "")):
+                errors.append(f"{label}: public artifact exposes upstream trace '{name}'")
+    return errors
 
 
 def public_upstream_trace_errors(files: Mapping[str, Path | str]) -> list[str]:

@@ -751,8 +751,10 @@ class EmailService:
         )
         self.db.execute(
             """
-            INSERT OR REPLACE INTO radar_history(canonical_url, normalized_title, last_pushed_at, issue_id)
-            SELECT canonical_url, normalized_title, ?, issue_id
+            INSERT OR REPLACE INTO radar_history(
+                canonical_url, normalized_title, last_pushed_at, issue_id, upstream_item_id, story_id
+            )
+            SELECT canonical_url, normalized_title, ?, issue_id, upstream_item_id, story_id
             FROM issue_radar_items WHERE issue_id=?
             """,
             (sent_at, issue["id"]),

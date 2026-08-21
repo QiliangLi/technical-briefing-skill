@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -19,6 +21,9 @@ from briefing_skill.radar_direct import (
 from briefing_skill.utils import canonicalize_url, write_json
 
 NOW = datetime.now(timezone.utc)
+# Direct-copy freshness is measured against the active run report date, never
+# the wall clock, so tests pin the reference to "today" of the test run.
+REFERENCE_DATE = NOW.date().isoformat()
 
 
 def _days_ago(days: float) -> str:
@@ -225,7 +230,7 @@ def test_direct_copy_selection_publishes_verbatim_records(tmp_path: Path) -> Non
         lanes=["selected"],
     )
 
-    issue_data = {"run_id": run_id, "id": issue_id, "items": []}
+    issue_data = {"run_id": run_id, "id": issue_id, "items": [], "date_to": REFERENCE_DATE}
     groups = direct_copy_groups(service, issue_id, issue_data)
     assert groups is not None
     final_groups, contract = finalize_radar_groups(
@@ -288,7 +293,7 @@ def test_long_summary_selects_complete_sentence_span(tmp_path: Path) -> None:
         summary=long_summary,
         external_id="cmt-span",
     )
-    issue_data = {"run_id": run_id, "items": []}
+    issue_data = {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE}
     candidates = normalized_radar_candidates(service, run_id, issue_data)
     assert len(candidates) == 1
     provenance = candidates[0]["copy_provenance"]
@@ -334,7 +339,7 @@ def test_story_and_url_dedup_merge(tmp_path: Path) -> None:
         summary="跟进报道补充了 KV cache 扩容的部署细节与限制条件。",
         external_id="cmt-b2", story_id="story-9",
     )
-    candidates = normalized_radar_candidates(service, run_id, {})
+    candidates = normalized_radar_candidates(service, run_id, {"date_to": REFERENCE_DATE})
     by_url = {c["url"]: c for c in candidates}
     # Same story collapses to a single candidate (design §8.1) keeping the
     # stronger record; both original URLs never publish together.
@@ -358,7 +363,7 @@ def test_category_caps_and_diversity(tmp_path: Path) -> None:
         summary="该存储方案降低 NAND 写入放大并保持 QLC 延迟稳定。",
         external_id="cmt-s",
     )
-    issue_data = {"run_id": run_id, "items": []}
+    issue_data = {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE}
     groups = direct_copy_groups(service, None, issue_data)
     assert groups is not None
     counts: dict[str, int] = {}
@@ -387,6 +392,7 @@ def test_deep_url_collision_excluded_from_direct_pool(tmp_path: Path) -> None:
     )
     issue_data = {
         "run_id": run_id,
+        "date_to": REFERENCE_DATE,
         "items": [{"sources": [{"url": "https://example.com/deep-covered"}]}],
     }
     groups = direct_copy_groups(service, None, issue_data)
@@ -408,7 +414,7 @@ def test_direct_copy_deterministic_and_idempotent(tmp_path: Path) -> None:
         summary="第二条 agent 调度完整中文摘要句子。", external_id="cmt-x2",
     )
 
-    issue_data = {"run_id": run_id, "id": issue_id, "items": []}
+    issue_data = {"run_id": run_id, "id": issue_id, "items": [], "date_to": REFERENCE_DATE}
     first_groups = direct_copy_groups(service, issue_id, issue_data)
     finalize_radar_groups(service, first_groups, issue_id=issue_id, issue_data=issue_data)
     provenance_path = tmp_path / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
@@ -428,3 +434,211 @@ def test_direct_copy_disabled_falls_back(tmp_path: Path) -> None:
     service, db = make_service(tmp_path, direct_copy=False)
     assert direct_copy_enabled(service) is False
     assert direct_copy_groups(service, None, {"run_id": "run-x", "items": []}) is None
+
+
+def _direct_run(tmp_path: Path, run_id="run-p1"):
+    service, db = make_service(tmp_path)
+    return service, db, {"run_id": run_id, "id": "issue-p1", "items": [], "date_to": REFERENCE_DATE}
+
+
+def test_missing_report_date_fails_closed(tmp_path: Path) -> None:
+    service, db = make_service(tmp_path)
+    with pytest.raises(ValueError, match="report date"):
+        normalized_radar_candidates(service, "run-x", {"run_id": "run-x", "items": []})
+
+
+def test_freshness_uses_report_date_not_wall_clock(tmp_path: Path) -> None:
+    service, db, _ = _direct_run(tmp_path)
+    run_id = "run-p1"
+    # Six days before the report date: inside the window even though the wall
+    # clock may move; eight days: outside regardless of the wall clock.
+    insert_raw(db, run_id, url="https://example.com/six-day", title="六天前的推理调度条目",
+               summary="六天前的完整中文摘要句子，内容保持完整。", external_id="cmt-6", age_days=6)
+    insert_raw(db, run_id, url="https://example.com/eight-day", title="八天前的存储介质条目",
+               summary="八天前的完整中文摘要句子，内容保持完整。", external_id="cmt-8", age_days=8)
+    issue_data = {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE}
+    first = normalized_radar_candidates(service, run_id, issue_data)
+    second = normalized_radar_candidates(service, run_id, issue_data)
+    assert [c["url"] for c in first] == ["https://example.com/six-day"]
+    # Same frozen input + same report date => byte-identical replay.
+    assert [c["summary"] for c in first] == [c["summary"] for c in second]
+    # An earlier report date moves both items inside the window: the pinned
+    # reference date, never the wall clock, decides freshness.
+    earlier = (NOW - timedelta(days=6)).date().isoformat()
+    widened = normalized_radar_candidates(
+        service, run_id, {"run_id": run_id, "items": [], "date_to": earlier}
+    )
+    assert [c["url"] for c in widened] == ["https://example.com/six-day", "https://example.com/eight-day"]
+
+
+def test_oversized_title_is_dropped_not_truncated(tmp_path: Path) -> None:
+    service, db, _ = _direct_run(tmp_path)
+    run_id = "run-p1"
+    long_title = "超长标题条目：" + "该推理调度机制持续降低尾延迟并优化吞吐表现，" * 12
+    assert len(long_title) > 160
+    insert_raw(db, run_id, url="https://example.com/long-title", title=long_title,
+               summary="该条目标题超过公开上限，应整条淘汰而不是按字符截断。", external_id="cmt-long")
+    candidates = normalized_radar_candidates(service, run_id, {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE})
+    assert candidates == []
+
+
+def test_reason_field_is_never_public_copy(tmp_path: Path) -> None:
+    service, db, _ = _direct_run(tmp_path)
+    run_id = "run-p1"
+    insert_raw(
+        db, run_id, url="https://example.com/reason-only", title="只有推荐理由的推理条目",
+        summary="上游编辑推荐理由被错误地放进摘要字段位置。", external_id="cmt-reason",
+        raw_extra={"reason": "上游编辑推荐理由被错误地放进摘要字段位置。", "summary": None},
+    )
+    # The adapter never promotes `reason` into the summary; simulate the raw
+    # row that only carries a reason and confirm the copy contract rejects it.
+    from briefing_skill.radar_direct import verify_copy_integrity
+
+    fake_item = {
+        "title": "只有推荐理由的推理条目",
+        "summary": "上游编辑推荐理由被错误地放进摘要字段位置。",
+        "title_provenance": {"source_text": "只有推荐理由的推理条目", "selected_span_start": 0, "selected_span_end": 11, "public_text_hash": None},
+        "copy_provenance": {"source_field": "reason", "source_text": "上游编辑推荐理由被错误地放进摘要字段位置。",
+                            "selected_span_start": 0, "selected_span_end": 20, "public_text_hash": None},
+    }
+    errors = verify_copy_integrity(fake_item)
+    assert any("reason" in error for error in errors)
+
+
+def test_upstream_domain_or_relative_url_never_public(tmp_path: Path) -> None:
+    service, db, _ = _direct_run(tmp_path)
+    run_id = "run-p1"
+    # Row whose only URL is the upstream item page (observation-only upstream).
+    insert_raw(db, run_id, url="", title="只有上游链接的观察条目", summary="该条目只有上游链接，不能公开。",
+               external_id="cmt-upstream", source_id="aihot")
+    candidates = normalized_radar_candidates(service, run_id, {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE})
+    assert all("virxact" not in c["url"] for c in candidates)
+    assert all(c["url"].startswith("http") for c in candidates)
+
+
+def test_cross_period_story_identity_blocks_republish(tmp_path: Path) -> None:
+    service, db, _ = _direct_run(tmp_path)
+    run_id = "run-p1"
+    # Last issue published the same story under a different report URL/title.
+    db.execute(
+        "INSERT INTO radar_history(canonical_url,normalized_title,last_pushed_at,issue_id,upstream_item_id,story_id) VALUES (?,?,?,?,?,?)",
+        ("https://example.org/old-report", "旧报道标题", "2026-08-20", "issue-old", None, "story-42"),
+    )
+    insert_raw(db, run_id, url="https://example.com/new-report", title="同一事件的新报道：KV cache 扩容",
+               summary="跟进报道描述同一事件的部署细节与限制条件，内容完整。",
+               external_id="cmt-new", story_id="story-42")
+    candidates = normalized_radar_candidates(service, run_id, {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE})
+    assert all(c["story_id"] != "story-42" for c in candidates)
+
+
+def test_variant_fallback_rescues_chinese_summary(tmp_path: Path) -> None:
+    service, db, _ = _direct_run(tmp_path)
+    run_id = "run-p1"
+    # High-priority all-lane row carries an English summary; the selected lane
+    # variant for the same item is usable Chinese — direct copy must fall back.
+    chinese = "调度器把长尾预填请求偏转到解码节点分块执行，实测收益显著。"
+    db.execute(
+        """
+        INSERT OR IGNORE INTO raw_items(
+            id, run_id, source_id, discovery_source, source_level, discovery_only,
+            title, summary, original_url, aihot_url, canonical_url, published_at,
+            discovered_at, authors_json, external_id, topic_hint, direction_hint,
+            priority, content_hash, payload_json, created_at, identity_key
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            "raw-variant", run_id, "aihot", "AI HOT", "B", 1,
+            "KVCache 跨节点预填调度器开源",
+            "An English abstract with no Chinese sentence for the same item.",
+            "https://example.com/variant", "https://aihot.virxact.com/items/cmt-v",
+            "https://example.com/variant", _days_ago(1), _days_ago(1), "[]", "cmt-v", "tpn", "kv",
+            99.0, "hash",
+            json.dumps({
+                "aihot": {"id": "cmt-v", "title": "KVCache 跨节点预填调度器开源",
+                          "summary": "An English abstract with no Chinese sentence for the same item.",
+                          "links": {"original": "https://example.com/variant"}},
+                "upstream_source": "Example（RSS）", "aihot_lane": "all", "aihot_lanes": ["selected", "all"],
+                "aihot_canonical_original": "https://example.com/variant",
+                "aihot_copy_variants": [
+                    {"lane": "all", "source_field": "summary", "summary": "An English abstract with no Chinese sentence for the same item."},
+                    {"lane": "selected", "source_field": "summary", "summary": chinese},
+                ],
+            }, ensure_ascii=False),
+            _days_ago(0), "https://example.com/variant",
+        ),
+    )
+    candidates = normalized_radar_candidates(service, run_id, {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE})
+    assert len(candidates) == 1
+    assert candidates[0]["summary"] == chinese
+    assert candidates[0]["copy_provenance"]["source_field"] == "summary"
+
+
+def _radar_html(final_groups) -> str:
+    parts = ['<html><body>']
+    for group in final_groups:
+        parts.append(
+            f'<div data-reader-role="radar-card" data-radar-category="{group["name"]}">'
+        )
+        for item in group["items"]:
+            parts.append(
+                '<div data-reader-role="radar-item">'
+                f'<a href="{item["url"]}">{item["title"]}</a>'
+                f'<div data-reader-role="radar-summary">{item["summary"]}</div>'
+                "</div>"
+            )
+        parts.append("</div>")
+    parts.append("</body></html>")
+    return "".join(parts)
+
+
+def _write_config_tree(root: Path, *, direct_copy: bool) -> None:
+    config = root / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "topics.yaml").write_text("topics: []\n", encoding="utf-8")
+    (config / "sources.yaml").write_text("sources: []\n", encoding="utf-8")
+    (config / "settings.yaml").write_text("{}\n", encoding="utf-8")
+    (config / "email.yaml").write_text("{}\n", encoding="utf-8")
+    (config / "scoring.yaml").write_text(
+        f"radar:\n  total_max: 8\n  max_per_category: 2\n  direct_copy: {str(direct_copy).lower()}\n",
+        encoding="utf-8",
+    )
+
+
+def test_release_gate_verifies_dom_summary_and_title_provenance(tmp_path: Path) -> None:
+    from briefing_skill.publication_manifest import (
+        publication_provenance_errors,
+        write_publication_manifest,
+    )
+
+    service, db = make_service(tmp_path)
+    run_id, issue_id = "run-gate", "issue-gate"
+    seed_issue(db, tmp_path, run_id, issue_id)
+    summary = "该推理调度器把长尾请求偏转到空闲解码节点，实测收益显著。"
+    insert_raw(
+        db, run_id, url="https://example.com/gate", title="推理调度器开源发布",
+        summary=summary, external_id="cmt-gate",
+    )
+    issue_data = {"run_id": run_id, "id": issue_id, "items": [], "date_to": REFERENCE_DATE}
+    groups = direct_copy_groups(service, issue_id, issue_data)
+    final_groups, contract = finalize_radar_groups(
+        service, groups, issue_id=issue_id, issue_data=issue_data
+    )
+    write_publication_manifest(service, issue_data, final_groups, contract)
+    html = _radar_html(final_groups)
+
+    assert publication_provenance_errors(tmp_path, run_id, html) == []
+
+    tampered_summary = html.replace(summary, "模型重新改写过的全新文案，引入了上游没有的判断。")
+    errors = publication_provenance_errors(tmp_path, run_id, tampered_summary)
+    assert any("does not match the frozen copy provenance" in error for error in errors)
+
+    tampered_title = html.replace("推理调度器开源发布", "推理调度器开源发布（改）")
+    errors = publication_provenance_errors(tmp_path, run_id, tampered_title)
+    assert any("does not match the frozen title provenance" in error for error in errors)
+
+    # With a readable config in direct mode a missing provenance record is a
+    # hard release failure, not a silent pass.
+    _write_config_tree(tmp_path, direct_copy=True)
+    (tmp_path / "workspace" / "runs" / run_id / "issue" / "radar-direct.json").unlink()
+    errors = publication_provenance_errors(tmp_path, run_id, html)
+    assert any("provenance record is missing" in error for error in errors)

@@ -310,6 +310,10 @@ def install_radar_signal_synthesis() -> None:
         if task_type == "issue_synthesis" and not direct_copy_enabled(self):
             # Direct-copy mode owns radar end to end; the synthesis Agent only
             # writes judgements/watch-next/insights and never sees radar input.
+            # The legacy fallback swaps in the versioned prompt that still
+            # documents the radar_candidates contract, so a disabled
+            # direct_copy switch rolls back input AND instructions together.
+            kwargs["prompt"] = "issue-synthesis-legacy-radar.md"
             if len(values) > 3:
                 values[3] = enrich_issue_synthesis_with_radar(self, run_id, dict(values[3]))
             else:

@@ -201,6 +201,8 @@ CREATE TABLE IF NOT EXISTS issue_radar_items (
     source_name TEXT NOT NULL,
     published_at TEXT NOT NULL,
     position INTEGER NOT NULL,
+    upstream_item_id TEXT,
+    story_id TEXT,
     PRIMARY KEY(issue_id, canonical_url),
     FOREIGN KEY(issue_id) REFERENCES issues(id)
 );
@@ -209,7 +211,9 @@ CREATE TABLE IF NOT EXISTS radar_history (
     canonical_url TEXT PRIMARY KEY,
     normalized_title TEXT NOT NULL,
     last_pushed_at TEXT NOT NULL,
-    issue_id TEXT NOT NULL
+    issue_id TEXT NOT NULL,
+    upstream_item_id TEXT,
+    story_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS radar_upstream_records (
@@ -217,6 +221,10 @@ CREATE TABLE IF NOT EXISTS radar_upstream_records (
     run_id TEXT NOT NULL,
     provider TEXT NOT NULL,
     upstream_lane TEXT NOT NULL,
+    lane_key TEXT,
+    lane_query TEXT,
+    topic_hint TEXT,
+    direction_hint TEXT,
     upstream_item_id TEXT,
     upstream_story_id TEXT,
     upstream_url TEXT,
@@ -225,6 +233,7 @@ CREATE TABLE IF NOT EXISTS radar_upstream_records (
     published_at TEXT,
     discovered_at TEXT,
     retrieved_at TEXT,
+    retrieved_at_first TEXT,
     etag TEXT,
     title TEXT,
     summary TEXT,
@@ -267,6 +276,20 @@ class Database:
             event_columns = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
             if "event_key" not in event_columns:
                 conn.execute("ALTER TABLE events ADD COLUMN event_key TEXT")
+            radar_history_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_history)")}
+            if "upstream_item_id" not in radar_history_columns:
+                conn.execute("ALTER TABLE radar_history ADD COLUMN upstream_item_id TEXT")
+            if "story_id" not in radar_history_columns:
+                conn.execute("ALTER TABLE radar_history ADD COLUMN story_id TEXT")
+            issue_radar_columns = {row[1] for row in conn.execute("PRAGMA table_info(issue_radar_items)")}
+            if "upstream_item_id" not in issue_radar_columns:
+                conn.execute("ALTER TABLE issue_radar_items ADD COLUMN upstream_item_id TEXT")
+            if "story_id" not in issue_radar_columns:
+                conn.execute("ALTER TABLE issue_radar_items ADD COLUMN story_id TEXT")
+            ledger_columns = {row[1] for row in conn.execute("PRAGMA table_info(radar_upstream_records)")}
+            for column in ("lane_key", "lane_query", "topic_hint", "direction_hint", "retrieved_at_first"):
+                if column not in ledger_columns:
+                    conn.execute(f"ALTER TABLE radar_upstream_records ADD COLUMN {column} TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_raw_identity ON raw_items(identity_key)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_event_key ON events(event_key)")
 
@@ -368,24 +391,36 @@ class Database:
         return row
 
     def upsert_radar_upstream_records(self, rows: Sequence[dict[str, Any]]) -> None:
-        """Refresh upstream lane observations while preserving selection decisions."""
+        """Refresh upstream lane observations while preserving selection decisions.
+
+        ``retrieved_at_first`` keeps the original capture time across replays so
+        resume never overwrites the fetch identity of an earlier collection.
+        """
         if not rows:
             return
         with self.connect() as conn:
             conn.executemany(
                 """
                 INSERT INTO radar_upstream_records(
-                    record_id, run_id, provider, upstream_lane, upstream_item_id, upstream_story_id,
+                    record_id, run_id, provider, upstream_lane, lane_key, lane_query,
+                    topic_hint, direction_hint, upstream_item_id, upstream_story_id,
                     upstream_url, original_url, canonical_original_url, published_at, discovered_at,
-                    retrieved_at, etag, title, summary, reason, title_hash, summary_hash,
+                    retrieved_at, retrieved_at_first, etag, title, summary, reason,
+                    title_hash, summary_hash,
                     raw_payload_json, selected_for_radar, radar_id, decision_reason, created_at
                 ) VALUES (
-                    :record_id, :run_id, :provider, :upstream_lane, :upstream_item_id, :upstream_story_id,
+                    :record_id, :run_id, :provider, :upstream_lane, :lane_key, :lane_query,
+                    :topic_hint, :direction_hint, :upstream_item_id, :upstream_story_id,
                     :upstream_url, :original_url, :canonical_original_url, :published_at, :discovered_at,
-                    :retrieved_at, :etag, :title, :summary, :reason, :title_hash, :summary_hash,
+                    :retrieved_at, :retrieved_at_first, :etag, :title, :summary, :reason,
+                    :title_hash, :summary_hash,
                     :raw_payload_json, :selected_for_radar, :radar_id, :decision_reason, :created_at
                 )
                 ON CONFLICT(record_id) DO UPDATE SET
+                    lane_key=excluded.lane_key,
+                    lane_query=excluded.lane_query,
+                    topic_hint=excluded.topic_hint,
+                    direction_hint=excluded.direction_hint,
                     upstream_story_id=excluded.upstream_story_id,
                     upstream_url=excluded.upstream_url,
                     original_url=excluded.original_url,
@@ -393,6 +428,7 @@ class Database:
                     published_at=excluded.published_at,
                     discovered_at=excluded.discovered_at,
                     retrieved_at=excluded.retrieved_at,
+                    retrieved_at_first=COALESCE(radar_upstream_records.retrieved_at_first, excluded.retrieved_at_first),
                     etag=excluded.etag,
                     title=excluded.title,
                     summary=excluded.summary,
