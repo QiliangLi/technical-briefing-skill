@@ -355,7 +355,73 @@ def test_historical_rewrite_blocked_by_upstream_trace_scan(tmp_path: Path) -> No
 
     reader = _reader(issue)
     reader["watch_next"] = ["接下来关注来自 AI HOT 精选的调度信号。"]
+
+    # First apply a CLEAN rewrite so the archive has full public state; then
+    # a blocked rewrite must leave every byte of that state untouched.
+    apply_historical_rewrite(tmp_path, issue_dir, _reader(issue))
+    before = {
+        path.name: path.read_bytes()
+        for path in sorted(issue_dir.rglob("*"))
+        if path.is_file()
+    }
+    assert before
+
     with pytest.raises(ValueError, match="upstream trace scan"):
         apply_historical_rewrite(tmp_path, issue_dir, reader)
-    # No public file was replaced by the blocked rewrite.
-    assert (issue_dir / "reader.json").exists() is False
+    after = {
+        path.name: path.read_bytes()
+        for path in sorted(issue_dir.rglob("*"))
+        if path.is_file()
+    }
+    assert after == before
+    # No temp/backup directories are left behind.
+    assert [child.name for child in issue_dir.parent.iterdir()] == [issue_dir.name]
+
+
+def test_dirty_run_email_blocks_archive_without_partial_writes(tmp_path: Path) -> None:
+    _install_schema(tmp_path)
+    run_id = "2026-08-20-094500"
+    event_id = "event-1"
+    item_id = stable_hash(run_id, "item", event_id)
+    machine = _machine_item(item_id)
+    issue = _issue(run_id, machine)
+    run_dir = tmp_path / "workspace" / "runs" / run_id
+    write_json(run_dir / "issue" / "issue.json", issue)
+    write_json(run_dir / "items" / f"{event_id}.json", machine)
+    title = "Agent跑得久以后，状态不该只留在进程里"
+    write_json(
+        run_dir / "reader_items" / f"{item_id}.json",
+        {
+            "brief_item_id": item_id,
+            "reader_version": 1,
+            "reader_shape": "blocks_v2",
+            "title": title,
+            "blocks": [
+                {"heading_key": None, "text": "这项工作把长任务状态保存为外部版本对象，失败后可以恢复。"},
+                {"heading_key": "mechanism", "text": "新状态只有通过接受门才会提交，因此回滚和继续执行都有明确边界。"},
+            ],
+            "lead": "这项工作把长任务状态保存为外部版本对象，失败后可以恢复。",
+            "body": ["新状态只有通过接受门才会提交，因此回滚和继续执行都有明确边界。"],
+            "takeaway": None,
+            "used_fields": ["core_conclusion", "mechanism"],
+            "_provenance": {
+                "run_id": run_id,
+                "source_item_hash": machine_item_hash(machine),
+                "reader_contract_version": 1,
+            },
+        },
+    )
+    headline = issue["synthesis"]["headline"]
+    # An upstream trace in the run email must abort the archive atomically:
+    # the public date directory is never created or partially written.
+    dirty = f"<html><body>{headline} dirty {title} via AI HOT 精选</body></html>"
+    (run_dir / "email.html").write_text(dirty, encoding="utf-8")
+    (run_dir / "email-illustrated.html").write_text(
+        f"<html><body>{headline} illustrated {title}</body></html>", encoding="utf-8"
+    )
+
+    with pytest.raises(SystemExit, match="upstream trace scan"):
+        archive_issue(tmp_path, run_id)
+
+    assert not (tmp_path / "archive" / "issues" / "2026-08-20").exists()
+    assert list((tmp_path / "archive" / "issues").glob(".*")) == []

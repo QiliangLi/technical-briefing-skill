@@ -36,7 +36,6 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 from briefing_skill.archive_reader import (
     apply_historical_rewrite,
-    backup_original_html,
     build_reader_from_run,
     prepare_rewrite_payload,
     validate_reader_document,
@@ -143,6 +142,73 @@ def _copy_original_variants(run_dir: Path, target: Path) -> dict[str, str]:
     return result
 
 
+def _assemble_archive(root: Path, run_id: str, target: Path, temp_dir: Path) -> None:
+    """Assemble the complete public archive inside temp_dir (target untouched)."""
+    from briefing_skill.archive_reader import _atomic_swap_directory
+    from briefing_skill.public_trace_scan import public_text_trace_errors, public_upstream_trace_errors
+
+    run_dir = root / "workspace" / "runs" / run_id
+    issue_path = run_dir / "issue" / "issue.json"
+    issue = json.loads(issue_path.read_text(encoding="utf-8"))
+    issue_date = target.name
+
+    reader = build_reader_from_run(root, run_id, issue)
+    validate_reader_document(root, issue, reader, require_current_sidecar=True)
+    for name in ("email.html", "email-illustrated.html"):
+        _require_reader_html(run_dir / name, reader)
+
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    # Carry over immutable original/ snapshots from an existing archive;
+    # a legacy archive (no manifest yet) snapshots its current public emails
+    # first. Both preserve the pre-existing bytes exactly.
+    if (target / "original").is_dir():
+        shutil.copytree(target / "original", temp_dir / "original")
+    if not (target / "publication-manifest.json").exists() and not (temp_dir / "original").is_dir():
+        for name in ("email.html", "email-illustrated.html"):
+            legacy = target / name
+            if legacy.is_file():
+                (temp_dir / "original").mkdir(parents=True, exist_ok=True)
+                shutil.copy2(legacy, temp_dir / "original" / name)
+    originals = {}
+    import hashlib
+
+    for name in ("email.html", "email-illustrated.html"):
+        source = run_dir / name
+        if not source.is_file():
+            raise ValueError(f"new archive requires both email variants; missing {source}")
+        destination = temp_dir / "original" / name
+        if destination.exists():
+            if destination.read_bytes() != source.read_bytes():
+                raise ValueError(f"refusing to replace immutable original variant: {destination}")
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        originals[name] = hashlib.sha256(destination.read_bytes()).hexdigest()
+
+    shutil.copy2(issue_path, temp_dir / "issue.json")
+    write_json(temp_dir / "reader.json", reader)
+    for name in ("email.html", "email-illustrated.html"):
+        shutil.copy2(run_dir / name, temp_dir / name)
+
+    papers = _paper_rows(issue_date, issue)
+    pre_errors = public_text_trace_errors(
+        {
+            "papers.json": json.dumps(papers, ensure_ascii=False),
+            "reader.json": json.dumps(reader, ensure_ascii=False),
+        }
+    )
+    if pre_errors:
+        raise SystemExit("upstream trace scan failed before archive write:\n" + "\n".join(pre_errors))
+    (temp_dir / "papers.json").write_text(
+        json.dumps(papers, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
+    write_publication_manifest(temp_dir, reader, originals=originals)
+    trace_errors = public_upstream_trace_errors(archive_public_files(temp_dir))
+    if trace_errors:
+        raise SystemExit("upstream trace scan failed:\n" + "\n".join(trace_errors))
+    _atomic_swap_directory(temp_dir, target)
+
+
 def archive_issue(root: Path, run_id: str) -> Path:
     run_dir = root / "workspace" / "runs" / run_id
     issue_path = run_dir / "issue" / "issue.json"
@@ -152,46 +218,14 @@ def archive_issue(root: Path, run_id: str) -> Path:
     issue_date = str(issue.get("date_to") or run_id[:10])
 
     target = root / "archive" / "issues" / issue_date
-    target.mkdir(parents=True, exist_ok=True)
-
-    reader = build_reader_from_run(root, run_id, issue)
-    validate_reader_document(root, issue, reader, require_current_sidecar=True)
-    for name in ("email.html", "email-illustrated.html"):
-        _require_reader_html(run_dir / name, reader)
-
-    # If this date already contains a legacy archive, preserve only the variants
-    # that truly exist before replacing the stable public names.
-    if not (target / "publication-manifest.json").exists():
-        legacy_originals = backup_original_html(target)
-    else:
-        legacy_originals = {}
-    originals = legacy_originals or _copy_original_variants(run_dir, target)
-
-    shutil.copy2(issue_path, target / "issue.json")
-    write_json(target / "reader.json", reader)
-    for name in ("email.html", "email-illustrated.html"):
-        shutil.copy2(run_dir / name, target / name)
-
-    papers = _paper_rows(issue_date, issue)
-    # Scan the generated public JSON before anything is written, then rescan
-    # the assembled directory: both must be free of upstream discovery traces.
-    from briefing_skill.public_trace_scan import public_text_trace_errors
-
-    pre_errors = public_text_trace_errors(
-        {
-            "papers.json": json.dumps(papers, ensure_ascii=False),
-            "reader.json": json.dumps(reader, ensure_ascii=False),
-        }
-    )
-    if pre_errors:
-        raise SystemExit("upstream trace scan failed before archive write:\n" + "\n".join(pre_errors))
-    (target / "papers.json").write_text(
-        json.dumps(papers, ensure_ascii=False, indent=1), encoding="utf-8"
-    )
-    write_publication_manifest(target, reader, originals=originals)
-    trace_errors = public_upstream_trace_errors(archive_public_files(target))
-    if trace_errors:
-        raise SystemExit("upstream trace scan failed:\n" + "\n".join(trace_errors))
+    temp_dir = target.with_name(f".{issue_date}.tmp")
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    try:
+        _assemble_archive(root, run_id, target, temp_dir)
+    finally:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
     _rebuild_index(root)
     return target
 

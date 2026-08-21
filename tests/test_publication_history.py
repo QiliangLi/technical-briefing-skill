@@ -178,3 +178,68 @@ def test_local_repair_is_idempotent(tmp_path: Path):
     assert reconcile_local_history(tmp_path, db) == 1
     assert reconcile_local_history(tmp_path, db) == 0
     assert db.fetchone("SELECT COUNT(*) AS n FROM published_sources")["n"] == 1
+
+
+def test_record_delivery_persists_radar_story_identity(tmp_path: Path) -> None:
+    """Two-period repro: the canonical SENT owner must write item/story ids.
+
+    After a real record_delivery, the next run's same-story candidate (new
+    report URL and title) must be blocked by cross-period identity dedup.
+    """
+    from briefing_skill.radar_direct import normalized_radar_candidates
+
+    db, service = _service(tmp_path)
+    issue = _issue(
+        db,
+        tmp_path,
+        html="""
+        <html><body>
+        <table>
+        <tr data-reader-row="radar-row"><td data-reader-role="radar-card" data-radar-category="AI Infra">
+        <div data-reader-role="radar-item">
+          <a href="https://example.com/report-a">KVCache 扩容第一报道</a>
+          <div>该报道描述 KV cache 分层扩容机制与实测收益，内容完整。</div>
+        </div>
+        </td></tr>
+        </table></body></html>
+        """,
+    )
+    db.execute(
+        """
+        INSERT INTO issue_radar_items(
+          issue_id,canonical_url,normalized_title,category,title,summary,
+          source_name,published_at,position,upstream_item_id,story_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            issue["id"], "https://example.com/report-a", "kvcache扩容第一报道", "AI Infra",
+            "KVCache 扩容第一报道", "该报道描述 KV cache 分层扩容机制与实测收益，内容完整。",
+            "example.com", "2026-08-21", 1, "cmt-story", "story-77",
+        ),
+    )
+
+    record_delivery(service, issue, now_iso(), "test@example.com", "mid-1")
+
+    row = db.fetchone(
+        "SELECT upstream_item_id, story_id FROM radar_history WHERE canonical_url=?",
+        ("https://example.com/report-a",),
+    )
+    assert row["upstream_item_id"] == "cmt-story"
+    assert row["story_id"] == "story-77"
+
+    # Second period: the same story returns under a new URL and title.
+    run2 = "run-2"
+    db.create_run(run2, "COLLECTING")
+    from tests.test_radar_direct import insert_raw  # noqa: PLC0415
+
+    insert_raw(
+        db, run2, url="https://example.com/report-b", title="同一事件的新报道：KV cache 扩容跟进",
+        summary="跟进报道描述同一事件的部署细节与限制条件，内容完整。",
+        external_id="cmt-new-report", story_id="story-77",
+    )
+    candidates = normalized_radar_candidates(
+        service,
+        run2,
+        {"run_id": run2, "items": [], "date_to": now_iso()[:10]},
+    )
+    assert all(candidate["story_id"] != "story-77" for candidate in candidates)

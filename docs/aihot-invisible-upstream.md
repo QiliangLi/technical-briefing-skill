@@ -25,14 +25,16 @@ AI Hot 是不可见的上游编辑与发现服务：
 
 ## 冻结、缓存与幂等
 
-- 每个 run 的全部 lane 响应与 lane 计划 hash 一起冻结在 `workspace/runs/<run_id>/source-cache/aihot/freeze.json`；重复 collect 同一 run 时直接回放冻结数据，不再请求上游；配置改变了 lane 计划时旧 freeze 整体失效并重新抓取，绝不部分回放、部分联网；
-- 单个 lane 失败只记录错误并继续（结果与错误状态一并冻结），已成功 lane 的结果不受影响；全部 lane 失败才视为 provider 级失败；
+- 每个 run 的全部 lane 响应与 lane 计划 hash 一起冻结在 `workspace/runs/<run_id>/source-cache/aihot/freeze.json`；重复 collect 同一 run 时直接回放冻结数据，不再请求上游；
+- 冻结 run 不可变：lane 计划（配置查询变化）在冻结后发生变化的就地重采会直接报 stale-run 错误并要求新建 run——避免"新 freeze + 旧 raw_items"的 run 内状态分裂；
+- 单个 lane 失败只记录错误并继续（结果与错误状态一并冻结），已成功 lane 的结果不受影响；全部 lane 失败才视为 provider 级失败；内部台账写入失败同样不清空已采集结果，错误记入 freeze 的 `ledger_error` 字段；
+- 台账唯一身份为 `record_id`（绑定完整 lane key），同类型多条 query lane 命中同一 item 会各自留下审计行（存量库在 `Database.init()` 自动重建旧四列唯一约束）；
 - 跨运行响应体缓存在 SQLite `source_state.payload.body`；304 时回放缓存体，新 run 不会拿到空 Radar；旧缓存无响应体时强制重新拉取；
 - `radar_upstream_records` 台账按完整 lane key 记录每条观察（query/topic/direction、ETag、首次抓取时间、是否被采用、radar_id、决策原因），按 run 隔离、upsert 幂等，resume 不覆盖原始抓取身份。
 
 ## 日期与文案纪律
 
-- Radar 新鲜度以 active run 的报告日期（issue `date_to`）为唯一基准，同一冻结 run 任何时候 resume/render 结果一致；缺失报告日期直接报错，绝不回退墙上时钟；
+- Radar 新鲜度以 active run 的报告日期（issue `date_to`，按配置时区解释日末，默认 Asia/Shanghai）为唯一基准，同一冻结 run 任何时候 resume/render 结果一致；缺失或非法报告日期、非法时区配置都直接报错，绝不回退墙上时钟或 UTC；
 - AI 日报日期只是内部召回边界：日报条目缺少自己的原始发布日期时，公开卡片不显示日期，绝不把日报日期伪装成原始发布日期；
 - 上游 `reason`（编辑推荐理由）永不进入公开文案，只保留在内部台账；公开摘要只接受 `summary`/`description` 字段；
 - 公开标题不截断：超出上限（160 字符）的标题整条淘汰；
@@ -45,7 +47,8 @@ AI Hot 是不可见的上游编辑与发现服务：
 - 技术范围过滤、跨期去重（`radar_history` 的 URL、统一规范化标题、upstream item ID 与 story ID——同一事件换报道/URL/标题也无法重复发布）、深度/附录 URL 冲突排除后按确定性权重排序（hot +40 / selected +30 / daily +20 / Direction 0-20 / A 级 URL +10 / 多栏目 +5 / 24 小时内 +5）；
 - 数量约束：最多 8 条、每类最多 2 条、同一 story/GitHub 项目最多 1 条；合法候选不足时允许少于 5 条并记录 underfill 原因；
 - 公开文案 = 冻结上游标题 + 完整摘要（或 1-2 个连续完整句子）；run 目录 `issue/radar-direct.json` 保存每条标题与摘要的 source_field/source_text_hash/span/public_text_hash，`selection_hash` 绑定冻结输入 hash、规则版本和全部公开字段 hash；
-- 发布门不只是记录溯源：`Renderer.validate` 会逐条执行 hash/span 验证、从最终 DOM 提取每张卡片的标题与摘要并与冻结 provenance 比对；direct-copy 模式下缺失 provenance 记录、卡片缺失/多出或文案被改写都会使发布失败；
+- 发布门从冻结输入向外单向重算整条链：真实 freeze 文件 hash 必须与记录的 `frozen_input_sha256` 一致，每条 AI Hot 卡片必须能按 item ID/URL 在 freeze 中定位到其声称的原始字段文本，`selection_hash` 会按记录的公开字段重算比对，manifest 的 `summary_sha256` 与 radar-direct 交叉核验，最终 DOM 的标题/摘要 hash 必须逐条匹配；direct-copy 模式下缺失 provenance 记录、卡片缺失/多出/重复（含 multiplicity）或文案被改写都会使发布失败，联合篡改 radar-direct 与 DOM 无法绕过 freeze 锚定；
+- 发送历史由 canonical `record_delivery` 写入跨期 story/item 身份，同一事件换 URL/标题也无法在下一期重复发布；
 - `issue_synthesis` 不再读取 radar_candidates，也不再生成 radar_signals；确定性 finalize 负责写入兼容的 `synthesis.radar_signals`（archive/Pages 继续可用）。
 
 ## 公开痕迹负向扫描
@@ -62,7 +65,9 @@ AI Hot 是不可见的上游编辑与发现服务：
 - AI Hot API 失败：保留其他来源，Radar 允许减量，不得复制上一期内容填充，不得在渲染阶段联网补救；
 - 热点榜无法解析到单条摘要：只记录内部命中，不发布空摘要卡片，不使用 story digest 冒充单一来源摘要；
 - 上游摘要非中文或不完整：尝试其他栏目同一 item 的中文摘要，仍不可用则淘汰；
-- 上游更正/撤回：未发布的 run 重新 collect 产生新冻结版本；已发布归档不静默改写。
+- 上游更正/撤回：未发布的 run 重新 collect 产生新冻结版本；已发布归档不静默改写；
+- 归档与历史重写全部走临时目录原子替换：组装、校验、痕迹扫描全部通过后才一次性换入正式目录，失败时已发布目录字节不变；
+- 公开 URL 必须是具体的原始页面（绝对 http(s)、非上游域名、非站点根地址）。
 
 ## 灰度与回滚
 

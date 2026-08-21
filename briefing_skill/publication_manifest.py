@@ -352,20 +352,20 @@ def _html_urls(soup, selector: str) -> set[str]:
     return urls
 
 
-def _radar_records_from_manifest(manifest: dict[str, Any]) -> set[tuple[str, str, str]]:
-    records: set[tuple[str, str, str]] = set()
+def _radar_records_from_manifest(manifest: dict[str, Any]) -> Counter:
+    records: Counter = Counter()
     for item in manifest.get("radar") or []:
         category = normalize_text(item.get("category") or "")
         title = normalize_text(item.get("title") or "")
         for value in item.get("urls") or []:
             url = canonicalize_url(value)
             if url:
-                records.add((category, title, url))
+                records[(category, title, url)] += 1
     return records
 
 
-def _radar_records_from_html(soup) -> set[tuple[str, str, str]]:
-    records: set[tuple[str, str, str]] = set()
+def _radar_records_from_html(soup) -> Counter:
+    records: Counter = Counter()
     for card in soup.select('[data-reader-role="radar-card"]'):
         category = normalize_text(card.get("data-radar-category") or "")
         for node in card.select('[data-reader-role="radar-item"]'):
@@ -374,13 +374,16 @@ def _radar_records_from_html(soup) -> set[tuple[str, str, str]]:
                 continue
             url = canonicalize_url(link.get("href"))
             if url:
-                records.add((category, normalize_text(link.get_text(" ", strip=True)), url))
+                records[(category, normalize_text(link.get_text(" ", strip=True)), url)] += 1
     return records
 
 
-def _radar_dom_items(soup) -> dict[str, dict[str, str]]:
-    """Extract {canonical_url: {title, summary}} from the rendered radar cards."""
-    result: dict[str, dict[str, str]] = {}
+def _radar_dom_items(soup) -> list[dict[str, str]]:
+    """Extract ordered {url, title, summary} records from the rendered radar cards.
+
+    A list (not a dict) so duplicated cards keep their multiplicity.
+    """
+    result: list[dict[str, str]] = []
     for node in soup.select('[data-reader-role="radar-item"]'):
         link = node.find("a", href=True)
         if link is None:
@@ -397,22 +400,34 @@ def _radar_dom_items(soup) -> dict[str, dict[str, str]]:
                 if text and "阅读原文" not in text:
                     summary_node = div
                     break
-        result[url] = {
-            "title": " ".join(link.get_text(" ", strip=True).split()),
-            "summary": " ".join(summary_node.get_text(" ", strip=True).split()) if summary_node else "",
-        }
+        result.append(
+            {
+                "url": url,
+                "title": " ".join(link.get_text(" ", strip=True).split()),
+                "summary": " ".join(summary_node.get_text(" ", strip=True).split()) if summary_node else "",
+            }
+        )
     return result
 
 
-def _direct_copy_provenance_errors(root: Path, run_id: str, soup) -> list[str]:
-    """Fail closed unless every rendered radar character is a frozen upstream span.
+def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict[str, Any]) -> list[str]:
+    """Fail closed on the full chain: freeze -> radar-direct -> manifest -> DOM.
 
-    In direct-copy mode the release must verify — not merely record — that each
-    DOM card's title and summary hash-match the frozen-field provenance, that
-    no card is missing or extra, and that no copy came from the internal-only
-    upstream ``reason`` field.
+    In direct-copy mode the release must verify — from the frozen input
+    outward, not from self-attested records: every item's claimed upstream
+    text must be locatable in the run's actual freeze, the stored
+    frozen_input_sha256 must equal the real freeze hash, the recorded
+    selection_hash must match a recomputation over the recorded public
+    fields, manifest summary hashes must agree, and the DOM must carry each
+    card exactly once with hash-matching title and summary.
     """
-    from .radar_direct import direct_copy_mode, verify_copy_integrity
+    from .radar_direct import (
+        direct_copy_mode,
+        freeze_file_sha256,
+        locate_frozen_source,
+        recompute_selection_hash,
+        verify_copy_integrity,
+    )
 
     mode = direct_copy_mode(root)
     path = root / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
@@ -425,36 +440,90 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup) -> list[str]:
         return ["Direct-copy radar provenance record is missing for final validation"]
     document = read_json(path, {}) or {}
     errors: list[str] = []
-    recorded = {}
+    recorded = {canonicalize_url((item.get("source_urls") or [None])[0]): item for item in document.get("items") or []}
     for item in document.get("items") or []:
-        url = canonicalize_url((item.get("source_urls") or [None])[0])
-        if url:
-            recorded[url] = item
         errors.extend(
             f"radar-direct record {item.get('radar_id')}: {error}"
             for error in verify_copy_integrity(item)
         )
+
+    # 1. Anchor to the real frozen input.
+    freeze_path = root / "workspace" / "runs" / run_id / "source-cache" / "aihot" / "freeze.json"
+    actual_freeze_hash = freeze_file_sha256(root, run_id)
+    stored_freeze_hash = document.get("frozen_input_sha256")
+    if stored_freeze_hash is not None and stored_freeze_hash != actual_freeze_hash:
+        errors.append("radar-direct provenance is not anchored to the current frozen AI Hot input")
+    freeze_document = read_json(freeze_path, {}) if freeze_path.is_file() else {}
+    for item in document.get("items") or []:
+        if not (item.get("upstream_lanes") or []):
+            continue  # non-AI-Hot discovery rows have no freeze anchor
+        anchor = locate_frozen_source(freeze_document, item)
+        if anchor is None:
+            errors.append(
+                f"radar-direct record {item.get('radar_id')} cannot be located in the frozen AI Hot responses"
+            )
+            continue
+        provenance = item.get("copy_provenance") or {}
+        title_provenance = item.get("title_provenance") or {}
+        if anchor["summary"] != str(provenance.get("source_text") or ""):
+            errors.append(
+                f"radar-direct record {item.get('radar_id')} summary source text differs from the frozen field"
+            )
+        if anchor["title"] != str(title_provenance.get("source_text") or ""):
+            errors.append(
+                f"radar-direct record {item.get('radar_id')} title source text differs from the frozen field"
+            )
+
+    # 2. Recompute the selection hash over the recorded public fields.
+    if document.get("selection_hash") and recompute_selection_hash(document) != document.get("selection_hash"):
+        errors.append("radar-direct selection hash does not match its recorded public fields")
+
+    # 3. Cross-check manifest summary hashes.
+    manifest_by_url = {}
+    for record in manifest.get("radar") or []:
+        url = canonicalize_url((record.get("urls") or [None])[0])
+        if url:
+            manifest_by_url[url] = record
+    for url, item in recorded.items():
+        record = manifest_by_url.get(url)
+        provenance = item.get("copy_provenance") or {}
+        if record is None:
+            continue
+        if record.get("summary_sha256") != provenance.get("public_text_hash"):
+            errors.append(f"publication manifest summary hash disagrees with radar-direct for {url}")
+
+    # 4. DOM comparison with multiplicity: exactly one card per record.
     dom_items = _radar_dom_items(soup)
-    if set(dom_items) != set(recorded):
-        missing = sorted(set(recorded) - set(dom_items))[:3]
-        extra = sorted(set(dom_items) - set(recorded))[:3]
+    dom_urls = Counter(item["url"] for item in dom_items)
+    recorded_urls = Counter(recorded.keys())
+    if dom_urls != recorded_urls:
+        duplicated = sorted(url for url, count in dom_urls.items() if count > 1)
         errors.append(
-            f"Radar DOM does not match direct-copy provenance records: missing={missing} extra={extra}"
+            "Radar DOM does not match direct-copy provenance records (count/multiplicity): "
+            f"duplicated={duplicated[:3]}"
         )
-    for url, rendered in dom_items.items():
-        item = recorded.get(url)
+    for rendered in dom_items:
+        item = recorded.get(rendered["url"])
         if item is None:
             continue
         provenance = item.get("copy_provenance") or {}
+        title_provenance = item.get("title_provenance") or {}
         if provenance.get("public_text_hash") != f"sha256:{content_hash(rendered['summary'])}":
             errors.append(
-                f"Radar summary in HTML does not match the frozen copy provenance for {url}"
+                f"Radar summary in HTML does not match the frozen copy provenance for {rendered['url']}"
             )
-        title_provenance = item.get("title_provenance") or {}
         if title_provenance.get("public_text_hash") != f"sha256:{content_hash(rendered['title'])}":
             errors.append(
-                f"Radar title in HTML does not match the frozen title provenance for {url}"
+                f"Radar title in HTML does not match the frozen title provenance for {rendered['url']}"
             )
+
+    # 5. The rendered count must equal the contract's final count exactly.
+    contract = manifest.get("radar_contract") or {}
+    final_count = int(contract.get("final_count") or 0)
+    if final_count and len(dom_items) != final_count:
+        errors.append(
+            f"Radar DOM count {len(dom_items)} does not equal the contract final_count {final_count}"
+        )
     return errors
 
 
@@ -495,7 +564,7 @@ def publication_provenance_errors(root: Path, run_id: str, email_html: str) -> l
         errors.append(
             f"Radar HTML provenance mismatch: missing={missing[:3]} extra={extra[:3]}"
         )
-    errors.extend(_direct_copy_provenance_errors(root, run_id, soup))
+    errors.extend(_direct_copy_provenance_errors(root, run_id, soup, manifest))
 
     contract = manifest.get("radar_contract") or {}
     required = int(contract.get("required_minimum") or 0)

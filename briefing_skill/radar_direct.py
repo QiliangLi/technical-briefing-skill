@@ -258,14 +258,38 @@ def _title_source_field(payload: dict[str, Any], title: str) -> str:
     return "title"
 
 
+def _report_date_reference(date_to: str, settings: dict[str, Any]):
+    """End of the report day in the CONFIGURED timezone, then aware datetime.
+
+    A bare report date is the active run's ``date_to``; interpreting it as
+    UTC day-end would silently drop timezone-boundary items (AGENTS: the
+    final date must come from the active run and configured timezone).
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    tz_name = str((settings or {}).get("timezone") or "Asia/Shanghai")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(f"invalid configured timezone for radar freshness: {tz_name}") from exc
+    try:
+        day = datetime.strptime(str(date_to).strip()[:10], "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(f"invalid active run report date: {date_to}") from exc
+    return day.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=tz)
+
+
 def _public_url_error(url: str) -> str | None:
-    """Public radar cards link to an absolute original page, never the upstream."""
+    """Public radar cards link to a specific original page, never the upstream."""
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
     if parsed.scheme not in {"http", "https"} or not host:
         return "not an absolute http(s) URL"
     if host == "aihot.virxact.com" or host.endswith(".aihot.virxact.com"):
         return "upstream discovery URL"
+    if not (parsed.path or "").strip("/"):
+        return "site-root URL, not a specific original page"
     return None
 
 
@@ -289,12 +313,13 @@ def _candidate_from_row(
     if not canonical:
         return None
 
-    # Freshness is measured against the active run's report date so the same
-    # frozen run replays identically no matter when it is resumed. Daily items
-    # without their own upstream date use the daily window as an internal
-    # recall bound only — the public card shows no fabricated date.
+    # Freshness is measured against the active run's report date (end of day
+    # in the configured timezone) so the same frozen run replays identically
+    # no matter when it is resumed. Daily items without their own upstream
+    # date use the daily window as an internal recall bound only — the public
+    # card shows no fabricated date.
     recall_reference = str(row.get("published_at") or "") or str(payload.get("aihot_daily_date") or "")
-    age = published_age_days(recall_reference or None, reference=reference_date)
+    age = published_age_days(recall_reference or None, reference=_report_date_reference(reference_date, context["settings"]))
     if age is None or age > RADAR_MAX_AGE_DAYS:
         return None
 
@@ -417,6 +442,7 @@ def normalized_radar_candidates(service, run_id: str, issue_data: dict[str, Any]
             str(topic.get("id")): str(topic.get("aihot_priority") or "low")
             for topic in service.config.topic_list()
         },
+        "settings": dict(getattr(service.config, "settings", None) or {}),
         "history_urls": {
             canonicalize_url(row.get("canonical_url")) for row in history if row.get("canonical_url")
         },
@@ -601,7 +627,11 @@ def record_direct_publication(
     """
     if not direct_copy_enabled(service):
         return
-    final_items = [dict(item) for group in final_groups or [] for item in group.get("items") or []]
+    final_items = [
+        dict(item, category=item.get("category") or item.get("category_key") or group.get("name"))
+        for group in final_groups or []
+        for item in group.get("items") or []
+    ]
     if final_items and not all(item.get("copy_provenance") for item in final_items):
         return
     for item in final_items:
@@ -625,6 +655,31 @@ def _frozen_input_sha256(service, run_id: str) -> str | None:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _selection_binding(document: dict[str, Any]) -> dict[str, Any]:
+    from .adapters.aihot import AIHOT_CONNECTOR_VERSION
+
+    items = document.get("items") or []
+    return {
+        "connector_version": AIHOT_CONNECTOR_VERSION,
+        "direct_copy_version": RADAR_DIRECT_COPY_VERSION,
+        "taxonomy_version": RADAR_TAXONOMY_VERSION,
+        "selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
+        "frozen_input_sha256": document.get("frozen_input_sha256"),
+        "contract": document.get("selection_contract"),
+        "items": [
+            {
+                "radar_id": item.get("radar_id"),
+                "category": item.get("category"),
+                "title_hash": content_hash(item.get("title")),
+                "summary_hash": content_hash(item.get("summary")),
+                "url": canonicalize_url((item.get("source_urls") or [None])[0]),
+                "published_at": item.get("published_at"),
+            }
+            for item in items
+        ],
+    }
+
+
 def _selection_hash(service, run_id: str, final_items: list[dict[str, Any]], contract: dict[str, Any]) -> str:
     """Bind the selection to frozen input, rule versions and every public field.
 
@@ -632,28 +687,67 @@ def _selection_hash(service, run_id: str, final_items: list[dict[str, Any]], con
     and selection-policy versions, and the public field hashes — not just the
     URL list, so an upstream copy change under a stable URL invalidates it.
     """
-    from .adapters.aihot import AIHOT_CONNECTOR_VERSION
-
-    binding = {
-        "connector_version": AIHOT_CONNECTOR_VERSION,
-        "direct_copy_version": RADAR_DIRECT_COPY_VERSION,
-        "taxonomy_version": RADAR_TAXONOMY_VERSION,
-        "selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
-        "frozen_input_sha256": _frozen_input_sha256(service, run_id),
-        "contract": contract,
-        "items": [
-            {
-                "radar_id": item.get("radar_id"),
-                "category": item.get("category"),
-                "title_hash": content_hash(item.get("title")),
-                "summary_hash": content_hash(item.get("summary")),
-                "url": canonicalize_url(item.get("url")),
-                "published_at": item.get("published_at"),
-            }
-            for item in final_items
-        ],
-    }
+    binding = _selection_binding(
+        {
+            "frozen_input_sha256": _frozen_input_sha256(service, run_id),
+            "selection_contract": contract,
+            "items": [
+                {**item, "source_urls": [item.get("url")]} for item in final_items
+            ],
+        }
+    )
     return stable_hash(json.dumps(binding, ensure_ascii=False, sort_keys=True), length=32)
+
+
+def recompute_selection_hash(document: dict[str, Any]) -> str:
+    """Recompute the selection hash from a persisted radar-direct document.
+
+    Pure function of the recorded fields (including the stored
+    frozen_input_sha256, so a stale freeze hash is caught separately instead
+    of silently re-binding to a tampered input).
+    """
+    return stable_hash(json.dumps(_selection_binding(document), ensure_ascii=False, sort_keys=True), length=32)
+
+
+def freeze_file_sha256(root, run_id: str) -> str | None:
+    """Hash of the run's actual frozen AI Hot responses (None if absent)."""
+    import hashlib
+
+    path = Path(root) / "workspace" / "runs" / run_id / "source-cache" / "aihot" / "freeze.json"
+    if not path.is_file():
+        return None
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def locate_frozen_source(freeze: dict[str, Any], item: dict[str, Any]) -> dict[str, str] | None:
+    """Locate the true upstream title/summary text for an item inside the freeze.
+
+    Matches the item by upstream item id or original URL across every frozen
+    lane payload, then reads the exact field the provenance claims. ``None``
+    means the claimed source cannot be located in the frozen input.
+    """
+    item_id = str(item.get("upstream_item_id") or "")
+    url = canonicalize_url((item.get("source_urls") or [None])[0])
+    provenance = item.get("copy_provenance") or {}
+    title_provenance = item.get("title_provenance") or {}
+    summary_field = str(provenance.get("source_field") or "summary")
+    title_field = str(title_provenance.get("source_field") or "title")
+    for lane in (freeze.get("lanes") or {}).values():
+        payload = lane.get("payload") if isinstance(lane, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        for raw in payload.get("items") or payload.get("data") or []:
+            if not isinstance(raw, dict):
+                continue
+            links = raw.get("links") or {}
+            raw_id = str(raw.get("publicId") or raw.get("id") or "")
+            raw_url = canonicalize_url(links.get("original") or raw.get("url") or "")
+            if (item_id and raw_id == item_id) or (url and raw_url == url):
+                return {
+                    "summary": " ".join(str(raw.get(summary_field) or "").split()),
+                    "title": " ".join(str(raw.get(title_field) or "").split()),
+                }
+    return None
 
 
 def _write_provenance_file(service, run_id: str, final_items: list[dict[str, Any]], contract: dict[str, Any]) -> None:

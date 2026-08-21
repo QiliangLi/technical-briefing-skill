@@ -613,50 +613,82 @@ def _write_if_changed(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _atomic_swap_directory(temp_dir: Path, target: Path) -> None:
+    """Replace target with temp_dir atomically; target is untouched on failure."""
+    import os
+
+    backup = target.with_name(f".{target.name}.backup")
+    if backup.exists():
+        shutil.rmtree(backup)
+    if target.exists():
+        os.rename(target, backup)
+    try:
+        os.rename(temp_dir, target)
+    except Exception:
+        if backup.exists() and not target.exists():
+            os.rename(backup, target)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
+
+
 def apply_historical_rewrite(root: Path, issue_dir: Path, reader: dict[str, Any]) -> dict[str, Any]:
+    """Apply a historical reader rewrite atomically.
+
+    The complete new issue directory is assembled in a sibling temp directory
+    and must pass validation and the upstream trace scan before the public
+    directory is swapped in one rename; a blocked rewrite leaves the archived
+    bytes untouched.
+    """
     from .public_trace_scan import archive_public_files, public_text_trace_errors, public_upstream_trace_errors
 
     issue = read_json(issue_dir / "issue.json", {})
     validate_reader_document(root, issue, reader)
     if reader.get("rewrite_status") != "historical_semantic_rewrite":
         raise ValueError("historical apply requires rewrite_status=historical_semantic_rewrite")
-    backup_original_reader(issue_dir, replacement=reader)
-    originals = (
-        existing_original_html(issue_dir)
-        if (issue_dir / "publication-manifest.json").is_file()
-        else backup_original_html(issue_dir)
-    )
-    # Every public archive write path shares the invisible-upstream contract:
-    # the proposed reader and both rendered variants are scanned BEFORE any
-    # public file is replaced (only internal original/ snapshots may exist
-    # already), so a rewrite can never reintroduce an upstream trace into
-    # reader.json, the emails or Pages data.
-    html = render_reader_over_original(issue_dir, issue, reader)
-    illustrated_source = issue_dir / "original" / "email-illustrated.html"
-    illustrated_html = (
-        render_reader_over_original(issue_dir, issue, reader, variant="email-illustrated.html")
-        if illustrated_source.is_file()
-        else html
-    )
-    trace_errors = public_text_trace_errors(
-        {
-            "reader.json": json.dumps(reader, ensure_ascii=False),
-            "email.html": html,
-            "email-illustrated.html": illustrated_html,
-        }
-    )
-    if trace_errors:
-        raise ValueError("historical rewrite blocked by upstream trace scan:\n" + "\n".join(trace_errors))
-    write_json(issue_dir / "reader.json", reader)
-    _write_if_changed(issue_dir / "email.html", html)
-    # A legacy archive may not preserve enough provenance to recover an illustrated
-    # variant. Publish the same complete reader view instead of inventing images.
-    _write_if_changed(issue_dir / "email-illustrated.html", illustrated_html)
-    manifest = write_publication_manifest(issue_dir, reader, originals=originals)
-    post_errors = public_upstream_trace_errors(archive_public_files(issue_dir))
-    if post_errors:
-        raise ValueError("archived issue failed post-write upstream trace scan:\n" + "\n".join(post_errors))
-    return manifest
+
+    temp_dir = issue_dir.with_name(f".{issue_dir.name}.tmp")
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+    shutil.copytree(issue_dir, temp_dir)
+    try:
+        backup_original_reader(temp_dir, replacement=reader)
+        originals = (
+            existing_original_html(temp_dir)
+            if (temp_dir / "publication-manifest.json").is_file()
+            else backup_original_html(temp_dir)
+        )
+        html = render_reader_over_original(temp_dir, issue, reader)
+        illustrated_source = temp_dir / "original" / "email-illustrated.html"
+        illustrated_html = (
+            render_reader_over_original(temp_dir, issue, reader, variant="email-illustrated.html")
+            if illustrated_source.is_file()
+            else html
+        )
+        trace_errors = public_text_trace_errors(
+            {
+                "reader.json": json.dumps(reader, ensure_ascii=False),
+                "email.html": html,
+                "email-illustrated.html": illustrated_html,
+            }
+        )
+        if trace_errors:
+            raise ValueError("historical rewrite blocked by upstream trace scan:\n" + "\n".join(trace_errors))
+        write_json(temp_dir / "reader.json", reader)
+        _write_if_changed(temp_dir / "email.html", html)
+        # A legacy archive may not preserve enough provenance to recover an illustrated
+        # variant. Publish the same complete reader view instead of inventing images.
+        _write_if_changed(temp_dir / "email-illustrated.html", illustrated_html)
+        manifest = write_publication_manifest(temp_dir, reader, originals=originals)
+        post_errors = public_upstream_trace_errors(archive_public_files(temp_dir))
+        if post_errors:
+            raise ValueError(
+                "historical rewrite failed the upstream trace scan:\n" + "\n".join(post_errors)
+            )
+        _atomic_swap_directory(temp_dir, issue_dir)
+        return manifest
+    finally:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def _manifest_files(issue_dir: Path) -> dict[str, str]:

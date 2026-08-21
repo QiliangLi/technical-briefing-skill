@@ -233,6 +233,24 @@ def _project_compatibility(conn, issue_id: str, sources: Iterable[PublishedSourc
             """,
             (source.canonical_url, source.normalized_title, sent_at, issue_id),
         )
+    # The HTML-derived source rows carry no upstream identity; project the
+    # final radar cards' item/story ids so cross-period dedup can block the
+    # same event republished under a new report URL and title.
+    conn.execute(
+        """
+        INSERT INTO radar_history(
+            canonical_url,normalized_title,last_pushed_at,issue_id,upstream_item_id,story_id
+        )
+        SELECT canonical_url,normalized_title,?,issue_id,upstream_item_id,story_id
+        FROM issue_radar_items WHERE issue_id=?
+        ON CONFLICT(canonical_url) DO UPDATE SET
+          last_pushed_at=excluded.last_pushed_at,
+          issue_id=excluded.issue_id,
+          upstream_item_id=COALESCE(excluded.upstream_item_id, radar_history.upstream_item_id),
+          story_id=COALESCE(excluded.story_id, radar_history.story_id)
+        """,
+        (sent_at, issue_id),
+    )
 
 
 def record_delivery(service, issue: dict[str, Any], sent_at: str, recipients: str, message_id: str) -> None:

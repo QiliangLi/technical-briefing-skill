@@ -245,7 +245,7 @@ CREATE TABLE IF NOT EXISTS radar_upstream_records (
     radar_id TEXT,
     decision_reason TEXT,
     created_at TEXT NOT NULL,
-    UNIQUE(run_id, provider, upstream_lane, upstream_item_id)
+    UNIQUE(run_id, provider, lane_key, upstream_item_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_radar_upstream_run ON radar_upstream_records(run_id);
@@ -331,6 +331,81 @@ class Database:
                 WHERE event_key IS NOT NULL AND event_key!=''
                 """
             )
+            self._migrate_radar_upstream_unique(conn)
+
+    @staticmethod
+    def _migrate_radar_upstream_unique(conn: sqlite3.Connection) -> None:
+        """Rebuild the ledger when it still carries the pre-lane-key UNIQUE.
+
+        The original constraint UNIQUE(run_id, provider, upstream_lane,
+        upstream_item_id) collides once two same-type query lanes (both
+        ``all``) hit the same item with distinct full lane keys. SQLite cannot
+        drop a table constraint, so the table is rebuilt once, copying rows.
+        """
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='radar_upstream_records'"
+        ).fetchone()
+        if not row or not row[0]:
+            return
+        normalized = " ".join(str(row[0]).split()).lower()
+        if "unique(run_id, provider, lane_key, upstream_item_id)" in normalized:
+            return
+        if "unique(run_id, provider, upstream_lane, upstream_item_id)" not in normalized:
+            return
+        columns = [
+            "record_id", "run_id", "provider", "upstream_lane", "lane_key", "lane_query",
+            "topic_hint", "direction_hint", "upstream_item_id", "upstream_story_id",
+            "upstream_url", "original_url", "canonical_original_url", "published_at",
+            "discovered_at", "retrieved_at", "retrieved_at_first", "etag", "title",
+            "summary", "reason", "title_hash", "summary_hash", "raw_payload_json",
+            "selected_for_radar", "radar_id", "decision_reason", "created_at",
+        ]
+        existing = {info[1] for info in conn.execute("PRAGMA table_info(radar_upstream_records)")}
+        usable = [name for name in columns if name in existing]
+        column_list = ",".join(usable)
+        conn.executescript(
+            """
+            CREATE TABLE radar_upstream_records_new(
+                record_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                upstream_lane TEXT NOT NULL,
+                lane_key TEXT,
+                lane_query TEXT,
+                topic_hint TEXT,
+                direction_hint TEXT,
+                upstream_item_id TEXT,
+                upstream_story_id TEXT,
+                upstream_url TEXT,
+                original_url TEXT,
+                canonical_original_url TEXT,
+                published_at TEXT,
+                discovered_at TEXT,
+                retrieved_at TEXT,
+                retrieved_at_first TEXT,
+                etag TEXT,
+                title TEXT,
+                summary TEXT,
+                reason TEXT,
+                title_hash TEXT,
+                summary_hash TEXT,
+                raw_payload_json TEXT,
+                selected_for_radar INTEGER NOT NULL DEFAULT 0,
+                radar_id TEXT,
+                decision_reason TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(run_id, provider, lane_key, upstream_item_id)
+            );
+            """
+        )
+        conn.execute(
+            f"INSERT OR IGNORE INTO radar_upstream_records_new({column_list}) "
+            f"SELECT {column_list} FROM radar_upstream_records"
+        )
+        conn.execute("DROP TABLE radar_upstream_records")
+        conn.execute("ALTER TABLE radar_upstream_records_new RENAME TO radar_upstream_records")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_radar_upstream_run ON radar_upstream_records(run_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_radar_upstream_item ON radar_upstream_records(run_id, upstream_item_id)")
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

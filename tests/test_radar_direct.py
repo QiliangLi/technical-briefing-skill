@@ -69,6 +69,7 @@ def insert_raw(
     lanes: list[str] | None = None,
     story_id: str = "",
     age_days: float = 1,
+    published_at: str | None = None,
     source_id: str = "aihot",
     source_level: str = "B",
     topic_hint: str = "",
@@ -117,7 +118,7 @@ def insert_raw(
             url,
             f"https://aihot.virxact.com/items/{external_id or raw_id}",
             canonical,
-            _days_ago(age_days),
+            published_at or _days_ago(age_days),
             _days_ago(age_days),
             "[]",
             external_id,
@@ -614,8 +615,35 @@ def test_release_gate_verifies_dom_summary_and_title_provenance(tmp_path: Path) 
     run_id, issue_id = "run-gate", "issue-gate"
     seed_issue(db, tmp_path, run_id, issue_id)
     summary = "该推理调度器把长尾请求偏转到空闲解码节点，实测收益显著。"
+    title = "推理调度器开源发布"
+    raw_item = {
+        "id": "cmt-gate",
+        "title": title,
+        "summary": summary,
+        "links": {
+            "aihot": "https://aihot.virxact.com/items/cmt-gate",
+            "original": "https://example.com/gate",
+        },
+    }
+    # The real frozen input: the release gate anchors every public character
+    # back to this file, not to radar-direct's own claims.
+    freeze_dir = tmp_path / "workspace" / "runs" / run_id / "source-cache" / "aihot"
+    write_json(
+        freeze_dir / "freeze.json",
+        {
+            "connector_version": 3,
+            "run_id": run_id,
+            "lane_plan_hash": "plan",
+            "lanes": {
+                "selected": {
+                    "url": "https://aihot.virxact.com/api/v1/items?mode=selected",
+                    "payload": {"items": [raw_item]},
+                }
+            },
+        },
+    )
     insert_raw(
-        db, run_id, url="https://example.com/gate", title="推理调度器开源发布",
+        db, run_id, url="https://example.com/gate", title=title,
         summary=summary, external_id="cmt-gate",
     )
     issue_data = {"run_id": run_id, "id": issue_id, "items": [], "date_to": REFERENCE_DATE}
@@ -632,13 +660,97 @@ def test_release_gate_verifies_dom_summary_and_title_provenance(tmp_path: Path) 
     errors = publication_provenance_errors(tmp_path, run_id, tampered_summary)
     assert any("does not match the frozen copy provenance" in error for error in errors)
 
-    tampered_title = html.replace("推理调度器开源发布", "推理调度器开源发布（改）")
+    tampered_title = html.replace(title, title + "（改）")
     errors = publication_provenance_errors(tmp_path, run_id, tampered_title)
     assert any("does not match the frozen title provenance" in error for error in errors)
 
+    # Adversarial joint tamper: radar-direct and the DOM are made mutually
+    # consistent with a brand-new text, but the frozen input, the selection
+    # hash and the manifest still describe the original copy.
+    forged = "一段完全自洽但从未被冻结过的联合篡改文案，包含完整中文句子。"
+    provenance_path = tmp_path / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
+    document = json.loads(provenance_path.read_text(encoding="utf-8"))
+    from briefing_skill.utils import content_hash
+
+    for item in document["items"]:
+        item["summary"] = forged
+        item["copy_provenance"]["source_text"] = forged
+        item["copy_provenance"]["source_text_hash"] = f"sha256:{content_hash(forged)}"
+        item["copy_provenance"]["public_text_hash"] = f"sha256:{content_hash(forged)}"
+        item["copy_provenance"]["selected_span_start"] = 0
+        item["copy_provenance"]["selected_span_end"] = len(forged)
+    provenance_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    card_start = html.find('<div data-reader-role="radar-card"')
+    forged_html = html[:card_start] + (
+        '<div data-reader-role="radar-card" data-radar-category="AI Infra">'
+        '<div data-reader-role="radar-item">'
+        f'<a href="https://example.com/gate">{title}</a>'
+        f'<div data-reader-role="radar-summary">{forged}</div>'
+        "</div></div>"
+    ) + html[html.find("</body>"):]
+    errors = publication_provenance_errors(tmp_path, run_id, forged_html)
+    assert any("differs from the frozen field" in error for error in errors), errors
+    assert any("selection hash does not match" in error for error in errors), errors
+    assert any("manifest summary hash disagrees" in error for error in errors), errors
+
+    # A duplicated card cannot hide behind set semantics.
+    card = html[html.find('<div data-reader-role="radar-card"'):html.find("</body>")]
+    duplicated = html.replace(card, card + card, 1)
+    errors = publication_provenance_errors(tmp_path, run_id, duplicated)
+    assert any("multiplicity" in error or "final_count" in error for error in errors), errors
+
     # With a readable config in direct mode a missing provenance record is a
     # hard release failure, not a silent pass.
+    provenance_path.unlink()
     _write_config_tree(tmp_path, direct_copy=True)
-    (tmp_path / "workspace" / "runs" / run_id / "issue" / "radar-direct.json").unlink()
     errors = publication_provenance_errors(tmp_path, run_id, html)
     assert any("provenance record is missing" in error for error in errors)
+
+
+
+
+def test_report_date_interpreted_in_configured_timezone(tmp_path: Path) -> None:
+    service, db = make_service(tmp_path)
+    run_id = "run-tz"
+    # 2026-08-14 00:30 Shanghai == 2026-08-13 16:30 UTC. Against the report
+    # day 2026-08-21 this is 7 days at Shanghai day-end (kept) but 8 days if
+    # the bare date were interpreted as UTC day-end (wrongly dropped).
+    insert_raw(
+        db, run_id, url="https://example.com/tz-edge", title="时区边界条目：KV cache 扩容",
+        summary="该条目在上海时间凌晨发布，应按配置时区日末计算新鲜度。",
+        external_id="cmt-tz", published_at="2026-08-14T00:30:00+08:00",
+    )
+    candidates = normalized_radar_candidates(
+        service, run_id, {"run_id": run_id, "items": [], "date_to": "2026-08-21"}
+    )
+    assert [c["url"] for c in candidates] == ["https://example.com/tz-edge"]
+    assert candidates[0]["age_days"] == 7
+
+
+def test_invalid_timezone_or_report_date_fails_closed(tmp_path: Path) -> None:
+    service, db = make_service(tmp_path)
+    service.config.settings["timezone"] = "Not/AZone"
+    insert_raw(db, "run-tz-bad", url="https://example.com/x", title="推理条目：调度器",
+               summary="完整中文摘要句子，用于触发新鲜度计算路径。", external_id="cmt-tz2")
+    with pytest.raises(ValueError, match="timezone"):
+        normalized_radar_candidates(
+            service, "run-tz-bad", {"run_id": "run-tz-bad", "items": [], "date_to": "2026-08-21"}
+        )
+    service2, _ = make_service(tmp_path)
+    with pytest.raises(ValueError, match="report date"):
+        normalized_radar_candidates(
+            service2, "run-tz-bad", {"run_id": "run-tz-bad", "items": [], "date_to": "2026/08/21"}
+        )
+
+
+def test_site_root_url_is_not_a_specific_original_page(tmp_path: Path) -> None:
+    service, db = make_service(tmp_path)
+    run_id = "run-root"
+    insert_raw(db, run_id, url="https://example.com", title="只有站点根地址的条目：推理调度",
+               summary="该条目只提供站点首页，没有具体原始页面。", external_id="cmt-root")
+    insert_raw(db, run_id, url="https://example.com/page", title="有具体页面的条目：推理调度",
+               summary="该条目提供了具体的原始页面链接，可以公开。", external_id="cmt-page")
+    candidates = normalized_radar_candidates(
+        service, run_id, {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE}
+    )
+    assert [c["url"] for c in candidates] == ["https://example.com/page"]

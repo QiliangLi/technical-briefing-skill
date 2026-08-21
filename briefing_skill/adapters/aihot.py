@@ -208,10 +208,15 @@ class AIHotCollector:
         if self._frozen_lanes is not None:
             frozen = getattr(self, "_frozen_doc", {}) or {}
             if frozen.get("lane_plan_hash") != plan_hash:
-                # Config now plans different lanes: the old freeze is invalid
-                # as a whole and a new one is fetched, never partially replayed.
-                LOGGER.warning("AI HOT freeze lane plan changed, refetching run %s", self.run_id)
-                self._frozen_lanes = None
+                # A frozen run is immutable: refetching under a changed lane
+                # plan would overwrite the freeze while INSERT OR IGNORE keeps
+                # the old raw_items, splitting run state in two. Fail loudly
+                # and require a fresh run instead.
+                raise RuntimeError(
+                    "AI Hot lane plan changed after this run was frozen "
+                    f"(stored={frozen.get('lane_plan_hash')} current={plan_hash}); "
+                    "create a new run for the new lane configuration"
+                )
 
         items: list[CollectedItem] = []
         hot_entries: list[dict[str, Any]] = []
@@ -476,6 +481,7 @@ class AIHotCollector:
                 "run_id": self.run_id,
                 "frozen_at": now_iso(),
                 "lane_plan_hash": plan_hash,
+                "ledger_error": getattr(self, "_ledger_error", None),
                 "lanes": self._lane_fetches,
             },
         )
@@ -544,7 +550,14 @@ class AIHotCollector:
     def _write_ledger(self) -> None:
         if not self.run_id or not self._upstream_records:
             return
-        self.db.upsert_radar_upstream_records(self._upstream_records)
+        try:
+            self.db.upsert_radar_upstream_records(self._upstream_records)
+        except Exception as exc:  # noqa: BLE001
+            # The audit ledger must never zero out successfully collected
+            # public candidates: record the failure for the freeze/telemetry
+            # and keep the collected items.
+            self._ledger_error = f"{type(exc).__name__}: {exc}"
+            LOGGER.exception("AI HOT upstream ledger write failed (continuing with collected items)")
 
     # ------------------------------------------------------------------ dedup
 

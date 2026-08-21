@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -456,6 +457,9 @@ def test_config_lane_plan_change_invalidates_freeze(tmp_path: Path) -> None:
             email={},
         )
 
+    # A frozen run is immutable: a changed lane plan must fail loudly instead
+    # of refetching in place, which would leave a new freeze next to stale
+    # INSERT OR IGNORE raw_items (split-brain).
     http2 = FakeHttp(
         {
             **lane_responses(selected=[shared]),
@@ -463,11 +467,36 @@ def test_config_lane_plan_change_invalidates_freeze(tmp_path: Path) -> None:
         }
     )
     replay = AIHotCollector(config_with_extra_query(), db, http2, run_id="run-plan", run_dir=run_dir)
-    second = replay.collect()
-    assert {item.external_id for item in second} == {"cmt1", "cmt2"}
-    assert any(call[0] == SELECTED_URL for call in http2.calls)
+    with pytest.raises(RuntimeError, match="lane plan changed"):
+        replay.collect()
+    assert http2.calls == []
     freeze_doc = json.loads((run_dir / "source-cache" / "aihot" / "freeze.json").read_text(encoding="utf-8"))
-    assert extra_key in freeze_doc["lanes"]["all:tpn:kv:agent harness"]["url"]
+    assert "all:tpn:kv:agent harness" not in freeze_doc["lanes"]
+
+    # A NEW run under the new plan refetches cleanly and materializes fully
+    # through the real persistence path.
+    from briefing_skill.collection import CollectionService
+
+    run2_dir = tmp_path / "runs" / "run-plan-2"
+    run2_dir.mkdir(parents=True)
+    db.create_run("run-plan-2", "COLLECTING")
+    http3 = FakeHttp(
+        {
+            **lane_responses(selected=[shared]),
+            extra_key: Response({"items": [extra_item]}),
+        }
+    )
+    fresh = AIHotCollector(config_with_extra_query(), db, http3, run_id="run-plan-2", run_dir=run2_dir)
+    service = CollectionService(config_with_extra_query(), db, run2_dir)
+    persisted = service.persist("run-plan-2", fresh.collect())
+    assert {row["external_id"] for row in persisted} == {"cmt1", "cmt2"}
+    freeze2 = json.loads((run2_dir / "source-cache" / "aihot" / "freeze.json").read_text(encoding="utf-8"))
+    assert "all:tpn:kv:agent harness" in freeze2["lanes"]
+    summaries = {
+        row["external_id"]: row["summary"]
+        for row in db.fetchall("SELECT external_id, summary FROM raw_items WHERE run_id='run-plan-2'")
+    }
+    assert summaries["cmt2"] == extra_item["summary"]
 
 
 def test_single_lane_failure_keeps_successful_lanes(tmp_path: Path) -> None:
@@ -521,3 +550,117 @@ def test_reason_only_item_never_carries_public_summary(tmp_path: Path) -> None:
     # The reason is preserved internally for audit, but no public copy exists.
     assert records["selected"]["reason"].startswith("上游编辑认为")
     assert records["selected"]["summary"] is None
+
+
+def test_two_all_query_lanes_hitting_same_item_do_not_crash_ledger(tmp_path: Path) -> None:
+    # Reviewer repro: two same-type (all) query lanes hit the same item; the
+    # legacy UNIQUE(run_id, provider, upstream_lane, upstream_item_id) made
+    # the second ledger row raise and zero out the whole provider batch.
+    shared = upstream_item("cmt-dup", "Agent harness 并行工具调用", "该 harness 在仓库级任务中并行执行工具调用并共享上下文缓存。", "https://example.com/dup")
+    q1, q2 = "agent harness", "agentic workflow"
+    key1 = _request_key(ENDPOINT, {"mode": "all", "window": "7d", "by": "timeline", "limit": 15, "q": q1})
+    key2 = _request_key(ENDPOINT, {"mode": "all", "window": "7d", "by": "timeline", "limit": 15, "q": q2})
+
+    def topic_config():
+        return ConfigBundle(
+            topics={"topics": [{"id": "agent_x", "name": "Agent", "aihot_priority": "medium",
+                                "directions": [{"id": "harness", "aihot_queries": [q1, q2]}]}]},
+            sources={"sources": [{"id": "aihot", "type": "aihot", "enabled": True, "endpoint": ENDPOINT,
+                                   "api_base": API_BASE, "window": "7d", "base_selected_limit": 50,
+                                   "query_limits": {"medium": 15}, "hot_topics_enabled": True,
+                                   "daily_enabled": True}]},
+            scoring={}, settings={}, email={},
+        )
+
+    http = FakeHttp({SELECTED_URL: Response({"items": []}), key1: Response({"items": [shared]}),
+                     key2: Response({"items": [shared]}),
+                     DAILY_URL: Response({"report": {"date": "2026-08-21", "sections": []}}),
+                     HOT_URL: Response({"items": []})})
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    run_dir = tmp_path / "runs" / "run-dup"
+    run_dir.mkdir(parents=True)
+    db.create_run("run-dup", "COLLECTING")
+    collector = AIHotCollector(topic_config(), db, http, run_id="run-dup", run_dir=run_dir)
+
+    items = collector.collect()
+
+    assert [item.external_id for item in items] == ["cmt-dup"]
+    records = db.fetchall(
+        "SELECT lane_key FROM radar_upstream_records WHERE run_id=? AND upstream_item_id=?",
+        ("run-dup", "cmt-dup"),
+    )
+    assert sorted(row["lane_key"] for row in records) == [
+        f"all:agent_x:harness:{q1}",
+        f"all:agent_x:harness:{q2}",
+    ]
+
+
+def test_legacy_ledger_unique_constraint_is_rebuilt(tmp_path: Path) -> None:
+    import sqlite3
+
+    path = tmp_path / "briefing.sqlite"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE radar_upstream_records (
+            record_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, provider TEXT NOT NULL,
+            upstream_lane TEXT NOT NULL, upstream_item_id TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(run_id, provider, upstream_lane, upstream_item_id)
+        );
+        INSERT INTO radar_upstream_records VALUES ('r1', 'run-m', 'aihot', 'all', 'cmt-x', '2026-08-21');
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    db = Database(path)
+    db.init()  # rebuilds the table onto the lane_key-based unique constraint
+
+    with db.connect() as conn:
+        sql = " ".join(
+            conn.execute("SELECT sql FROM sqlite_master WHERE name='radar_upstream_records'").fetchone()[0].split()
+        )
+    assert "UNIQUE(run_id, provider, lane_key, upstream_item_id)" in sql
+    # Same provider/lane/item under two distinct lane keys now coexist.
+    def row(record_id: str, lane_key: str) -> dict:
+        return {
+            "record_id": record_id, "run_id": "run-m", "provider": "aihot", "upstream_lane": "all",
+            "lane_key": lane_key, "lane_query": None, "topic_hint": None, "direction_hint": None,
+            "upstream_item_id": "cmt-x", "upstream_story_id": None, "upstream_url": None,
+            "original_url": None, "canonical_original_url": None, "published_at": None,
+            "discovered_at": None, "retrieved_at": "2026-08-21", "retrieved_at_first": "2026-08-21",
+            "etag": None, "title": None, "summary": None, "reason": None, "title_hash": None,
+            "summary_hash": None, "raw_payload_json": None, "selected_for_radar": 0,
+            "radar_id": None, "decision_reason": None, "created_at": "2026-08-21",
+        }
+
+    db.upsert_radar_upstream_records([row("r1", "all:t:d:q1"), row("r2", "all:t:d:q2")])
+    rows = db.fetchall("SELECT record_id FROM radar_upstream_records WHERE run_id='run-m'")
+    assert sorted(row["record_id"] for row in rows) == ["r1", "r2"]
+
+
+def test_ledger_write_failure_keeps_collected_items(tmp_path: Path) -> None:
+    shared = upstream_item("cmt-ok2", "可用的KV条目", "该条目摘要完整且来自精选 lane。", "https://example.com/ok2")
+    http = FakeHttp(lane_responses(selected=[shared]))
+    collector, db, _ = make_collector(http, tmp_path, run_id="run-ledger")
+
+    def broken_upsert(self, rows):
+        raise sqlite3.IntegrityError("simulated ledger failure")
+
+    import briefing_skill.db as db_module
+
+    original = db_module.Database.upsert_radar_upstream_records
+    db_module.Database.upsert_radar_upstream_records = broken_upsert
+    try:
+        items = collector.collect()
+    finally:
+        db_module.Database.upsert_radar_upstream_records = original
+
+    # The audit failure must not zero out the successfully collected items.
+    assert [item.external_id for item in items] == ["cmt-ok2"]
+    freeze_doc = json.loads(
+        (collector.run_dir / "source-cache" / "aihot" / "freeze.json").read_text(encoding="utf-8")
+    )
+    assert "simulated ledger failure" in str(freeze_doc.get("ledger_error"))
