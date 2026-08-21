@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from .utils import write_json
@@ -117,6 +118,23 @@ def _structured_provenance_errors(service, run_id: str) -> list[str]:
     ]
 
 
+def _public_upstream_trace_errors(service, run_id: str) -> list[str]:
+    """Published artifacts must not expose the invisible upstream anywhere."""
+    from .public_trace_scan import public_upstream_trace_errors, run_public_files
+
+    issue = service.db.fetchone("SELECT email_path FROM issues WHERE run_id=?", (run_id,))
+    email_paths: list[Path] = []
+    if issue and issue.get("email_path"):
+        email_paths.append(service.root / issue["email_path"])
+    run_dir = service.root / "workspace" / "runs" / run_id
+    baseline = run_dir / "email.html"
+    if baseline not in email_paths:
+        email_paths.append(baseline)
+    return public_upstream_trace_errors(
+        run_public_files(service.root, run_id, email_paths=email_paths)
+    )
+
+
 def install_publication_stage() -> None:
     """Own structured publication assembly and keep final validation mutation-free."""
 
@@ -199,6 +217,7 @@ def install_publication_stage() -> None:
         failures.extend(final_reader_contract.final_reader_contract_errors(self, run_id))
         failures.extend(_publication_quality_errors(self, run_id))
         failures.extend(_structured_provenance_errors(self, run_id))
+        failures.extend(_public_upstream_trace_errors(self, run_id))
         report["failures"] = list(dict.fromkeys(failures))
         report["warnings"] = list(dict.fromkeys(report.get("warnings") or []))
         if report["failures"]:

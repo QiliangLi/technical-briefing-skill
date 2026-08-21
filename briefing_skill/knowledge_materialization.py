@@ -203,6 +203,11 @@ class PublishedArchive:
                     "direction_id": _frontier_direction_id(category),
                     "direction_name": category,
                     "frontier_category": category,
+                    # Radar cards are unverified discovery signals copied from
+                    # an invisible upstream; they may cluster and count, but
+                    # never support/retire Roadmap stages or Ideas directly.
+                    "evidence_kind": "discovery_signal",
+                    "claim_strength": "unverified",
                     "title": str(signal.get("signal") or row.get("title") or ""),
                     "published_at": row.get("published_at"),
                     "core_conclusion": str(signal.get("summary") or ""),
@@ -431,12 +436,23 @@ def idea_semantic_errors(
     if not idea.get("topic_ids"):
         errors.append("idea requires topic_ids")
     allowed = _evidence_map(evidence)
+    unverified_ids = {
+        item_id
+        for item_id, item in allowed.items()
+        if str(item.get("claim_strength") or "") == "unverified"
+        or str(item.get("evidence_kind") or "") == "discovery_signal"
+    }
     referenced: set[str] = set()
     for field in ("evidence_for", "evidence_against"):
         for index, ref in enumerate(idea.get(field) or []):
             errors.extend(
                 _validate_evidence_ref(ref, allowed=allowed, context=f"idea {field} {index}")
             )
+            if str(ref.get("item_id") or "") in unverified_ids:
+                errors.append(
+                    f"idea {field} {index} cites an unverified discovery signal; "
+                    "radar evidence must re-enter through the original-source fact pipeline first"
+                )
             referenced.add(str(ref.get("item_id") or ""))
     all_refs = [*(idea.get("evidence_for") or []), *(idea.get("evidence_against") or [])]
     ref_keys = [(str(ref.get("issue_date") or ""), str(ref.get("item_id") or "")) for ref in all_refs]
@@ -457,6 +473,11 @@ def idea_semantic_errors(
         unknown = sorted(set(map(str, row.get("evidence_item_ids") or [])) - set(allowed))
         if unknown:
             errors.append(f"idea decision_log {index} references unknown evidence: {', '.join(unknown)}")
+        unverified_log = sorted(set(map(str, row.get("evidence_item_ids") or [])) & unverified_ids)
+        if unverified_log:
+            errors.append(
+                f"idea decision_log {index} cites unverified discovery signals: {', '.join(unverified_log)}"
+            )
     evidence_dates = [str(ref.get("issue_date") or "") for ref in all_refs]
     if evidence_dates and idea.get("first_seen_issue") != min(evidence_dates):
         errors.append("idea first_seen_issue must equal its earliest supporting or contrary evidence")

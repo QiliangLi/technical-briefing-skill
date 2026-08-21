@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from .radar_direct import direct_copy_reserve_candidates, record_direct_publication
 from .radar_signal_synthesis import build_radar_candidates
 from .reader_writing_contract import text_contains_chinese
-from .utils import canonicalize_url, normalize_text, read_json, write_json
+from .utils import canonicalize_url, content_hash, normalize_text, read_json, stable_hash, write_json
 
 
 MANIFEST_NAME = "publication-manifest.json"
@@ -300,13 +300,18 @@ def write_publication_manifest(
     for group in groups:
         for item in group.get("items") or []:
             primary = canonicalize_url(item.get("url"))
+            summary = str(item.get("summary") or "")
             radar.append(
                 {
+                    # Deterministic identity shared with the internal ledger;
+                    # original URLs only, never an upstream discovery URL.
+                    "radar_id": stable_hash("radar", run_id, primary) if primary else None,
                     "category": str(group.get("name") or "其他技术前沿"),
                     "title": str(item.get("title") or ""),
                     # The template renders only hot.url even when one synthesized
                     # signal was grounded by multiple source URLs.
                     "urls": [primary] if primary else [],
+                    "summary_sha256": f"sha256:{content_hash(summary)}" if summary else None,
                 }
             )
 

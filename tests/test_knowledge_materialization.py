@@ -582,3 +582,36 @@ def test_rejection_and_reopen_require_append_only_audit_records():
         evidence=evidence,
         previous=rejected,
     ) == []
+
+
+def test_radar_evidence_is_unverified_and_cannot_support_ideas(tmp_path: Path) -> None:
+    root = _root(tmp_path)
+    radar_id = _add_radar(
+        root, "2026-08-01", category="AI Infra", url="https://example.com/radar", title="Radar 推理调度信号"
+    )
+    evidence = PublishedArchive(root).evidence_through("2026-08-01")
+    radar = next(item for item in evidence if item["item_id"] == radar_id)
+
+    assert radar["role"] == "radar"
+    assert radar["topic_id"] == "frontier_exploration"
+    assert radar["evidence_kind"] == "discovery_signal"
+    assert radar["claim_strength"] == "unverified"
+
+    identity = {"problem_key": "radar", "mechanism_key": "as", "target_key": "evidence"}
+    idea = {
+        "idea_id": stable_idea_id(identity),
+        "idea_type": "research_hypothesis",
+        "status": "seed",
+        "identity": identity,
+        "topic_ids": ["frontier_exploration"],
+        "statement": "验证 Radar 摘要能否直接支持 Idea。",
+        "evidence_for": [
+            {"item_id": radar_id, "issue_date": "2026-08-01", "source_urls": ["https://example.com/radar"]}
+        ],
+        "evidence_against": [],
+        "decision_log": [],
+        "first_seen_issue": "2026-08-01",
+        "last_updated_issue": "2026-08-01",
+    }
+    errors = idea_semantic_errors(idea, issue_date="2026-08-01", evidence=evidence)
+    assert any("unverified discovery signal" in error for error in errors)

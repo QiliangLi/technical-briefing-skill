@@ -42,6 +42,7 @@ from briefing_skill.archive_reader import (
     validate_reader_document,
     write_publication_manifest,
 )
+from briefing_skill.public_trace_scan import archive_public_files, public_upstream_trace_errors
 from briefing_skill.utils import read_json, write_json
 
 
@@ -176,6 +177,11 @@ def archive_issue(root: Path, run_id: str) -> Path:
         json.dumps(papers, ensure_ascii=False, indent=1), encoding="utf-8"
     )
     write_publication_manifest(target, reader, originals=originals)
+    # The archive is a public artifact: it must leave with zero upstream
+    # discovery traces (brand, domain, provider fields) before it ships.
+    trace_errors = public_upstream_trace_errors(archive_public_files(target))
+    if trace_errors:
+        raise SystemExit("upstream trace scan failed:\n" + "\n".join(trace_errors))
     _rebuild_index(root)
     return target
 
