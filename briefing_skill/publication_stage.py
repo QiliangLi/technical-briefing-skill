@@ -112,24 +112,44 @@ def _structured_provenance_errors(service, run_id: str) -> list[str]:
     if not path.is_file():
         return ["Structured provenance cannot read the persisted email artifact"]
     html = path.read_text(encoding="utf-8")
-    active = service.db.fetchone("SELECT run_id, date_to FROM issues WHERE run_id=?", (run_id,))
+    active = service.db.fetchone(
+        "SELECT id, run_id, date_to, issue_json_path FROM issues WHERE run_id=?", (run_id,)
+    )
     return [
         *publication_provenance_errors(service.root, run_id, html, active_issue=active),
         *illustration_provenance_errors(service.root, run_id, html),
     ]
 
 
-def _upstream_ledger_errors(service, run_id: str) -> list[str]:
-    """The internal upstream audit ledger must be provably complete.
+LEDGER_CONTENT_COLUMNS = (
+    "run_id",
+    "provider",
+    "upstream_lane",
+    "lane_key",
+    "upstream_item_id",
+    "upstream_story_id",
+    "upstream_url",
+    "original_url",
+    "canonical_original_url",
+    "title_hash",
+    "summary_hash",
+)
 
-    A healthy sidecar alone proves nothing: the status block must be valid,
-    belong to THIS run, and — decisively — the database must actually contain
-    every record the frozen input requires. Only a complete DB set lets a
-    healthy sidecar override a historical freeze error.
+SUPPORTED_LEDGER_STATUS_SCHEMAS = {1}
+
+
+def _upstream_ledger_errors(service, run_id: str) -> list[str]:
+    """The internal upstream audit ledger must match the frozen input exactly.
+
+    The sidecar is required for a frozen run and strictly validated; the
+    database is then compared against the full expected audit projection in
+    BOTH directions — missing rows, extra rows and rows whose content
+    disagrees with the frozen observation (wrong provider/lane/identity or
+    altered hashes/payload) all block the release.
     """
     import json as json_module
 
-    from .adapters.aihot import expected_ledger_record_ids
+    from .adapters.aihot import expected_ledger_records
     from .utils import read_json
 
     base = service.root / "workspace" / "runs" / run_id / "source-cache" / "aihot"
@@ -140,41 +160,90 @@ def _upstream_ledger_errors(service, run_id: str) -> list[str]:
     if freeze and str(freeze.get("run_id") or "") != run_id:
         errors.append("frozen AI Hot input belongs to another run")
 
-    # DB completeness: every observation in the frozen input must exist in
-    # radar_upstream_records for THIS run.
-    expected = expected_ledger_record_ids(freeze, run_id) if freeze else None
-    if expected is not None:
-        rows = service.db.fetchall(
-            "SELECT record_id FROM radar_upstream_records WHERE run_id=?", (run_id,)
-        )
-        actual = {str(row.get("record_id")) for row in rows}
-        missing = expected - actual
-        if missing:
-            errors.append(
-                f"AI Hot upstream ledger DB is incomplete: {len(missing)} frozen "
-                "observations are missing from radar_upstream_records"
-            )
+    expected = expected_ledger_records(freeze, run_id) if freeze else None
 
     status_path = base / "ledger-status.json"
-    if status_path.is_file():
-        try:
-            status = read_json(status_path, None)
-        except (ValueError, json_module.JSONDecodeError):
-            return [*errors, "AI Hot ledger status file is corrupt and cannot be verified"]
-        if not isinstance(status, dict):
-            return [*errors, "AI Hot ledger status file is invalid"]
-        for field in ("schema", "run_id", "records_attempted", "last_error"):
-            if field not in status:
-                errors.append(f"AI Hot ledger status is missing required field '{field}'")
-        if str(status.get("run_id") or "") != run_id:
-            errors.append("AI Hot ledger status belongs to another run")
-        if status.get("last_error"):
-            errors.append("AI Hot upstream ledger is incomplete for this run: " + str(status.get("last_error")))
+    if expected is not None or status_path.is_file():
+        # A frozen run MUST carry a status sidecar; absence, corruption,
+        # foreign ownership or an unsupported schema is a hard failure.
+        if not status_path.is_file():
+            errors.append("AI Hot upstream ledger is incomplete: status sidecar is missing for a frozen run")
+            status = None
+        else:
+            try:
+                status = read_json(status_path, None)
+            except (ValueError, json_module.JSONDecodeError):
+                errors.append("AI Hot ledger status file is corrupt and cannot be verified")
+                status = None
+        if isinstance(status, dict):
+            for field in ("schema", "run_id", "records_attempted", "last_error"):
+                if field not in status:
+                    errors.append(f"AI Hot ledger status is missing required field '{field}'")
+            if status.get("run_id") is not None and str(status.get("run_id")) != run_id:
+                errors.append("AI Hot ledger status belongs to another run")
+            schema = status.get("schema")
+            if isinstance(schema, int) is False or schema not in SUPPORTED_LEDGER_STATUS_SCHEMAS:
+                errors.append(
+                    f"AI Hot ledger status schema ({schema!r}) is not in the supported set "
+                    f"{sorted(SUPPORTED_LEDGER_STATUS_SCHEMAS)}"
+                )
+            attempted = status.get("records_attempted")
+            if not isinstance(attempted, int) or isinstance(attempted, bool) or attempted < 0:
+                errors.append("AI Hot ledger status records_attempted must be a non-negative integer")
+            elif expected is not None and attempted != len(expected):
+                errors.append(
+                    f"AI Hot ledger status records_attempted ({attempted}) does not match the "
+                    f"{len(expected)} observations required by the frozen input"
+                )
+            if status.get("last_error"):
+                errors.append("AI Hot upstream ledger is incomplete for this run: " + str(status.get("last_error")))
     elif freeze and freeze.get("ledger_error"):
-        # No healthy sidecar to prove the failure was resolved on a resume.
         errors.append(
             "AI Hot upstream ledger is incomplete for this run: " + str(freeze.get("ledger_error"))
         )
+
+    if expected is not None:
+        rows = service.db.fetchall("SELECT * FROM radar_upstream_records WHERE run_id=?", (run_id,))
+        actual = {str(row.get("record_id")): row for row in rows}
+        missing = sorted(set(expected) - set(actual))
+        extras = sorted(set(actual) - set(expected))
+        if missing:
+            errors.append(
+                f"AI Hot upstream ledger DB is incomplete: {len(missing)} frozen observations "
+                "are missing from radar_upstream_records"
+            )
+        if extras:
+            errors.append(
+                f"AI Hot upstream ledger DB has {len(extras)} records the frozen input does not "
+                "explain (stale or foreign rows for this run)"
+            )
+        for record_id in sorted(set(expected) & set(actual)):
+            row = actual[record_id]
+            projection = expected[record_id]
+            mismatches = [
+                column
+                for column in LEDGER_CONTENT_COLUMNS
+                if (row.get(column) or None) != (projection.get(column) or None)
+            ]
+            raw_value = row.get("raw_payload_json")
+            try:
+                raw_sha = (
+                    "sha256:"
+                    + __import__("briefing_skill.utils", fromlist=["content_hash"]).content_hash(
+                        json_module.dumps(json_module.loads(raw_value), ensure_ascii=False, sort_keys=True)
+                    )
+                    if raw_value
+                    else None
+                )
+            except (TypeError, ValueError):
+                raw_sha = None
+            if raw_sha != projection.get("raw_payload_sha"):
+                mismatches.append("raw_payload")
+            if mismatches:
+                errors.append(
+                    f"AI Hot upstream ledger record {record_id} disagrees with the frozen input "
+                    f"on {', '.join(mismatches)}"
+                )
     return errors
 
 

@@ -42,41 +42,71 @@ AIHOT_ITEM_ID_RE = re.compile(r"/items/([A-Za-z0-9_-]+)")
 AIHOT_STORY_ID_RE = re.compile(r"/story/([A-Za-z0-9_-]+)")
 
 
-def expected_ledger_record_ids(freeze: dict[str, Any], run_id: str) -> set[str] | None:
-    """Record ids the frozen input requires in radar_upstream_records.
+def _hash_text(value: Any) -> str | None:
+    text_value = str(value or "")
+    return f"sha256:{content_hash(text_value)}" if text_value else None
 
-    Mirrors ``_record_upstream``'s identity derivation exactly (per full lane
-    key, including nested daily sections), so the release gate can prove the
-    database actually contains every observation instead of trusting the
-    status sidecar's self-description. ``None`` when there is no frozen input.
+
+def _raw_payload_sha(raw: dict[str, Any]) -> str:
+    return "sha256:" + content_hash(json.dumps(raw, ensure_ascii=False, sort_keys=True))
+
+
+def expected_ledger_records(freeze: dict[str, Any], run_id: str) -> dict[str, dict[str, Any]] | None:
+    """The exact audit rows the frozen input requires in radar_upstream_records.
+
+    Mirrors ``_record_upstream`` field by field (full lane key, daily
+    enrichment, identity extraction, hashes), so the release gate can
+    compare the database both directions — no missing and no extra rows —
+    and verify each row's content instead of trusting record ids. ``None``
+    when there is no frozen input.
     """
     if not freeze:
         return None
-    expected: set[str] = set()
+    expected: dict[str, dict[str, Any]] = {}
     for lane_key, lane in (freeze.get("lanes") or {}).items():
         payload = lane.get("payload") if isinstance(lane, dict) else None
         if not isinstance(payload, dict):
             continue
-        observations: list[dict[str, Any]] = []
+        lane_key = str(lane_key)
+        lane_type = lane_key.split(":", 1)[0]
+        report = payload.get("report") if isinstance(payload.get("report"), dict) else None
+        daily_date = str((report or {}).get("date") or "")
+        observations: list[tuple[dict[str, Any], str]] = []
         for raw in payload.get("items") or payload.get("data") or []:
             if isinstance(raw, dict):
-                observations.append(raw)
-        report = payload.get("report") if isinstance(payload.get("report"), dict) else None
+                observations.append((raw, ""))
         for section in (report or {}).get("sections") or []:
+            label = str(section.get("label") or section.get("title") or "").strip()
             for raw in section.get("items") or []:
                 if isinstance(raw, dict):
-                    observations.append(raw)
-        for raw in observations:
-            links = raw.get("links") or {}
-            original = str(links.get("original") or raw.get("url") or "")
+                    observations.append((raw, label))
+        for raw, section_label in observations:
+            observed = enrich_daily_entry(raw, section_label, daily_date) if lane_type == "daily" else raw
+            links = observed.get("links") or {}
+            original = str(links.get("original") or observed.get("url") or "")
+            aihot_url = str(links.get("aihot") or observed.get("permalink") or "")
             canonical = canonicalize_url(original)
-            item_id = upstream_item_id(raw)
-            title = str(raw.get("title") or raw.get("originalTitle") or "")
+            item_id = upstream_item_id(observed)
+            title = str(observed.get("title") or observed.get("originalTitle") or "")
+            summary = str(observed.get("summary") or observed.get("description") or "")
             if not (item_id or canonical or title):
                 continue
-            expected.add(
-                stable_hash(run_id, "aihot-upstream", str(lane_key), item_id or canonical or title)
-            )
+            record_id = stable_hash(run_id, "aihot-upstream", lane_key, item_id or canonical or title)
+            expected[record_id] = {
+                "record_id": record_id,
+                "run_id": run_id,
+                "provider": AIHOT_PROVIDER,
+                "upstream_lane": lane_type,
+                "lane_key": lane_key,
+                "upstream_item_id": item_id or None,
+                "upstream_story_id": upstream_story_id(observed) or None,
+                "upstream_url": aihot_url or None,
+                "original_url": original or None,
+                "canonical_original_url": canonical or None,
+                "title_hash": _hash_text(title),
+                "summary_hash": _hash_text(summary),
+                "raw_payload_sha": _raw_payload_sha(observed),
+            }
     return expected
 
 
@@ -96,6 +126,21 @@ def upstream_story_id(raw: dict[str, Any]) -> str:
         if match:
             return match.group(1)
     return ""
+
+
+def enrich_daily_entry(raw: dict[str, Any], label: str, daily_date: str) -> dict[str, Any]:
+    """Internal annotations added to a daily observation.
+
+    The daily date is the recall window, never the original publication
+    date. Shared by collection and by expected-ledger derivation so the
+    audit projection and the database row stay byte-comparable.
+    """
+    entry = dict(raw)
+    if label:
+        entry["daily_section"] = label
+    if daily_date:
+        entry["daily_date"] = daily_date
+    return entry
 
 
 def _summary_variant(raw: dict[str, Any]) -> dict[str, str] | None:
@@ -298,8 +343,11 @@ class AIHotCollector:
 
         items = self._deduplicate(items)
         self._apply_hot_matches(items, hot_entries)
-        self._write_ledger()
+        # Freeze first, ledger second: a crash between the two leaves a
+        # frozen run whose resume replays the same observations into the DB.
+        # The reverse order could leave DB rows no freeze can explain.
         self._write_freeze(plan_hash)
+        self._write_ledger()
         return items
 
     # ------------------------------------------------------------------ lanes
@@ -311,13 +359,7 @@ class AIHotCollector:
         for section in report.get("sections") or []:
             label = str(section.get("label") or section.get("title") or "").strip()
             for raw in section.get("items") or []:
-                entry = dict(raw)
-                if label:
-                    entry["daily_section"] = label
-                if daily_date:
-                    # The daily date is the recall window, never the original
-                    # publication date: it must not leak into publishedAt.
-                    entry["daily_date"] = daily_date
+                entry = enrich_daily_entry(raw, label, daily_date)
                 self._record_upstream(entry, lane)
                 # A daily entry needs a complete title/public-copy/original
                 # triple before it may become a radar candidate; partial

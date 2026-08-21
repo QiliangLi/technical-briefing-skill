@@ -1134,3 +1134,51 @@ def test_missing_anchors_and_joint_source_name_rewrite_fail(tmp_path: Path) -> N
     provenance_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
     errors = gate(tmp_path, run_id, html)
     assert any("'version' (0) is not in the supported set" in error for error in errors), errors
+
+
+def test_foreign_issue_json_and_db_identity_binding(tmp_path: Path) -> None:
+    from briefing_skill.publication_manifest import publication_provenance_errors
+    from briefing_skill.utils import read_json as load_json
+
+    title = "推理调度器开源发布"
+    summary = "该推理调度器把长尾请求偏转到空闲解码节点，实测收益显著。"
+    original = "https://example.com/bind"
+    raw = {"id": "cmt-bind", "title": title, "summary": summary,
+           "links": {"aihot": "https://aihot.virxact.com/items/cmt-bind", "original": original}}
+    service, db, run_id, final_groups, html, gate = _build_release_chain(
+        tmp_path,
+        freeze_lanes={"selected": {"url": "s", "payload": {"items": [raw]}}},
+        raw_rows=[{"url": original, "title": title, "summary": summary, "external_id": "cmt-bind"}],
+    )
+    assert gate(tmp_path, run_id, html) == []
+    issue_path = tmp_path / "workspace" / "runs" / run_id / "issue" / "issue.json"
+    active_issue = {"id": "issue-chain", "run_id": run_id, "date_to": REFERENCE_DATE,
+                    "issue_json_path": f"workspace/runs/{run_id}/issue/issue.json"}
+
+    # Even without the DB anchor, a foreign run_id inside issue.json fails.
+    issue = load_json(issue_path, {})
+    issue["run_id"] = "run-other"
+    issue_path.write_text(json.dumps(issue, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, html)
+    assert any("issue.json run_id" in error for error in errors), errors
+
+    # Mismatched issue id between DB, issue.json and manifest fails.
+    issue = load_json(issue_path, {})
+    issue["run_id"] = run_id
+    issue_path.write_text(json.dumps(issue, ensure_ascii=False), encoding="utf-8")
+    wrong_id = dict(active_issue, id="issue-other")
+    errors = publication_provenance_errors(tmp_path, run_id, html, active_issue=wrong_id)
+    assert any("issue.json id does not match" in error for error in errors), errors
+
+    # A DB-recorded path escaping the active run directory fails.
+    escaping = dict(active_issue, issue_json_path=f"workspace/runs/{run_id}/../other/issue/issue.json")
+    errors = publication_provenance_errors(tmp_path, run_id, html, active_issue=escaping)
+    assert any("escapes the active run directory" in error for error in errors), errors
+
+    # A DB-recorded path pointing somewhere else inside the run fails.
+    elsewhere = dict(active_issue, issue_json_path=f"workspace/runs/{run_id}/issue/synthesis.json")
+    errors = publication_provenance_errors(tmp_path, run_id, html, active_issue=elsewhere)
+    assert any("does not point at the validated issue.json" in error for error in errors), errors
+
+    # The honest anchor passes.
+    assert publication_provenance_errors(tmp_path, run_id, html, active_issue=active_issue) == []

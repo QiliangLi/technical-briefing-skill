@@ -164,7 +164,13 @@ def test_ledger_error_blocks_release_gate(tmp_path: Path) -> None:
     service = SimpleNamespace(db=db, root=tmp_path)
     assert any("upstream ledger is incomplete" in error.lower() for error in _upstream_ledger_errors(service, run_id))
 
+    # A healthy frozen run (no observations) passes only WITH a valid sidecar.
     write_json(freeze, {"connector_version": 3, "run_id": run_id, "ledger_error": None, "lanes": {}})
+    assert any("sidecar is missing" in error for error in _upstream_ledger_errors(service, run_id))
+    write_json(
+        freeze.parent / "ledger-status.json",
+        {"schema": 1, "run_id": run_id, "records_attempted": 0, "last_error": None},
+    )
     assert _upstream_ledger_errors(service, run_id) == []
 
 
@@ -241,19 +247,119 @@ def test_ledger_gate_verifies_db_completeness(tmp_path: Path) -> None:
     errors = _upstream_ledger_errors(service, run_id)
     assert any("ledger DB is incomplete" in error for error in errors), errors
 
-    # Once the expected record actually exists, the gate passes.
+    # Once the expected record exists with the EXACT projected content, the
+    # gate passes.
+    from briefing_skill.adapters.aihot import expected_ledger_records
+
+    projection = expected_ledger_records(
+        {"lanes": {"selected": {"payload": {"items": [observation]}}}}, run_id
+    )
+    assert len(projection) == 1
+    row = dict(next(iter(projection.values())))
+    raw_sha = row.pop("raw_payload_sha")
+    import hashlib
+    import json as json_module
+
+    from briefing_skill.utils import content_hash
+
+    # Reconstruct a raw payload whose canonical hash matches the projection.
+    db.execute(
+        "INSERT INTO radar_upstream_records(record_id, run_id, provider, upstream_lane, lane_key,"
+        " upstream_item_id, upstream_story_id, upstream_url, original_url, canonical_original_url,"
+        " title_hash, summary_hash, raw_payload_json, created_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            row["record_id"], row["run_id"], row["provider"], row["upstream_lane"], row["lane_key"],
+            row["upstream_item_id"], row["upstream_story_id"], row["upstream_url"], row["original_url"],
+            row["canonical_original_url"], row["title_hash"], row["summary_hash"],
+            json_module.dumps(observation, ensure_ascii=False), "2026-08-22",
+        ),
+    )
+    canonical = json_module.dumps(observation, ensure_ascii=False, sort_keys=True)
+    assert raw_sha == "sha256:" + content_hash(canonical)
+    assert _upstream_ledger_errors(service, run_id) == []
+
+
+def test_ledger_gate_rejects_bad_schema_counts_and_wrong_content(tmp_path: Path) -> None:
+    from briefing_skill.adapters.aihot import expected_ledger_records
+    from briefing_skill.db import Database
+    from briefing_skill.publication_stage import _upstream_ledger_errors
+    from briefing_skill.utils import content_hash
+
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    run_id = "run-ledger-exact"
+    db.create_run(run_id, "COLLECTING")
+    base = tmp_path / "workspace" / "runs" / run_id / "source-cache" / "aihot"
+    base.mkdir(parents=True, exist_ok=True)
+    observation = {
+        "id": "cmt-exact",
+        "title": "精确内容条目",
+        "summary": "台账每行内容都必须与冻结观察一致。",
+        "links": {"aihot": "https://aihot.virxact.com/items/cmt-exact", "original": "https://example.com/exact"},
+    }
+    freeze = {"connector_version": 3, "run_id": run_id, "lane_plan_hash": "p",
+              "lanes": {"selected": {"url": "s", "payload": {"items": [observation]}}}}
+    write_json(base / "freeze.json", freeze)
+    projection = expected_ledger_records(freeze, run_id)
+    assert len(projection) == 1
+    row = dict(next(iter(projection.values())))
+    service = SimpleNamespace(db=db, root=tmp_path)
+
+    def insert_row(**overrides):
+        values = {
+            "record_id": row["record_id"], "run_id": row["run_id"], "provider": row["provider"],
+            "upstream_lane": row["upstream_lane"], "lane_key": row["lane_key"],
+            "upstream_item_id": row["upstream_item_id"], "upstream_story_id": row["upstream_story_id"],
+            "upstream_url": row["upstream_url"], "original_url": row["original_url"],
+            "canonical_original_url": row["canonical_original_url"], "title_hash": row["title_hash"],
+            "summary_hash": row["summary_hash"], "raw_payload_json": __import__("json").dumps(observation, ensure_ascii=False),
+            "created_at": "2026-08-22",
+        }
+        values.update(overrides)
+        db.execute(
+            "INSERT OR REPLACE INTO radar_upstream_records(record_id, run_id, provider, upstream_lane, lane_key,"
+            " upstream_item_id, upstream_story_id, upstream_url, original_url, canonical_original_url,"
+            " title_hash, summary_hash, raw_payload_json, created_at)"
+            " VALUES (:record_id,:run_id,:provider,:upstream_lane,:lane_key,:upstream_item_id,:upstream_story_id,"
+            ":upstream_url,:original_url,:canonical_original_url,:title_hash,:summary_hash,:raw_payload_json,:created_at)",
+            values,
+        )
+
+    def sidecar(**overrides):
+        values = {"schema": 1, "run_id": run_id, "records_attempted": 1, "last_error": None}
+        values.update(overrides)
+        write_json(base / "ledger-status.json", values)
+
+    # Illegal schema / negative count block even with a complete DB.
+    insert_row()
+    sidecar(schema=999)
+    errors = _upstream_ledger_errors(service, run_id)
+    assert any("schema" in error and "supported set" in error for error in errors), errors
+    sidecar(records_attempted=-10)
+    errors = _upstream_ledger_errors(service, run_id)
+    assert any("non-negative integer" in error for error in errors), errors
+
+    # Correct id, wrong CONTENT (forged provider + altered payload).
+    sidecar()
+    forged = dict(observation)
+    forged["summary"] = "被篡改的摘要内容，与冻结观察不一致。"
+    insert_row(provider="other", raw_payload_json=__import__("json").dumps(forged, ensure_ascii=False))
+    errors = _upstream_ledger_errors(service, run_id)
+    assert any("disagrees with the frozen input" in error and "provider" in error for error in errors), errors
+    assert any("disagrees with the frozen input" in error and "raw_payload" in error for error in errors), errors
+
+    # Correct content restored, but a PHANTOM extra record for this run.
+    insert_row()
     from briefing_skill.utils import stable_hash
 
     db.execute(
-        "INSERT INTO radar_upstream_records(record_id, run_id, provider, upstream_lane, upstream_item_id, created_at)"
-        " VALUES (?,?,?,?,?,?)",
-        (
-            stable_hash(run_id, "aihot-upstream", "selected", "cmt-db"),
-            run_id,
-            "aihot",
-            "selected",
-            "cmt-db",
-            "2026-08-22",
-        ),
+        "INSERT OR REPLACE INTO radar_upstream_records(record_id, run_id, provider, upstream_lane, created_at)"
+        " VALUES (?,?,?,?,?)",
+        (stable_hash(run_id, "aihot-upstream", "selected", "cmt-phantom"), run_id, "aihot", "selected", "2026-08-22"),
     )
+    errors = _upstream_ledger_errors(service, run_id)
+    assert any("does not explain" in error for error in errors), errors
+
+    db.execute("DELETE FROM radar_upstream_records WHERE record_id=?", (stable_hash(run_id, "aihot-upstream", "selected", "cmt-phantom"),))
     assert _upstream_ledger_errors(service, run_id) == []

@@ -475,7 +475,14 @@ def _direct_copy_provenance_errors(
             "radar-direct provenance belongs to another run "
             f"({document.get('run_id')!r} != active {run_id!r})"
         )
-    issue_document = read_json(root / "workspace" / "runs" / run_id / "issue" / "issue.json", {}) or {}
+    issue_path = root / "workspace" / "runs" / run_id / "issue" / "issue.json"
+    issue_document = read_json(issue_path, {}) or {}
+    # The issue document itself must declare THIS run and issue; a same-date
+    # foreign or mislabeled JSON must not pass as the active issue.
+    if str(issue_document.get("run_id") or "") != run_id:
+        errors.append(
+            f"issue.json run_id {issue_document.get('run_id')!r} does not match the active run {run_id!r}"
+        )
     active_date = str(issue_document.get("date_to") or "")
     if not active_date:
         errors.append("active issue is missing its date_to report date")
@@ -500,6 +507,8 @@ def _direct_copy_provenance_errors(
     if active_issue is not None:
         db_run = str(active_issue.get("run_id") or "")
         db_date = str(active_issue.get("date_to") or "")
+        db_issue_id = str(active_issue.get("id") or "")
+        db_json_path = str(active_issue.get("issue_json_path") or "")
         if db_run and db_run != run_id:
             errors.append(f"database active issue belongs to another run ({db_run!r})")
         if not db_date:
@@ -508,6 +517,22 @@ def _direct_copy_provenance_errors(
             errors.append(
                 f"issue.json date_to {active_date!r} does not match the database active issue {db_date!r}"
             )
+        if not db_issue_id:
+            errors.append("database active issue is missing its issue id")
+        elif str(issue_document.get("id") or "") != db_issue_id:
+            errors.append("issue.json id does not match the database active issue id")
+        elif manifest.get("issue_id") is not None and str(manifest.get("issue_id")) != db_issue_id:
+            errors.append("publication manifest issue_id does not match the database active issue id")
+        if not db_json_path:
+            errors.append("database active issue is missing its issue_json_path")
+        else:
+            # The DB-recorded path must point inside the active run directory
+            # at exactly the issue document being validated.
+            recorded = (root / db_json_path).resolve()
+            if not recorded.is_relative_to((root / "workspace" / "runs" / run_id).resolve()):
+                errors.append("database issue_json_path escapes the active run directory")
+            elif recorded != issue_path.resolve():
+                errors.append("database issue_json_path does not point at the validated issue.json")
 
     for item in direct_items:
         errors.extend(

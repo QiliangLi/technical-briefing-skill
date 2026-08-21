@@ -660,10 +660,10 @@ def test_ledger_write_failure_keeps_collected_items(tmp_path: Path) -> None:
 
     # The audit failure must not zero out the successfully collected items.
     assert [item.external_id for item in items] == ["cmt-ok2"]
-    freeze_doc = json.loads(
-        (collector.run_dir / "source-cache" / "aihot" / "freeze.json").read_text(encoding="utf-8")
+    status_doc = json.loads(
+        (collector.run_dir / "source-cache" / "aihot" / "ledger-status.json").read_text(encoding="utf-8")
     )
-    assert "simulated ledger failure" in str(freeze_doc.get("ledger_error"))
+    assert "simulated ledger failure" in str(status_doc.get("last_error"))
 
 
 def test_ledger_status_sidecar_resolves_and_records_across_resume(tmp_path: Path) -> None:
