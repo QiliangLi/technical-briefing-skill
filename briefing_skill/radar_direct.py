@@ -722,6 +722,7 @@ def _selection_binding(document: dict[str, Any]) -> dict[str, Any]:
                 "category": item.get("category"),
                 "title_hash": content_hash(item.get("title")),
                 "summary_hash": content_hash(item.get("summary")),
+                "source_name_hash": content_hash(item.get("source_name")),
                 "url": canonicalize_url((item.get("source_urls") or [None])[0]),
                 "published_at": item.get("published_at"),
             }

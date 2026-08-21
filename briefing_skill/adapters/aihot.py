@@ -10,7 +10,16 @@ from urllib.parse import urlencode
 from ..config import ConfigBundle
 from ..db import Database
 from ..http import HttpClient
-from ..utils import canonicalize_url, content_hash, now_iso, read_json, stable_hash, unique_preserve, write_json
+from ..utils import (
+    canonicalize_url,
+    content_hash,
+    now_iso,
+    read_json,
+    stable_hash,
+    unique_preserve,
+    write_json,
+    write_json_atomic,
+)
 from .base import CollectedItem
 
 LOGGER = logging.getLogger(__name__)
@@ -31,6 +40,44 @@ VARIANT_LANE_PREFERENCE = ("selected", "daily", "all", "paper")
 # Upstream item/story identities are only taken from officially returned links.
 AIHOT_ITEM_ID_RE = re.compile(r"/items/([A-Za-z0-9_-]+)")
 AIHOT_STORY_ID_RE = re.compile(r"/story/([A-Za-z0-9_-]+)")
+
+
+def expected_ledger_record_ids(freeze: dict[str, Any], run_id: str) -> set[str] | None:
+    """Record ids the frozen input requires in radar_upstream_records.
+
+    Mirrors ``_record_upstream``'s identity derivation exactly (per full lane
+    key, including nested daily sections), so the release gate can prove the
+    database actually contains every observation instead of trusting the
+    status sidecar's self-description. ``None`` when there is no frozen input.
+    """
+    if not freeze:
+        return None
+    expected: set[str] = set()
+    for lane_key, lane in (freeze.get("lanes") or {}).items():
+        payload = lane.get("payload") if isinstance(lane, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        observations: list[dict[str, Any]] = []
+        for raw in payload.get("items") or payload.get("data") or []:
+            if isinstance(raw, dict):
+                observations.append(raw)
+        report = payload.get("report") if isinstance(payload.get("report"), dict) else None
+        for section in (report or {}).get("sections") or []:
+            for raw in section.get("items") or []:
+                if isinstance(raw, dict):
+                    observations.append(raw)
+        for raw in observations:
+            links = raw.get("links") or {}
+            original = str(links.get("original") or raw.get("url") or "")
+            canonical = canonicalize_url(original)
+            item_id = upstream_item_id(raw)
+            title = str(raw.get("title") or raw.get("originalTitle") or "")
+            if not (item_id or canonical or title):
+                continue
+            expected.add(
+                stable_hash(run_id, "aihot-upstream", str(lane_key), item_id or canonical or title)
+            )
+    return expected
 
 
 def upstream_item_id(raw: dict[str, Any]) -> str:
@@ -580,9 +627,10 @@ class AIHotCollector:
     def _write_ledger_status(self, error: str | None) -> None:
         if self.run_dir is None:
             return
-        write_json(
+        write_json_atomic(
             self.run_dir / "source-cache" / "aihot" / "ledger-status.json",
             {
+                "schema": 1,
                 "run_id": self.run_id,
                 "updated_at": now_iso(),
                 "records_attempted": len(self._upstream_records),

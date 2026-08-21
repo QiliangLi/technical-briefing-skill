@@ -112,39 +112,70 @@ def _structured_provenance_errors(service, run_id: str) -> list[str]:
     if not path.is_file():
         return ["Structured provenance cannot read the persisted email artifact"]
     html = path.read_text(encoding="utf-8")
+    active = service.db.fetchone("SELECT run_id, date_to FROM issues WHERE run_id=?", (run_id,))
     return [
-        *publication_provenance_errors(service.root, run_id, html),
+        *publication_provenance_errors(service.root, run_id, html, active_issue=active),
         *illustration_provenance_errors(service.root, run_id, html),
     ]
 
 
 def _upstream_ledger_errors(service, run_id: str) -> list[str]:
-    """An incomplete upstream audit ledger blocks the release.
+    """The internal upstream audit ledger must be provably complete.
 
-    The internal ledger is a hard requirement of the invisible-upstream
-    contract; a collection-time write failure recorded in the freeze must be
-    visible at the gate instead of silently shipping without provenance.
+    A healthy sidecar alone proves nothing: the status block must be valid,
+    belong to THIS run, and — decisively — the database must actually contain
+    every record the frozen input requires. Only a complete DB set lets a
+    healthy sidecar override a historical freeze error.
     """
+    import json as json_module
+
+    from .adapters.aihot import expected_ledger_record_ids
     from .utils import read_json
 
     base = service.root / "workspace" / "runs" / run_id / "source-cache" / "aihot"
-    status = read_json(base / "ledger-status.json", None)
-    if status is not None:
-        # The sidecar is the truth: it is rewritten on every collect, so a
-        # successful resume clears the error and a failing one records it.
+    errors: list[str] = []
+
+    freeze_path = base / "freeze.json"
+    freeze = read_json(freeze_path, {}) if freeze_path.is_file() else {}
+    if freeze and str(freeze.get("run_id") or "") != run_id:
+        errors.append("frozen AI Hot input belongs to another run")
+
+    # DB completeness: every observation in the frozen input must exist in
+    # radar_upstream_records for THIS run.
+    expected = expected_ledger_record_ids(freeze, run_id) if freeze else None
+    if expected is not None:
+        rows = service.db.fetchall(
+            "SELECT record_id FROM radar_upstream_records WHERE run_id=?", (run_id,)
+        )
+        actual = {str(row.get("record_id")) for row in rows}
+        missing = expected - actual
+        if missing:
+            errors.append(
+                f"AI Hot upstream ledger DB is incomplete: {len(missing)} frozen "
+                "observations are missing from radar_upstream_records"
+            )
+
+    status_path = base / "ledger-status.json"
+    if status_path.is_file():
+        try:
+            status = read_json(status_path, None)
+        except (ValueError, json_module.JSONDecodeError):
+            return [*errors, "AI Hot ledger status file is corrupt and cannot be verified"]
+        if not isinstance(status, dict):
+            return [*errors, "AI Hot ledger status file is invalid"]
+        for field in ("schema", "run_id", "records_attempted", "last_error"):
+            if field not in status:
+                errors.append(f"AI Hot ledger status is missing required field '{field}'")
+        if str(status.get("run_id") or "") != run_id:
+            errors.append("AI Hot ledger status belongs to another run")
         if status.get("last_error"):
-            return [
-                "AI Hot upstream ledger is incomplete for this run: "
-                + str(status.get("last_error"))
-            ]
-        return []
-    freeze = read_json(base / "freeze.json", {})
-    if freeze and freeze.get("ledger_error"):
-        return [
-            "AI Hot upstream ledger is incomplete for this run: "
-            + str(freeze.get("ledger_error"))
-        ]
-    return []
+            errors.append("AI Hot upstream ledger is incomplete for this run: " + str(status.get("last_error")))
+    elif freeze and freeze.get("ledger_error"):
+        # No healthy sidecar to prove the failure was resolved on a resume.
+        errors.append(
+            "AI Hot upstream ledger is incomplete for this run: " + str(freeze.get("ledger_error"))
+        )
+    return errors
 
 
 def _public_upstream_trace_errors(service, run_id: str) -> list[str]:

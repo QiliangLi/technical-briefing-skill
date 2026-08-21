@@ -20,7 +20,14 @@ from briefing_skill.radar_direct import (
 )
 from briefing_skill.utils import canonicalize_url, write_json
 
-NOW = datetime.now(timezone.utc)
+# Freshness is measured against the report date interpreted as end-of-day in
+# the CONFIGURED timezone (Asia/Shanghai). Building the fixture clock in that
+# same timezone keeps "N days before the report date" stable across the
+# Shanghai/UTC day-rollover window instead of flaking near midnight.
+from zoneinfo import ZoneInfo
+
+TZ = ZoneInfo("Asia/Shanghai")
+NOW = datetime.now(TZ)
 # Direct-copy freshness is measured against the active run report date, never
 # the wall clock, so tests pin the reference to "today" of the test run.
 REFERENCE_DATE = NOW.date().isoformat()
@@ -33,6 +40,19 @@ def _days_ago(days: float) -> str:
 def make_service(tmp_path: Path, *, direct_copy: bool = True, total_max: int = 8, per_category: int = 2):
     db = Database(tmp_path / "briefing.sqlite")
     db.init()
+    # The release gate validates the configured timezone from the root, so
+    # every fixture root carries a real config tree.
+    config = tmp_path / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "topics.yaml").write_text("topics: []\n", encoding="utf-8")
+    (config / "sources.yaml").write_text("sources: []\n", encoding="utf-8")
+    (config / "settings.yaml").write_text("timezone: Asia/Shanghai\n", encoding="utf-8")
+    (config / "email.yaml").write_text("{}\n", encoding="utf-8")
+    (config / "scoring.yaml").write_text(
+        f"radar:\n  total_max: {total_max}\n  max_per_category: {per_category}\n"
+        f"  direct_copy: {str(direct_copy).lower()}\n",
+        encoding="utf-8",
+    )
     service = SimpleNamespace(
         db=db,
         root=tmp_path,
@@ -147,7 +167,13 @@ def seed_issue(db: Database, tmp_path: Path, run_id: str, issue_id: str) -> None
     write_json(issue_dir / "synthesis.json", {"judgements": [], "radar_signals": []})
     write_json(
         issue_dir / "issue.json",
-        {"id": issue_id, "run_id": run_id, "synthesis": {"judgements": [], "radar_signals": []}},
+        {
+            "id": issue_id,
+            "run_id": run_id,
+            "date_from": REFERENCE_DATE,
+            "date_to": REFERENCE_DATE,
+            "synthesis": {"judgements": [], "radar_signals": []},
+        },
     )
     db.execute(
         """
@@ -1030,5 +1056,81 @@ def test_tampered_rule_version_fails(tmp_path: Path) -> None:
     document["radar_taxonomy_version"] = 999
     provenance_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
     errors = gate(tmp_path, run_id, html)
-    assert any("newer than this code supports" in error for error in errors), errors
+    assert any("not in the supported set" in error for error in errors), errors
     assert any("selection hash does not match" in error for error in errors), errors
+
+
+def test_missing_anchors_and_joint_source_name_rewrite_fail(tmp_path: Path) -> None:
+    from briefing_skill.radar_direct import recompute_selection_hash
+    from briefing_skill.utils import read_json as load_json
+
+    title = "推理调度器开源发布"
+    summary = "该推理调度器把长尾请求偏转到空闲解码节点，实测收益显著。"
+    original = "https://example.com/anchor"
+    raw = {"id": "cmt-anchor", "title": title, "summary": summary,
+           "links": {"aihot": "https://aihot.virxact.com/items/cmt-anchor", "original": original}}
+    service, db, run_id, final_groups, html, gate = _build_release_chain(
+        tmp_path,
+        freeze_lanes={"selected": {"url": "s", "payload": {"items": [raw]}}},
+        raw_rows=[{"url": original, "title": title, "summary": summary, "external_id": "cmt-anchor"}],
+    )
+    assert gate(tmp_path, run_id, html) == []
+
+    provenance_path = tmp_path / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
+    manifest_path = tmp_path / "workspace" / "runs" / run_id / "publication-manifest.json"
+    issue_path = tmp_path / "workspace" / "runs" / run_id / "issue" / "issue.json"
+
+    # Missing manifest run_id fails closed.
+    manifest = load_json(manifest_path, {})
+    del manifest["run_id"]
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, html)
+    assert any("missing its run_id" in error for error in errors), errors
+
+    # Missing active report date fails closed.
+    manifest = load_json(manifest_path, {})
+    manifest["run_id"] = run_id
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    issue = load_json(issue_path, {})
+    del issue["date_to"]
+    issue_path.write_text(json.dumps(issue, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, html)
+    assert any("missing its date_to" in error for error in errors), errors
+    issue["date_to"] = REFERENCE_DATE
+    issue_path.write_text(json.dumps(issue, ensure_ascii=False), encoding="utf-8")
+
+    # Jointly rewriting the source name on ALL layers (with a recomputed
+    # selection hash) still fails: the public name must derive from the URL.
+    forged_name = "伪造站点"
+    document = load_json(provenance_path, {})
+    for item in document["items"]:
+        item["source_name"] = forged_name
+    document["selection_hash"] = recompute_selection_hash(document)
+    provenance_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    manifest = load_json(manifest_path, {})
+    manifest["radar"][0]["source_name"] = forged_name
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    forged_html = html.replace(">example.com<", f">{forged_name}<")
+    errors = gate(tmp_path, run_id, forged_html)
+    assert any("source name is not derived from the original URL" in error for error in errors), errors
+
+    # Deleting the manifest source_name is a failure, and version 0 is
+    # outside the supported set.
+    manifest = load_json(manifest_path, {})
+    manifest["radar"][0]["source_name"] = None
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, html)
+    assert any("missing source_name" in error for error in errors), errors
+
+    manifest = load_json(manifest_path, {})
+    manifest["radar"][0]["source_name"] = "example.com"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    document = load_json(provenance_path, {})
+    for item in document["items"]:
+        item["source_name"] = item.get("source_name")
+    document = load_json(provenance_path, {})
+    document["version"] = 0
+    document["selection_hash"] = recompute_selection_hash(document)
+    provenance_path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    errors = gate(tmp_path, run_id, html)
+    assert any("'version' (0) is not in the supported set" in error for error in errors), errors

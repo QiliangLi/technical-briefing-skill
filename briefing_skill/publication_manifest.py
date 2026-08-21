@@ -429,7 +429,14 @@ def _radar_dom_items(soup) -> list[dict[str, str]]:
     return result
 
 
-def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict[str, Any]) -> list[str]:
+def _direct_copy_provenance_errors(
+    root: Path,
+    run_id: str,
+    soup,
+    manifest: dict[str, Any],
+    *,
+    active_issue: dict[str, Any] | None = None,
+) -> list[str]:
     """Fail closed on the full chain: freeze -> radar-direct -> manifest -> DOM.
 
     In direct-copy mode every layer is mandatory and cross-checked: the
@@ -470,20 +477,37 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict
         )
     issue_document = read_json(root / "workspace" / "runs" / run_id / "issue" / "issue.json", {}) or {}
     active_date = str(issue_document.get("date_to") or "")
-    if active_date and str(document.get("reference_date") or "") != active_date:
+    if not active_date:
+        errors.append("active issue is missing its date_to report date")
+    if str(document.get("reference_date") or "") != active_date:
         errors.append(
             f"radar-direct reference date {document.get('reference_date')!r} does not match the active issue date {active_date!r}"
         )
     from .radar_direct import configured_timezone
 
     expected_timezone = configured_timezone(root)
-    if expected_timezone is not None and str(document.get("timezone") or "") != expected_timezone:
+    if expected_timezone is None:
+        errors.append("configured timezone cannot be read for radar provenance validation")
+    elif str(document.get("timezone") or "") != expected_timezone:
         errors.append(
             f"radar-direct timezone {document.get('timezone')!r} does not match the configured {expected_timezone!r}"
         )
     manifest_run_id = str(manifest.get("run_id") or "")
-    if manifest_run_id and manifest_run_id != run_id:
+    if not manifest_run_id:
+        errors.append("publication manifest is missing its run_id")
+    elif manifest_run_id != run_id:
         errors.append(f"publication manifest belongs to another run ({manifest_run_id!r})")
+    if active_issue is not None:
+        db_run = str(active_issue.get("run_id") or "")
+        db_date = str(active_issue.get("date_to") or "")
+        if db_run and db_run != run_id:
+            errors.append(f"database active issue belongs to another run ({db_run!r})")
+        if not db_date:
+            errors.append("database active issue is missing its date_to")
+        elif db_date != active_date:
+            errors.append(
+                f"issue.json date_to {active_date!r} does not match the database active issue {db_date!r}"
+            )
 
     for item in direct_items:
         errors.extend(
@@ -557,22 +581,26 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict
         RADAR_TAXONOMY_VERSION,
     )
 
+    # Explicitly supported version values: 0 (deleted history) and future
+    # values are both rejected, and the top-level `version` field is the
+    # direct-copy schema version and must agree with direct_copy_version.
     supported_versions = {
-        "connector_version": AIHOT_CONNECTOR_VERSION,
-        "direct_copy_version": RADAR_DIRECT_COPY_VERSION,
-        "radar_taxonomy_version": RADAR_TAXONOMY_VERSION,
-        "radar_selection_policy_version": RADAR_SELECTION_POLICY_VERSION,
+        "connector_version": {AIHOT_CONNECTOR_VERSION},
+        "direct_copy_version": {RADAR_DIRECT_COPY_VERSION},
+        "radar_taxonomy_version": {RADAR_TAXONOMY_VERSION},
+        "radar_selection_policy_version": {RADAR_SELECTION_POLICY_VERSION},
+        "version": {RADAR_DIRECT_COPY_VERSION},
     }
-    for field, current in supported_versions.items():
+    for field, supported in supported_versions.items():
         value = document.get(field)
         try:
             numeric = int(value)
         except (TypeError, ValueError):
             errors.append(f"radar-direct provenance field '{field}' is not a version number")
             continue
-        if numeric > current:
+        if numeric not in supported:
             errors.append(
-                f"radar-direct provenance field '{field}' ({numeric}) is newer than this code supports ({current})"
+                f"radar-direct provenance field '{field}' ({numeric}) is not in the supported set {sorted(supported)}"
             )
 
     # The manifest must link back to the exact provenance document; a missing
@@ -635,10 +663,19 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict
             errors.append(f"Radar published date in HTML does not match radar-direct for {url}")
         if normalize_text(direct_item.get("source_name") or "") != normalize_text(rendered.get("source_name") or ""):
             errors.append(f"Radar source name in HTML does not match radar-direct for {url}")
-        if manifest_record.get("source_name") is not None and normalize_text(
-            manifest_record.get("source_name") or ""
-        ) != normalize_text(direct_item.get("source_name") or ""):
+        if manifest_record.get("source_name") is None:
+            errors.append(f"publication manifest is missing source_name for {url}")
+        elif normalize_text(manifest_record.get("source_name") or "") != normalize_text(
+            direct_item.get("source_name") or ""
+        ):
             errors.append(f"publication manifest source name disagrees with radar-direct for {url}")
+        # The public source name is derived from the canonical original URL;
+        # a name forged across every layer still breaks this recompute.
+        from .radar_direct import public_source_name
+
+        derived = public_source_name(str((direct_item.get("source_urls") or [""])[0] or ""))
+        if derived != str(direct_item.get("source_name") or ""):
+            errors.append(f"radar-direct source name is not derived from the original URL for {url}")
 
         provenance = direct_item.get("copy_provenance") or {}
         title_provenance = direct_item.get("title_provenance") or {}
@@ -653,8 +690,19 @@ def _direct_copy_provenance_errors(root: Path, run_id: str, soup, manifest: dict
     return errors
 
 
-def publication_provenance_errors(root: Path, run_id: str, email_html: str) -> list[str]:
-    """Prove that the final DOM is the structured publication, not a hand-edited lookalike."""
+def publication_provenance_errors(
+    root: Path,
+    run_id: str,
+    email_html: str,
+    *,
+    active_issue: dict[str, Any] | None = None,
+) -> list[str]:
+    """Prove that the final DOM is the structured publication, not a hand-edited lookalike.
+
+    ``active_issue`` optionally supplies the database-backed active issue
+    row (``run_id``/``date_to``); when present it is the external anchor the
+    filesystem artifacts must match.
+    """
 
     path = root / "workspace" / "runs" / run_id / MANIFEST_NAME
     if not path.is_file():
@@ -690,7 +738,7 @@ def publication_provenance_errors(root: Path, run_id: str, email_html: str) -> l
         errors.append(
             f"Radar HTML provenance mismatch: missing={missing[:3]} extra={extra[:3]}"
         )
-    errors.extend(_direct_copy_provenance_errors(root, run_id, soup, manifest))
+    errors.extend(_direct_copy_provenance_errors(root, run_id, soup, manifest, active_issue=active_issue))
 
     contract = manifest.get("radar_contract") or {}
     required = int(contract.get("required_minimum") or 0)

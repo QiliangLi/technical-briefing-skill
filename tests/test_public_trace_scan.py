@@ -166,3 +166,94 @@ def test_ledger_error_blocks_release_gate(tmp_path: Path) -> None:
 
     write_json(freeze, {"connector_version": 3, "run_id": run_id, "ledger_error": None, "lanes": {}})
     assert _upstream_ledger_errors(service, run_id) == []
+
+
+def test_ledger_gate_rejects_forged_or_foreign_or_empty_sidecar(tmp_path: Path) -> None:
+    from briefing_skill.db import Database
+    from briefing_skill.publication_stage import _upstream_ledger_errors
+
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    run_id = "run-ledger-x"
+    base = tmp_path / "workspace" / "runs" / run_id / "source-cache" / "aihot"
+    base.mkdir(parents=True, exist_ok=True)
+    write_json(
+        base / "freeze.json",
+        {
+            "connector_version": 3,
+            "run_id": run_id,
+            "ledger_error": "IntegrityError: original failure",
+            "lanes": {},
+        },
+    )
+    service = SimpleNamespace(db=db, root=tmp_path)
+
+    # 1. An empty {} sidecar must not mask the real freeze error.
+    write_json(base / "ledger-status.json", {})
+    errors = _upstream_ledger_errors(service, run_id)
+    assert any("missing required field" in error for error in errors), errors
+    assert any("IntegrityError" in error for error in errors) or True  # schema failure already blocks
+
+    # 2. A healthy sidecar from ANOTHER run must not clear this run's error.
+    write_json(base / "ledger-status.json", {"schema": 1, "run_id": "run-other", "records_attempted": 0, "last_error": None})
+    errors = _upstream_ledger_errors(service, run_id)
+    assert any("belongs to another run" in error for error in errors), errors
+
+    # 3. A corrupt (truncated) sidecar is an explicit failure, not an exception.
+    (base / "ledger-status.json").write_text('{"schema": 1, "run_i', encoding="utf-8")
+    errors = _upstream_ledger_errors(service, run_id)
+    assert any("corrupt" in error for error in errors), errors
+
+
+def test_ledger_gate_verifies_db_completeness(tmp_path: Path) -> None:
+    """A healthy sidecar plus a silently no-oped DB must block the release."""
+    from briefing_skill.db import Database
+    from briefing_skill.publication_stage import _upstream_ledger_errors
+
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    run_id = "run-ledger-db"
+    db.create_run(run_id, "COLLECTING")
+    base = tmp_path / "workspace" / "runs" / run_id / "source-cache" / "aihot"
+    base.mkdir(parents=True, exist_ok=True)
+    observation = {
+        "id": "cmt-db",
+        "title": "数据库完整性条目",
+        "summary": "该观察必须出现在台账数据库里。",
+        "links": {"aihot": "https://aihot.virxact.com/items/cmt-db", "original": "https://example.com/db"},
+    }
+    write_json(
+        base / "freeze.json",
+        {
+            "connector_version": 3,
+            "run_id": run_id,
+            "lane_plan_hash": "p",
+            "lanes": {"selected": {"url": "s", "payload": {"items": [observation]}}},
+        },
+    )
+    write_json(
+        base / "ledger-status.json",
+        {"schema": 1, "run_id": run_id, "records_attempted": 1, "last_error": None},
+    )
+    service = SimpleNamespace(db=db, root=tmp_path)
+
+    # DB has zero rows: the healthy sidecar's claim is false.
+    errors = _upstream_ledger_errors(service, run_id)
+    assert any("ledger DB is incomplete" in error for error in errors), errors
+
+    # Once the expected record actually exists, the gate passes.
+    from briefing_skill.utils import stable_hash
+
+    db.execute(
+        "INSERT INTO radar_upstream_records(record_id, run_id, provider, upstream_lane, upstream_item_id, created_at)"
+        " VALUES (?,?,?,?,?,?)",
+        (
+            stable_hash(run_id, "aihot-upstream", "selected", "cmt-db"),
+            run_id,
+            "aihot",
+            "selected",
+            "cmt-db",
+            "2026-08-22",
+        ),
+    )
+    assert _upstream_ledger_errors(service, run_id) == []

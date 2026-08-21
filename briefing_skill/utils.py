@@ -243,6 +243,17 @@ def write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def write_json_atomic(path: Path, data: Any) -> None:
+    """Write JSON via same-dir temp file + os.replace so readers never see a
+    truncated document if the writer is interrupted."""
+    import os
+
+    ensure_parent(path)
+    temp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temp, path)
+
+
 def read_json(path: Path, default: Any = None) -> Any:
     if not path.exists():
         return default
