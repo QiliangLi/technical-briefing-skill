@@ -4,6 +4,10 @@
 
 ## 契约摘要
 
+### 报告日期
+
+报告日期在 active run 创建时固定（锚定 `runs.created_at`），按配置时区（`Asia/Shanghai`）解释，并被 expanded 选择、`issues.date_from/date_to`、Radar 新鲜度与 resume 全程复用——凌晨（上海 00:57 = UTC 前一天 16:57）运行的日报不会再被标成前一天，也不会在后续阶段重新读取墙上时钟。
+
 AI Hot 是不可见的上游编辑与发现服务：
 
 - 内部机器层保留真实 provider（`aihot`）、item/story ID、AI Hot URL、原始响应和内容 hash；

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from .business_time import briefing_date
 from .config import ConfigBundle
 from .collection import CollectionService
 from .adapters.base import CollectedItem
@@ -17,7 +18,7 @@ from .freshness import freshness_limits
 from .matching import RuleMatcher
 from .scoring import Scorer
 from .tasks import TaskService, synthesis_item_payload
-from .utils import now_iso, read_json, source_url_is_resolved, stable_hash, write_json
+from .utils import now_iso, parse_datetime, read_json, source_url_is_resolved, stable_hash, write_json
 from .visuals import VisualAssetService
 
 LOGGER = logging.getLogger(__name__)
@@ -34,10 +35,24 @@ class Pipeline:
         self.tasks = TaskService(db, root, self.run_dir)
         self.scorer = Scorer(config)
 
+    def _report_date(self) -> str:
+        """The report date: fixed at run creation, interpreted in the
+        configured timezone, reused by selection/issue/radar and resume.
+
+        Anchoring on ``runs.created_at`` (persisted when the run was created)
+        means a Shanghai-midnight run keeps its local date on every later
+        stage instead of re-reading a UTC calendar day.
+        """
+        run = self.db.fetchone("SELECT created_at FROM runs WHERE id=?", (self.run_id,))
+        anchor = parse_datetime(run.get("created_at")) if run and run.get("created_at") else None
+        return briefing_date(self.config, anchor).isoformat()
+
     def prepare_agent_search(self, max_queries: int = 18) -> int:
         created = 0
         max_age_days = freshness_limits(self.config)["absolute"]
-        search_end = datetime.now(timezone.utc).date()
+        # Search windows are reader/report-facing calendar dates: use the
+        # configured timezone, not the UTC calendar day.
+        search_end = briefing_date(self.config)
         search_start = search_end - timedelta(days=max_age_days)
         priority_map = {"highest": 100, "high": 80, "medium": 55, "low": 30}
         for topic, direction in self.config.iter_directions():
@@ -516,12 +531,13 @@ class Pipeline:
             """,
             (self.run_id,),
         )
+        report_date = self._report_date()
         if mode == "expanded_v2":
             selected, _, _, _ = select_expanded_rows(
                 self.root,
                 self.config,
                 rows,
-                reference_date=datetime.now(timezone.utc).date().isoformat(),
+                reference_date=report_date,
             )
         else:
             threshold = float(self.config.scoring.get("thresholds", {}).get("issue_minimum", 70))
@@ -545,11 +561,10 @@ class Pipeline:
         if not selected or (mode == "expanded_v2" and not any(row.get("item_role") == "core" for row in selected)):
             return
         issue_id = stable_hash("issue", self.run_id)
-        now = datetime.now(timezone.utc)
         with self.db.connect() as conn:
             conn.execute(
                 "INSERT INTO issues(id, run_id, status, date_from, date_to, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (issue_id, self.run_id, "DRAFT", now.date().isoformat(), now.date().isoformat(), now_iso(), now_iso()),
+                (issue_id, self.run_id, "DRAFT", report_date, report_date, now_iso(), now_iso()),
             )
             for position, row in enumerate(selected, 1):
                 conn.execute(

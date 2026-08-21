@@ -118,3 +118,47 @@ def test_item_writing_created_for_resolved_a_level_source(tmp_path: Path) -> Non
     task_input = read_json(tmp_path / task["input_path"])
     assert task_input["sources"][0]["source_level"] == "A"
     assert task_input["sources"][0]["url"] == "https://example.com/paper/transport"
+
+
+def test_report_date_is_run_anchored_in_configured_timezone(tmp_path):
+    """Shanghai-midnight runs must keep the local date (round-7 review item).
+
+    A run created at 2026-08-22 00:57 Asia/Shanghai is still 2026-08-21 in
+    UTC; the old code stamped the report as the previous day. The report
+    date is now fixed from the persisted run creation time and interpreted
+    in the configured timezone on every later stage.
+    """
+    from datetime import datetime, timezone
+
+    from briefing_skill.config import ConfigBundle
+    from briefing_skill.db import Database
+    from briefing_skill.pipeline import Pipeline
+
+    config = ConfigBundle(topics={}, sources={}, scoring={}, settings={"timezone": "Asia/Shanghai"}, email={})
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    run_id = "2026-08-22-005700"
+    db.create_run(run_id, "COLLECTING")
+    # Simulate creation at Shanghai 2026-08-22 00:57 == UTC 2026-08-21 16:57.
+    db.execute(
+        "UPDATE runs SET created_at=? WHERE id=?",
+        ("2026-08-21T16:57:00.000000+00:00", run_id),
+    )
+    pipeline = Pipeline(tmp_path, config, db, run_id)
+
+    assert pipeline._report_date() == "2026-08-22"
+
+    # The same anchored date is reused on later stages (no wall-clock drift
+    # between selection, issue creation and resume).
+    db.execute(
+        "UPDATE runs SET created_at=? WHERE id=?",
+        ("2026-08-21T16:57:00.000000+00:00", run_id),
+    )
+    assert pipeline._report_date() == pipeline._report_date() == "2026-08-22"
+
+    # A run created before the Shanghai rollover keeps that local day.
+    db.execute(
+        "UPDATE runs SET created_at=? WHERE id=?",
+        ("2026-08-21T15:57:00.000000+00:00", run_id),  # Shanghai 23:57 on 08-21
+    )
+    assert pipeline._report_date() == "2026-08-21"
