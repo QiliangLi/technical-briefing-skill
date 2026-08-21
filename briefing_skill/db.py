@@ -211,6 +211,36 @@ CREATE TABLE IF NOT EXISTS radar_history (
     last_pushed_at TEXT NOT NULL,
     issue_id TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS radar_upstream_records (
+    record_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    upstream_lane TEXT NOT NULL,
+    upstream_item_id TEXT,
+    upstream_story_id TEXT,
+    upstream_url TEXT,
+    original_url TEXT,
+    canonical_original_url TEXT,
+    published_at TEXT,
+    discovered_at TEXT,
+    retrieved_at TEXT,
+    etag TEXT,
+    title TEXT,
+    summary TEXT,
+    reason TEXT,
+    title_hash TEXT,
+    summary_hash TEXT,
+    raw_payload_json TEXT,
+    selected_for_radar INTEGER NOT NULL DEFAULT 0,
+    radar_id TEXT,
+    decision_reason TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(run_id, provider, upstream_lane, upstream_item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_radar_upstream_run ON radar_upstream_records(run_id);
+CREATE INDEX IF NOT EXISTS idx_radar_upstream_item ON radar_upstream_records(run_id, upstream_item_id);
 """
 
 
@@ -336,6 +366,82 @@ class Database:
         if row and row.get("payload_json"):
             row["payload"] = json.loads(row["payload_json"])
         return row
+
+    def upsert_radar_upstream_records(self, rows: Sequence[dict[str, Any]]) -> None:
+        """Refresh upstream lane observations while preserving selection decisions."""
+        if not rows:
+            return
+        with self.connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO radar_upstream_records(
+                    record_id, run_id, provider, upstream_lane, upstream_item_id, upstream_story_id,
+                    upstream_url, original_url, canonical_original_url, published_at, discovered_at,
+                    retrieved_at, etag, title, summary, reason, title_hash, summary_hash,
+                    raw_payload_json, selected_for_radar, radar_id, decision_reason, created_at
+                ) VALUES (
+                    :record_id, :run_id, :provider, :upstream_lane, :upstream_item_id, :upstream_story_id,
+                    :upstream_url, :original_url, :canonical_original_url, :published_at, :discovered_at,
+                    :retrieved_at, :etag, :title, :summary, :reason, :title_hash, :summary_hash,
+                    :raw_payload_json, :selected_for_radar, :radar_id, :decision_reason, :created_at
+                )
+                ON CONFLICT(record_id) DO UPDATE SET
+                    upstream_story_id=excluded.upstream_story_id,
+                    upstream_url=excluded.upstream_url,
+                    original_url=excluded.original_url,
+                    canonical_original_url=excluded.canonical_original_url,
+                    published_at=excluded.published_at,
+                    discovered_at=excluded.discovered_at,
+                    retrieved_at=excluded.retrieved_at,
+                    etag=excluded.etag,
+                    title=excluded.title,
+                    summary=excluded.summary,
+                    reason=excluded.reason,
+                    title_hash=excluded.title_hash,
+                    summary_hash=excluded.summary_hash,
+                    raw_payload_json=excluded.raw_payload_json
+                """,
+                [dict(row) for row in rows],
+            )
+
+    def list_radar_upstream_records(self, run_id: str) -> list[dict[str, Any]]:
+        rows = self.fetchall(
+            "SELECT * FROM radar_upstream_records WHERE run_id=? ORDER BY upstream_lane, record_id",
+            (run_id,),
+        )
+        for row in rows:
+            if row.get("raw_payload_json"):
+                row["raw_payload"] = json.loads(row["raw_payload_json"])
+        return rows
+
+    def update_radar_upstream_decisions(self, run_id: str, decisions: Sequence[dict[str, Any]]) -> None:
+        """Record which upstream items the deterministic radar selection adopted."""
+        if not decisions:
+            return
+        with self.connect() as conn:
+            conn.executemany(
+                """
+                UPDATE radar_upstream_records
+                SET selected_for_radar=:selected_for_radar,
+                    radar_id=:radar_id,
+                    decision_reason=:decision_reason
+                WHERE run_id=:run_id AND provider=:provider
+                  AND ((:upstream_item_id != '' AND upstream_item_id=:upstream_item_id)
+                       OR (:canonical_original_url != '' AND canonical_original_url=:canonical_original_url))
+                """,
+                [
+                    {
+                        "run_id": run_id,
+                        "provider": "aihot",
+                        "upstream_item_id": str(decision.get("upstream_item_id") or ""),
+                        "canonical_original_url": str(decision.get("canonical_original_url") or ""),
+                        "selected_for_radar": int(bool(decision.get("selected_for_radar"))),
+                        "radar_id": decision.get("radar_id"),
+                        "decision_reason": decision.get("decision_reason"),
+                    }
+                    for decision in decisions
+                ],
+            )
 
     def create_run(self, run_id: str, stage: str = "INIT") -> None:
         now = now_iso()

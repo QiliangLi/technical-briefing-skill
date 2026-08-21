@@ -132,7 +132,7 @@ class CollectionService:
             extra_http = [self._new_http() for _ in range(5)]
             clients = [self.http, *extra_http]
             collectors = [
-                AIHotCollector(self.config, self.db, clients[0]),
+                AIHotCollector(self.config, self.db, clients[0], run_id=run_id, run_dir=self.run_dir),
                 ArxivCollector(self.config, clients[1]),
                 RSSCollector(self.config, clients[2]),
                 GitHubReleaseCollector(self.config, clients[3]),
