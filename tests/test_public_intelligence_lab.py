@@ -21,6 +21,8 @@ def _run_node(source: str) -> dict:
 def test_public_site_is_a_routed_three_pane_workbench():
     html = (SITE / "index.html").read_text(encoding="utf-8")
     css = (SITE / "styles.css").read_text(encoding="utf-8")
+    finesse_css = (SITE / "workbench-overrides.css").read_text(encoding="utf-8")
+    compact_css = "".join(css.split())
 
     assert 'class="workbench"' in html
     assert 'class="left-pane"' in html
@@ -32,16 +34,20 @@ def test_public_site_is_a_routed_three_pane_workbench():
     assert 'data-route="atlas"' in html
     assert 'data-route="features"' in html
     assert html.index('data-route="features"') > html.index('data-route="atlas"')
-    assert "height:calc(100vh - 62px)" in css
-    assert "grid-template-columns:var(--sidebar) minmax(0,1fr) var(--detail)" in css
-    assert ".compact-list{grid-template-columns:minmax(0,1fr);min-width:0}" in css
-    assert ".compact-row{min-width:0}" in css
+    assert "height:calc(100vh-62px)" in compact_css
+    assert "grid-template-columns:var(--sidebar)minmax(0,1fr)var(--detail)" in compact_css
+    assert ".compact-list{grid-template-columns:minmax(0,1fr);min-width:0;}" in compact_css
+    assert ".compact-row{min-width:0;}" in compact_css
+    assert "shell=floating-triptych" in finesse_css
+    assert "overflow-x: clip" in finesse_css
+    assert "prefers-reduced-motion: reduce" in finesse_css
     assert "平均评分" not in html
 
 
 def test_roadmap_and_idea_views_only_read_materialized_knowledge():
     app = (SITE / "app.js").read_text(encoding="utf-8")
     views = (SITE / "intelligence-lab.js").read_text(encoding="utf-8")
+    compact_views = "".join(views.split())
 
     assert "./knowledge" in app
     assert "validateKnowledgeIndex" in app
@@ -52,7 +58,7 @@ def test_roadmap_and_idea_views_only_read_materialized_knowledge():
     assert "系统不会用日期列表或 next_action 临时拼装替代品" in views
     assert "验证建议 · 尚未执行" in views
     assert "不是仿真或实验结果" in views
-    assert "row.item_id?[row]" in views
+    assert "row.item_id?[row]" in compact_views
     assert "row.reason" in views
     assert "row.mechanisms" in views
     assert "边界观察 · 尚未进入 Roadmap" in views
@@ -75,9 +81,10 @@ def test_reader_projection_and_original_email_contract_are_visible():
 def test_feedback_mock_is_explicitly_local_and_non_authoritative():
     html = (SITE / "index.html").read_text(encoding="utf-8")
     views = (SITE / "intelligence-lab.js").read_text(encoding="utf-8")
+    compact_html = "".join(html.split())
 
     assert "演示模式，仅保存在当前浏览器" in html
-    assert "不会改变真实 Roadmap、Idea 或日报选择" in html
+    assert "不会改变真实Roadmap、Idea或日报选择" in compact_html
     assert "导出 JSON" in html
     assert "不会自动改变 Idea 状态" in views
 
@@ -86,13 +93,17 @@ def test_idea_filters_are_all_visible_and_feature_plan_is_public():
     html = (SITE / "index.html").read_text(encoding="utf-8")
     views = (SITE / "intelligence-lab.js").read_text(encoding="utf-8")
     feature_plan = json.loads((SITE / "feature-plan.json").read_text(encoding="utf-8"))
+    canonical_views = "".join(views.split()).replace('"', "'")
 
     assert 'id="ideaFilters"' in html
-    assert "filterOptions('topic'" in views
-    assert "filterOptions('type'" in views
-    assert "filterOptions('status'" in views
+    assert "filterOptions('topic'" in canonical_views
+    assert "filterOptions('type'" in canonical_views
+    assert "filterOptions('status'" in canonical_views
     assert "<select" not in views
     assert "aria-pressed" in views
+    assert "feature-plan-group" in views
+    assert "正在迭代" in views
+    assert "接下来" in views
     assert feature_plan["schema_version"] == 1
     assert {row["status"] for row in feature_plan["items"]} == {"iterating", "planned"}
 
