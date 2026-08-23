@@ -14,7 +14,8 @@ from briefing_skill.coverage_policy import (
     select_diverse_deep_budget,
 )
 from briefing_skill.db import Database
-from briefing_skill.expanded import select_expanded_rows
+from briefing_skill.expanded import collect_historical_brief_rows, select_expanded_rows
+from briefing_skill.fact_cache_provenance import set_run_execution_mode
 from briefing_skill.paths import Paths
 
 
@@ -197,14 +198,19 @@ def test_repo_config_uses_sixty_day_deep_window_and_disables_rule_auto_accept():
     config = ConfigBundle.load(Paths(ROOT))
     assert config.scoring["freshness_gates"]["absolute_max_age_days"] == 60
     assert config.scoring["radar"]["max_age_days"] == 7
+    assert config.scoring["radar"]["total_max"] == 16
+    assert config.scoring["radar"]["max_per_category"] == 5
+    assert config.scoring["radar"]["industry_builder_min"] == 8
     assert config.settings["efficiency"]["deep_lookback_days"] == 60
     assert config.settings["efficiency"]["auto_accept_rule_score"] > 100
     assert config.settings["efficiency"]["max_fact_candidates_per_project"] == 1
     assert config.settings["efficiency"]["topic_appendix_max_per_topic"] == 8
+    assert config.scoring["expanded_v2"]["topic_target"] == 4
+    assert config.scoring["expanded_v2"]["topic_floor_allow_brief_upgrade"] is True
 
 
-def test_topic_floor_fills_thin_topic_with_supplement_observation(tmp_path):
-    """A thin topic reaches topic_target via labelled supplements, never beyond cap."""
+def test_topic_target_upgrades_available_short_items_without_exceeding_cap(tmp_path):
+    """Current brief rows fill the topic target without exceeding the cap."""
     config = ConfigBundle.load(Paths(ROOT))
     items = []
     # tpn is thin (3 core-grade + 1 sub-bar); agent has 5 core-grade (overflow capped).
@@ -244,3 +250,283 @@ def test_topic_floor_fills_thin_topic_with_supplement_observation(tmp_path):
     assert all(role == "core" for role, _ in per_topic["agent_acceleration"])
     overflow = {row["id"] for row in excluded if row["reason"] == "expanded-v2 capacity"}
     assert overflow == {"agent_acceleration-4"}
+
+
+def _historical_selection_row(
+    tmp_path: Path,
+    index: int,
+    *,
+    previously_brief: bool,
+    previously_detailed: bool,
+) -> dict:
+    published = "2026-08-01"
+    payload = {
+        "title": f"historical item {index}",
+        "published_at": published,
+        "sources": [
+            {
+                "url": f"https://arxiv.org/abs/2608.10{index:03d}",
+                "source_level": "A",
+            }
+        ],
+        "incremental_update": False,
+    }
+    path = tmp_path / f"historical-{index}.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return {
+        "id": f"historical-{index}",
+        "score": 80 - index,
+        "json_path": path.name,
+        "fact_check_status": "PASS",
+        "topic_id": "tpn",
+        "direction_id": "kv_transfer",
+        "source_published_at": published,
+        "last_pushed_at": "2026-08-02T00:00:00+00:00",
+        "previously_brief": previously_brief,
+        "previously_detailed": previously_detailed,
+    }
+
+
+def test_only_brief_only_history_can_be_upgraded_and_available_count_is_respected(tmp_path):
+    config = ConfigBundle.load(Paths(ROOT))
+    rows = [
+        _historical_selection_row(
+            tmp_path,
+            index,
+            previously_brief=True,
+            previously_detailed=False,
+        )
+        for index in range(3)
+    ]
+    rows.extend(
+        [
+            _historical_selection_row(
+                tmp_path,
+                10,
+                previously_brief=False,
+                previously_detailed=True,
+            ),
+            # Once an identity has ever been detailed, an earlier brief appearance
+            # cannot make it eligible for another detailed replay.
+            _historical_selection_row(
+                tmp_path,
+                11,
+                previously_brief=True,
+                previously_detailed=True,
+            ),
+        ]
+    )
+
+    selected, excluded, counts, limits = select_expanded_rows(
+        tmp_path,
+        config,
+        rows,
+        reference_date="2026-08-09",
+    )
+
+    assert limits["topic_target"] == 4
+    assert counts["total"] == counts["observations"] == 3
+    assert {row["id"] for row in selected} == {
+        "historical-0",
+        "historical-1",
+        "historical-2",
+    }
+    assert all(row["brief_upgrade"] is True for row in selected)
+    excluded_by_id = {row["id"]: row["reason"] for row in excluded}
+    assert excluded_by_id["historical-10"] == "previously published as detailed without incremental update"
+    assert excluded_by_id["historical-11"] == "previously published as detailed without incremental update"
+
+
+def test_brief_only_upgrades_fill_only_the_shortfall_to_four(tmp_path):
+    config = ConfigBundle.load(Paths(ROOT))
+    rows = []
+    for index in range(2):
+        row = _historical_selection_row(
+            tmp_path,
+            index,
+            previously_brief=False,
+            previously_detailed=False,
+        )
+        row["last_pushed_at"] = None
+        row["score"] = 90 - index
+        rows.append(row)
+    rows.extend(
+        _historical_selection_row(
+            tmp_path,
+            index,
+            previously_brief=True,
+            previously_detailed=False,
+        )
+        for index in range(2, 7)
+    )
+
+    selected, excluded, counts, _ = select_expanded_rows(
+        tmp_path,
+        config,
+        rows,
+        reference_date="2026-08-09",
+    )
+
+    assert counts["topics"]["tpn"] == 4
+    assert {row["id"] for row in selected if row.get("brief_upgrade")} == {
+        "historical-2",
+        "historical-3",
+    }
+    assert {
+        row["id"]
+        for row in excluded
+        if row["reason"] == "brief upgrade capacity"
+    } == {"historical-4", "historical-5", "historical-6"}
+
+
+def test_current_brief_upgrades_precede_higher_scored_history(tmp_path):
+    config = ConfigBundle.load(Paths(ROOT))
+    rows = []
+    for index in range(2):
+        row = _historical_selection_row(
+            tmp_path,
+            index,
+            previously_brief=False,
+            previously_detailed=False,
+        )
+        row["last_pushed_at"] = None
+        row["score"] = 95 - index
+        rows.append(row)
+
+    for index, score in ((2, 70), (3, 69)):
+        row = _historical_selection_row(
+            tmp_path,
+            index,
+            previously_brief=True,
+            previously_detailed=False,
+        )
+        row["score"] = score
+        rows.append(row)
+
+    for index, score in ((4, 90), (5, 89)):
+        row = _historical_selection_row(
+            tmp_path,
+            index,
+            previously_brief=True,
+            previously_detailed=False,
+        )
+        row["score"] = score
+        row["historical_brief_candidate"] = True
+        rows.append(row)
+
+    selected, excluded, counts, _ = select_expanded_rows(
+        tmp_path,
+        config,
+        rows,
+        reference_date="2026-08-09",
+    )
+
+    assert counts["topics"]["tpn"] == 4
+    assert {row["id"] for row in selected} == {
+        "historical-0",
+        "historical-1",
+        "historical-2",
+        "historical-3",
+    }
+    assert {
+        row["id"]
+        for row in excluded
+        if row["reason"] == "brief upgrade capacity"
+    } == {"historical-4", "historical-5"}
+
+
+def test_historical_brief_pool_is_independent_of_current_run_materialisation(tmp_path, monkeypatch):
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    db.create_run("old")
+    db.create_run("current")
+
+    for event_id, event_key in (
+        ("event-brief", "arxiv:brief"),
+        ("event-detailed", "arxiv:detailed"),
+        ("event-current", "arxiv:current"),
+    ):
+        db.execute(
+            """
+            INSERT INTO events(
+                id,topic_id,direction_id,canonical_title,fingerprint,score,
+                first_seen_at,last_updated_at,last_pushed_at,payload_json,event_key
+            ) VALUES (?, 'tpn', 'kv_transfer', ?, ?, 80, ?, ?, ?, '{}', ?)
+            """,
+            (event_id, event_id, event_key, "2026-08-01", "2026-08-02", "2026-08-03", event_key),
+        )
+        path = tmp_path / f"{event_id}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "title": event_id,
+                    "core_conclusion": "该方案验证了跨节点缓存传输能够减少重复计算，并给出了可复现、可审计且可迁移的系统结论。",
+                    "mechanism": "系统通过分层索引、异步传输与拥塞感知调度，把远端缓存安全地送到目标节点。",
+                    "result": "实验覆盖多种请求规模和网络条件，显示端到端时延与资源占用均有稳定改善。",
+                    "boundary": "收益依赖缓存命中率、链路带宽和工作负载稳定性，不能外推到所有线上环境。",
+                    "project_relevance": "这为跨域推理中的缓存复用、容量规划和一致性设计提供了直接参考。",
+                    "published_at": "2026-08-01",
+                    "sources": [
+                        {
+                            "url": f"https://arxiv.org/abs/{event_id}",
+                            "source_level": "A",
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        db.execute(
+            """
+            INSERT INTO brief_items(
+                id,run_id,event_id,json_path,score,fact_check_status,approved,created_at
+            ) VALUES (?, 'old', ?, ?, 80, 'PASS', 1, '2026-08-03')
+            """,
+            (f"brief-{event_id}", event_id, path.name),
+        )
+
+    def annotate(_root, _db, rows):
+        result = []
+        for row in rows:
+            key = row["event_key"]
+            result.append(
+                {
+                    **row,
+                    "previously_brief": key in {"arxiv:brief", "arxiv:current"},
+                    "previously_detailed": key == "arxiv:detailed",
+                }
+            )
+        return result
+
+    monkeypatch.setattr(
+        "briefing_skill.publication_history.annotate_rows_with_publication_roles",
+        annotate,
+    )
+    config = SimpleNamespace(
+        settings={
+            "efficiency": {"deep_topics": ["tpn"]},
+            "brief_item_min_chars": 230,
+            "historical_brief_upgrade_min_chars": 180,
+            "brief_item_max_chars": 330,
+        }
+    )
+    historical = collect_historical_brief_rows(
+        tmp_path,
+        config,
+        db,
+        "current",
+        [{"event_key": "arxiv:current", "topic_id": "tpn"}],
+    )
+
+    assert [row["event_key"] for row in historical] == ["arxiv:brief"]
+    assert historical[0]["historical_brief_candidate"] is True
+
+    set_run_execution_mode(db, "current", "demo")
+    assert collect_historical_brief_rows(
+        tmp_path,
+        config,
+        db,
+        "current",
+        [{"event_key": "arxiv:current", "topic_id": "tpn"}],
+    ) == []

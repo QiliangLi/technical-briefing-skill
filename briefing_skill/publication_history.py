@@ -9,6 +9,11 @@ from urllib.parse import urlparse
 from .utils import canonicalize_url, normalize_text, now_iso, read_json, source_identity_key
 
 
+DETAILED_PUBLICATION_ROLES = {"core", "observation", "deep-card", "observation-card"}
+BRIEF_PUBLICATION_ROLES = {"appendix", "topic-appendix"}
+RADAR_PUBLICATION_ROLES = {"radar-item"}
+
+
 @dataclass(frozen=True)
 class PublishedSource:
     identity_key: str
@@ -59,6 +64,120 @@ def _reader_role(node) -> str:
             return role
         current = getattr(current, "parent", None)
     return "publication"
+
+
+def _historical_link_role(link) -> str | None:
+    """Classify one recipient-visible source link by its actual card container.
+
+    Older emails predate ``data-reader-role`` on detailed cards, but their source
+    title is still an ``h2`` link. Topic appendices have had a stable
+    ``data-topic-appendix`` row marker, so inspect that first.
+    """
+
+    if link.find_parent("tr", attrs={"data-topic-appendix": "1"}) is not None:
+        return "brief"
+    role = _reader_role(link)
+    if role in DETAILED_PUBLICATION_ROLES or link.find_parent("h2") is not None:
+        return "detailed"
+    if role in BRIEF_PUBLICATION_ROLES:
+        return "brief"
+    if role in RADAR_PUBLICATION_ROLES:
+        return "radar"
+    return None
+
+
+def published_identity_roles(root: Path, db, identity_keys: Iterable[str]) -> dict[str, set[str]]:
+    """Return recipient-visible historical roles for stable source identities.
+
+    Final HTML is the authority. Publication manifests and persisted ``section``
+    values are fallbacks for cleaned historical artifacts. Ambiguous legacy
+    ``publication`` rows are marked unknown so selection fails closed instead of
+    accidentally replaying a source that may already have been a detailed card.
+    """
+
+    targets = {str(value or "").strip() for value in identity_keys if str(value or "").strip()}
+    result = {identity: set() for identity in targets}
+    if not targets:
+        return result
+    placeholders = ",".join("?" for _ in targets)
+    rows = db.fetchall(
+        f"""
+        SELECT p.identity_key,p.section,p.canonical_url,p.issue_id,
+               i.run_id,i.email_path,i.issue_json_path
+        FROM published_sources p
+        LEFT JOIN issues i ON i.id=p.issue_id
+        WHERE p.identity_key IN ({placeholders})
+        ORDER BY p.sent_at
+        """,
+        tuple(sorted(targets)),
+    )
+    by_issue: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_issue.setdefault(str(row.get("issue_id") or ""), []).append(row)
+
+    from bs4 import BeautifulSoup
+
+    for issue_rows in by_issue.values():
+        issue_targets = {str(row["identity_key"]) for row in issue_rows}
+        found: dict[str, set[str]] = {identity: set() for identity in issue_targets}
+        sample = issue_rows[0]
+        email_path = str(sample.get("email_path") or "").strip()
+        path = root / email_path if email_path else None
+        if path is not None and path.is_file():
+            soup = BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
+            for link in soup.find_all("a", href=True):
+                identity = source_identity_key(str(link.get("href") or ""))
+                if identity not in issue_targets:
+                    continue
+                role = _historical_link_role(link)
+                if role:
+                    found[identity].add(role)
+
+        # Structured manifests retain exact deep/appendix/radar ownership when the
+        # final HTML has been cleaned or predates a role marker.
+        run_id = str(sample.get("run_id") or "").strip()
+        manifest_path = root / "workspace" / "runs" / run_id / "publication-manifest.json"
+        if manifest_path.is_file():
+            manifest = read_json(manifest_path, {})
+            for key, role in (("deep", "detailed"), ("appendix", "brief"), ("radar", "radar")):
+                for item in manifest.get(key) or []:
+                    for url in item.get("urls") or []:
+                        identity = source_identity_key(str(url or ""))
+                        if identity in issue_targets:
+                            found[identity].add(role)
+
+        for row in issue_rows:
+            identity = str(row["identity_key"])
+            if found[identity]:
+                result[identity].update(found[identity])
+                continue
+            section = str(row.get("section") or "").strip()
+            if section in DETAILED_PUBLICATION_ROLES:
+                result[identity].add("detailed")
+            elif section in BRIEF_PUBLICATION_ROLES:
+                result[identity].add("brief")
+            elif section in RADAR_PUBLICATION_ROLES:
+                result[identity].add("radar")
+            else:
+                result[identity].add("unknown")
+    return result
+
+
+def annotate_rows_with_publication_roles(root: Path, db, rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach cross-period detailed/brief history used by expanded selection."""
+
+    materialized = [dict(row) for row in rows]
+    roles = published_identity_roles(
+        root,
+        db,
+        (str(row.get("event_key") or "") for row in materialized),
+    )
+    for row in materialized:
+        history = roles.get(str(row.get("event_key") or ""), set())
+        row["publication_roles"] = sorted(history)
+        row["previously_detailed"] = "detailed" in history
+        row["previously_brief"] = "brief" in history
+    return materialized
 
 
 def _published_source(url: str, title: str = "", section: str = "publication") -> PublishedSource | None:

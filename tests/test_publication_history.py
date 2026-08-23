@@ -8,6 +8,7 @@ from briefing_skill.db import Database
 from briefing_skill.emailer import EmailService
 from briefing_skill.publication_history import (
     publication_state,
+    published_identity_roles,
     reconcile_local_history,
     record_delivery,
 )
@@ -147,6 +148,32 @@ def test_stable_identity_and_exact_version_are_distinct(tmp_path: Path):
     assert state_v2["exact_version_published"] is False
     assert state_v2["identity_published"] is True
     assert state_v1["identity_key"] == state_v2["identity_key"] == "arxiv:2608.05886"
+
+
+def test_historical_roles_come_from_recipient_visible_html(tmp_path: Path):
+    db, service = _service(tmp_path)
+    detailed_url = "https://arxiv.org/abs/2608.01001"
+    brief_url = "https://arxiv.org/abs/2608.01002"
+    issue = _issue(
+        db,
+        tmp_path,
+        html=f"""
+        <html><body><table>
+          <tr><td><h2><a href="{detailed_url}">旧版无角色标记的详细卡片</a></h2></td></tr>
+          <tr data-topic-appendix="1"><td><a href="{brief_url}">专题速览条目</a></td></tr>
+        </table></body></html>
+        """,
+    )
+    record_delivery(service, issue, "2026-08-12T08:00:00+00:00", "reader@example.com", "msg-1")
+
+    roles = published_identity_roles(
+        tmp_path,
+        db,
+        [source_identity_key(detailed_url), source_identity_key(brief_url)],
+    )
+
+    assert roles[source_identity_key(detailed_url)] == {"detailed"}
+    assert roles[source_identity_key(brief_url)] == {"brief"}
 
 
 def test_legacy_sent_rows_are_repaired_before_next_cli_run(tmp_path: Path):

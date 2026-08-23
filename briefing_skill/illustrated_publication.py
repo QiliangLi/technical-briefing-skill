@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import html as html_lib
+import json
 from pathlib import Path
 from typing import Any
 
-from .utils import now_iso, read_json, write_json
+from .utils import now_iso, read_json, stable_hash, write_json
 
 
 TASK_TYPE = "illustrated_publication"
@@ -299,6 +300,7 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
     ]
     visuals = dict(pipeline.config.settings.get("visuals") or {})
     persona_contract = _ian_persona_contract(pipeline.root, visuals)
+    run_id = str(getattr(pipeline, "run_id", Path(pipeline.run_dir).name))
     return {
         "issue_id": issue["id"],
         "synthesis": issue_data.get("synthesis") or {},
@@ -310,7 +312,9 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
             "layout_policy": "placement is a preference; Python assigns non-adjacent final slots with at most one after judgements and one before each topic, then content-separated after-item slots",
             "aspect_ratio": "1.9:1",
             **persona_contract,
-            "output_directory": str((pipeline.run_dir / "illustrations").relative_to(pipeline.root)),
+            # Publication assets must live outside workspace/runs so the final
+            # email can reference stable, commit-pinned URLs after publication.
+            "output_directory": str(Path("published-assets") / run_id),
             "base_email_name": "email.html",
             "illustrated_email_name": "email-illustrated.html",
             "host_execution_policy": _host_execution_policy(),
@@ -345,19 +349,37 @@ def install_illustrated_publication() -> None:
         issue = self.db.fetchone("SELECT * FROM issues WHERE run_id=?", (self.run_id,))
         if not issue or not issue.get("issue_json_path"):
             return
-        if self.db.fetchone(
+        input_data = _illustration_input(self, issue)
+        existing = self.db.fetchone(
             "SELECT 1 FROM tasks WHERE run_id=? AND task_type=? AND entity_id=?",
             (self.run_id, TASK_TYPE, issue["id"]),
-        ):
-            return
+        )
+        task = self.db.fetchone(
+            "SELECT * FROM tasks WHERE run_id=? AND task_type=? AND entity_id=?",
+            (self.run_id, TASK_TYPE, issue["id"]),
+        )
+        expected_digest = stable_hash(
+            json.dumps(input_data, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            length=32,
+        )
+        if task:
+            current_input = read_json(self.root / task["input_path"], {})
+            current_digest = (current_input.get("_task") or {}).get("input_digest")
+            if current_digest == expected_digest:
+                return
+        if existing:
+            replace_existing = True
+        else:
+            replace_existing = False
         self.tasks.create(
             self.run_id,
             TASK_TYPE,
             issue["id"],
-            _illustration_input(self, issue),
+            input_data,
             prompt="illustrated-publication.md",
             schema="illustrated-publication.schema.json",
             priority=95,
+            replace_existing=replace_existing,
         )
         self.db.update_run(self.run_id, stage="AWAITING_ILLUSTRATIONS")
 

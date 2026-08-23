@@ -273,7 +273,11 @@ def normalise_orphan_card_widths(email_html: str) -> str:
     return str(soup)
 
 
-def html_reader_contract_errors(email_html: str) -> list[str]:
+def html_reader_contract_errors(
+    email_html: str,
+    *,
+    radar_max_per_category: int = 2,
+) -> list[str]:
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(email_html, "html.parser")
@@ -308,8 +312,11 @@ def html_reader_contract_errors(email_html: str) -> list[str]:
                 errors.append("Every Radar card must identify one category")
             else:
                 radar_categories.append(category)
-            if len(card.select('[data-reader-role="radar-item"]')) > 2:
-                errors.append("A Radar category card may contain at most two signals")
+            if len(card.select('[data-reader-role="radar-item"]')) > radar_max_per_category:
+                errors.append(
+                    "A Radar category card may contain at most "
+                    f"{radar_max_per_category} signals"
+                )
     if len(radar_categories) != len(set(radar_categories)):
         errors.append("Radar signals from the same category must share one category card")
 
@@ -431,7 +438,16 @@ def final_reader_contract_errors(service, run_id: str) -> list[str]:
     if not email_path.is_file():
         errors.append("Final reader contract requires rendered email.html")
     else:
-        errors.extend(html_reader_contract_errors(email_path.read_text(encoding="utf-8")))
+        radar_policy = dict(getattr(service.config, "scoring", {}).get("radar") or {})
+        radar_max_per_category = max(
+            1, int(radar_policy.get("max_per_category", 2))
+        )
+        errors.extend(
+            html_reader_contract_errors(
+                email_path.read_text(encoding="utf-8"),
+                radar_max_per_category=radar_max_per_category,
+            )
+        )
     return list(dict.fromkeys(errors))
 
 

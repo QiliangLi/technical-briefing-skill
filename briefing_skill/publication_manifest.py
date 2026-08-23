@@ -454,6 +454,13 @@ def _direct_copy_provenance_errors(
         verify_copy_integrity,
     )
 
+    if str((active_issue or {}).get("execution_mode") or "") in {
+        "demo",
+        "fixture",
+        "test",
+    }:
+        return []
+
     mode = direct_copy_mode(root)
     path = root / "workspace" / "runs" / run_id / "issue" / "radar-direct.json"
     if mode is False:

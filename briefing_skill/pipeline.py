@@ -514,7 +514,7 @@ class Pipeline:
         mode = self.config.settings.get("issue_mode", "compact")
         rows = self.db.fetchall(
             """
-            SELECT bi.*, e.topic_id, e.direction_id, e.canonical_title,
+            SELECT bi.*, e.topic_id, e.direction_id, e.canonical_title, e.event_key,
                    COALESCE(
                      e.last_pushed_at,
                      (SELECT MAX(e2.last_pushed_at) FROM events e2
@@ -533,6 +533,9 @@ class Pipeline:
         )
         report_date = self._report_date()
         if mode == "expanded_v2":
+            from .publication_history import annotate_rows_with_publication_roles
+
+            rows = annotate_rows_with_publication_roles(self.root, self.db, rows)
             selected, _, _, _ = select_expanded_rows(
                 self.root,
                 self.config,

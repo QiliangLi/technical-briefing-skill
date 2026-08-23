@@ -113,7 +113,14 @@ def _structured_provenance_errors(service, run_id: str) -> list[str]:
         return ["Structured provenance cannot read the persisted email artifact"]
     html = path.read_text(encoding="utf-8")
     active = service.db.fetchone(
-        "SELECT id, run_id, date_to, issue_json_path FROM issues WHERE run_id=?", (run_id,)
+        """
+        SELECT i.id, i.run_id, i.date_to, i.issue_json_path,
+               rep.execution_mode
+        FROM issues i
+        LEFT JOIN run_execution_provenance rep ON rep.run_id=i.run_id
+        WHERE i.run_id=?
+        """,
+        (run_id,),
     )
     return [
         *publication_provenance_errors(service.root, run_id, html, active_issue=active),

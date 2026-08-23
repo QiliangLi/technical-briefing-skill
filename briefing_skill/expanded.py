@@ -4,6 +4,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .config import ConfigBundle
 from .db import Database
@@ -13,11 +14,11 @@ from .utils import complete_sentence_excerpt, now_iso, read_json, source_url_is_
 
 
 LEGACY_FIELD_BUDGETS = {
-    "core_conclusion": 70,
-    "mechanism": 50,
-    "result": 50,
-    "boundary": 35,
-    "project_relevance": 45,
+    "core_conclusion": 100,
+    "mechanism": 75,
+    "result": 75,
+    "boundary": 55,
+    "project_relevance": 65,
 }
 
 
@@ -30,6 +31,16 @@ def normalise_legacy_item(item: dict[str, Any], config: ConfigBundle) -> dict[st
     for field, limit in LEGACY_FIELD_BUDGETS.items():
         rebuilt[field] = complete_sentence_excerpt(str(item.get(field) or ""), limit)
     return rebuilt
+
+
+def historical_brief_upgrade_min_chars(config: ConfigBundle) -> int:
+    """Compatibility floor for fact-checked brief-only cards from older runs."""
+
+    current_min = int(config.settings.get("brief_item_min_chars", 180))
+    configured = int(
+        config.settings.get("historical_brief_upgrade_min_chars", min(180, current_min))
+    )
+    return max(1, min(configured, current_min))
 
 
 def _limits(config: ConfigBundle) -> dict[str, int]:
@@ -64,10 +75,16 @@ def select_expanded_rows(
     """
     limits = _limits(config)
     age_limits = freshness_limits(config)
-    allow_revisit = bool(config.scoring.get("expanded_v2", {}).get("topic_floor_allow_revisit", True))
+    expanded_config = config.scoring.get("expanded_v2", {})
+    allow_brief_upgrade = bool(
+        expanded_config.get(
+            "topic_floor_allow_brief_upgrade",
+            expanded_config.get("topic_floor_allow_revisit", True),
+        )
+    )
     eligible: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
-    revisit_pool: dict[str, list[dict[str, Any]]] = {}
+    brief_upgrade_pool: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         score = float(row["score"])
         if row.get("fact_check_status") != "PASS":
@@ -85,10 +102,30 @@ def select_expanded_rows(
             excluded.append({"id": row["id"], "score": score, "reason": f"stale source ({age} days old)"})
             continue
         if row.get("last_pushed_at") and not item.get("incremental_update"):
-            if allow_revisit and score >= limits["observation_score"]:
-                revisit_pool.setdefault(row["topic_id"], []).append({**row, "item": item, "age_days": age, "item_role": "observation", "revisit": True})
+            previously_brief = bool(row.get("previously_brief"))
+            previously_detailed = bool(row.get("previously_detailed"))
+            if (
+                allow_brief_upgrade
+                and previously_brief
+                and not previously_detailed
+                and score >= limits["observation_score"]
+            ):
+                brief_upgrade_pool.setdefault(row["topic_id"], []).append(
+                    {
+                        **row,
+                        "item": item,
+                        "age_days": age,
+                        "item_role": "observation",
+                        "brief_upgrade": True,
+                    }
+                )
             else:
-                excluded.append({"id": row["id"], "score": score, "reason": "previously pushed without incremental update"})
+                reason = (
+                    "previously published as detailed without incremental update"
+                    if previously_detailed
+                    else "previously published without brief-only upgrade provenance"
+                )
+                excluded.append({"id": row["id"], "score": score, "reason": reason})
             continue
         has_resolved_a = any(
             source.get("source_level") == "A" and source_url_is_resolved(source.get("url"))
@@ -115,9 +152,10 @@ def select_expanded_rows(
     selected: list[dict[str, Any]] = []
     topic_counts: dict[str, int] = {}
     core_count = observation_count = 0
-    # Per-topic floor pass: core-eligible rows first, then same-topic rows that
-    # only missed the core score bar as labelled supplements, so a thin topic
-    # still reaches topic_target detailed items when honest material exists.
+    # Per-topic conversion pass: core-eligible rows first, then upgrade only
+    # available short-form rows until the topic reaches topic_target. This is a
+    # ceiling on promotion, not a cardinality requirement: if fewer short rows
+    # exist, select fewer; never refill with a previously detailed publication.
     topic_floor_candidates: dict[str, list[dict[str, Any]]] = {}
     for row in eligible:
         if row["item_role"] != "core":
@@ -133,10 +171,15 @@ def select_expanded_rows(
             core_count += 1
             topic_counts[row["topic_id"]] = topic_counts.get(row["topic_id"], 0) + 1
             selected.append(row)
-    for topic_id in sorted(set(topic_floor_candidates) | set(revisit_pool)):
+    for topic_id in sorted(set(topic_floor_candidates) | set(brief_upgrade_pool)):
         shortfall = limits["topic_target"] - topic_counts.get(topic_id, 0)
         fill = list(topic_floor_candidates.get(topic_id, [])) + sorted(
-            revisit_pool.get(topic_id, []), key=lambda row: (-float(row["score"]), row["id"])
+            brief_upgrade_pool.get(topic_id, []),
+            key=lambda row: (
+                1 if row.get("historical_brief_candidate") else 0,
+                -float(row["score"]),
+                row["id"],
+            ),
         )
         for row in fill[:max(0, shortfall)]:
             if len(selected) >= limits["total_max"] or observation_count >= limits["observation_max"]:
@@ -147,10 +190,10 @@ def select_expanded_rows(
             topic_counts[topic_id] = topic_counts.get(topic_id, 0) + 1
             selected.append(row)
         for row in fill[max(0, shortfall):]:
-            reason = "revisit floor not reached" if row.get("revisit") else "expanded-v2 capacity"
+            reason = "brief upgrade capacity" if row.get("brief_upgrade") else "expanded-v2 capacity"
             excluded.append({"id": row["id"], "score": row["score"], "reason": reason})
     for topic_id, rows in topic_floor_candidates.items():
-        if topic_id in revisit_pool:
+        if topic_id in brief_upgrade_pool:
             continue
         for row in rows:
             if row not in selected:
@@ -167,6 +210,102 @@ def select_expanded_rows(
     return selected, excluded, counts, limits
 
 
+def collect_historical_brief_rows(
+    root: Path,
+    config: ConfigBundle,
+    db: Database,
+    run_id: str,
+    current_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return prior brief-only Machine Items that can fill current topic gaps.
+
+    Historical refill is deliberately separate from current-run materialisation.
+    A prior brief does not need to have been rediscovered in this run, but it must
+    still have a fact-checked Machine Item, a stable event identity, and recipient-
+    visible brief provenance. Any identity ever published in a detailed card is
+    excluded, even when it also appeared in a brief section at another time.
+    """
+
+    from .fact_cache_provenance import SYNTHETIC_MODES, execution_mode
+
+    if execution_mode(db, run_id) in SYNTHETIC_MODES:
+        # Demo/fixture/test runs must remain reproducible and must never import
+        # recipient-visible history from the production workspace.
+        return []
+
+    current_keys = {
+        str(row.get("event_key") or "")
+        for row in current_rows
+        if str(row.get("event_key") or "")
+    }
+    deep_topics = {
+        str(topic_id)
+        for topic_id in (config.settings.get("efficiency") or {}).get("deep_topics") or []
+    }
+    deep_topics.update(
+        str(row.get("topic_id") or "")
+        for row in current_rows
+        if str(row.get("topic_id") or "")
+    )
+    rows = db.fetchall(
+        """
+        SELECT bi.id, bi.run_id AS source_run_id, bi.score, bi.json_path,
+               bi.fact_check_status, e.topic_id, e.direction_id, e.event_key,
+               COALESCE(
+                 e.last_pushed_at,
+                 (SELECT MAX(e2.last_pushed_at) FROM events e2
+                  WHERE e.event_key IS NOT NULL AND e2.event_key=e.event_key)
+               ) AS last_pushed_at,
+               (SELECT MAX(r.published_at)
+                FROM event_members em
+                JOIN candidates c ON c.id=em.candidate_id
+                JOIN raw_items r ON r.id=c.raw_item_id
+                WHERE em.event_id=e.id) AS source_published_at,
+               NULL AS visual_plan_path
+        FROM brief_items bi
+        JOIN events e ON e.id=bi.event_id
+        WHERE bi.run_id<>? AND bi.fact_check_status='PASS'
+          AND e.event_key IS NOT NULL AND e.event_key!=''
+        ORDER BY bi.score DESC, bi.created_at DESC, bi.id
+        """,
+        (run_id,),
+    )
+    from .publication_history import annotate_rows_with_publication_roles
+
+    rows = annotate_rows_with_publication_roles(root, db, rows)
+    selected: list[dict[str, Any]] = []
+    seen = set(current_keys)
+    for row in rows:
+        event_key = str(row.get("event_key") or "")
+        if not event_key or event_key in seen:
+            continue
+        if deep_topics and str(row.get("topic_id") or "") not in deep_topics:
+            continue
+        if not row.get("previously_brief") or row.get("previously_detailed"):
+            continue
+        item_path = root / str(row.get("json_path") or "")
+        if not item_path.is_file():
+            continue
+        item = read_json(item_path, {})
+        hosts = {
+            (urlparse(str(source.get("url") or "")).hostname or "").lower().removeprefix("www.")
+            for source in item.get("sources") or []
+        }
+        if hosts & {"example.com", "example.org", "example.net"}:
+            continue
+        normalised = normalise_legacy_item(item, config)
+        min_chars = historical_brief_upgrade_min_chars(config)
+        max_chars = int(config.settings.get("brief_item_max_chars", 260))
+        if brief_item_validation_errors(normalised, min_chars=min_chars, max_chars=max_chars):
+            # Historical brief-only cards retain their legacy length floor, but
+            # still need all five complete fields, fact checking and A-level
+            # provenance. Never invent filler solely to meet a newer word budget.
+            continue
+        selected.append({**row, "historical_brief_candidate": True})
+        seen.add(event_key)
+    return selected
+
+
 def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: str) -> dict[str, Any]:
     issue = db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
     run = db.fetchone("SELECT * FROM runs WHERE id=?", (run_id,))
@@ -177,8 +316,8 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
 
     rows = db.fetchall(
         """
-        SELECT bi.id, bi.score, bi.json_path, bi.fact_check_status,
-               e.topic_id, e.direction_id,
+        SELECT bi.id, bi.run_id AS source_run_id, bi.score, bi.json_path, bi.fact_check_status,
+               e.topic_id, e.direction_id, e.event_key,
                COALESCE(
                  e.last_pushed_at,
                  (SELECT MAX(e2.last_pushed_at) FROM events e2
@@ -198,6 +337,10 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
         """,
         (issue["id"], run_id),
     )
+    from .publication_history import annotate_rows_with_publication_roles
+
+    rows = annotate_rows_with_publication_roles(root, db, rows)
+    rows.extend(collect_historical_brief_rows(root, config, db, run_id, rows))
     selected, excluded, counts, limits = select_expanded_rows(
         root,
         config,
@@ -217,8 +360,11 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
             "fact_check_status": row["fact_check_status"],
             "anchor_id": f"item-{row['id']}",
         }
-        if row.get("revisit"):
-            item["revisit"] = True
+        if row.get("brief_upgrade"):
+            item["brief_upgrade"] = True
+            item["brief_upgrade_origin"] = (
+                "historical" if row.get("historical_brief_candidate") else "current"
+            )
         (core_items if row["item_role"] == "core" else observations).append(item)
 
     rebuilt = {

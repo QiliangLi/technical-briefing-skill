@@ -37,7 +37,14 @@ def _days_ago(days: float) -> str:
     return (NOW - timedelta(days=days)).isoformat()
 
 
-def make_service(tmp_path: Path, *, direct_copy: bool = True, total_max: int = 8, per_category: int = 2):
+def make_service(
+    tmp_path: Path,
+    *,
+    direct_copy: bool = True,
+    total_max: int = 8,
+    per_category: int = 2,
+    industry_builder_min: int = 0,
+):
     db = Database(tmp_path / "briefing.sqlite")
     db.init()
     # The release gate validates the configured timezone from the root, so
@@ -50,6 +57,7 @@ def make_service(tmp_path: Path, *, direct_copy: bool = True, total_max: int = 8
     (config / "email.yaml").write_text("{}\n", encoding="utf-8")
     (config / "scoring.yaml").write_text(
         f"radar:\n  total_max: {total_max}\n  max_per_category: {per_category}\n"
+        f"  industry_builder_min: {industry_builder_min}\n"
         f"  direct_copy: {str(direct_copy).lower()}\n",
         encoding="utf-8",
     )
@@ -68,7 +76,14 @@ def make_service(tmp_path: Path, *, direct_copy: bool = True, total_max: int = 8
                 ]
             },
             sources={"sources": []},
-            scoring={"radar": {"total_max": total_max, "max_per_category": per_category, "direct_copy": direct_copy}},
+            scoring={
+                "radar": {
+                    "total_max": total_max,
+                    "max_per_category": per_category,
+                    "industry_builder_min": industry_builder_min,
+                    "direct_copy": direct_copy,
+                }
+            },
             settings={},
             email={},
         ),
@@ -407,6 +422,56 @@ def test_category_caps_and_diversity(tmp_path: Path) -> None:
     assert counts.get("AI Infra", 0) <= 2
     assert counts.get("存储与介质", 0) == 1
     assert sum(counts.values()) <= 8
+
+
+def test_direct_copy_reserves_aihot_chinese_items_linking_industry_sources(tmp_path: Path) -> None:
+    service, db = make_service(
+        tmp_path,
+        total_max=8,
+        per_category=3,
+        industry_builder_min=4,
+    )
+    run_id = "run-industry-mix"
+    rows = [
+        ("https://engineering.example.com/runtime", "GPU推理运行时发布工程优化", "该公司工程团队发布新的GPU推理运行时，通过调度优化降低服务延迟。"),
+        ("https://builder.example.net/agent", "个人Builder发布智能体工具链", "作者公开智能体工具链的状态管理机制，并给出真实仓库使用经验。"),
+        ("https://cache.example.org/prefix", "Prefix Cache路由机制更新", "项目团队更新Prefix Cache路由机制，使多实例之间可以复用缓存状态。"),
+        ("https://storage.example.io/nand", "NAND存储控制器工程更新", "厂商工程博客介绍NAND控制器的新写入路径，并说明适用的部署边界。"),
+    ]
+    for index, (url, title, summary) in enumerate(rows):
+        insert_raw(
+            db,
+            run_id,
+            url=url,
+            title=title,
+            summary=summary,
+            external_id=f"industry-{index}",
+            lanes=["all"],
+            source_level="B",
+        )
+    for index in range(6):
+        insert_raw(
+            db,
+            run_id,
+            url=f"https://arxiv.org/abs/2608.90{index:03d}",
+            title=f"智能体与GPU推理系统论文 {index}",
+            summary=f"该论文提出智能体与GPU推理系统机制，并报告完整实验结果 {index}。",
+            external_id=f"paper-{index}",
+            lanes=["all"],
+            source_level="A",
+        )
+
+    groups = direct_copy_groups(
+        service,
+        None,
+        {"run_id": run_id, "items": [], "date_to": REFERENCE_DATE},
+    )
+    selected = [item for group in groups or [] for item in group["items"]]
+    selected_urls = {item["url"] for item in selected}
+
+    assert {url for url, _, _ in rows}.issubset(selected_urls)
+    assert all("AI HOT" not in item["source_name"] for item in selected)
+    assert all(item["summary"].endswith("。") for item in selected)
 
 
 def test_deep_url_collision_excluded_from_direct_pool(tmp_path: Path) -> None:

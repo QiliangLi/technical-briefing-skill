@@ -207,11 +207,16 @@ def cmd_demo(args) -> int:
     db.update_run(run_id, stage="COLLECTED")
     pipeline = Pipeline(root, config, db, run_id)
     pipeline.prepare_relevance()
-    for _ in range(10):
+    max_demo_steps = int(config.settings.get("max_demo_advance_steps", 256))
+    for _ in range(max_demo_steps):
         completed = complete_pending_demo_tasks(root, db, run_id)
         result = pipeline.advance()
         if result["stage"] == "READY_FOR_RENDER" or not completed and not result["pending"]:
             break
+    else:
+        raise RuntimeError(
+            f"Demo did not reach a terminal render stage after {max_demo_steps} advance steps"
+        )
     renderer = Renderer(root, config, db)
     renderer.render_issue(run_id, execute_playwright=args.render)
     EmailService(root, config, db).build(run_id)

@@ -25,7 +25,7 @@ def _has_legacy_visual_work(pipeline) -> bool:
 def _selected_issue_rows(pipeline) -> list[dict]:
     rows = pipeline.db.fetchall(
         """
-        SELECT bi.*, e.topic_id, e.direction_id, e.canonical_title,
+        SELECT bi.*, e.topic_id, e.direction_id, e.canonical_title, e.event_key,
                COALESCE(
                  e.last_pushed_at,
                  (SELECT MAX(e2.last_pushed_at) FROM events e2
@@ -44,6 +44,9 @@ def _selected_issue_rows(pipeline) -> list[dict]:
     )
     mode = pipeline.config.settings.get("issue_mode", "compact")
     if mode == "expanded_v2":
+        from .publication_history import annotate_rows_with_publication_roles
+
+        rows = annotate_rows_with_publication_roles(pipeline.root, pipeline.db, rows)
         selected, _, _, _ = select_expanded_rows(
             pipeline.root,
             pipeline.config,
@@ -186,7 +189,7 @@ def install_issue_stage() -> None:
 
         item_rows = self.db.fetchall(
             """
-            SELECT ii.position,ii.item_role,bi.*,e.topic_id,e.direction_id,
+            SELECT ii.position,ii.item_role,bi.*,e.topic_id,e.direction_id,e.event_key,
                    COALESCE(
                      e.last_pushed_at,
                      (SELECT MAX(e2.last_pushed_at) FROM events e2
@@ -199,6 +202,9 @@ def install_issue_stage() -> None:
             """,
             (issue["id"],),
         )
+        from .publication_history import annotate_rows_with_publication_roles
+
+        item_rows = annotate_rows_with_publication_roles(self.root, self.db, item_rows)
         issue_data = {
             "id": issue["id"],
             "run_id": self.run_id,
@@ -224,14 +230,19 @@ def install_issue_stage() -> None:
                 "fact_check_status": row.get("fact_check_status"),
                 "anchor_id": f"item-{row['id']}",
             }
-            # Supplement fills drawn from previously pushed events are labelled
-            # as revisits so readers can tell them from fresh deep items.
+            # Only a source that was previously brief and never detailed is a
+            # legitimate cross-period upgrade.
             if (
                 item_role != "core"
                 and row.get("last_pushed_at")
                 and not item.get("incremental_update")
+                and row.get("previously_brief")
+                and not row.get("previously_detailed")
             ):
-                rebuilt["revisit"] = True
+                rebuilt["brief_upgrade"] = True
+                rebuilt["brief_upgrade_origin"] = (
+                    "historical" if str(row.get("run_id") or "") != self.run_id else "current"
+                )
             issue_data["items"].append(rebuilt)
             issue_data["core_items" if item_role == "core" else "observations"].append(rebuilt)
 

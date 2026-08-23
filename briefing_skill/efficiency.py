@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -259,11 +260,35 @@ def install_pipeline_optimizations() -> None:
         rows = self.db.fetchall("""
             SELECT c.*,r.title,r.summary,r.original_url,r.aihot_url,r.published_at,
                    r.discovery_source,r.source_level,r.discovery_only,r.payload_json,r.priority
+                   ,r.identity_key
             FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
             WHERE c.run_id=? AND c.status='RELEVANT' AND c.fulltext_required=1
               AND r.source_level='A' AND r.discovery_only=0
             ORDER BY c.relevance_score DESC,c.rule_score DESC,r.priority DESC
         """, (self.run_id,))
+        from .publication_history import published_identity_roles
+
+        roles = published_identity_roles(
+            self.root,
+            self.db,
+            (str(row.get("identity_key") or "") for row in rows),
+        )
+        eligible_rows = []
+        for row in rows:
+            payload = {}
+            try:
+                payload = json.loads(row.get("payload_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                pass
+            history = roles.get(str(row.get("identity_key") or ""), set())
+            if "detailed" in history and not payload.get("incremental_update"):
+                self.db.execute(
+                    "UPDATE candidates SET status='DEFERRED_PUBLISHED_DETAILED' WHERE id=?",
+                    (row["id"],),
+                )
+                continue
+            eligible_rows.append(row)
+        rows = eligible_rows
         selected, deferred = select_deep_budget(rows, self.config.settings)
         for row in deferred:
             self.db.execute("UPDATE candidates SET status='DEFERRED_BUDGET' WHERE id=?", (row["id"],))

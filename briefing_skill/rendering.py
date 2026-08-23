@@ -346,10 +346,18 @@ const fs = require('fs');
                         report["failures"].append(
                             f"Topic id/name mismatch: {item.get('title')} ({topic_id} != {item.get('topic_name')})"
                         )
+                from .expanded import historical_brief_upgrade_min_chars
                 from .tasks import brief_item_validation_errors
+
+                minimum = int(self.config.settings.get("brief_item_min_chars", 300))
+                if (
+                    item.get("brief_upgrade")
+                    and item.get("brief_upgrade_origin") == "historical"
+                ):
+                    minimum = historical_brief_upgrade_min_chars(self.config)
                 completeness_errors = brief_item_validation_errors(
                     item,
-                    min_chars=int(self.config.settings.get("brief_item_min_chars", 300)),
+                    min_chars=minimum,
                     max_chars=int(self.config.settings.get("brief_item_max_chars", 450)),
                 )
                 if completeness_errors:

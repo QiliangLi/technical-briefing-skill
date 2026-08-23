@@ -43,6 +43,24 @@ CATEGORY_PREFERENCE = ("存储与介质", "KVCache生态", "Agent生态", "AI In
 
 TOPIC_PRIORITY_SCORE = {"highest": 20, "high": 15, "medium": 8, "low": 0}
 
+ACADEMIC_SOURCE_HOSTS = {
+    "arxiv.org",
+    "openreview.net",
+    "doi.org",
+    "acm.org",
+    "dl.acm.org",
+    "ieee.org",
+    "ieeexplore.ieee.org",
+}
+SOCIAL_SOURCE_HOSTS = {"x.com", "twitter.com", "youtube.com", "youtu.be"}
+NEWS_ANALYSIS_HOSTS = {
+    "reuters.com",
+    "marktechpost.com",
+    "the-decoder.com",
+    "techcrunch.com",
+    "venturebeat.com",
+}
+
 # Deterministic out-of-scope blocklist (design §9.2): financing, executive
 # statements, policy/legal disputes, consumer apps and ranking-only news.
 SCOPE_BLOCKED_TERMS = (
@@ -141,6 +159,24 @@ def public_source_name(url: str) -> str:
     if host.endswith("github.com") or host.endswith("github.io"):
         return "GitHub"
     return _clean_text(host, 60)
+
+
+def public_source_lane(url: str) -> str:
+    """Classify the original linked page, independent of the AI HOT provider.
+
+    AI HOT supplies the frozen Chinese reader copy. The linked page may be in
+    any language; this lane exists only to preserve a useful mix of papers,
+    official company/engineering posts, individual builders, news and social.
+    """
+
+    host = (urlparse(url).hostname or "").lower().removeprefix("www.")
+    if any(host == value or host.endswith(f".{value}") for value in ACADEMIC_SOURCE_HOSTS):
+        return "academic_primary"
+    if any(host == value or host.endswith(f".{value}") for value in SOCIAL_SOURCE_HOSTS):
+        return "social"
+    if any(host == value or host.endswith(f".{value}") for value in NEWS_ANALYSIS_HOSTS):
+        return "news_analysis"
+    return "industry_builder"
 
 
 def _github_project(url: str) -> str:
@@ -398,6 +434,7 @@ def _candidate_from_row(
         "summary": public_summary,
         "url": url,
         "source_name": public_source_name(url),
+        "source_lane": public_source_lane(url),
         "source_level": str(row.get("source_level") or "C").upper(),
         "source_id": str(row.get("source_id") or ""),
         "published_at": str(row.get("published_at") or "")[:10],
@@ -525,7 +562,13 @@ def _identity(candidate: dict[str, Any]) -> str:
     return f"title:{candidate.get('normalized_title') or ''}"
 
 
-def select_radar_items(candidates: list[dict[str, Any]], *, total_max: int, per_category: int) -> list[dict[str, Any]]:
+def select_radar_items(
+    candidates: list[dict[str, Any]],
+    *,
+    total_max: int,
+    per_category: int,
+    industry_builder_min: int = 0,
+) -> list[dict[str, Any]]:
     """Deterministic bounded selection: <= total_max, <= per_category, one per story/project."""
     category_rank = {name: index for index, name in enumerate(CATEGORY_PREFERENCE)}
     ordered = sorted(candidates, key=lambda c: category_rank.get(c["category"], 99))
@@ -555,12 +598,38 @@ def select_radar_items(candidates: list[dict[str, Any]], *, total_max: int, per_
         state["url"].add(candidate["canonical_url"])
         return True
 
-    # Pass one spreads coverage across categories before any category doubles.
-    for candidate in ordered:
-        if state["category"].get(candidate["category"], 0) == 0:
-            take(candidate)
-    # Pass two fills remaining capacity strictly by internal priority.
-    for candidate in sorted(candidates, key=lambda c: -float(c["internal_priority"])):
+    priority_order = sorted(candidates, key=lambda c: -float(c["internal_priority"]))
+
+    # Pass one spreads coverage across categories. When an industry/builder
+    # reserve is configured, prefer an official company/engineering/individual
+    # source in each category while continuing to publish AI HOT's frozen Chinese
+    # copy and linking the original page in whatever language it uses.
+    for category in CATEGORY_PREFERENCE:
+        rows = [candidate for candidate in priority_order if candidate["category"] == category]
+        if not rows:
+            continue
+        preferred = next(
+            (row for row in rows if row.get("source_lane") == "industry_builder"),
+            rows[0],
+        ) if industry_builder_min else rows[0]
+        take(preferred)
+
+    # Pass two meets the configured source-mix floor without weakening category,
+    # story, project or URL deduplication.
+    target = min(max(0, industry_builder_min), total_max)
+    while sum(row.get("source_lane") == "industry_builder" for row in selected) < target:
+        added = False
+        for candidate in priority_order:
+            if candidate.get("source_lane") != "industry_builder" or candidate in selected:
+                continue
+            if take(candidate):
+                added = True
+                break
+        if not added:
+            break
+
+    # Pass three fills remaining capacity strictly by internal priority.
+    for candidate in priority_order:
         take(candidate)
     return selected
 
@@ -952,6 +1021,23 @@ def direct_copy_groups(service, issue_id: str | None, issue_data: dict[str, Any]
     if not direct_copy_enabled(service) or not getattr(service, "db", None):
         return None
     run_id = str((issue_data or {}).get("run_id") or "")
+    if run_id:
+        try:
+            provenance = service.db.fetchone(
+                "SELECT execution_mode FROM run_execution_provenance WHERE run_id=?",
+                (run_id,),
+            )
+        except Exception:
+            provenance = None
+        if str((provenance or {}).get("execution_mode") or "") in {
+            "demo",
+            "fixture",
+            "test",
+        }:
+            # Synthetic runs have no authentic frozen AI Hot response and must
+            # never mint production direct-copy provenance from fixture text or
+            # fall back to persisted production Radar rows.
+            return []
     candidates = _run_candidates(service, run_id, issue_data)
     if candidates is None:
         return None
@@ -959,6 +1045,7 @@ def direct_copy_groups(service, issue_id: str | None, issue_data: dict[str, Any]
     policy = dict(getattr(service.config, "scoring", {}).get("radar") or {})
     total_max = max(1, int(policy.get("total_max", 8)))
     per_category = max(1, int(policy.get("max_per_category", 2)))
+    industry_builder_min = max(0, int(policy.get("industry_builder_min", 0)))
 
     # Deep/appendix collisions are known by build time: exclude them before
     # selection so the selected set equals the final published set.
@@ -978,7 +1065,12 @@ def direct_copy_groups(service, issue_id: str | None, issue_data: dict[str, Any]
         and not (candidate.get("github_project") and candidate["github_project"] in forbidden_projects)
     ]
 
-    selected = select_radar_items(pool, total_max=total_max, per_category=per_category)
+    selected = select_radar_items(
+        pool,
+        total_max=total_max,
+        per_category=per_category,
+        industry_builder_min=industry_builder_min,
+    )
 
     groups: dict[str, list[dict[str, Any]]] = {}
     for candidate in selected:

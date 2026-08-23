@@ -74,6 +74,9 @@ def _install_renderer_length_guard() -> None:
     def validate(self, run_id: str) -> dict[str, Any]:
         report = original_validate(self, run_id)
         minimum = int(self.config.settings.get("brief_item_min_chars", 300))
+        from .expanded import historical_brief_upgrade_min_chars
+
+        historical_minimum = historical_brief_upgrade_min_chars(self.config)
         prefix = "Item may be too short: "
         warnings = list(report.get("warnings") or [])
         if any(str(warning).startswith(prefix) for warning in warnings):
@@ -81,7 +84,13 @@ def _install_renderer_length_guard() -> None:
             data = read_json(self.root / issue["issue_json_path"], {}) if issue and issue.get("issue_json_path") else {}
             fields = ("core_conclusion", "mechanism", "result", "boundary", "project_relevance")
             lengths = {
-                str(item.get("title") or ""): len("".join(str(item.get(field) or "") for field in fields))
+                str(item.get("title") or ""): (
+                    len("".join(str(item.get(field) or "") for field in fields)),
+                    historical_minimum
+                    if item.get("brief_upgrade")
+                    and item.get("brief_upgrade_origin") == "historical"
+                    else minimum,
+                )
                 for item in data.get("items") or []
             }
             report["warnings"] = [
@@ -89,7 +98,8 @@ def _install_renderer_length_guard() -> None:
                 for warning in warnings
                 if not (
                     str(warning).startswith(prefix)
-                    and lengths.get(str(warning)[len(prefix):], 0) >= minimum
+                    and lengths.get(str(warning)[len(prefix):], (0, minimum))[0]
+                    >= lengths.get(str(warning)[len(prefix):], (0, minimum))[1]
                 )
             ]
             write_json(self.root / "workspace" / "runs" / run_id / "validation.json", report)

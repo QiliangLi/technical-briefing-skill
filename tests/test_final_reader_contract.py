@@ -275,4 +275,20 @@ def test_radar_rejects_more_than_two_signals_in_one_category():
 
     errors = html_reader_contract_errors(html)
 
-    assert any("at most two signals" in error for error in errors)
+    assert any("at most 2 signals" in error for error in errors)
+
+
+def test_radar_category_limit_can_be_configured_to_three():
+    html = """
+    <table>
+      <tr data-reader-row="radar-row">
+        <td width="100%" data-reader-role="radar-card" data-radar-category="AI Infra">
+          <div data-reader-role="radar-item"><a href="https://example.com/a">A</a></div>
+          <div data-reader-role="radar-item"><a href="https://example.com/b">B</a></div>
+          <div data-reader-role="radar-item"><a href="https://example.com/c">C</a></div>
+        </td>
+      </tr>
+    </table>
+    """
+
+    assert html_reader_contract_errors(html, radar_max_per_category=3) == []
