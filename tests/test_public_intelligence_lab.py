@@ -30,6 +30,8 @@ def test_public_site_is_a_routed_three_pane_workbench():
     assert 'data-route="ideas"' in html
     assert 'data-route="archive"' in html
     assert 'data-route="atlas"' in html
+    assert 'data-route="features"' in html
+    assert html.index('data-route="features"') > html.index('data-route="atlas"')
     assert "height:calc(100vh - 62px)" in css
     assert "grid-template-columns:var(--sidebar) minmax(0,1fr) var(--detail)" in css
     assert ".compact-list{grid-template-columns:minmax(0,1fr);min-width:0}" in css
@@ -80,12 +82,28 @@ def test_feedback_mock_is_explicitly_local_and_non_authoritative():
     assert "不会自动改变 Idea 状态" in views
 
 
+def test_idea_filters_are_all_visible_and_feature_plan_is_public():
+    html = (SITE / "index.html").read_text(encoding="utf-8")
+    views = (SITE / "intelligence-lab.js").read_text(encoding="utf-8")
+    feature_plan = json.loads((SITE / "feature-plan.json").read_text(encoding="utf-8"))
+
+    assert 'id="ideaFilters"' in html
+    assert "filterOptions('topic'" in views
+    assert "filterOptions('type'" in views
+    assert "filterOptions('status'" in views
+    assert "<select" not in views
+    assert "aria-pressed" in views
+    assert feature_plan["schema_version"] == 1
+    assert {row["status"] for row in feature_plan["items"]} == {"iterating", "planned"}
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_route_reader_merge_and_radar_dedupe_contracts():
     output = _run_node(
         f"""
         const data = require({json.dumps(str(SITE / 'data-contract.js'))});
         const route = data.parseRoute('#ideas?status=seed&topic=agent');
+        const featureRoute = data.parseRoute('#features?feature=team-feedback-loop');
         const merged = data.mergeReaderItem(
           {{item_id:'a1', title:'机器标题', summary:'机器摘要'}},
           {{brief_item_id:'a1', title:'读者标题', lead:'读者导语'}}
@@ -99,11 +117,12 @@ def test_route_reader_merge_and_radar_dedupe_contracts():
           [{{role:'radar', title:'同一信号', url:'https://arxiv.org/abs/2608.10000v1'}}]
         );
         const inferredArxiv = data.canonicalIdentity({{url:'https://arxiv.org/abs/2608.10000v3'}});
-        process.stdout.write(JSON.stringify({{route, merged, bodyMerged, inferredArxiv, count:rows.length}}));
+        process.stdout.write(JSON.stringify({{route, featureRoute, merged, bodyMerged, inferredArxiv, count:rows.length}}));
         """
     )
 
     assert output["route"] == {"name": "ideas", "params": {"status": "seed", "topic": "agent"}}
+    assert output["featureRoute"] == {"name": "features", "params": {"feature": "team-feedback-loop"}}
     assert output["merged"]["title"] == "读者标题"
     assert output["merged"]["summary"] == "读者导语"
     assert output["merged"]["machine_title"] == "机器标题"

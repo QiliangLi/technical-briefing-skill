@@ -3,7 +3,7 @@ const KNOWLEDGE_ROOT = './knowledge';
 const COLORS = ['#7697ef','#62b795','#e6a45e','#9b83d4','#db7474','#55afc2','#c6a247'];
 const state = {
   issues: [], items: [], latest: null, itemById: new Map(),
-  knowledge: null, knowledgeError: null, objectCache: new Map(),
+  knowledge: null, knowledgeError: null, featurePlan: null, objectCache: new Map(),
   route: {name:'home',params:{}}, graphScope: 'latest', graphMode: 'topic',
   roles: new Set(['core','supplement','radar']), keyword: '', keywordSuggestions: [],
   view: null, drag: null, lastLayout: null, feedback: null,
@@ -90,7 +90,10 @@ async function loadArchiveIssue(meta) {
 }
 
 async function loadData() {
-  const archive = await getJson(`${ROOT}/index.json`);
+  const [archive, featurePlan] = await Promise.all([
+    getJson(`${ROOT}/index.json`),
+    optionalJson('./feature-plan.json'),
+  ]);
   const issues = await Promise.all((archive.issues || []).map(loadArchiveIssue));
   issues.sort((a,b) => a.date.localeCompare(b.date));
   state.issues = issues;
@@ -100,6 +103,7 @@ async function loadData() {
     [item.item_id,item.brief_item_id,item.detail?.brief_item_id,item.id].filter(Boolean).forEach(id => state.itemById.set(String(id),item));
   });
   state.keywordSuggestions = buildKeywordSuggestions();
+  state.featurePlan = featurePlan;
   try {
     state.knowledge = BriefingData.validateKnowledgeIndex(await getJson(`${KNOWLEDGE_ROOT}/index.json`));
   } catch (error) {

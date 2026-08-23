@@ -135,9 +135,9 @@
   function parseRoute(hash) {
     const raw = text(hash).replace(/^#/, '');
     const [rawName, query = ''] = raw.split('?');
-    const aliases = {roadmap: 'roadmaps', 'idea-bank': 'ideas', graph: 'atlas', dashboard: 'home'};
+    const aliases = {roadmap: 'roadmaps', 'idea-bank': 'ideas', graph: 'atlas', dashboard: 'home', plan: 'features'};
     const requested = aliases[rawName] || rawName || 'home';
-    const allowed = new Set(['home', 'roadmaps', 'ideas', 'archive', 'atlas']);
+    const allowed = new Set(['home', 'roadmaps', 'ideas', 'archive', 'atlas', 'features']);
     return {name: allowed.has(requested) ? requested : 'home', params: Object.fromEntries(new URLSearchParams(query))};
   }
 

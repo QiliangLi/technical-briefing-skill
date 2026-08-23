@@ -10,6 +10,7 @@ function emptyBlock(message){return `<div class="empty-state">${esc(message)}</d
 function setDetail(html){$('#detailPane').innerHTML=html;}
 function setLeft(html=''){$('#leftContext').innerHTML=html;}
 function go(route,params={}){const query=new URLSearchParams(params).toString();location.hash=`${route}${query?`?${query}`:''}`;}
+function topicLabel(topicId){return state.knowledge?.roadmaps?.find(row=>row.topic_id===topicId)?.topic_name||topicId;}
 
 function renderHome(){
   setLeft(`<div class="context-title">首页</div><p class="context-copy">只看最新一期、Roadmap 实质变化、Idea 状态和来源构成。</p>`);
@@ -102,19 +103,27 @@ function renderRoadmapDetail(branch,row,isTimeline=false){
 
 async function renderIdeas(route){
   const token=++viewRenderToken;
-  if(!state.knowledge){setLeft('<div class="context-title">Idea Bank</div>');$('#ideaMain').replaceChildren(missingKnowledge(state.knowledgeError?.message));setDetail('<div class="detail-placeholder"><span>IDEA BANK</span><h2>等待物化数据</h2><p>不会把项目 next_action 当作 Idea。</p></div>');return;}
+  if(!state.knowledge){setLeft('<div class="context-title">Idea Bank</div>');$('#ideaFilters').innerHTML='';$('#ideaMain').replaceChildren(missingKnowledge(state.knowledgeError?.message));setDetail('<div class="detail-placeholder"><span>IDEA BANK</span><h2>等待物化数据</h2><p>不会把项目 next_action 当作 Idea。</p></div>');return;}
   const all=state.knowledge.ideas;$('#ideaMeta').textContent=`${all.length} 个稳定 Idea 对象`;
   const topics=[...new Set(all.flatMap(row=>row.topic_ids||[]))].sort();
   const filters={topic:route.params.topic||'',type:route.params.type||'',status:route.params.status||''};
-  setLeft(`<div class="context-title">筛选 Idea</div>${filterSelect('ideaTopicFilter','专题',topics,filters.topic)}${filterSelect('ideaTypeFilter','类型',Object.keys(IDEA_TYPE_LABELS),filters.type,IDEA_TYPE_LABELS)}${filterSelect('ideaStatusFilter','状态',Object.keys(STATUS_LABELS),filters.status,STATUS_LABELS)}<p class="context-copy">研究假设与技术方案是一等对象；验证动作只挂在 Idea 下。</p>`);
-  ['ideaTopicFilter','ideaTypeFilter','ideaStatusFilter'].forEach(id=>$('#'+id).addEventListener('change',()=>go('ideas',{topic:$('#ideaTopicFilter').value,type:$('#ideaTypeFilter').value,status:$('#ideaStatusFilter').value})));
+  setLeft('<div class="context-title">Idea Bank</div><p class="context-copy">所有筛选项在主工作区直接展开。“全部”是每组默认选项；当前选项会以深色高亮。</p>');
+  $('#ideaFilters').innerHTML=[
+    filterOptions('topic','专题',topics,filters.topic,Object.fromEntries(topics.map(value=>[value,topicLabel(value)]))),
+    filterOptions('type','类型',Object.keys(IDEA_TYPE_LABELS),filters.type,IDEA_TYPE_LABELS),
+    filterOptions('status','状态',Object.keys(STATUS_LABELS),filters.status,STATUS_LABELS),
+  ].join('');
+  $$('#ideaFilters [data-filter]').forEach(button=>button.addEventListener('click',()=>go('ideas',{...filters,[button.dataset.filter]:button.dataset.value})));
   const rows=all.filter(row=>(!filters.topic||(row.topic_ids||[]).includes(filters.topic))&&(!filters.type||row.idea_type===filters.type)&&(!filters.status||row.status===filters.status));
-  $('#ideaMain').innerHTML=rows.length?rows.map(row=>`<button class="idea-list-card ${row.idea_id===route.params.idea?'selected':''}" data-idea="${esc(row.idea_id)}"><div><span class="status-pill status-${esc(row.status)}">${esc(STATUS_LABELS[row.status]||row.status)}</span><span class="type-label">${esc(IDEA_TYPE_LABELS[row.idea_type]||row.idea_type)}</span></div><h2>${esc(row.title)}</h2><p>${esc((row.topic_ids||[]).join(' · '))}</p><small>更新于 ${esc(row.last_updated_issue||'')}</small></button>`).join(''):emptyBlock('当前筛选条件下没有 Idea');
+  $('#ideaMain').innerHTML=rows.length?rows.map(row=>`<button class="idea-list-card ${row.idea_id===route.params.idea?'selected':''}" data-idea="${esc(row.idea_id)}"><div><span class="status-pill status-${esc(row.status)}">${esc(STATUS_LABELS[row.status]||row.status)}</span><span class="type-label">${esc(IDEA_TYPE_LABELS[row.idea_type]||row.idea_type)}</span></div><h2>${esc(row.title)}</h2><p>${esc((row.topic_ids||[]).map(topicLabel).join(' · '))}</p><small>更新于 ${esc(row.last_updated_issue||'')}</small></button>`).join(''):emptyBlock('当前筛选条件下没有 Idea');
   $$('#ideaMain [data-idea]').forEach(button=>button.addEventListener('click',()=>go('ideas',{...filters,idea:button.dataset.idea})));
   const selected=rows.find(row=>row.idea_id===route.params.idea)||rows[0];if(!selected){setDetail('<div class="detail-placeholder"><span>IDEA</span><h2>没有匹配记录</h2></div>');return;}
   try{const idea=await loadKnowledgeObject(selected.path);if(token!==viewRenderToken)return;renderIdeaDetail(idea,selected);}catch(error){if(token===viewRenderToken)setDetail(`<div class="missing-data"><b>Idea 加载失败</b><p>${esc(error.message)}</p></div>`);}
 }
-function filterSelect(id,label,values,current,labels={}){return `<label class="context-filter">${esc(label)}<select id="${id}"><option value="">全部</option>${values.map(value=>`<option value="${esc(value)}" ${value===current?'selected':''}>${esc(labels[value]||value)}</option>`).join('')}</select></label>`;}
+function filterOptions(name,label,values,current,labels={}){
+  const options=['',...values];
+  return `<fieldset class="visible-filter-group"><legend>${esc(label)}</legend><div class="visible-filter-options" role="group" aria-label="${esc(label)}">${options.map(value=>`<button type="button" data-filter="${esc(name)}" data-value="${esc(value)}" aria-pressed="${value===current?'true':'false'}" class="${value===current?'active':''}">${esc(value?(labels[value]||value):'全部')}</button>`).join('')}</div></fieldset>`;
+}
 function listField(title,rows){return `<dt>${esc(title)}</dt><dd>${Array.isArray(rows)?esc(rows.join('；')||'尚未记录'):esc(rows||'尚未记录')}</dd>`;}
 function validationPlan(plan={}){
   return `<section class="validation-plan"><div class="warning-label">验证建议 · 尚未执行</div><p>以下内容是建议怎样验证，不是仿真或实验结果。</p><dl class="detail-fields">${listField('方式',plan.mode)}${listField('最小模型',plan.minimal_model)}${listField('输入与扫描范围',plan.inputs)}${listField('对照基线',plan.baselines)}${listField('观察指标',plan.metrics)}${listField('支持判据',plan.support_criteria)}${listField('否定判据',plan.reject_criteria)}${listField('无法覆盖的边界',plan.limitations)}</dl></section>`;
@@ -141,12 +150,31 @@ function renderIssueDetail(issue){
 
 function renderAtlasContext(){setLeft(`<div class="context-title">证据图谱</div><p class="context-copy">图谱是辅助浏览工具。它只使用 Machine IDs、归档结构与显式关键词，不替代 Roadmap，也不根据 Reader 文案制造关联。</p>`);}
 
+function renderFeatures(route){
+  const plan=state.featurePlan;
+  const items=Array.isArray(plan?.items)?plan.items:[];
+  const selected=items.find(row=>row.feature_id===route.params.feature)||items[0];
+  const iterating=items.filter(row=>row.status==='iterating').length;
+  const planned=items.filter(row=>row.status==='planned').length;
+  $('#featureMeta').textContent=items.length?`更新于 ${plan.updated_at||'未标注'}`:'等待计划数据';
+  setLeft('<div class="context-title">迭代计划</div><p class="context-copy">公开当前正在迭代和计划支持的能力。状态用于同步方向，不代表固定交付日期。</p>');
+  $('#featureSummary').innerHTML=`<div><span class="status-pill">公开能力计划</span><h2>让下一步改进变得可见</h2><p>这里展示产品能力方向，不混入技术情报 Roadmap，也不把计划状态当作已经交付。</p></div><div class="feature-plan-counts"><span><b>${iterating}</b>迭代中</span><span><b>${planned}</b>计划支持</span></div>`;
+  $('#featureMain').innerHTML=items.length?items.map(row=>`<button class="feature-plan-card ${row===selected?'selected':''}" data-feature="${esc(row.feature_id)}"><span class="feature-status feature-status-${esc(row.status)}">${row.status==='iterating'?'迭代中':'计划支持'}</span><h2>${esc(row.title)}</h2><p>${esc(row.summary)}</p><div class="feature-tags">${(row.tags||[]).map(tag=>`<span>${esc(tag)}</span>`).join('')}</div></button>`).join(''):emptyBlock('尚未配置公开迭代计划');
+  $$('#featureMain [data-feature]').forEach(button=>button.addEventListener('click',()=>go('features',{feature:button.dataset.feature})));
+  if(selected)renderFeatureDetail(selected,plan);else setDetail('<div class="detail-placeholder"><span>WHAT\'S NEXT</span><h2>尚无计划条目</h2><p>计划数据加入后会在这里展示范围与完成标准。</p></div>');
+}
+
+function renderFeatureDetail(feature,plan){
+  setDetail(`<div class="detail-kicker">${feature.status==='iterating'?'ITERATING':'PLANNED SUPPORT'}</div><h2>${esc(feature.title)}</h2><p class="detail-lead">${esc(feature.summary)}</p><dl class="detail-fields"><dt>为什么支持</dt><dd>${esc(feature.rationale||'尚未补充')}</dd><dt>计划范围</dt><dd>${esc((feature.scope||[]).join('；')||'尚未补充')}</dd><dt>完成标准</dt><dd>${esc((feature.done_when||[]).join('；')||'尚未补充')}</dd></dl><p class="feature-plan-disclaimer">计划更新于 ${esc(plan.updated_at||'未标注')}。状态不代表固定发布日期，实际实现仍以公开版本为准。</p>`);
+}
+
 function renderWorkbenchView(route){
   if(route.name==='home')renderHome();
   else if(route.name==='roadmaps')renderRoadmaps(route);
   else if(route.name==='ideas')renderIdeas(route);
   else if(route.name==='archive')renderArchive(route);
   else if(route.name==='atlas')renderAtlasContext();
+  else if(route.name==='features')renderFeatures(route);
 }
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootWorkbench);else bootWorkbench();
