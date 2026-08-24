@@ -8,11 +8,19 @@
 - 根目录 `email.html` 与 `email-illustrated.html` 是稳定的公开 URL。
 - `publication-manifest.json` 记录输入、Reader Contract 和所有产物 hash。
 
-新 run 必须已有 hash 绑定且属于当前 run 的 Reader sidecar，并同时生成两份邮件：
+新 run 必须已有 hash 绑定且属于当前 run 的 Reader sidecar，并同时生成两份邮件。正常发送命令会在邮件传输成功后自动执行归档、提交 `archive/` 并推送 `main`，由现有 GitHub Pages workflow 部署：
 
 ```bash
-python3 scripts/archive_sent_issue.py archive --run 2026-08-20-094500
+python briefing.py send --confirm-send
 ```
+
+手工只归档（或重试已发送 run 的自动发布）仍可使用：
+
+```bash
+python briefing.py publish-archive --run 2026-08-20-094500
+```
+
+底层脚本 `scripts/archive_sent_issue.py archive` 仍保留用于离线调试。发送前和归档时会检查最终 issue 的全部条目；如果历史升级条目缺少当前 run sidecar，会从收件人实际看到的 `email.html` 补齐并重新绑定规范化 Machine Item hash，不会用原始中间文本覆盖已发送 HTML。
 
 历史迁移一次只准备一期，不重跑采集、事实抽取、选择或 Fact Check：
 

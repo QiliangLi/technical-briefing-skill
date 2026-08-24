@@ -70,11 +70,18 @@ python briefing.py render --execute
 python briefing.py validate
 # validate 即发布门：通过后 issue 进入 READY_TO_SEND，没有 review/approve 步骤
 python briefing.py send --confirm-send
+# send 成功后会自动生成归档、提交 archive/ 并推送 main，触发 GitHub Pages 部署
 ```
 
 `tasks next`只在能证明任务上下文兼容且Evidence总量不超预算时，把多个**独立**`fact_extraction`任务放到同一Agent会话连续处理。需要显式单任务执行时使用 `python briefing.py tasks next-single`。会话复用失败或不确定时应回退到单任务，而不是减少Evidence或放宽校验。
 
 默认使用本机已授权的 `agently-cli` 发送 HTML 邮件。第一次执行会请求发送确认令牌并停止；用户确认后，再次执行同一命令才会真正发送。若需要使用SMTP后端，设置 `EMAIL_BACKEND=smtp`。
+
+如果邮件已经发送但自动发布被网络或 Git 状态暂时阻断，可在修复原因后重试：
+
+```bash
+python briefing.py publish-archive --run <run_id>
+```
 
 ## 三层输出与成本控制
 

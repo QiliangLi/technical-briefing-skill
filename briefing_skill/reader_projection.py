@@ -23,6 +23,24 @@ MACHINE_FIELDS = (
 )
 READER_USED_FIELDS = frozenset(MACHINE_FIELDS)
 INTERNAL_TAXONOMY_TERMS = ("TPN卡", "芯片卡", "介质卡", "项目卡")
+# These fields are added while rebuilding the publishable issue. They describe
+# placement/rendering metadata, not the fact-checked machine item itself. A
+# reader sidecar may be generated before the issue wrapper exists, so including
+# them in the source hash makes otherwise valid sidecars look stale.
+ISSUE_WRAPPER_FIELDS = frozenset(
+    {
+        "brief_item_id",
+        "item_role",
+        "topic_id",
+        "direction_id",
+        "fact_check_status",
+        "anchor_id",
+        "visual_plan",
+        "illustration",
+        "brief_upgrade",
+        "brief_upgrade_origin",
+    }
+)
 SLOT_LABEL_RE = re.compile(r"(?:^|[。！？!?\n])\s*(?:机制|证据|边界|启发|项目相关性)\s*[：:]")
 FORMULAIC_TITLE_RE = re.compile(
     r"^[A-Za-z][A-Za-z0-9+._-]{1,24}(?:用|让|把|靠|按|以)[^：:]{4,}$"
@@ -39,7 +57,11 @@ def reader_item_path(root: Path, run_id: str, brief_item_id: str) -> Path:
 def machine_item_hash(item: dict[str, Any]) -> str:
     """Bind reader prose to the exact fact-checked machine item it paraphrases."""
 
-    payload = {key: value for key, value in item.items() if key != "_provenance"}
+    payload = {
+        key: value
+        for key, value in item.items()
+        if key != "_provenance" and key not in ISSUE_WRAPPER_FIELDS
+    }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return stable_hash("reader-source-v1", encoded, length=32)
 

@@ -140,10 +140,11 @@ def build_reader_from_run(root: Path, run_id: str, issue: dict[str, Any]) -> dic
 
     run_dir = root / "workspace" / "runs" / run_id
     sidecars: dict[str, dict[str, Any]] = {}
-    machine_hashes = {
-        machine_item_hash(read_json(path, {}))
-        for path in (run_dir / "items").glob("*.json")
-    }
+    # Expanded issues may promote historical, already fact-checked items into
+    # the current run. Their source JSON intentionally lives in the historical
+    # run, so binding must be checked against the final issue item's canonical
+    # hash rather than only against ``workspace/runs/<current>/items``.
+    machine_hashes = {machine_item_hash(item) for _, item in _items(issue)}
     for role, item in _items(issue):
         item_id = str(item.get("brief_item_id") or "")
         if not item_id:
@@ -153,6 +154,8 @@ def build_reader_from_run(root: Path, run_id: str, issue: dict[str, Any]) -> dic
         source_hash = str(provenance.get("source_item_hash") or "")
         if int(sidecar.get("reader_version") or 0) != CONTRACT_VERSION:
             raise ValueError(f"{item_id}: reader sidecar version is missing or stale")
+        if "brief_item_id" in sidecar and str(sidecar.get("brief_item_id") or "") != item_id:
+            raise ValueError(f"{item_id}: reader sidecar identity does not match its path")
         if str(provenance.get("run_id") or "") != run_id:
             raise ValueError(f"{item_id}: reader sidecar belongs to another run")
         expected_hash = machine_item_hash(item)

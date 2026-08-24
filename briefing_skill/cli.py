@@ -17,6 +17,8 @@ from .db import Database
 from .demo import complete_pending_demo_tasks
 from .emailer import AgentlyConfirmationRequired, EmailService, resolve_email_backend
 from .expanded import rebuild_expanded_issue
+from .archive_publish import ArchivePublishError, archive_and_publish_sent_run
+from .archive_reader_repair import ReaderSidecarRepairError, repair_reader_sidecars_from_sent_html
 from .paths import Paths, discover_root
 from .pipeline import Pipeline
 from .rendering import Renderer
@@ -255,8 +257,59 @@ def cmd_validate(args) -> int:
 def cmd_send(args) -> int:
     root, paths, config, db = _context(args)
     run_id = _resolve_run(db, args.run)
+    try:
+        # Validate/repair the final issue selection before the irreversible
+        # transport call. The subsequent archive step repeats this idempotently.
+        repair_reader_sidecars_from_sent_html(root, run_id)
+    except ReaderSidecarRepairError as exc:
+        raise RuntimeError(f"Refusing to send {run_id}: reader sidecar repair failed: {exc}") from exc
     sent_at = EmailService(root, config, db).send(run_id, confirm=args.confirm_send)
-    print(f"Sent at {sent_at}")
+    try:
+        publication = archive_and_publish_sent_run(root, run_id)
+    except ArchivePublishError as exc:
+        raise RuntimeError(
+            f"Email sent at {sent_at}, but automatic archive publication failed for {run_id}: {exc}. "
+            f"Retry with `python scripts/archive_sent_issue.py archive --run {run_id}` "
+            "after resolving the publication error."
+        ) from exc
+    print(
+        json.dumps(
+            {
+                "sent_at": sent_at,
+                "run_id": run_id,
+                "archive_date": publication.issue_date,
+                "pages_commit": publication.commit,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def cmd_publish_archive(args) -> int:
+    """Repair or retry publication for a run that was already sent."""
+
+    root, paths, config, db = _context(args)
+    run_id = _resolve_run(db, args.run)
+    issue = db.fetchone("SELECT status FROM issues WHERE run_id=?", (run_id,))
+    if not issue or issue.get("status") != "SENT":
+        raise RuntimeError(f"Only SENT runs can be published; {run_id} is not marked SENT")
+    try:
+        publication = archive_and_publish_sent_run(root, run_id)
+    except ArchivePublishError as exc:
+        raise RuntimeError(f"Automatic archive publication failed for {run_id}: {exc}") from exc
+    print(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "archive_date": publication.issue_date,
+                "pages_commit": publication.commit,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -280,6 +333,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("rebuild-existing"); p.add_argument("--run", required=True); p.add_argument("--confirm-rebuild", action="store_true"); p.set_defaults(func=cmd_rebuild_existing)
     p = sub.add_parser("validate"); p.add_argument("--run", default="latest"); p.set_defaults(func=cmd_validate)
     p = sub.add_parser("send"); p.add_argument("--run", default="latest"); p.add_argument("--confirm-send", action="store_true"); p.set_defaults(func=cmd_send)
+    p = sub.add_parser("publish-archive"); p.add_argument("--run", default="latest"); p.set_defaults(func=cmd_publish_archive)
     return parser
 
 
