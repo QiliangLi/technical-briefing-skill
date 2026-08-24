@@ -66,6 +66,14 @@ def machine_item_hash(item: dict[str, Any]) -> str:
     return stable_hash("reader-source-v1", encoded, length=32)
 
 
+def legacy_machine_item_hash(item: dict[str, Any]) -> str:
+    """Hash used by archives written before issue-wrapper fields were normalized."""
+
+    payload = {key: value for key, value in item.items() if key != "_provenance"}
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return stable_hash("reader-source-v1", encoded, length=32)
+
+
 def _reader_projection_payload(pipeline, selected: list[dict[str, Any]]) -> dict[str, Any]:
     """Build the current-run reader task from final fact-checked selected items.
 

@@ -11,7 +11,12 @@ from typing import Any
 from bs4 import BeautifulSoup, NavigableString, Tag
 from jsonschema import Draft202012Validator
 
-from .reader_projection import CONTRACT_VERSION, NUMBER_RE, machine_item_hash
+from .reader_projection import (
+    CONTRACT_VERSION,
+    NUMBER_RE,
+    legacy_machine_item_hash,
+    machine_item_hash,
+)
 from .utils import read_json, stable_hash, write_json
 
 
@@ -305,7 +310,12 @@ def validate_reader_document(
         if output.get("sources") != _sources(item):
             raise ValueError(f"{item_id}: sources changed")
         expected_hash = machine_item_hash(item)
-        if not require_current_sidecar and str(output.get("source_item_hash") or "") != expected_hash:
+        accepted_hashes = {expected_hash}
+        if not require_current_sidecar:
+            # Keep historical archives readable after the canonical hash was
+            # corrected to ignore generated issue-wrapper fields.
+            accepted_hashes.add(legacy_machine_item_hash(item))
+        if str(output.get("source_item_hash") or "") not in accepted_hashes:
             raise ValueError(f"{item_id}: source_item_hash changed")
         prose = {
             key: output.get(key)
