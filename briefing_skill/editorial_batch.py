@@ -85,8 +85,23 @@ def plan_item_writing_entries(pipeline) -> list[dict[str, Any]]:
         EventClusterer(pipeline.db).cluster_run(pipeline.run_id),
     )
     floor = _editorial_score_floor(pipeline.config)
+    upgrade_floor = float(
+        (pipeline.config.settings.get("efficiency") or {}).get(
+            "topic_floor_upgrade_min_score",
+            (pipeline.config.settings.get("efficiency") or {}).get(
+                "topic_appendix_min_relevance_score", 45
+            ),
+        )
+    )
     entries: list[dict[str, Any]] = []
     for cluster in clusters:
+        # Incremental runs (topic-floor upgrades) re-run this planner after earlier
+        # batches were applied; clusters that already own a Machine Item are done.
+        if pipeline.db.fetchone(
+            "SELECT 1 FROM brief_items WHERE run_id=? AND event_id=? LIMIT 1",
+            (pipeline.run_id, cluster["event_id"]),
+        ):
+            continue
         members = cluster["members"]
         facts = [read_json(pipeline.root / member["json_path"]) for member in members]
         candidates = [
@@ -116,7 +131,12 @@ def plan_item_writing_entries(pipeline) -> list[dict[str, Any]]:
 
         score = pipeline.scorer.event_score(facts, candidates, raws)
         pipeline.db.execute("UPDATE events SET score=? WHERE id=?", (score, cluster["event_id"]))
-        if float(score) < floor:
+        # Topic-floor upgrades publish at the appendix admission bar, not the
+        # observation bar; the marker is deep_eligible=2 on their candidates.
+        is_floor_upgrade = any(
+            row and int(row.get("deep_eligible") or 0) == 2 for row in candidates
+        )
+        if float(score) < (upgrade_floor if is_floor_upgrade else floor):
             _annotate_event(
                 pipeline.db,
                 str(cluster["event_id"]),
@@ -217,8 +237,15 @@ def install_editorial_batching() -> None:
             (self.run_id,),
         ):
             return original_prepare_items(self)
+        # Applied batches must not block incremental batches for late-materialized
+        # topic-floor upgrades; only unfinished batches still own the stage.
         if self.db.fetchone(
-            "SELECT 1 FROM tasks WHERE run_id=? AND task_type='item_writing_batch' LIMIT 1",
+            """
+            SELECT 1 FROM tasks
+            WHERE run_id=? AND task_type='item_writing_batch'
+              AND status IN ('PENDING','INVALID','COMPLETED')
+            LIMIT 1
+            """,
             (self.run_id,),
         ):
             return

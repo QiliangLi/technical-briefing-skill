@@ -82,6 +82,14 @@ def select_expanded_rows(
             expanded_config.get("topic_floor_allow_revisit", True),
         )
     )
+    policy = dict(config.settings.get("efficiency") or {})
+    # Materialized topic-floor upgrades publish at the appendix admission bar.
+    upgrade_min_score = float(
+        policy.get(
+            "topic_floor_upgrade_min_score",
+            policy.get("topic_appendix_min_relevance_score", 45),
+        )
+    )
     eligible: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     brief_upgrade_pool: dict[str, list[dict[str, Any]]] = {}
@@ -131,9 +139,11 @@ def select_expanded_rows(
             source.get("source_level") == "A" and source_url_is_resolved(source.get("url"))
             for source in item.get("sources", [])
         )
-        if age <= age_limits["core"] and score >= limits["core_score"] and has_resolved_a:
+        is_floor_upgrade = bool(row.get("floor_upgrade"))
+        min_observation = upgrade_min_score if is_floor_upgrade else limits["observation_score"]
+        if not is_floor_upgrade and age <= age_limits["core"] and score >= limits["core_score"] and has_resolved_a:
             role = "core"
-        elif age <= age_limits["adjacent"] and score >= limits["observation_score"] and has_resolved_a:
+        elif age <= age_limits["adjacent"] and score >= min_observation and has_resolved_a:
             role = "observation"
         else:
             reason = "no resolved A-level source" if not has_resolved_a else "below expanded-v2 evidence threshold"
@@ -188,6 +198,13 @@ def select_expanded_rows(
                 break
             observation_count += 1
             topic_counts[topic_id] = topic_counts.get(topic_id, 0) + 1
+            if row.get("brief_upgrade"):
+                # Historical brief-only Machine Item filling this topic's floor.
+                row["brief_upgrade_origin"] = "historical"
+            elif not row.get("last_pushed_at"):
+                # Current-issue brief materialized into a detailed card.
+                row["brief_upgrade"] = True
+                row["brief_upgrade_origin"] = "current"
             selected.append(row)
         for row in fill[max(0, shortfall):]:
             reason = "brief upgrade capacity" if row.get("brief_upgrade") else "expanded-v2 capacity"
@@ -317,7 +334,7 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
     rows = db.fetchall(
         """
         SELECT bi.id, bi.run_id AS source_run_id, bi.score, bi.json_path, bi.fact_check_status,
-               e.topic_id, e.direction_id, e.event_key,
+               bi.event_id, e.topic_id, e.direction_id, e.event_key,
                COALESCE(
                  e.last_pushed_at,
                  (SELECT MAX(e2.last_pushed_at) FROM events e2
@@ -337,10 +354,12 @@ def plan_expanded_issue(root: Path, config: ConfigBundle, db: Database, run_id: 
         """,
         (issue["id"], run_id),
     )
+    from .issue_stage import _mark_floor_upgrades
     from .publication_history import annotate_rows_with_publication_roles
 
     rows = annotate_rows_with_publication_roles(root, db, rows)
     rows.extend(collect_historical_brief_rows(root, config, db, run_id, rows))
+    _mark_floor_upgrades(db, run_id, rows)
     selected, excluded, counts, limits = select_expanded_rows(
         root,
         config,

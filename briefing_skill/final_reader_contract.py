@@ -409,7 +409,11 @@ def _core_selection_errors(service, run_id: str, data: dict[str, Any]) -> list[s
             """,
             (run_id, topic_id, *urls, *urls),
         )
-        if not row or int(row.get("deep_eligible") or 0) != 1 or int(row.get("fulltext_required") or 0) != 1:
+        if (
+            not row
+            or int(row.get("deep_eligible") or 0) < 1
+            or int(row.get("fulltext_required") or 0) != 1
+        ):
             errors.append(f"{topic_id}: final detailed item is not backed by a Deep-eligible candidate: {item.get('title')}")
     return errors
 

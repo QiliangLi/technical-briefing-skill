@@ -39,6 +39,16 @@ def _number(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _github_project_key(url: Any) -> str:
+    """Stable same-project key for GitHub-hosted sources; empty for everything else."""
+
+    host = (urlparse(str(url or "")).hostname or "").lower()
+    if host not in {"github.com", "www.github.com"}:
+        return ""
+    parts = [part.lower() for part in urlparse(str(url or "")).path.split("/") if part]
+    return f"github:{parts[0]}/{parts[1]}" if len(parts) >= 2 else ""
+
+
 def plan_relevance_rows(rows: Iterable[dict[str, Any]], settings: dict[str, Any]) -> RelevancePlan:
     policy = _policy(settings)
     accept_at = _number(policy.get("auto_accept_rule_score"), 85)
@@ -250,6 +260,141 @@ def install_pipeline_optimizations() -> None:
             """, (int(relevant), result.get("score"), result.get("reason"), int(deep),
                     "RELEVANT" if deep else ("RADAR" if relevant else "REJECTED"), candidate_id))
 
+    def _materialize_topic_floor(self) -> list[dict[str, Any]]:
+        """Promote current-issue briefs into fact extraction when a deep topic is below target.
+
+        The upgrade path is deliberately topic-local: a deep topic that ended up with
+        fewer detailed candidates than ``expanded_v2.topic_target`` may materialize its
+        own relevant A-level briefs (appendix/RADAR rows) into fact tasks, ordered by
+        relevance value. This changes only the publication role; the promoted items
+        still pass the normal Evidence Pack, Machine Item, Evidence Gate and selective
+        Fact Check pipeline before they can appear as detailed cards.
+        """
+
+        expanded = self.config.scoring.get("expanded_v2", {}) or {}
+        if not expanded.get("topic_floor_allow_brief_upgrade", True):
+            return []
+        policy = _policy(self.config.settings)
+        deep_topics = [str(t) for t in policy.get("deep_topics") or []]
+        if not deep_topics:
+            return []
+        topic_target = max(1, int(expanded.get("topic_target", 4)))
+        # Briefs that already qualified for the topic appendix are the upgrade pool;
+        # the appendix admission score (not the observation score) is their floor.
+        min_score = float(
+            policy.get(
+                "topic_floor_upgrade_min_score",
+                policy.get("topic_appendix_min_relevance_score", 45),
+            )
+        )
+        total_budget = max(1, int(policy.get("max_fact_candidates_total", 10)))
+        per_project = max(1, int(policy.get("max_fact_candidates_per_project", 1) or 1))
+
+        facted = self.db.fetchall(
+            """
+            SELECT c.id, c.topic_id, c.direction_id, r.original_url, r.identity_key
+            FROM tasks t JOIN candidates c ON c.id=t.entity_id
+            JOIN raw_items r ON r.id=c.raw_item_id
+            WHERE t.run_id=? AND t.task_type='fact_extraction' AND c.run_id=?
+            """,
+            (self.run_id, self.run_id),
+        )
+        from .publication_history import published_identity_roles
+
+        facted_roles = published_identity_roles(
+            self.root,
+            self.db,
+            (str(row.get("identity_key") or "") for row in facted),
+        )
+        # Candidates whose identity was already published in any public role can
+        # never be selected, so they must not consume a topic's floor budget.
+        facted = [
+            row
+            for row in facted
+            if not facted_roles.get(str(row.get("identity_key") or ""), set())
+        ]
+        committed_topics: dict[str, int] = {}
+        committed_projects: dict[tuple[str, str], int] = {}
+        for row in facted:
+            topic_id = str(row["topic_id"])
+            committed_topics[topic_id] = committed_topics.get(topic_id, 0) + 1
+            project = _github_project_key(row.get("original_url"))
+            if project:
+                committed_projects[(topic_id, project)] = committed_projects.get((topic_id, project), 0) + 1
+        if len(facted) >= total_budget:
+            return []
+
+        shortfall_topics = {
+            topic_id: topic_target - committed_topics.get(topic_id, 0)
+            for topic_id in deep_topics
+            if topic_target - committed_topics.get(topic_id, 0) > 0
+        }
+        if not shortfall_topics:
+            return []
+
+        placeholders = ",".join("?" for _ in shortfall_topics)
+        pool = self.db.fetchall(
+            f"""
+            SELECT c.*,r.title,r.summary,r.original_url,r.aihot_url,r.published_at,
+                   r.discovery_source,r.source_level,r.discovery_only,r.payload_json,r.priority
+                   ,r.identity_key
+            FROM candidates c JOIN raw_items r ON r.id=c.raw_item_id
+            WHERE c.run_id=? AND c.relevant=1 AND c.status IN ('RADAR','DEFERRED_BUDGET')
+              AND c.relevance_score >= ? AND r.source_level='A' AND r.discovery_only=0
+              AND c.topic_id IN ({placeholders})
+              AND NOT EXISTS (
+                SELECT 1 FROM tasks t WHERE t.run_id=? AND t.task_type='fact_extraction' AND t.entity_id=c.id
+              )
+            ORDER BY c.relevance_score DESC, c.rule_score DESC, r.priority DESC, c.id
+            """,
+            (self.run_id, min_score, *shortfall_topics.keys(), self.run_id),
+        )
+        if not pool:
+            return []
+
+        from .publication_history import published_identity_roles
+
+        pool_roles = published_identity_roles(
+            self.root,
+            self.db,
+            (str(row.get("identity_key") or "") for row in pool),
+        )
+
+        promoted: list[dict[str, Any]] = []
+        remaining_budget = total_budget - len(facted)
+        for row in pool:
+            topic_id = str(row["topic_id"])
+            if shortfall_topics.get(topic_id, 0) <= 0 or remaining_budget <= 0:
+                continue
+            payload = {}
+            try:
+                payload = json.loads(row.get("payload_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                pass
+            history = pool_roles.get(str(row.get("identity_key") or ""), set())
+            if history and not payload.get("incremental_update"):
+                # Already shown to recipients in any public role (radar, appendix or
+                # detailed); cross-period dedup forbids re-publishing it as detailed.
+                continue
+            project = _github_project_key(row.get("original_url"))
+            if project and committed_projects.get((topic_id, project), 0) >= per_project:
+                continue
+            promoted.append(row)
+            # The upgrade changes the publication role: from here on the candidate
+            # is Deep-eligible so final provenance checks see a consistent record.
+            # deep_eligible=2 is the dedicated topic-floor-upgrade marker: downstream
+            # floors treat these items with the appendix admission bar instead of the
+            # observation bar, and final provenance accepts any deep_eligible >= 1.
+            self.db.execute(
+                "UPDATE candidates SET fulltext_required=1, deep_eligible=2 WHERE id=?",
+                (row["id"],),
+            )
+            shortfall_topics[topic_id] -= 1
+            remaining_budget -= 1
+            if project:
+                committed_projects[(topic_id, project)] = committed_projects.get((topic_id, project), 0) + 1
+        return promoted
+
     def maybe_prepare_facts(self) -> None:
         unfinished = self.db.fetchone("""
             SELECT COUNT(*) AS n FROM tasks WHERE run_id=? AND task_type IN ('relevance_review','relevance_batch')
@@ -292,6 +437,8 @@ def install_pipeline_optimizations() -> None:
         selected, deferred = select_deep_budget(rows, self.config.settings)
         for row in deferred:
             self.db.execute("UPDATE candidates SET status='DEFERRED_BUDGET' WHERE id=?", (row["id"],))
+        floor_selected = self._materialize_topic_floor()
+        selected = [*selected, *floor_selected]
         if not selected:
             return
         fulltext = FulltextService(self.config, self.db, self.run_dir)
@@ -390,6 +537,7 @@ def install_pipeline_optimizations() -> None:
     Pipeline.prepare_relevance = prepare_relevance
     Pipeline._apply_task = apply_task
     Pipeline._maybe_prepare_facts = maybe_prepare_facts
+    Pipeline._materialize_topic_floor = _materialize_topic_floor
     Pipeline._efficiency_policy_installed = True
     emailer_module.EmailService._aihot_groups = radar_groups
     demo_module._demo_output = demo_output

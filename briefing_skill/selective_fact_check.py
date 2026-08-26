@@ -8,15 +8,25 @@ from .utils import read_json, stable_hash, write_json
 
 def _write_gate_report(pipeline, rows: list[dict[str, Any]]) -> None:
     path = pipeline.root / "workspace" / "runs" / pipeline.run_id / "evidence_gate.json"
+    existing_rows: list[dict[str, Any]] = []
+    if path.is_file():
+        try:
+            existing_rows = list(read_json(path, {}).get("items") or [])
+        except (OSError, ValueError):
+            existing_rows = []
+    merged = {str(row.get("brief_item_id")): row for row in existing_rows}
+    for row in rows:
+        merged[str(row.get("brief_item_id"))] = row
+    items = sorted(merged.values(), key=lambda row: str(row.get("brief_item_id")))
     write_json(
         path,
         {
             "run_id": pipeline.run_id,
             "gate_version": 1,
-            "items": rows,
+            "items": items,
             "summary": {
-                "pass": sum(1 for row in rows if row["decision"] == "PASS"),
-                "review": sum(1 for row in rows if row["decision"] == "REVIEW"),
+                "pass": sum(1 for row in items if row["decision"] == "PASS"),
+                "review": sum(1 for row in items if row["decision"] == "REVIEW"),
             },
         },
     )
@@ -40,11 +50,27 @@ def install_selective_fact_check() -> None:
             (self.run_id,),
         ):
             return original_prepare_checks(self)
-        if self.db.fetchone(
+        batched_run = self.db.fetchone(
+            "SELECT 1 FROM tasks WHERE run_id=? AND task_type='item_writing_batch' LIMIT 1",
+            (self.run_id,),
+        )
+        if not batched_run and self.db.fetchone(
             "SELECT 1 FROM tasks WHERE run_id=? AND task_type IN ('fact_check','fact_check_batch') LIMIT 1",
             (self.run_id,),
         ):
             return original_prepare_checks(self)
+        # Batched runs may gain fact-checked items after earlier gate batches were
+        # applied (topic-floor upgrades); only unfinished batches still own the stage.
+        if self.db.fetchone(
+            """
+            SELECT 1 FROM tasks
+            WHERE run_id=? AND task_type IN ('fact_check','fact_check_batch')
+              AND status IN ('PENDING','INVALID','COMPLETED')
+            LIMIT 1
+            """,
+            (self.run_id,),
+        ):
+            return
 
         writing_unfinished = self.db.fetchone(
             """

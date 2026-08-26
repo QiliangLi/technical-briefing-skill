@@ -533,9 +533,17 @@ class Pipeline:
         )
         report_date = self._report_date()
         if mode == "expanded_v2":
+            from .expanded import collect_historical_brief_rows
             from .publication_history import annotate_rows_with_publication_roles
 
+            # Topic floors may also be filled by fact-checked historical brief-only
+            # Machine Items; the rebuild path already does this, so the normal issue
+            # assembly must use the same pool.
+            rows.extend(collect_historical_brief_rows(self.root, self.config, self.db, self.run_id, rows))
             rows = annotate_rows_with_publication_roles(self.root, self.db, rows)
+            from .issue_stage import _mark_floor_upgrades
+
+            _mark_floor_upgrades(self.db, self.run_id, rows)
             selected, _, _, _ = select_expanded_rows(
                 self.root,
                 self.config,

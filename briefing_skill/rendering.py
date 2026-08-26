@@ -313,11 +313,29 @@ const fs = require('fs');
                         report["failures"].append(f"Core item lacks an A-level source: {item.get('title')}")
                     if item.get("fact_check_status") != "PASS":
                         report["failures"].append(f"Core item did not pass fact checking: {item.get('title')}")
+                from .issue_stage import _floor_upgrade_event_ids
+
+                upgrade_events = _floor_upgrade_event_ids(self.db, run_id)
                 for item in observations:
                     if item.get("item_role") != "observation":
                         report["failures"].append(f"Observation is not explicitly labelled: {item.get('title')}")
                     score = float(item.get("score") or 0)
-                    if score < float(limits["observation_score"]):
+                    # Topic-floor upgrades publish at the appendix admission bar,
+                    # which is intentionally lower than the observation bar.
+                    item_event = str(
+                        item.get("event_id")
+                        or (item.get("_provenance") or {}).get("event_id")
+                        or ""
+                    )
+                    threshold = (
+                        float(self.config.settings.get("efficiency", {}).get(
+                            "topic_floor_upgrade_min_score",
+                            self.config.settings.get("efficiency", {}).get("topic_appendix_min_relevance_score", 45),
+                        ))
+                        if item_event in upgrade_events
+                        else float(limits["observation_score"])
+                    )
+                    if score < threshold:
                         report["failures"].append(f"Observation score is below the configured threshold: {item.get('title')}")
                     if item.get("fact_check_status") != "PASS":
                         report["failures"].append(f"Observation did not pass fact checking: {item.get('title')}")

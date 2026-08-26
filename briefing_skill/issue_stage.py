@@ -22,6 +22,35 @@ def _has_legacy_visual_work(pipeline) -> bool:
     )
 
 
+def _floor_upgrade_event_ids(db, run_id: str) -> set[str]:
+    """Events that were materialized by the topic-floor upgrade path."""
+
+    try:
+        return {
+            str(row["event_id"])
+            for row in db.fetchall(
+                """
+                SELECT DISTINCT em.event_id
+                FROM event_members em
+                JOIN candidates c ON c.id=em.candidate_id
+                WHERE em.run_id=? AND c.run_id=? AND c.deep_eligible=2
+                """,
+                (run_id, run_id),
+            )
+        }
+    except Exception:
+        # Older schemas without the deep_eligible marker simply have no upgrades.
+        return set()
+
+
+def _mark_floor_upgrades(db, run_id: str, rows: list[dict]) -> None:
+    """Flag rows whose event was materialized by the topic-floor upgrade path."""
+
+    upgraded = _floor_upgrade_event_ids(db, run_id)
+    for row in rows:
+        row["floor_upgrade"] = str(row.get("event_id") or "") in upgraded
+
+
 def _selected_issue_rows(pipeline) -> list[dict]:
     rows = pipeline.db.fetchall(
         """
@@ -44,9 +73,16 @@ def _selected_issue_rows(pipeline) -> list[dict]:
     )
     mode = pipeline.config.settings.get("issue_mode", "compact")
     if mode == "expanded_v2":
+        from .expanded import collect_historical_brief_rows
         from .publication_history import annotate_rows_with_publication_roles
 
+        # Reader projection, synthesis and the issue row itself must share one
+        # selection pool, including fact-checked historical brief upgrades.
+        rows.extend(
+            collect_historical_brief_rows(pipeline.root, pipeline.config, pipeline.db, pipeline.run_id, rows)
+        )
         rows = annotate_rows_with_publication_roles(pipeline.root, pipeline.db, rows)
+        _mark_floor_upgrades(pipeline.db, pipeline.run_id, rows)
         selected, _, _, _ = select_expanded_rows(
             pipeline.root,
             pipeline.config,
@@ -205,6 +241,7 @@ def install_issue_stage() -> None:
         from .publication_history import annotate_rows_with_publication_roles
 
         item_rows = annotate_rows_with_publication_roles(self.root, self.db, item_rows)
+        upgrade_events = _floor_upgrade_event_ids(self.db, self.run_id)
         issue_data = {
             "id": issue["id"],
             "run_id": self.run_id,
@@ -230,19 +267,15 @@ def install_issue_stage() -> None:
                 "fact_check_status": row.get("fact_check_status"),
                 "anchor_id": f"item-{row['id']}",
             }
-            # Only a source that was previously brief and never detailed is a
-            # legitimate cross-period upgrade.
-            if (
-                item_role != "core"
-                and row.get("last_pushed_at")
-                and not item.get("incremental_update")
-                and row.get("previously_brief")
-                and not row.get("previously_detailed")
-            ):
-                rebuilt["brief_upgrade"] = True
-                rebuilt["brief_upgrade_origin"] = (
-                    "historical" if str(row.get("run_id") or "") != self.run_id else "current"
-                )
+            # Topic-floor upgrades carry their origin: a current-issue brief that
+            # was materialized this run, or a brief first shown in an earlier issue.
+            if item_role != "core":
+                if str(row.get("event_id") or "") in upgrade_events:
+                    rebuilt["brief_upgrade"] = True
+                    rebuilt["brief_upgrade_origin"] = "current"
+                elif str(row.get("run_id") or self.run_id) != self.run_id or row.get("last_pushed_at"):
+                    rebuilt["brief_upgrade"] = True
+                    rebuilt["brief_upgrade_origin"] = "historical"
             issue_data["items"].append(rebuilt)
             issue_data["core_items" if item_role == "core" else "observations"].append(rebuilt)
 
