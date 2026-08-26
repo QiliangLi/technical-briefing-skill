@@ -34,8 +34,11 @@ def _attach_appendix_and_source_titles(service, groups: list[dict[str, Any]]) ->
     for group in groups:
         group.setdefault("appendix", [])
         group.setdefault("appendix_count", len(group["appendix"]))
-        for item in group.get("items") or []:
-            item["source_title"] = _source_title(service, item)
+        # The 论文/来源 line is reader provenance: floor-upgraded observations
+        # need it exactly like native detailed cards.
+        for item in [*(group.get("items") or []), *(group.get("observations") or [])]:
+            if item.get("source_title") is None:
+                item["source_title"] = _source_title(service, item)
 
     order = {
         str(topic.get("id") or ""): index
