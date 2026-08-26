@@ -118,6 +118,42 @@ def publication_illustration_input(original_input, pipeline, issue: dict[str, An
     return payload
 
 
+def _write_plain_fallback_body(service, run_id: str, issue: dict[str, Any]) -> str:
+    """Materialize the plain-text body used when the gateway rejects rich HTML.
+
+    The full illustrated briefing always ships as the HTML attachment; this
+    body only has to survive content filtering and point the reader to the
+    attachment and the public Pages mirror.
+    """
+
+    from .utils import read_json as _read_json
+
+    issue_row = service.db.fetchone("SELECT * FROM issues WHERE run_id=?", (run_id,))
+    synthesis = {}
+    if issue_row and issue_row.get("synthesis_path"):
+        synthesis = _read_json(service.root / issue_row["synthesis_path"], {})
+    judgements = synthesis.get("judgements") or []
+    lines = [
+        str(issue.get("subject") or "AI语义Fabric技术情报（公测版）"),
+        "",
+        "本期判断：",
+    ]
+    for index, judgement in enumerate(judgements, 1):
+        lines.append(f"{index:02d} {judgement.get('title') or ''}".rstrip())
+    topic_names = synthesis.get("topic_names") or []
+    if topic_names:
+        lines.append("")
+        lines.append("覆盖专题：" + "、".join(str(name) for name in topic_names))
+    lines += [
+        "",
+        "完整图文版（含解释图、专题补充与全部原文链接）见本邮件附件 email-illustrated.html，用浏览器打开即可。",
+        "在线版：https://qiliangli.github.io/technical-briefing-skill/",
+    ]
+    path = service.root / "workspace" / "runs" / run_id / "email-plain-body.txt"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path.relative_to(service.root.resolve()).as_posix()
+
+
 def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
     """Send the exact final HTML as both body and attachment through agently-cli."""
 
@@ -145,20 +181,29 @@ def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
     subject = issue.get("subject") or "AI语义Fabric技术情报（公测版）"
     body_rel = body_path.relative_to(service.root.resolve()).as_posix()
     body_bytes = body_path.read_bytes()
+    pending_path = service.root / "workspace" / "runs" / run_id / "agently-send-pending.json"
+    pending = read_json(pending_path, {}) if pending_path.exists() else {}
+    # Sticky degradation: once the gateway's security filter has rejected the
+    # rich HTML body, later attempts go straight to the plain-text-body +
+    # HTML-attachment form the gateway itself recommends.
+    fallback = bool(pending.get("body_fallback"))
+    plain_rel = _write_plain_fallback_body(service, run_id, issue) if fallback else ""
+    if fallback and not plain_rel:
+        fallback = False
     request_key = stable_hash(
         subject,
         config.recipients,
         config.cc,
         config.bcc,
         body_bytes,
-        "attach-html-v1",
+        "attach-html-v1" if not fallback else "attach-html-fallback-v1",
     )
-    pending_path = service.root / "workspace" / "runs" / run_id / "agently-send-pending.json"
-    pending = read_json(pending_path, {}) if pending_path.exists() else {}
     token = str(pending.get("confirmation_token") or "")
     if token and pending.get("request_key") != request_key:
         pending_path.unlink(missing_ok=True)
         token = ""
+        fallback = False
+        plain_rel = ""
 
     args = [config.executable, "message", "+send", "--subject", str(subject)]
     for recipient in config.recipients:
@@ -167,7 +212,11 @@ def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
         args.extend(["--cc", recipient])
     for recipient in config.bcc:
         args.extend(["--bcc", recipient])
-    args.extend(["--body-file", body_rel, "--attachment", body_rel])
+    if fallback and plain_rel:
+        args.extend(["--body-file", plain_rel, "--body-format", "plain"])
+    else:
+        args.extend(["--body-file", body_rel])
+    args.extend(["--attachment", body_rel])
     if token:
         args.extend(["--confirmation-token", token])
 
@@ -187,6 +236,7 @@ def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
                     "confirmation_token": str(candidate),
                     "request_key": request_key,
                     "summary": summary,
+                    "body_fallback": fallback,
                     "created_at": now_iso(),
                 },
             )
@@ -195,6 +245,25 @@ def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
             except OSError:
                 pass
             raise AgentlyConfirmationRequired(summary) from exc
+        if "security filtering" in str(getattr(exc, "stderr", "") or "") + str(exc):
+            # The gateway rejected the rich HTML body itself. Persist the
+            # degradation marker so the next attempt sends the same content
+            # with a plain-text body and the full HTML attached, exactly the
+            # remedy the gateway error message recommends.
+            write_json(
+                pending_path,
+                {
+                    "request_key": request_key,
+                    "body_fallback": True,
+                    "summary": pending.get("summary")
+                    or {"subject": subject, "to": list(config.recipients)},
+                    "created_at": now_iso(),
+                },
+            )
+            raise RuntimeError(
+                "agently 网关以安全过滤拒绝了 HTML 正文；已记录降级标记，"
+                "请重跑 `python briefing.py send --confirm-send` 以纯文本正文+HTML附件重发"
+            ) from exc
         raise
 
     if service._payload_value(payload, "confirmation_required", "confirmationRequired"):
@@ -207,6 +276,7 @@ def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
                     "confirmation_token": str(candidate),
                     "request_key": request_key,
                     "summary": summary,
+                    "body_fallback": fallback,
                     "created_at": now_iso(),
                 },
             )
