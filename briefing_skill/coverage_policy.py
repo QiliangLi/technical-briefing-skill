@@ -428,7 +428,9 @@ def collect_topic_appendix(service, run_id: str, issue_data: dict[str, Any]) -> 
             payload = json.loads(row.get("payload_json") or "{}")
         except json.JSONDecodeError:
             pass
-        source_name = str(payload.get("publisher") or row.get("discovery_source") or "原始来源")
+        from .radar_direct import public_source_name
+
+        source_name = str(payload.get("publisher") or public_source_name(url) or "原始来源")
         summary = _clean_summary(row.get("relevance_reason") or row.get("summary") or "")
         result[topic_id].append(
             {
@@ -493,7 +495,7 @@ def collect_topic_appendix(service, run_id: str, issue_data: dict[str, Any]) -> 
                     "url": url,
                     "source_name": str(
                         payload.get("publisher")
-                        or row.get("discovery_source")
+                        or public_source_name(url)
                         or "原始来源"
                     ),
                     "published_at": str(row.get("published_at") or "")[:10],

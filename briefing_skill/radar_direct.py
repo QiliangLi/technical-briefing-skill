@@ -562,6 +562,128 @@ def _identity(candidate: dict[str, Any]) -> str:
     return f"title:{candidate.get('normalized_title') or ''}"
 
 
+_SAME_EVENT_STOP_TOKENS = frozenset({
+    "and", "or", "the", "with", "for", "from", "new", "into", "via", "its", "their",
+    "introduces", "introducing", "unveils", "unveiling", "launches", "launching",
+    "announces", "announcing", "announced", "releases", "released", "official",
+    "blog", "news", "press", "big", "leap", "more", "most", "first", "ai",
+    "performance", "compute",
+    "全新", "推出", "发布", "搭载", "性能", "算力", "大幅", "跃升", "提升",
+})
+
+# Consumer-availability signatures: same-launch posts that mainly announce
+# pre-order/ship dates are product news; the technical change post wins.
+_AVAILABILITY_MARKERS = (
+    "预购", "开售", "发售", "即日起", "购买", "售价", "起售",
+    "pre-order", "preorder", "pre order", "available today", "on sale",
+    "goes on sale", "ships today", "order today",
+)
+
+
+def _has_availability_marker(candidate: dict[str, Any]) -> bool:
+    text = f" {candidate.get('title') or ''} {candidate.get('summary') or ''} ".lower()
+    return any(marker in text for marker in _AVAILABILITY_MARKERS)
+
+
+def _identifier_tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9][a-z0-9\-]+", str(text or "").lower())
+        if len(token) >= 2 and token not in _SAME_EVENT_STOP_TOKENS and not token.isdigit()
+    }
+
+
+def _same_event_tokens(candidate: dict[str, Any]) -> set[str]:
+    """Distinctive identifiers come from the title and the URL path slug only.
+
+    Scheme, host and TLD fragments (https, www, com, ...) are shared by every
+    item of a publisher and must never count as event identifiers.
+    """
+
+    path = urlparse(str(candidate.get("url") or "")).path
+    return _identifier_tokens(f"{candidate.get('title') or ''} {path}")
+
+
+def _registrable_domain(url: str) -> str:
+    host = (urlparse(str(url or "")).hostname or "").lower().removeprefix("www.")
+    parts = host.split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+
+
+def _technical_scope_score(candidate: dict[str, Any]) -> int:
+    text = f" {candidate.get('title') or ''} {candidate.get('summary') or ''} ".lower()
+    return sum(1 for term in SCOPE_ALLOWED_TERMS if term in text)
+
+
+def _drop_same_event_duplicates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse same-launch announce posts: one publisher, one day, shared identifiers.
+
+    The upstream hot-list ranks launch-day posts from the same vendor as separate
+    stories (for example a product-availability post next to the chip-architecture
+    post). Same publisher domain plus same publication date plus at least two shared
+    distinctive identifier tokens (model names, product lines) is treated as one
+    story, matching the "one card per story" publication rule. GitHub candidates are
+    exempt because project-level dedup already applies. The surviving card prefers
+    the one without consumer-availability markers, then the strongest technical
+    scope vocabulary, then the higher priority.
+    """
+
+    parents = list(range(len(candidates)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        parents[find(left)] = find(right)
+
+    prepared: list[dict[str, Any] | None] = []
+    for candidate in candidates:
+        if candidate.get("github_project"):
+            prepared.append(None)
+            continue
+        tokens = _same_event_tokens(candidate)
+        prepared.append(
+            {
+                "domain": _registrable_domain(candidate.get("canonical_url") or candidate.get("url") or ""),
+                "date": str(candidate.get("published_at") or "")[:10],
+                "tokens": tokens,
+            }
+        )
+    for i in range(len(candidates)):
+        left = prepared[i]
+        if not left or not left["domain"] or not left["date"]:
+            continue
+        for j in range(i + 1, len(candidates)):
+            right = prepared[j]
+            if not right or left["domain"] != right["domain"] or left["date"] != right["date"]:
+                continue
+            domain_token = left["domain"].split(".")[0]
+            shared = {token for token in left["tokens"] & right["tokens"] if token != domain_token}
+            if len(shared) >= 2:
+                union(i, j)
+    groups: dict[int, list[int]] = {}
+    for index in range(len(candidates)):
+        groups.setdefault(find(index), []).append(index)
+    dropped: set[int] = set()
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        members.sort(
+            key=lambda idx: (
+                1 if _has_availability_marker(candidates[idx]) else 0,
+                -_technical_scope_score(candidates[idx]),
+                -float(candidates[idx].get("internal_priority") or 0),
+                str(candidates[idx].get("canonical_url") or ""),
+            )
+        )
+        for index in members[1:]:
+            dropped.add(index)
+    return [candidate for index, candidate in enumerate(candidates) if index not in dropped]
+
+
 def select_radar_items(
     candidates: list[dict[str, Any]],
     *,
@@ -1064,6 +1186,7 @@ def direct_copy_groups(service, issue_id: str | None, issue_data: dict[str, Any]
         if candidate["canonical_url"] not in forbidden
         and not (candidate.get("github_project") and candidate["github_project"] in forbidden_projects)
     ]
+    pool = _drop_same_event_duplicates(pool)
 
     selected = select_radar_items(
         pool,
