@@ -162,3 +162,50 @@ def test_report_date_is_run_anchored_in_configured_timezone(tmp_path):
         ("2026-08-21T15:57:00.000000+00:00", run_id),  # Shanghai 23:57 on 08-21
     )
     assert pipeline._report_date() == "2026-08-21"
+
+
+def test_reader_projection_waits_for_pending_upstream_tasks(tmp_path: Path) -> None:
+    from briefing_skill.reader_projection import install_reader_projection
+
+    install_reader_projection()
+
+    db = _seed_fact_run(tmp_path, source_level="A", url="https://arxiv.org/abs/2608.00001v1", primary_resolved=True)
+    run_dir = tmp_path / "workspace" / "runs" / "run-1"
+    # A brief item exists, but a second fact extraction is still in flight:
+    # exactly the state a manual rewind produces.
+    from briefing_skill.dedup import EventClusterer
+
+    cluster = EventClusterer(db).persist("run-1", EventClusterer(db).cluster_run("run-1"))[0]
+    db.execute(
+        """
+        INSERT INTO brief_items(id, run_id, event_id, json_path, score, fact_check_status, created_at)
+        VALUES ('bi-1', 'run-1', ?, 'workspace/runs/run-1/items/bi-1.json', 80, 'PASS', ?)
+        """,
+        (cluster["event_id"], now_iso()),
+    )
+    write_json(run_dir / "items" / "bi-1.json", {"title": "分阶段传输降低拥塞"})
+    db.execute(
+        """
+        INSERT INTO tasks(id, run_id, task_type, entity_id, input_path, output_path,
+                          prompt_path, schema_path, status, priority, created_at, updated_at)
+        VALUES ('t-fact-2', 'run-1', 'fact_extraction', 'candidate-2', 'i.json', 'o.json',
+                'p.md', 's.json', 'PENDING', 80, ?, ?)
+        """,
+        (now_iso(), now_iso()),
+    )
+
+    Pipeline(tmp_path, _config(), db, "run-1")._maybe_prepare_issue()
+
+    pending = db.fetchone(
+        "SELECT COUNT(*) AS n FROM tasks WHERE run_id=? AND task_type='reader_projection'",
+        ("run-1",),
+    )["n"]
+    assert pending == 0
+
+    db.execute("UPDATE tasks SET status='APPLIED' WHERE id='t-fact-2'")
+    Pipeline(tmp_path, _config(), db, "run-1")._maybe_prepare_issue()
+    created = db.fetchone(
+        "SELECT COUNT(*) AS n FROM tasks WHERE run_id=? AND task_type='reader_projection'",
+        ("run-1",),
+    )["n"]
+    assert created == 1

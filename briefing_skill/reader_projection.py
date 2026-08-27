@@ -280,6 +280,23 @@ def install_reader_projection() -> None:
         # Legacy/interrupted runs that already own an issue stay untouched.
         if self.db.fetchone("SELECT 1 FROM issues WHERE run_id=?", (self.run_id,)):
             return original_prepare_issue(self)
+        # A reader projection must cover the FINAL fact-checked item set. While
+        # facts, repairs, or item drafts are still in flight (for example after
+        # a manual run rewind), building one now would snapshot a partial set
+        # and leave a stale task behind when the set grows.
+        pending_upstream = self.db.fetchone(
+            """
+            SELECT COUNT(*) AS n FROM tasks
+            WHERE run_id=? AND task_type IN (
+                'fact_extraction', 'fact_evidence_repair',
+                'item_writing', 'item_writing_batch'
+              )
+              AND status IN ('PENDING','INVALID','COMPLETED')
+            """,
+            (self.run_id,),
+        )["n"]
+        if pending_upstream:
+            return
         pending_checks = self.db.fetchone(
             """
             SELECT COUNT(*) AS n FROM tasks
