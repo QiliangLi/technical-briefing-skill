@@ -130,6 +130,10 @@ class EventClusterer:
                             WHEN events.last_pushed_at IS NOT NULL THEN events.direction_id
                             ELSE excluded.direction_id
                         END,
+                        canonical_title=CASE
+                            WHEN events.last_pushed_at IS NOT NULL THEN events.canonical_title
+                            ELSE excluded.canonical_title
+                        END,
                         last_updated_at=excluded.last_updated_at,
                         event_key=excluded.event_key,
                         payload_json=excluded.payload_json,

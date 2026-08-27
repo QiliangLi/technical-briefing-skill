@@ -276,3 +276,35 @@ def test_radar_filters_nontechnical_items_caps_categories_and_remembers_sent_url
         (now, now),
     )
     assert service._aihot_groups("2026-08-05", issue_id="i2", issue_data={"items": []}) == []
+
+
+def test_unpushed_event_title_refreshes_on_recluster(tmp_path: Path) -> None:
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    db.create_run("r1")
+    db.create_run("r2")
+    url = "https://arxiv.org/abs/2608.99901v1"
+    _insert_fact(db, "r1", "c1", url, "KVCache感知网络调度")
+    event_id = EventClusterer(db).persist("r1", EventClusterer(db).cluster_run("r1"))[0]["event_id"]
+    assert db.fetchone("SELECT canonical_title FROM events WHERE id=?", (event_id,))["canonical_title"] == "KVCache感知网络调度"
+
+    _insert_fact(db, "r2", "c2", url, "FastKV两级压缩的实测研究")
+    EventClusterer(db).persist("r2", EventClusterer(db).cluster_run("r2"))
+    refreshed = db.fetchone("SELECT canonical_title FROM events WHERE id=?", (event_id,))
+    assert refreshed["canonical_title"] == "FastKV两级压缩的实测研究"
+
+
+def test_pushed_event_title_stays_frozen_across_recluster(tmp_path: Path) -> None:
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    db.create_run("r1")
+    db.create_run("r2")
+    url = "https://arxiv.org/abs/2608.99902v1"
+    _insert_fact(db, "r1", "c1", url, "已发布事件的原始标题")
+    event_id = EventClusterer(db).persist("r1", EventClusterer(db).cluster_run("r1"))[0]["event_id"]
+    db.execute("UPDATE events SET last_pushed_at=? WHERE id=?", (now_iso(), event_id))
+
+    _insert_fact(db, "r2", "c2", url, "后来运行的新标题")
+    EventClusterer(db).persist("r2", EventClusterer(db).cluster_run("r2"))
+    frozen = db.fetchone("SELECT canonical_title FROM events WHERE id=?", (event_id,))
+    assert frozen["canonical_title"] == "已发布事件的原始标题"

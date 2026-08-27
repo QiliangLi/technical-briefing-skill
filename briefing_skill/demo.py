@@ -31,9 +31,13 @@ def _demo_output(task_type: str, data: dict):
     if task_type == "fact_extraction":
         title = data["source"]["title"]
         agent = "CodeGraph" in title or "repository" in title.lower()
+        # The hint must stay unique per demo source: demo runs share the global
+        # events table, and a canned one-size-fits-all hint previously froze as
+        # the canonical_title of hundreds of unrelated events.
+        base_hint = "CodeGraph代码Agent仓库索引" if agent else "KVCache感知网络调度演示"
         return {
             "title": title,
-            "event_hint": "CodeGraph代码Agent仓库索引" if agent else "KVCache感知网络调度",
+            "event_hint": f"{base_hint}：{title}",
             "problem": "Agent反复搜索代码导致工具调用和上下文开销增加。" if agent else "Prefill和Decode流量竞争使KVCache传输和请求排队增加。",
             "mechanism": "预先构建符号、文件和调用关系图，先通过图查询定位代码，再调用Read/Grep读取必要文件。" if agent else "跟踪KVCache位置和Decode紧迫度，并将这些状态用于带宽与传输队列调度。",
             "evidence": [
