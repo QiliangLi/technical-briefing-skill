@@ -1247,3 +1247,54 @@ def test_foreign_issue_json_and_db_identity_binding(tmp_path: Path) -> None:
 
     # The honest anchor passes.
     assert publication_provenance_errors(tmp_path, run_id, html, active_issue=active_issue) == []
+
+
+def test_same_event_merges_across_domains_with_strict_overlap() -> None:
+    from briefing_skill.radar_direct import _drop_same_event_duplicates
+
+    vendor = {
+        "title": "NVIDIA announces Blackwell Ultra with 288GB HBM3e",
+        "summary": "Blackwell Ultra 将 GPU 内存提升到 288GB，带宽 8 TB/s。",
+        "url": "https://nvidia.com/blog/blackwell-ultra-288gb",
+        "canonical_url": "https://nvidia.com/blog/blackwell-ultra-288gb",
+        "published_at": "2026-08-20",
+        "github_project": "",
+        "internal_priority": 50,
+    }
+    press = {
+        "title": "Blackwell Ultra 288GB specs confirmed at GTC",
+        "summary": "NVIDIA confirms Blackwell Ultra 288GB HBM3e at 8 TB/s.",
+        "url": "https://www.techcrunch.com/2026/08/20/blackwell-ultra-288gb",
+        "canonical_url": "https://www.techcrunch.com/2026/08/20/blackwell-ultra-288gb",
+        "published_at": "2026-08-20",
+        "github_project": "",
+        "internal_priority": 40,
+    }
+    out = _drop_same_event_duplicates([vendor, press])
+    assert len(out) == 1
+    assert out[0]["url"] == vendor["url"]
+
+
+def test_same_day_unrelated_products_across_domains_do_not_merge() -> None:
+    from briefing_skill.radar_direct import _drop_same_event_duplicates
+
+    nvidia = {
+        "title": "NVIDIA Blackwell Ultra 288GB launch",
+        "summary": "NVIDIA Blackwell Ultra 内存规格。",
+        "url": "https://nvidia.com/blog/blackwell-ultra",
+        "canonical_url": "https://nvidia.com/blog/blackwell-ultra",
+        "published_at": "2026-08-20",
+        "github_project": "",
+        "internal_priority": 50,
+    }
+    amd = {
+        "title": "AMD MI400X 288GB HBM4 launch",
+        "summary": "AMD MI400X 内存规格。",
+        "url": "https://www.amd.com/blog/mi400x-launch",
+        "canonical_url": "https://www.amd.com/blog/mi400x-launch",
+        "published_at": "2026-08-20",
+        "github_project": "",
+        "internal_priority": 45,
+    }
+    out = _drop_same_event_duplicates([nvidia, amd])
+    assert len(out) == 2

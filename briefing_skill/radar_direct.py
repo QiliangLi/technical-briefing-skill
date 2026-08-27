@@ -616,15 +616,17 @@ def _technical_scope_score(candidate: dict[str, Any]) -> int:
 
 
 def _drop_same_event_duplicates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Collapse same-launch announce posts: one publisher, one day, shared identifiers.
+    """Collapse same-launch announce posts: one day, shared identifiers.
 
-    The upstream hot-list ranks launch-day posts from the same vendor as separate
-    stories (for example a product-availability post next to the chip-architecture
-    post). Same publisher domain plus same publication date plus at least two shared
-    distinctive identifier tokens (model names, product lines) is treated as one
-    story, matching the "one card per story" publication rule. GitHub candidates are
-    exempt because project-level dedup already applies. The surviving card prefers
-    the one without consumer-availability markers, then the strongest technical
+    The upstream hot-list ranks launch-day posts as separate stories (for
+    example a vendor's product-availability post next to its chip-architecture
+    post, or two outlets covering the same launch). Candidates published on the
+    same date are treated as one story when they share distinctive identifier
+    tokens (model names, product lines): at least two when they come from the
+    same publisher domain, at least three across different domains, matching
+    the "one card per story" publication rule. GitHub candidates are exempt
+    because project-level dedup already applies. The surviving card prefers the
+    one without consumer-availability markers, then the strongest technical
     scope vocabulary, then the higher priority.
     """
 
@@ -654,15 +656,20 @@ def _drop_same_event_duplicates(candidates: list[dict[str, Any]]) -> list[dict[s
         )
     for i in range(len(candidates)):
         left = prepared[i]
-        if not left or not left["domain"] or not left["date"]:
+        if not left or not left["date"] or not left["tokens"]:
             continue
         for j in range(i + 1, len(candidates)):
             right = prepared[j]
-            if not right or left["domain"] != right["domain"] or left["date"] != right["date"]:
+            if not right or left["date"] != right["date"]:
                 continue
-            domain_token = left["domain"].split(".")[0]
-            shared = {token for token in left["tokens"] & right["tokens"] if token != domain_token}
-            if len(shared) >= 2:
+            shared = left["tokens"] & right["tokens"]
+            if left["domain"] and left["domain"] == right["domain"]:
+                shared = {token for token in shared if token != left["domain"].split(".")[0]}
+                if len(shared) >= 2:
+                    union(i, j)
+            elif len(shared) >= 3:
+                # Different outlets, same launch: demand a stricter overlap so
+                # same-day posts about unrelated products never merge.
                 union(i, j)
     groups: dict[int, list[int]] = {}
     for index in range(len(candidates)):
