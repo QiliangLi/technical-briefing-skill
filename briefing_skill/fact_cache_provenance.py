@@ -12,6 +12,24 @@ FACT_CACHE_PROVENANCE_VERSION = 2
 TRUSTED_MODES = {"production", "replay"}
 SYNTHETIC_MODES = {"demo", "fixture", "test"}
 
+
+def production_source_run_condition(alias: str) -> str:
+    """SQL condition restricting cross-run reads to production-namespace runs.
+
+    Cross-run history (historical brief upgrades, deep backlog materialization)
+    must never import items produced by demo/fixture/test/replay runs. Runs with
+    no provenance row fall back to the same heuristic as `execution_mode`: only
+    the `demo-` id prefix marks them synthetic.
+    """
+
+    modes = ",".join(f"'{mode}'" for mode in sorted(SYNTHETIC_MODES | {"replay"}))
+    return (
+        f"NOT EXISTS (SELECT 1 FROM run_execution_provenance p "
+        f"WHERE p.run_id={alias}.run_id AND p.execution_mode IN ({modes})) "
+        f"AND {alias}.run_id NOT LIKE 'demo-%' "
+        f"AND {alias}.run_id NOT LIKE '%-replay-%'"
+    )
+
 FACT_CACHE_V2_SCHEMA = """
 CREATE TABLE IF NOT EXISTS run_execution_provenance (
     run_id TEXT PRIMARY KEY,

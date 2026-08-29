@@ -283,7 +283,9 @@ def install_reader_projection() -> None:
         # A reader projection must cover the FINAL fact-checked item set. While
         # facts, repairs, or item drafts are still in flight (for example after
         # a manual run rewind), building one now would snapshot a partial set
-        # and leave a stale task behind when the set grows.
+        # and leave a stale task behind when the set grows. Selection-stage work
+        # (relevance batches, coverage-gap search) belongs to the same wait: it
+        # can still surface deep candidates that later become facts and items.
         pending_upstream = self.db.fetchone(
             """
             SELECT COUNT(*) AS n FROM tasks
@@ -296,6 +298,16 @@ def install_reader_projection() -> None:
             (self.run_id,),
         )["n"]
         if pending_upstream:
+            return
+        pending_selection = self.db.fetchone(
+            """
+            SELECT COUNT(*) AS n FROM tasks
+            WHERE run_id=? AND task_type IN ('relevance_batch', 'agent_web_search')
+              AND status IN ('PENDING','INVALID','COMPLETED')
+            """,
+            (self.run_id,),
+        )["n"]
+        if pending_selection:
             return
         pending_checks = self.db.fetchone(
             """

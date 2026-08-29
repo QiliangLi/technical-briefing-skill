@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
+from .fact_cache_provenance import production_source_run_condition
 from .freshness import published_age_days
 from .utils import canonicalize_url, now_iso, read_json, source_url_is_resolved, stable_hash
 
@@ -77,11 +78,15 @@ def materialize_deep_backlog(config, db, run_id: str) -> int:
         if row.get("canonical_url")
     }
 
+    from .fact_cache_provenance import ensure_fact_cache_provenance_schema
+
+    ensure_fact_cache_provenance_schema(db)
     rows = db.fetchall(
-        """
+        f"""
         SELECT * FROM raw_items
         WHERE run_id<>? AND source_level='A' AND discovery_only=0
           AND published_at IS NOT NULL
+          AND {production_source_run_condition('raw_items')}
         ORDER BY priority DESC, published_at DESC, created_at DESC
         """,
         (run_id,),

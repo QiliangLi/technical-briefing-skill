@@ -264,8 +264,14 @@ def collect_historical_brief_rows(
         for row in current_rows
         if str(row.get("topic_id") or "")
     )
+    from .fact_cache_provenance import (
+        ensure_fact_cache_provenance_schema,
+        production_source_run_condition,
+    )
+
+    ensure_fact_cache_provenance_schema(db)
     rows = db.fetchall(
-        """
+        f"""
         SELECT bi.id, bi.run_id AS source_run_id, bi.score, bi.json_path,
                bi.fact_check_status, e.topic_id, e.direction_id, e.event_key,
                COALESCE(
@@ -283,6 +289,7 @@ def collect_historical_brief_rows(
         JOIN events e ON e.id=bi.event_id
         WHERE bi.run_id<>? AND bi.fact_check_status='PASS'
           AND e.event_key IS NOT NULL AND e.event_key!=''
+          AND {production_source_run_condition('bi')}
         ORDER BY bi.score DESC, bi.created_at DESC, bi.id
         """,
         (run_id,),
