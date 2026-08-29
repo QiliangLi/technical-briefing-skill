@@ -29,6 +29,6 @@ The length limit is a reader budget, not an instruction to remove grammar. Do no
 - Avoid vague consultancy wording such as “走向”“落点”“提供坐标”“开始汇合” when the source supports a more concrete statement.
 - Avoid half-colloquial compression such as “拿到加速”“保住精度”“多付 token”.
 
-This task is **draft generation only**. Do not call any writing Skill here. A later issue-level `item_style_polish` task sees all drafted items together and calls `$human-writing` exactly once. That later stage has full reader-facing field rewrite authority while facts remain locked; the resulting prose is then independently fact-checked.
+This task is **Machine Item draft generation only**. Do not call any writing Skill here. Python applies the deterministic Evidence Gate, and items with semantic risk receive an independent Fact Check. After the machine layer is final, one run-scoped `reader_projection` task sees the complete selected item set and calls `$human-writing` exactly once. Reader Projection may omit or reorder facts for readability, but it never edits this Machine Item or changes its factual meaning.
 
 Return JSON only. Copy the input `_task` object unchanged into the top level of the output.

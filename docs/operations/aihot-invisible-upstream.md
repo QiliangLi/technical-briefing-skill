@@ -1,6 +1,6 @@
 # AI Hot 隐形上游接入（运维说明）
 
-对应设计：`lql_doc/热点雷达_AIHot隐形上游接入设计_20260821.md`。
+历史设计记录见`docs/history/research-notes/热点雷达_AIHot隐形上游接入设计_20260821.md`。
 
 ## 契约摘要
 

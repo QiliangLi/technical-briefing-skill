@@ -6,7 +6,7 @@
 
 - `SKILL.md`：主流程、Agent/Skill 边界、成本与质量规则；
 - `README.md`：当前架构与使用方式；
-- `docs/illustrated-publication.md`：整期生图与双 HTML 发布契约；
+- `docs/contracts/illustrated-publication.md`：整期生图与双 HTML 发布契约；
 - `config/settings.yaml`：运行时预算和策略；
 - `briefing_skill/bootstrap.py`：当前 active runtime 的安装顺序与 Stage owner。
 

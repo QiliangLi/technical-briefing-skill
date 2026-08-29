@@ -1,41 +1,43 @@
-# 已发送日报归档
+# Published briefing archive
 
-通过 agently 实际发出的每一期简报归档在此,以发件箱为准。同一日期多次发送或
-存在多个变体时,**以最新一次实发为准**,只保留一个目录(如 2026-08-10 保留
-插画版 V2,放弃更早的文字版)。每期一个目录 `issues/<日期>/`:
+This directory contains the public, reader-facing history of sent briefings. `archive/index.json` is the ordered issue index. Each date has one stable directory under `archive/issues/<date>/`.
 
+```text
+archive/
+├── index.json
+└── issues/<date>/
+    ├── email.html
+    ├── email-illustrated.html
+    ├── issue.json
+    ├── reader.json
+    ├── papers.json
+    ├── publication-manifest.json
+    └── original/
 ```
-issues/2026-08-17/
-  email.html    当期实发邮件(最终读者见到的版本)
-  issue.json    结构化 IssueDocument(核心条目/补充条目/判断/雷达,机器可读)
-  papers.json   论文级索引(图谱/论文树的生成底料)
-index.json      全部期次索引(按日期排序,含各期条目计数)
-```
 
-已归档期次:2026-08-02、2026-08-06、2026-08-10(插画版)、2026-08-11、
-2026-08-15、2026-08-17。08-04/05/08 三个停留在旧审批阶段的 run 从未发出,不入档。
+The files at the issue root are the current public reader projection. `original/` keeps immutable generated or sent snapshots. A migration may update the root reader files, but it must not overwrite an existing original snapshot.
 
-## papers.json 字段(为图谱/论文树设计)
+## Publication rules
 
-| 字段 | 含义 |
-|---|---|
-| `paper_key` | 由 URL 派生的稳定主键,同一论文跨期可 join |
-| `arxiv_id` | arXiv 编号(GitHub release 等来源为空) |
-| `topic_id` / `topic_name` | 所属专题(雷达条目为空,`topic_name` 存雷达分类) |
-| `direction_id` | 专题内方向 |
-| `role` | `core`(深度)/ `supplement`(专题补充,含重访)/ `radar`(雷达速览) |
-| `revisit` | 是否为重访条目(曾在早期简报出现过) |
-| `score` / `published_at` / `source_level` | 评分、论文发表日、来源级别 |
-| `item_id` / `issue_date` | 条目 ID 与所属期次 |
+- A successful `python briefing.py send --confirm-send` archives the active run and attempts to publish it.
+- Mail transport and archive publication have separate states. If mail succeeded but publication failed, use `python briefing.py publish-archive --run <run_id>`; do not resend.
+- Re-running archive or publication commands with unchanged inputs must be idempotent.
+- `publication-manifest.json` binds the reader artifacts by hash.
+- Recipient-visible images must use stable absolute URLs. Local workspace paths and relative run paths are forbidden.
+- `archive/index.json` must be rebuilt after adding or migrating an issue.
 
-生成图谱时:以 `paper_key` 为节点主键,`topic_id` 为专题层,`issue_date` 为时间维,`role` 区分深度/补充/雷达三种边权。
+## Manual maintenance
 
-## 追加归档
-
-发送一期后运行:
+The low-level archive tool supports a completed run and bounded historical reader migration.
 
 ```bash
-python scripts/archive_sent_issue.py --run <run_id>
+python scripts/archive_sent_issue.py archive --run <run_id>
+python scripts/archive_sent_issue.py prepare-rewrite --date <date> --output <input.json>
+python scripts/archive_sent_issue.py apply-rewrite --date <date> --input <reader-output.json>
 ```
 
-脚本会复制实发邮件与结构化文档、重建 `papers.json`,并刷新 `index.json`。
+Use the normal `send` and `publish-archive` commands for current runs. The migration commands exist for historical repairs and keep their own validation and provenance requirements.
+
+## `papers.json`
+
+`papers.json` is the issue-level source index used by the public knowledge views. Its stable `paper_key` supports cross-issue joins. `role` is one of `core`, `supplement`, or `radar`; source identity, issue date, topic, item ID, score, and source level remain available for audit and aggregation.

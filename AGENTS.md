@@ -1,14 +1,24 @@
-# Agent compatibility
+# Repository instructions
 
-Read `SKILL.md` first. Use `python briefing.py tasks next` to obtain one bounded task. Never load all candidates or all fulltexts into one context. Write JSON to the exact output path, then call `python briefing.py advance`.
+This file is an index. Load only the guidance needed for the current task. `SKILL.md` is the briefing execution runbook, not a prerequisite for unrelated repository maintenance.
 
-## Code Review Rules
+## Task routing
 
-### Run isolation and idempotency
-- Treat cross-run data leakage and duplicate re-application as correctness bugs. Reads and writes for candidates, facts, events, issue items, assets, and generated outputs must stay scoped to the active run unless code explicitly accesses archived/history data. `advance` and resume paths must remain idempotent: rerunning them must not duplicate issue content or re-apply outputs from an earlier run.
+| Task | Read |
+| --- | --- |
+| Run or resume a briefing | `SKILL.md`, then only the Prompt, input, context card, and Schema named by `python briefing.py tasks next --run latest` |
+| Discuss or propose a non-trivial design | `docs/designs/README.md` and `docs/contracts/change-governance.md` |
+| Change Agent workflow, evidence scope, or briefing task order | `SKILL.md`, `docs/contracts/change-governance.md`, and the relevant current contract |
+| Implement, refactor, change configuration, or move files | `docs/contracts/change-governance.md`; also read `docs/contracts/code-review-invariants.md` when pipeline state or publication behavior is involved |
+| Review pipeline, state, rendering, mail, or publication code | `docs/contracts/code-review-invariants.md` and the relevant current contract |
+| Change documentation structure or paths | `docs/README.md` and `docs/contracts/change-governance.md` |
+| Diagnose or operate a subsystem | the relevant file under `docs/operations/` or `docs/contracts/` |
 
-### Briefing integrity and report time
-- Flag changes that can silently drop configured briefing sections/items, bypass fact-check/selection/final-writing stages, replace polished output with raw intermediate text, or derive the report date from stale filesystem/database state. The final date must come from the active run and configured timezone; missing or invalid upstream data should surface through an explicit error or documented fallback instead of silently collapsing the output.
+## Always
 
-### Published email assets
-- Final email HTML must not reference local or relative run paths for images recipients need to load. Before send/archive, image references must resolve to stable browser/email-accessible absolute URLs (for example, published GitHub asset URLs), and rendering changes must preserve independent layout of adjacent figures rather than allowing them to concatenate or overlap.
+- Briefing execution uses the task queue. Repository maintenance, documentation, testing, and code review do not.
+- Never load all candidates or all full texts into one context. Grouped fact extraction never merges source evidence, outputs, schemas, caches, or provenance.
+- Treat implementation and `config/*.yaml` as the source of truth for current defaults. `docs/history/` is historical only.
+- Update affected current documentation as part of an implementation. A design-only request stops before code changes.
+- Do not send mail without explicit user confirmation and `--confirm-send`.
+- Do not stage or commit unless the user requests it.

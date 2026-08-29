@@ -1,6 +1,6 @@
 """Negative scan for upstream discovery traces in public artifacts.
 
-The invisible-upstream contract (lql_doc/热点雷达_AIHot隐形上游接入设计) allows
+The invisible-upstream history note (docs/history/research-notes/热点雷达_AIHot隐形上游接入设计) allows
 AI Hot as an internal editorial/discovery service but forbids any visible
 trace in published outputs. This module scans FINAL public artifacts only —
 run publish files, the archive's public issue directory and Pages data. Source

@@ -9,7 +9,7 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, validate
 
 把大量分散、重复、深浅不一的公开技术信息压缩为可信、可读、可追溯并能直接支持项目判断的内部技术简报。
 
-默认受众是公司内部领导和技术同事。代码保留4～6条的紧凑模式；当前项目启用`expanded_v2`。每个深度专题以4条完整解读为目标，Top4之外已判定相关且具有A级原始来源的内容进入“专题补充”，每条只保留1～2句总结和原文链接。专题不足4条时，先把本期简要内容按价值顺序升级为详细内容；本期简要全部升级后仍不足4条，再从60天窗口内的历史纯简要内容中按价值顺序升级补足。历史简要不要求在本期重新被发现，但必须已有通过事实检查的Machine Item和可验证的简要发布身份；升级改变的是发布角色，旧版Machine Item可沿用配置的历史正文门槛，但仍须五字段完整、事实核验通过并有A级来源。任何身份只要曾经作为详细内容发布过，就不得在没有实质更新时再次补充或重访；当前与历史简要都不足时才允许少于4条，不得用弱信息凑数。每2～3天发送一次，不强制覆盖全部专题。
+默认受众是公司内部领导和技术同事。代码保留紧凑模式；当前项目启用`expanded_v2`。每个配置的深度专题以4条完整解读为目标，Top4之外已判定相关且具有A级原始来源的内容进入“专题补充”，每条只保留1～2句总结和原文链接。专题不足4条时，先把本期简要内容按价值顺序升级为详细内容；本期简要全部升级后仍不足4条，再从60天窗口内的历史纯简要内容中按价值顺序升级补足。历史简要不要求在本期重新被发现，但必须已有通过事实检查的Machine Item和可验证的简要发布身份；升级改变的是发布角色，旧版Machine Item可沿用配置的历史正文门槛，但仍须五字段完整、事实核验通过并有A级来源。任何身份只要曾经作为详细内容发布过，就不得在没有实质更新时再次补充或重访；当前与历史简要都不足时才允许少于4条，不得用弱信息凑数。每2～3天发送一次，不强制覆盖全部专题。
 
 ## 核心架构
 
@@ -89,7 +89,7 @@ python briefing.py resume --run latest
 python briefing.py tasks next --run latest
 ```
 
-严格按命令返回的执行说明处理，不得自行扩大读取范围。普通任务仍是单任务执行；当下一个任务属于`fact_extraction`且存在同专题、同方向、同项目判断卡、同Prompt/Schema的兼容任务时，命令可以返回一个**事实抽取会话组**，默认最多2个独立任务。
+严格按命令返回的执行说明处理，不得自行扩大读取范围。普通任务仍是单任务执行；当下一个任务属于`fact_extraction`且存在同专题、同项目判断卡、同Prompt/Schema的兼容任务时，命令可以返回一个**事实抽取会话组**。当前配置最多4个独立任务；各任务仍保留自己的direction上下文。
 
 单任务执行规则：
 
@@ -99,7 +99,7 @@ python briefing.py tasks next --run latest
 4. 输出符合指定Schema的JSON；
 5. 写入指定输出路径，然后执行`python briefing.py advance --run latest`。
 
-事实抽取会话组必须遵守更严格的隔离规则：共享Prompt、Facts Schema和项目判断卡只读取一次；之后严格按命令列出的顺序逐任务处理。每个任务必须单独读取自己的输入JSON和自己的完整Evidence Pack，前一个任务的证据对后一个任务不可采信，不得跨来源比较、归纳、补事实或移动数字；每个任务复制自己的`_task`绑定并写入自己的输出JSON，禁止产生合并数组或batch输出。全部组内输出写完后只执行一次`advance`。会话分组只减少Agent启动和重复上下文加载，不允许减少候选数、Evidence字符、facts字段、Schema校验、语义校验、facts cache、Evidence Repair或后续fact check。
+事实抽取会话组必须遵守更严格的隔离规则：共享Prompt、Facts Schema和项目判断卡只读取一次；之后严格按命令列出的顺序逐任务处理。每个任务必须单独读取自己的输入JSON、direction上下文和完整Evidence Pack，前一个任务的证据对后一个任务不可采信，不得跨来源比较、归纳、补事实或移动数字；每个任务复制自己的`_task`绑定并写入自己的输出JSON，禁止产生合并数组或batch输出。全部组内输出写完后只执行一次`advance`。会话分组只减少Agent启动和重复上下文加载，不允许减少候选数、Evidence字符、facts字段、Schema校验、语义校验、facts cache、Evidence Repair或后续fact check。
 
 需要调试、恢复旧宿主行为，或对会话隔离有任何不确定时，使用：
 
@@ -143,12 +143,12 @@ python briefing.py send --confirm-send
 3. A级深度候选按专题批量做价值判断；`max_relevance_batch`默认最多24条，同时受`relevance_batch_max_input_chars`默认48k字符预算约束。topic信息只在批次级出现一次，direction配置必须去重后由候选通过`direction_id`引用；超长摘要默认最多暴露5k字符的完整句摘录。输出仍必须逐候选返回且不得缺失、重复或出现未知ID。只有明确版本arXiv、GitHub Release/Tag、DOI等强版本来源才允许跨期复用relevance；缓存键必须同时匹配来源指纹、topic、direction、Prompt/Schema/项目判断卡形成的evaluator版本和新鲜度区间。普通可变网页不得零评审复用；跨越配置的2/7/30/60天新鲜度边界必须重新评审。不得仅因关键词、topic hint或direction hint自动进入全文分析。
 4. 只有已解析、非`discovery_only`的A级原始来源才能竞争深度Top4；B/C级和聚合线索进入Radar并继续用于发现原始来源。
 5. 开放Web搜索只补充A级覆盖缺口，默认每期最多4次。TPN同一方向只有一个项目时仍视为覆盖不足，避免单一项目阻止多样化搜索。
-6. 深度事实抽取默认每期最多16条、单专题最多4条、同专题同项目最多1条、同方向优先最多2条。其余相关A级候选进入专题补充，不做全文写作和事实检查。
+6. 深度事实抽取按专题本地选择，单专题最多4条、同专题同项目最多1条、同方向优先最多2条；整期安全上限由`config/settings.yaml`配置。其余相关A级候选进入专题补充，不做全文写作和事实检查。
 7. 原始全文可以在本地保留到`max_fulltext_chars`用于审计，但正常`fact_extraction`默认只读取`evidence_pack_max_chars`控制的Evidence Pack。Evidence Pack必须优先覆盖架构/方法/实验/结果/边界和专题相关段落，并保留章节或页码定位。
 8. Evidence Pack信息不足时，宁可少写结论并在`limitations`记录缺失验证，也不得自行读取未引用全文或猜测数字。只有当缺失baseline、工作负载/硬件条件、部署边界或明确limitation会实质改变结论解释时，才允许在`evidence_gaps`中提出最多3个具体缺口，并给出可在原文中直接检索的source-native术语。
 9. 每篇来源最多只允许一轮`fact_evidence_repair`。Python只能在首轮Evidence Pack未曝光的章节中按明确gap terms生成`evidence_repair_max_chars`限制的targeted supplement；repair Agent只读取结构化旧facts和这份supplement。没有明确术语命中时保持保守结论，不得退化为全文搜索；repair后仍缺失的信息保留在`limitations/evidence_gaps`，不得发起第二轮。
 10. facts cache只能复用稳定来源指纹与运行时抽取版本完全匹配的结果。零抓取复用仅用于明确版本arXiv、GitHub Release/Tag和DOI类强版本身份；普通可变网页必须重新验证。事实Prompt、Facts Schema和Evidence Repair Prompt变化会自动影响运行时版本；Evidence Pack算法发生实质改变时仍应更新`fact_extractor_version`。
-11. facts cache命中必须走同步fast path，不能再次生成需要Agent处理的事实抽取任务；存在未解决`evidence_gaps`的facts不得写入跨期cache。未命中cache的独立`fact_extraction`任务允许在**不修改任务图和证据量**的前提下复用执行会话：仅同topic+direction+项目判断卡+Prompt/Schema可分组，默认最多2篇且组内Evidence合计默认不超过40k字符；Evidence长度未知、超过预算、不兼容或任何隔离条件无法证明时必须单独运行。分组不得改变任何单篇输出、校验、cache、repair或fact check语义。
+11. facts cache命中必须走同步fast path，不能再次生成需要Agent处理的事实抽取任务；存在未解决`evidence_gaps`的facts不得写入跨期cache。未命中cache的独立`fact_extraction`任务允许在**不修改任务图和证据量**的前提下复用执行会话：仅同topic+项目判断卡+Prompt/Schema可分组，当前配置最多4篇且组内Evidence合计不超过72k字符；每篇direction上下文仍单独读取。Evidence长度未知、超过预算、不兼容或任何隔离条件无法证明时必须单独运行。分组不得改变任何单篇输出、校验、cache、repair或fact check语义。
 12. 新运行的深度条目先使用最多4条的`item_writing_batch`独立形成事实受约束的Machine Item。Python对每条执行确定性Evidence Gate；只有命中语义风险的条目才创建LLM `fact_check_batch`，低风险条目由Gate记录后通过。`fact_check_batch_size`默认24只是安全上限。每个event/item仍保持独立ID、来源、Schema/语义校验、provenance和PASS/FAIL，禁止跨条目移动事实。旧run已经存在`item_style_polish`、单条`item_writing`或已有fact-check任务时按旧任务继续恢复。
 13. 所有Machine Item通过Gate或必要的Fact Check后，只创建一个当前run的`reader_projection`任务，并对整期条目调用一次`$human-writing`。Reader Projection可以选择性改写标题、导语、正文和可选takeaway，但不得改变事实、数字、条件、因果强度、ID、角色、score、日期或来源；每个sidecar必须绑定准确的Machine Item hash。`issue_synthesis`、Roadmap和Idea分析继续读取Machine数据，不能把有损的reader文案当作事实源。
 14. 专题补充默认每专题最多8条、同项目最多2条；每条仅1～2句总结和原文链接，不参与本期综合判断。同一GitHub项目多条低优先级release可聚合为Release Family，必须保留每个原始链接。
@@ -252,7 +252,7 @@ npx skills add https://github.com/KKKKhazix/human-writing --global --agent codex
 6. KVCache、Agent Cache和记忆的跨域传输；
 7. AI/GPU集群光交换网络。
 
-基础专题定义在`config/topics.yaml`，AI芯片与加速器定义在`config/topics-chip.yaml`，运行时合并成七个深度专题和一个横向专题。
+基础专题定义在`config/topics.yaml`，芯片、存储介质与边界探索分别定义在`config/topics-chip.yaml`、`config/topics-media.yaml`和`config/topics-frontier.yaml`。运行时合并全部专题；当前数量和深度/Radar路由以这些文件及`config/settings.yaml`为准。
 
 每个深度专题采用两层输出：
 
@@ -298,7 +298,7 @@ relevance复用的目标是避免60天滚动池中同一个不可变版本反复
 - 3～5个关键词；
 - 原始来源。
 
-禁止：营销语言、无条件放大预印本结论、遗漏关键基线、把项目推断写成原文事实、以省略号或悬空标点结束字段。五个正文域合计必须为180～260字；优先删除次要背景，不得依赖冒号串联或括号堆叠强行压缩。渲染器不得截断事实检查后的正文。
+禁止：营销语言、无条件放大预印本结论、遗漏关键基线、把项目推断写成原文事实、以省略号或悬空标点结束字段。五个正文域合计使用任务输入和`config/settings.yaml`给出的长度预算，当前新条目通常为230～330字；优先删除次要背景，不得依赖冒号串联或括号堆叠强行压缩。渲染器不得截断事实检查后的正文。
 
 ## 跨期去重与热点Radar
 
@@ -355,7 +355,7 @@ AI解释图的个人角色只由`assets/persona/ian-qiliang/overlay.md`和`asset
 - 每张图生成后检查个人IP一致性、中文文字、箭头/节点关系、裁切、安全边距和事实结构；
 - 只有`status=generated`且`persona_used=true`的图片才允许进入`email-illustrated.html`。
 
-详细执行契约见`docs/illustrated-publication.md`、`prompts/illustrated-publication.md`和`schemas/illustrated-publication.schema.json`。
+详细执行契约见`docs/contracts/illustrated-publication.md`、`prompts/illustrated-publication.md`和`schemas/illustrated-publication.schema.json`。
 
 ## 失败降级
 
@@ -365,7 +365,7 @@ AI解释图的个人角色只由`assets/persona/ian-qiliang/overlay.md`和`asset
 - relevance cache来源指纹、版本、评分上下文或新鲜度桶不匹配：按cache miss重新进入批量价值判断，不得为了省Token强行复用；普通可变网页始终按miss处理。
 - Evidence Pack缺少材料性条件且明确gap terms在未曝光章节中有命中：最多生成一次targeted supplement；没有命中或repair后仍不足时降低结论强度并写入`limitations`，不得偷偷扩大到未引用全文。
 - facts cache文件缺失、版本不匹配、来源版本变化或facts仍有`evidence_gaps`：按cache miss/不缓存处理，不得假装命中。
-- 事实抽取会话分组无法证明同topic/direction/判断卡，Evidence长度未知，组内Evidence超过配置上限，或宿主无法可靠在同一会话内逐任务写独立输出：自动退化为单任务执行。不得通过截断Evidence、合并输出或跳过Schema/repair来维持分组收益。
+- 事实抽取会话分组无法证明同topic/项目判断卡/Prompt/Schema，Evidence长度未知，组内Evidence超过配置上限，或宿主无法可靠在同一会话内逐任务写独立输出：自动退化为单任务执行。不得通过截断Evidence、合并输出或跳过Schema/repair来维持分组收益。
 - 历史回填单次网络错误：保留lane游标并标为`ERROR`，后续采集再重试，不得从第一页重新扫；明确的GitHub 404等配置/来源问题标为`FAILED_PERMANENT`并在`backfill-status`暴露，修复配置后再reset。
 - 邮件失败：不写`last_pushed_at`，下次只重试发送。
 - 任何配图失败都不能阻塞简报正文。
@@ -376,7 +376,7 @@ AI解释图的个人角色只由`assets/persona/ian-qiliang/overlay.md`和`asset
 
 - `expanded_v2`单专题深度解读不超过4条；同专题同项目默认不超过1条深读；
 - Top4之外的专题补充只包含已判定相关的A级内容，每条1～2句并链接原文；Release Family必须保留每个原始release链接；
-- 每条Machine Item五个事实正文域合计180～260字；Reader Projection按内容自然展开，不要求机械呈现五个槽位；
+- 每条Machine Item五个事实正文域满足任务输入和当前配置的长度预算；Reader Projection按内容自然展开，不要求机械呈现五个槽位；
 - 每条深度解读至少一个A级来源；
 - 所有数字可追溯到Evidence Pack或targeted supplement中的定位信息，或其他明确的原始来源；
 - 所有详细条目都通过确定性Evidence Gate；命中风险的条目完成LLM Fact Check；当前run的Reader Projection必须绑定通过后的Machine Item hash；
