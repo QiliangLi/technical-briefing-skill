@@ -7,7 +7,9 @@
 - 文档日期：2026-08-29
 - 适用仓库：`technical-briefing-skill`
 - 文档定位：目标产品形态、运行机制、界面效果与体验验收说明
-- 关联文档：[Roadmap、Idea Bank 与证据图谱：现状诊断与优化方案](./2026-08-29-roadmap-idea-bank-evidence-model-redesign.md)
+- 关联文档：
+  - [Roadmap、Idea Bank 与证据图谱：现状诊断与优化方案](./2026-08-29-roadmap-idea-bank-evidence-model-redesign.md)
+  - [技术情报工作台：UI 页面内容 Brief](./2026-08-30-technical-intelligence-ui-screen-content-brief.md)
 
 ## 一、这份文档回答什么问题
 

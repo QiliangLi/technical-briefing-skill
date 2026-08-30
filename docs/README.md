@@ -11,6 +11,9 @@ This directory separates current documentation from dated project records. Start
 - [Design document rules and template](designs/README.md)
 - [Roadmap, Idea Bank, and Evidence model redesign](designs/2026-08-29-roadmap-idea-bank-evidence-model-redesign.md)
 - [Roadmap, Idea Bank, and Evidence Workbench blueprint](designs/2026-08-29-roadmap-idea-bank-evidence-workbench-blueprint.md)
+- [Technical intelligence workbench UI screen content brief](designs/2026-08-30-technical-intelligence-ui-screen-content-brief.md)
+- [Technical intelligence workbench UI style brief pack](designs/2026-08-30-technical-intelligence-ui-style-brief-pack.md)
+- [Technical intelligence workbench editorial UI implementation spec](designs/2026-08-31-editorial-workbench-ui-implementation-spec.md)
 
 Create non-trivial designs under `designs/` before implementation. Once an implementation is complete, move durable behavior into the current architecture, operations, or contracts documentation. Historical design records belong under `history/designs/` only after that transfer is complete.
 
