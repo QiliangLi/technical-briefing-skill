@@ -2,7 +2,7 @@
 
 - Status: draft
 - Created: 2026-08-29
-- Last updated: 2026-08-29
+- Last updated: 2026-08-30
 
 - 文档日期：2026-08-29
 - 适用仓库：`technical-briefing-skill`
@@ -98,6 +98,8 @@
 - 没有任何 `evidence_against`；
 - 最新更新时间仍停在 `2026-08-17`；
 - 6 个对象均由 `scripts/seed_knowledge.py` 中的固定内容生成，而不是由已运行的增量 application 产生。
+
+从现有 6 个种子对象的证据组成看，当前数据已经隐含了不同的 Idea 产生方式：2 个只引用单条、单期证据，1 个联合了同一期的两条证据，3 个联合了 2～3 个期次的证据。但这只是种子脚本人工写出的结果，不代表运行链路已经实现“单条发现”和“跨期综合”两条生成通道。
 
 Idea 本身的文本质量并不差，问题在于它还没有形成持续决策闭环：
 
@@ -548,7 +550,76 @@ Solution Concept 不必强塞一个总 `hypothesis` 字段，而应包含一组 
 - 创建一个关联的 solution concept，并用 `DERIVED_FROM` 连接；或
 - 通过显式 `type_changed` decision 升级，而不是因为 Schema 不可变被迫制造一个无关联的新 Idea。
 
-### 6.2 建议的状态机
+### 6.2 把“Idea 内容类型”“产生方式”和“证据成熟度”分开
+
+`research_hypothesis / solution_concept` 描述 Idea 是什么，不应同时承担“它怎样产生”的语义。Idea 的产生方式需要在创建时形成不可变的 Origin Event；后续新增证据只改变 Assumption、证据成熟度和决策状态，不回写它的出生方式。
+
+外部情报驱动的 Idea 以两条主通道为核心，但自动来源应细分为三类：
+
+- `single_evidence`：一条已发布 Evidence Record 中的强 Claim 直接触发 Idea Seed；
+- `cross_source_synthesis`：同一期内多个独立来源或 Claim 联合暴露共同瓶颈、组合机会或冲突；
+- `cross_issue_synthesis`：至少两个不同 issue 的 Claim 形成新的跨期判断。
+
+此外保留三类补充来源：
+
+- `roadmap_gap`：由 Roadmap Open Question 或 Watch Trigger 产生；
+- `human_proposal`：内部人员提出问题、假设或方案；
+- `experiment_branch`：Experiment Result 产生新的研究分支或 Solution Concept。
+
+Origin 不能由当前 `evidence_for` 的数量动态推断。一个 `single_evidence` Seed 在后续几期可能积累多项证据，但它最初仍由单条信息触发。建议的数据结构如下：
+
+```json
+{
+  "origin": {
+    "origin_event_id": "idea_origin_...",
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-08-29",
+    "claim_ids": ["claim_a", "claim_b"],
+    "evidence_record_ids": ["ev_a", "ev_b"],
+    "issue_dates": ["2026-08-17", "2026-08-29"],
+    "independence_groups": ["team_a", "team_b"],
+    "rationale": "两期证据共同表明同一瓶颈已从局部优化问题变成可调度边界。",
+    "snapshot_id": "knowledge_2026-08-29_...",
+    "generator": {"type": "agent", "policy_version": "idea-origin-v1"}
+  }
+}
+```
+
+证据成熟度另行计算并展示，例如 issue 数、独立来源数、直接/间接证据、支持/反对/限定关系和适用性。`cross_issue_synthesis` 不自动代表高置信，重复出现也可能来自同一团队、同一数据或同一未经验证的假设。
+
+### 6.3 建立“单条候选发现 + 跨期综合发现”两段生成机制
+
+每次新归档完成后，Idea 发现分为两个有界步骤：
+
+```text
+每个新增 Claim
+→ Direct Candidate Extraction
+→ 发现 single_evidence 候选
+
+本期新增 Claim + Topic 历史 Claim + Roadmap Open Question
+→ Topic Synthesis
+→ 发现 cross_source_synthesis / cross_issue_synthesis / roadmap_gap 候选
+
+全部候选
+→ Identity / Similarity / Lineage Resolution
+→ create / update / split / merge_suggested / no-op
+```
+
+Direct Candidate 只有在单条证据同时给出明确问题、机制、目标对象和可验证效果时才能建立 Seed；“建议补测一个指标”仍然只是 Validation Plan。
+
+Synthesis Candidate 必须保存参与综合的 Claim 集合和 synthesis rationale。`cross_issue_synthesis` 至少包含两个不同 `issue_date`，且一次增量任务至少有一个触发 Claim 来自当前 issue；否则只是在旧证据上重复生成候选。多篇材料仅仅属于同一 Topic，不构成综合关系。
+
+候选不应直接写入权威 Idea 文件。系统先与已有 Idea 比较身份和 lineage，再提出：
+
+- 创建新 Idea；
+- 为已有 Idea 增加证据或收窄 Frame；
+- 将 Research Hypothesis 派生为关联的 Solution Concept；
+- split / merge 建议；
+- 因没有新增语义而 no-op。
+
+单条来源通常从 `seed` 开始并显示“尚未独立验证”；跨来源或跨期综合也不能仅凭数量跨越状态门槛。Idea 状态继续由 Frame 完整度、Assumption 证据和 Experiment Result 决定。
+
+### 6.4 建议的状态机
 
 ```text
 seed
@@ -576,7 +647,7 @@ validating
 - `proposal_candidate`：验证通过，且战略相关性、投入与风险评审完成；
 - `rejected`：明确记录被否定的 assumption，不能只写“暂无工具”或“暂时没资源”。
 
-### 6.3 把自动淘汰改成自动提出决策
+### 6.5 把自动淘汰改成自动提出决策
 
 AI 可以自动做：
 
@@ -593,7 +664,7 @@ AI 可以自动做：
 
 三者不能都压缩成一个 rejected。
 
-### 6.4 增加组合管理字段
+### 6.6 增加组合管理字段
 
 建议增加：
 
@@ -609,6 +680,7 @@ AI 可以自动做：
 - `similar_idea_ids`
 - `supersedes / superseded_by`
 - `split_from / merged_into`
+- `origin.kind / origin_event_id`
 
 不建议用这些字段生成一个看似精确的综合分。更实用的是做二维或三维组合视图，例如：
 
@@ -617,7 +689,7 @@ AI 可以自动做：
 - 证据强 / 战略相关性弱；
 - 长期观察 / 当前可行动。
 
-### 6.5 Experiment 必须是独立、版本化对象
+### 6.7 Experiment 必须是独立、版本化对象
 
 当前 `validation_plan` 嵌在 Idea 中，只能表达建议。建议拆成：
 
@@ -685,6 +757,8 @@ knowledge/graph/
 - `TRACK_BELONGS_TO_TOPIC`
 - `IDEA_ADDRESSES_QUESTION`
 - `IDEA_DERIVED_FROM_MILESTONE`
+- `CLAIM_TRIGGERS_IDEA`
+- `CLAIM_SET_SYNTHESIZES_IDEA`
 - `CLAIM_SUPPORTS_ASSUMPTION`
 - `CLAIM_CONTRADICTS_ASSUMPTION`
 - `EXPERIMENT_TESTS_ASSUMPTION`
@@ -802,12 +876,15 @@ Open Question → 缺失 Claim 类型 → Watch Trigger / Validation Plan
 ```text
 Claim Materialization（每个 Brief Item）
 → Topic Roadmap Synthesis（每个受影响 Topic）
-→ Idea Candidate / Update（每个受影响 Idea）
+→ Direct Idea Candidate（每个新增 Claim）
+→ Cross-source / Cross-issue Idea Synthesis（每个受影响 Topic）
+→ Candidate Identity / Lineage Resolution
+→ Idea Update（每个受影响 Idea）
 → Graph Projection（确定性）
 → Snapshot Validation
 ```
 
-Idea task 绑定 `previous_idea_version / digest`，一次只更新一个 Idea。多 Topic 只作为输入关系，不再由多个 Topic task 竞争写同一文件。
+Direct Candidate 与 Synthesis Candidate 都只是提案，不直接写权威对象。Synthesis task 必须绑定本期触发 Claim、历史 Claim 水位和 Roadmap snapshot；Idea task 绑定 `previous_idea_version / digest`，一次只更新一个 Idea。多 Topic 只作为输入关系，不再由多个 Topic task 竞争写同一文件。
 
 ### 8.6 需要新增的质量指标
 
@@ -822,6 +899,8 @@ Idea task 绑定 `previous_idea_version / digest`，一次只更新一个 Idea�
 - Roadmap no-op 与 material change 比例；
 - branch / milestone 非预期 churn；
 - Idea 各状态停留时间；
+- 各 `origin.kind` 的候选数、采纳率、重复率与人工改写率；
+- 单条 Seed 获得独立证据所需期数，以及跨期综合的平均 issue/source 跨度；
 - 到期未复查 Idea 数；
 - orphan Idea、orphan Claim、dangling edge 数；
 - 页面证据路径可解析率；
@@ -861,6 +940,7 @@ Idea task 绑定 `previous_idea_version / digest`，一次只更新一个 Idea�
 
 默认视图建议是组合看板：
 
+- 产生方式与触发期次；
 - 状态；
 - 证据强度；
 - 验证成本；
@@ -918,6 +998,7 @@ Idea 详情页按 Assumption 展示支持和反对证据，并把“建议验证
 - Roadmap 支持 landscape、track、milestone、watch trigger 和结构化 diff；
 - 分离 maturity、momentum、confidence、consensus；
 - Idea 使用不可变铸造 ID、Assumption、状态门槛和对象演化关系；
+- Idea 创建时保存不可变 Origin Event，并分别运行单条候选发现与跨期综合发现；
 - Validation Plan 与 Experiment Run 独立版本化；
 - AI 自动提出状态变化，高影响状态由人确认。
 
@@ -972,6 +1053,10 @@ Idea 详情页按 Assumption 展示支持和反对证据，并把“建议验证
 ### 11.4 Idea Bank
 
 - 每个 Idea 有独立稳定 ID 和明确 Assumption；
+- 每个 Idea 都能展示不可变的产生方式、触发 Claim、触发期次和 synthesis rationale；
+- `single_evidence`、`cross_source_synthesis` 与 `cross_issue_synthesis` 有确定性判定，且不会由当前证据数量反推；
+- 跨期综合至少覆盖两个 issue，并在增量生成时包含本期触发 Claim；
+- 单条 Seed 明示未独立验证，跨期 Idea 也不因证据数量自动升级状态；
 - 状态迁移满足硬门槛；
 - `proposal_candidate` 必须有已完成验证或明确人工豁免；
 - rejected 能区分外部证伪、内部不可行和战略降级；
@@ -997,3 +1082,7 @@ Idea 详情页按 Assumption 展示支持和反对证据，并把“建议验证
 5. 将当前“证据图谱”明确定位为 Archive Atlas，等 typed Claim relation 可用后再上线真正的 Evidence Explorer。
 
 这五项完成后，系统会从“几份结构化 JSON 加一个漂亮页面”迈进到“能够持续积累、解释判断、管理验证并可靠追溯的技术决策系统”。Roadmap、Idea Bank 和证据图谱也会自然成为同一知识底座的三个工作视图，而不是三套各自生长的功能。
+
+## 十三、Decision log
+
+- 2026-08-29：明确外部情报驱动 Idea 以“单条信息直接触发”和“多条信息联合综合”为两条主通道；联合综合进一步区分同一期跨来源与跨期综合。采用不可变 Origin Event 保存出生方式，并将其与 Idea 内容类型、后续证据成熟度和决策状态分离。

@@ -2,7 +2,7 @@
 
 - Status: draft
 - Created: 2026-08-29
-- Last updated: 2026-08-29
+- Last updated: 2026-08-30
 
 - 文档日期：2026-08-29
 - 适用仓库：`technical-briefing-skill`
@@ -471,15 +471,34 @@ Idea Bank 不是灵感收藏夹，而是验证与资源分配漏斗。它应回�
 
 #### Idea 的来源
 
-Idea 可以来自：
+外部情报驱动的 Idea 有两条主要生成通道：单条信息直接触发，以及多条信息联合综合。为了避免把“同一期多来源”和“真正跨期”混在一起，界面与数据契约使用三个自动来源标签：
+
+- `单条证据触发`：一条强 Claim 形成 Idea Seed；
+- `同一期跨来源综合`：同一期多个独立 Claim 暴露共同瓶颈、组合机会或冲突；
+- `跨期综合`：至少两个不同期次的 Claim 共同形成新判断。
+
+Idea 还可以来自：
 
 - Roadmap Open Question；
-- 多项 Claim 暴露出的共同瓶颈；
-- 单篇强证据形成的 Idea Seed；
 - 内部人工提出的问题或方案；
 - Experiment 结果产生的新分支。
 
-来源必须显式记录。系统不能因为多篇文章属于同一 Topic 就自动制造 Idea。
+来源必须作为不可变 Origin Event 显式记录，包括来源类型、触发期次、Claim、Evidence Record、综合理由、知识 snapshot 和生成者。后续增加支持证据不会改变 Idea 最初的产生方式。系统不能因为多篇文章属于同一 Topic 就自动制造 Idea，也不能用当前证据数量反推它是单条触发还是跨期产生。
+
+#### 两段自动发现机制
+
+新一期归档后，系统先对每个新增 Claim 运行单条候选发现，再把本期新增 Claim、同 Topic 历史 Claim 和 Roadmap Open Question 交给跨来源/跨期综合：
+
+```text
+新增 Claim → 单条候选发现 ───────────────┐
+                                         ├→ 去重与 lineage 判断 → create / update / split / merge / no-op
+新增 Claim + 历史 Claim + Roadmap Gap    │
+              → 跨来源 / 跨期综合 ───────┘
+```
+
+跨期候选必须引用至少两个不同 issue，并包含至少一个本期触发 Claim；同一期多条材料只能标为跨来源综合。候选先与已有 Idea 比较问题、机制和目标，不能绕过去重直接落库。
+
+产生方式和证据成熟度相互独立：单条 Seed 后续可以获得跨期支持，但其 Origin 仍是单条触发；跨期 Idea 也不能仅凭文章数量自动表现为高置信或进入更高状态。
 
 #### Idea 身份
 
@@ -572,6 +591,8 @@ Idea
 
 - 标题；
 - Idea 类型；
+- 产生方式：单条触发 / 跨来源综合 / 跨期综合 / Roadmap gap / 人工 / Experiment；
+- 触发期次，以及涉及的 issue / Claim / 独立来源数量；
 - 当前状态；
 - 关联 Topic / Roadmap gap；
 - 支持、反对、限定证据摘要；
@@ -590,7 +611,8 @@ Idea
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ Idea：用……解决……                evidence_building · Owner 李× · 09-10复查│
-│ 来源：Roadmap / Track A / Open Question 3                                  │
+│ 产生方式：跨期综合 · 3期 / 4 Claims / 3独立来源                            │
+│ 来源路径：Roadmap / Track A / Open Question 3                              │
 ├───────────────────────────────────────────────┬────────────────────────────┤
 │ 当前决策摘要                                  │ 为什么是这个状态           │
 │ 价值：……  最大不确定性：……  下一步：……      │ Decision Event             │
@@ -669,7 +691,11 @@ Idea
 
 #### 只有一条强证据
 
-允许创建 Seed，但明确显示“单来源、尚未独立验证”，不能表现成已形成共识。
+允许创建 Seed，但明确显示“单条证据触发、尚未独立验证”，同时列出触发 Claim 和缺失证据，不能表现成已形成共识。后续获得跨期支持时更新证据成熟度，不改写 Origin。
+
+#### 跨期综合但来源并不独立
+
+显示“跨期综合”与“独立来源不足”两个并存标签。跨期出现次数不等于证据强度，不能因为同一团队、同一数据或同一假设在多期重复出现而自动升级状态。
 
 #### 支持和反对证据并存
 
@@ -697,6 +723,8 @@ Idea
 
 - 组合视图能直接看出哪些 Idea 需要行动；
 - Idea 详情第一屏能回答“为什么存在、现在怎样、下一步是什么”；
+- 每个 Idea 都能看见产生方式、最初触发 Claim 和不可变 Origin Event；
+- 单条触发、同一期跨来源和跨期综合在界面上可区分，且与当前证据成熟度分开；
 - 证据挂在具体 Assumption，而不是整张卡；
 - 建议验证和实际结果视觉上明确分开；
 - 每个状态变化都能展开到证据快照；
@@ -922,6 +950,9 @@ Archive Atlas 仍然可以使用浏览器端关键词、聚合和可视化，但
 → 已验证 facts 物化为 Claim
 → Claim 更新受影响 Roadmap Track / Milestone
 → Roadmap 新增或收窄 Open Question
+→ 新增 Claim 运行单条 Idea Candidate 发现
+→ 新增 Claim、历史 Claim 与最新 Roadmap Gap 运行跨来源 / 跨期 Idea Synthesis
+→ 候选经过去重、lineage 与创建门槛检查
 → 已有 Idea 的 Assumption 获得支持或反对证据
 → 系统提出 Idea 状态建议
 → 完整 snapshot 校验并发布
@@ -1009,7 +1040,8 @@ Source 新版本或负面结果进入日报
 | Roadmap | 8 个对象全部为 v1 evidence timeline | Landscape、Track、Milestone、diff、Open Question | P2 / 产品核心 |
 | Roadmap 状态 | 单一 `supported/emerging/contested/inferred` | maturity、momentum、confidence、consensus 分离 | P2 / 语义 |
 | Roadmap UI | Topic、branch、timeline/stage 和链接 | Current State、Track 对比、Trajectory、Watch Trigger | P2-P3 / 体验 |
-| Idea 生成 | 6 个固定 seed 对象，未见增量 application | 持续产生、去重、拆分、合并、演化 | P2 / 产品核心 |
+| Idea 生成 | 6 个固定 seed 对象；数据中隐含单条、同一期多条和跨期组合，但未见增量 application | 单条候选发现与跨来源/跨期综合双通道持续运行，并支持去重、拆分、合并、演化 | P2 / 产品核心 |
+| Idea 来源追溯 | 只能从 evidence 日期和 created log 近似反推，无法区分出生方式与后续成熟度 | 不可变 Origin Event 记录来源类型、触发 Claim、期次、综合理由和 snapshot | P1-P2 / 语义与审计 |
 | Idea 证据 | 整个 Idea 级的 for / against | Assumption 级 Evidence Link | P1-P2 / 语义 |
 | Idea 验证 | suggestion_only | Plan、Run、Result、Decision 闭环 | P2-P3 / 运营 |
 | Idea UI | 状态、字段、证据链接和本地反馈 | 组合看板、Assumption Ledger、实验与审批 | P3 / 体验 |
@@ -1061,6 +1093,9 @@ Source 新版本或负面结果进入日报
 关键缺口：
 
 - Idea 仍是预置 seed，没有持续增量漏斗；
+- Prompt 虽能看到本期新增证据和 Topic 全部历史证据，但没有分别执行单条候选发现与跨期综合；
+- Schema 没有 Origin Event，无法可靠区分单条触发、同一期跨来源和跨期产生；
+- 页面没有产生方式、触发 Claim、综合理由或来源独立性标签；
 - 证据没有挂到 Assumption；
 - 没有 Owner、review due、验证成本和 time-to-signal；
 - 状态没有完整迁移门槛；
@@ -1202,6 +1237,7 @@ Source 新版本或负面结果进入日报
 交付效果：
 
 - Roadmap 出现 Current State、Track 对比、Milestone 和 Open Question；
+- Idea 运行单条候选发现与跨来源/跨期综合两段机制，并保存不可变 Origin Event；
 - Idea 出现 Assumption Ledger、状态门槛和 Roadmap gap 关联；
 - 结构化 diff 和 Decision Trace 可用；
 - 组合视图能帮助安排验证优先级。
@@ -1291,3 +1327,7 @@ Source 新版本或负面结果进入日报
 > Roadmap 说明外部技术怎样变化和哪里仍有缺口，Idea Bank 把缺口变成可验证的假设与方案，Evidence Explorer 让每个判断、实验和决策都能回到明确证据；三者始终共享同一知识快照，并诚实展示新鲜度、冲突与未知。
 
 达到这个效果后，日报就不再只是被归档的内容，而会持续转化为可以比较、验证、复查和最终支持立项的长期技术资产。
+
+## 十五、Decision log
+
+- 2026-08-29：将 Idea 的外部情报来源明确为单条触发与联合综合两条主通道，并把联合综合细分为同一期跨来源和跨期综合；界面必须同时展示不可变产生方式与可变化的证据成熟度，避免把跨期出现次数误当成证据强度。
