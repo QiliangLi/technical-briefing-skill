@@ -32,6 +32,10 @@ const graphDoc = {
     {data:{id:'roadmap:t1',kind:'roadmap',label:'Roadmap 专题一',topic_id:'t1'},position:{x:-1,y:0},provenance:[{path:'knowledge/roadmaps/t1.json'}]},
     {data:{id:'branch:t1:b1',kind:'roadmap_branch',label:'分支一',topic_id:'t1',branch_id:'b1'},position:{x:-1,y:1},provenance:[{path:'knowledge/roadmaps/t1.json'}]},
     {data:{id:'idea:x1',kind:'idea',label:'Idea 一',status:'observing'},position:{x:5,y:0},provenance:[{path:'knowledge/ideas/idea_x1.json'}]},
+    {data:{id:'topic:t2',kind:'topic',label:'专题二',topic_id:'t2'},position:{x:0,y:9},provenance:[{path:'archive/issues/2026-08-08/issue.json'}]},
+    {data:{id:'direction:d2',kind:'direction',label:'方向二',direction_id:'d2'},position:{x:1,y:9},provenance:[{path:'archive/issues/2026-08-08/issue.json'}]},
+    {data:{id:'item:i3',kind:'item',label:'条目三',topic_id:'t2',direction_id:'d2',issue_date:'2026-08-08'},position:{x:2,y:9},provenance:[{path:'archive/issues/2026-08-08/issue.json'}]},
+    {data:{id:'judgement:2026-08-08:def',kind:'judgement',label:'判断二',issue_date:'2026-08-08',body:'正文二',evidence_item_ids:['i3']},position:{x:4,y:9},provenance:[{path:'archive/issues/2026-08-08/issue.json'}]},
   ],
   edges: [
     {data:{id:'e1',source:'topic:t1',target:'direction:d1',relation:'has_direction',label:'包含方向',confirmation:'explicit'},provenance:[{path:'archive/issues/2026-08-01/issue.json'}]},
@@ -46,6 +50,10 @@ const graphDoc = {
     {data:{id:'e10',source:'idea:x1',target:'topic:t1',relation:'relates_to',label:'关联专题',confirmation:'explicit'},provenance:[{path:'knowledge/ideas/idea_x1.json'}]},
     {data:{id:'e11',source:'item:i1',target:'idea:x1',relation:'supports_idea',label:'支持',confirmation:'explicit'},provenance:[{path:'knowledge/ideas/idea_x1.json'}]},
     {data:{id:'e12',source:'item:i2',target:'idea:x1',relation:'challenges_idea',label:'反对',confirmation:'explicit'},provenance:[{path:'knowledge/ideas/idea_x1.json'}]},
+    {data:{id:'e13',source:'topic:t2',target:'direction:d2',relation:'has_direction',label:'包含方向',confirmation:'explicit'},provenance:[{path:'archive/issues/2026-08-08/issue.json'}]},
+    {data:{id:'e14',source:'direction:d2',target:'item:i3',relation:'has_item',label:'收录条目',confirmation:'explicit'},provenance:[{path:'archive/issues/2026-08-08/issue.json'}]},
+    {data:{id:'e15',source:'item:i3',target:'issue:2026-08-08',relation:'published_in',label:'发布于',confirmation:'explicit'},provenance:[{path:'archive/issues/2026-08-08/issue.json'}]},
+    {data:{id:'e16',source:'item:i3',target:'judgement:2026-08-08:def',relation:'supports_judgement',label:'支持判断',confirmation:'explicit'},provenance:[{path:'archive/issues/2026-08-08/issue.json'}]},
   ],
   unresolved: [{reason:'dangling_idea_evidence',source_ref:'item:ghost',target_ref:'idea:x1',detail:'ghost'}],
 };
@@ -174,7 +182,7 @@ def test_knowledge_graph_projection_lenses_overlays_and_determinism():
     assert "tracks" in output["overlayRelations"] and "organizes" in output["overlayRelations"] and "relates_to" in output["overlayRelations"]
     assert output["usesEvidenceWithoutItems"] is False
     # Evolution latest: only the newest issue's items and that issue node.
-    assert output["evolutionLatestItems"] == ["item:i2"]
+    assert output["evolutionLatestItems"] == ["item:i2", "item:i3"]
     assert set(output["evolutionLatestKinds"]) == {"topic", "direction", "item", "issue"}
     # Judgements lens keeps the explicit judgement evidence edges.
     assert "supports_judgement" in output["judgementRelations"]
@@ -182,7 +190,7 @@ def test_knowledge_graph_projection_lenses_overlays_and_determinism():
     assert output["focusRequested"] == "topic:t1"  # item focus not visible in structure lens
     assert output["unavailable"] is True
     assert output["unresolvedPassedThrough"] == 1
-    assert output["statsNodeCount"] == 10
+    assert output["statsNodeCount"] == 14
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -221,6 +229,69 @@ def test_knowledge_graph_projection_enforces_soft_caps_with_focus_priority():
     assert output["truncated"] is True
     assert output["focusKept"] is True
     assert output["noDanglingEdges"] is True
+    assert output["deterministic"] is True
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_hiding_node_kinds_never_leaves_dangling_edges():
+    output = _run_node(
+        f"""
+        const data = require({json.dumps(str(SITE / 'data-contract.js'))});
+        {GRAPH_DOC}
+        const hideable = ['topic', 'direction', 'item', 'judgement', 'issue', 'roadmap', 'roadmap_branch', 'idea'];
+        const results = {{}};
+        for (const kind of hideable) {{
+          const model = data.buildKnowledgeGraphModel({{graph: graphDoc, params: {{lens: 'evolution', range: 'all', hide: kind, overlay: 'roadmap,idea'}}}});
+          const ids = new Set(model.nodes.map((n) => n.data.id));
+          results[kind] = {{
+            nodes: model.nodes.length,
+            dangling: model.edges.filter((e) => !ids.has(e.data.source) || !ids.has(e.data.target)).length,
+            kindGone: !model.nodes.some((n) => n.data.kind === kind),
+          }};
+        }}
+        // Judgements lens exercises judgement + overlay kinds too.
+        const judgementModel = data.buildKnowledgeGraphModel({{graph: graphDoc, params: {{lens: 'judgements', range: 'all', hide: 'topic', overlay: 'roadmap,idea'}}}});
+        const judgementIds = new Set(judgementModel.nodes.map((n) => n.data.id));
+        results.judgementsLensHideTopic = judgementModel.edges.filter((e) => !judgementIds.has(e.data.source) || !judgementIds.has(e.data.target)).length;
+        process.stdout.write(JSON.stringify(results));
+        """
+    )
+
+    for kind, result in output.items():
+        if kind == "judgementsLensHideTopic":
+            assert result == 0, "judgements lens keeps dangling edges after hiding a kind"
+            continue
+        assert result["dangling"] == 0, f"{kind}: dangling edges left after hiding"
+        assert result["kindGone"] is True, f"{kind}: kind still present after hiding"
+        assert result["nodes"] >= 0
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_topic_filter_constrains_judgements_and_issues_to_visible_items():
+    output = _run_node(
+        f"""
+        const data = require({json.dumps(str(SITE / 'data-contract.js'))});
+        {GRAPH_DOC}
+        const filtered = data.buildKnowledgeGraphModel({{graph: graphDoc, params: {{lens: 'judgements', range: 'all', topic: 't1'}}}});
+        const evolution = data.buildKnowledgeGraphModel({{graph: graphDoc, params: {{lens: 'evolution', range: 'all', topic: 't2'}}}});
+        const ids = (model) => new Set(model.nodes.map((n) => n.data.id));
+        const isolated = (model) => model.nodes.filter((n) => !model.edges.some((e) => e.data.source === n.data.id || e.data.target === n.data.id)).map((n) => n.data.id);
+        process.stdout.write(JSON.stringify({{
+          otherTopicJudgementHidden: !ids(filtered).has('judgement:2026-08-08:def'),
+          ownTopicJudgementVisible: ids(filtered).has('judgement:2026-08-01:abc'),
+          otherTopicItemsHidden: !ids(filtered).has('item:i3'),
+          evolutionIsolated: isolated(evolution),
+          evolutionIssues: [...ids(evolution)].filter((id) => id.startsWith('issue:')).sort(),
+          deterministic: JSON.stringify(filtered) === JSON.stringify(data.buildKnowledgeGraphModel({{graph: graphDoc, params: {{lens: 'judgements', range: 'all', topic: 't1'}}}}))
+        }}));
+        """
+    )
+
+    assert output["otherTopicJudgementHidden"] is True
+    assert output["ownTopicJudgementVisible"] is True
+    assert output["otherTopicItemsHidden"] is True
+    assert output["evolutionIsolated"] == [], "topic-filtered views must not contain isolated nodes"
+    assert output["evolutionIssues"] == ["issue:2026-08-08"]
     assert output["deterministic"] is True
 
 

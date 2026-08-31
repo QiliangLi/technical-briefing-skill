@@ -63,6 +63,10 @@ python3 briefing.py knowledge graph validate   # 与当前输入比对新鲜度
 
 构建规则：
 
+- 构建前先运行完整的长期知识仓库校验（与 `knowledge validate` 同一套 Schema
+  与语义校验）。Roadmap 或 Idea 文件无效时构建直接失败，不会把残缺输入
+  伪装成一张符合 graph Schema 的图；因此知识侧的悬空引用是构建失败，
+  `unresolved` 主要承载 Archive 侧（如编辑判断引用）的悬空引用。
 - 关系只来自显式字段（`direction_id`、`synthesis.judgements[].evidence_item_ids`、
   Roadmap branch 的 `direction_ids`/`evidence_item_ids`/evidence_timeline、
   Idea 的 `topic_ids`/`evidence_for`/`evidence_against`）；Topic 名、Direction 名
@@ -79,10 +83,13 @@ python3 briefing.py knowledge graph validate   # 与当前输入比对新鲜度
 - `input_digest` 覆盖所有参与构图的输入文件；前端只用它诊断构建版本，
   不计算、不修补。
 
-发布时机：GitHub Pages 工作流在组装站点前执行
-`knowledge graph build` + `knowledge graph validate` 作为发布门禁——
-输入与图谱不一致时停止发布陈旧图谱，而不是静默上线。本地归档发布后
-应同样运行 build 保持工作区新鲜；图谱构建失败不影响邮件生成或发送。
+发布时机：GitHub Pages 工作流在组装站点前依次执行
+`knowledge validate`（权威知识仓库自身必须有效）、
+`knowledge graph build` 与 `knowledge graph validate` 作为发布门禁——
+输入与图谱不一致时停止发布陈旧图谱，而不是静默上线。图谱构建器、
+Schema 或依赖文件的变化同样触发 Pages 部署，保证 `gh-pages` 不会继续
+运行旧代码构建的图。本地归档发布后应同样运行 build 保持工作区新鲜；
+图谱构建失败不影响邮件生成或发送。
 
 ## 判断边界
 

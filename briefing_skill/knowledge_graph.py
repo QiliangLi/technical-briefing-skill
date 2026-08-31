@@ -28,7 +28,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from .knowledge_materialization import PublishedArchive
+from .knowledge_materialization import PublishedArchive, validate_knowledge_store
 from .utils import normalize_text, read_json, stable_hash, write_json_atomic
 
 SCHEMA_VERSION = 1
@@ -692,6 +692,14 @@ def build_knowledge_graph(root: Path, *, issue_date: str | None = None) -> dict[
     knowledge_index = _load_knowledge_index(root)
     knowledge_dates: list[str] = []
     if knowledge_index is not None:
+        # A structurally valid graph built from schema-invalid or semantically
+        # invalid knowledge inputs would still be a broken publication, so the
+        # full store validation runs before any graph node is derived.
+        store_errors = validate_knowledge_store(root)
+        if store_errors:
+            raise ValueError(
+                "knowledge store failed validation before graph build:\n  " + "\n  ".join(store_errors)
+            )
         draft.inputs["knowledge_index"] = knowledge_index
         for row in knowledge_index.get("roadmaps") or []:
             if isinstance(row, dict) and row.get("updated_by_issue"):

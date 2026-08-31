@@ -345,34 +345,51 @@
       });
     });
 
+    const visibleItemIds = new Set();
     if (kinds.has('item')) {
       directions.forEach((direction) => {
         (outgoing.get(direction.data.id) || []).forEach((edge) => {
           if (edge.relation !== 'has_item' || visible.has(edge.target)) return;
           const node = graph.nodes.find((candidate) => candidate.data.id === edge.target);
-          if (node && itemInRange(node)) visible.add(node.data.id);
+          if (node && itemInRange(node)) {
+            visible.add(node.data.id);
+            visibleItemIds.add(node.data.id);
+          }
         });
       });
     }
     if (kinds.has('issue')) {
-      graph.nodes.forEach((node) => {
-        if (node.data.kind !== 'issue' || visible.has(node.data.id)) return;
-        if (params.range === 'latest') {
-          if (text(node.data.issue_date) === latest) visible.add(node.data.id);
-        } else if (params.range === 'recent3') {
-          if (recentDates.has(text(node.data.issue_date))) visible.add(node.data.id);
-        } else if (params.range === 'custom') {
-          const date = text(node.data.issue_date);
-          if ((!params.from || date >= params.from) && (!params.to || date <= params.to)) visible.add(node.data.id);
-        } else {
-          visible.add(node.data.id);
-        }
-      });
+      if (kinds.has('item')) {
+        // Issues enter only through the items actually shown, so range and
+        // Topic/Direction filters never leak unrelated issue nodes.
+        graph.edges.forEach((edge) => {
+          if (edge.data.relation === 'published_in' && visibleItemIds.has(edge.data.source)) {
+            visible.add(edge.data.target);
+          }
+        });
+      } else {
+        graph.nodes.forEach((node) => {
+          if (node.data.kind !== 'issue' || visible.has(node.data.id)) return;
+          if (params.range === 'latest') {
+            if (text(node.data.issue_date) === latest) visible.add(node.data.id);
+          } else if (params.range === 'recent3') {
+            if (recentDates.has(text(node.data.issue_date))) visible.add(node.data.id);
+          } else if (params.range === 'custom') {
+            const date = text(node.data.issue_date);
+            if ((!params.from || date >= params.from) && (!params.to || date <= params.to)) visible.add(node.data.id);
+          } else {
+            visible.add(node.data.id);
+          }
+        });
+      }
     }
     if (kinds.has('judgement')) {
-      graph.nodes.forEach((node) => {
-        if (node.data.kind !== 'judgement' || visible.has(node.data.id)) return;
-        if (itemInRange(node)) visible.add(node.data.id);
+      // A judgement is visible exactly when it explicitly cites a visible
+      // item, so judgements from other Topics never leak into a filtered view.
+      graph.edges.forEach((edge) => {
+        if (edge.data.relation === 'supports_judgement' && visibleItemIds.has(edge.data.source)) {
+          visible.add(edge.data.target);
+        }
       });
     }
     if (overlays.has('roadmap')) {
@@ -410,13 +427,15 @@
     }
 
     // Node-type filtering applies after structural reachability so hiding a
-    // bridge kind never rewrites how the remaining graph was derived.
+    // bridge kind never rewrites how the remaining graph was derived. Edges
+    // are then re-derived from the FINAL node set so a hidden kind can never
+    // leave a dangling edge behind.
     const hiddenKinds = new Set(text(params.hide).split(',').filter(Boolean));
     let nodes = graph.nodes.filter((node) => visible.has(node.data.id) && !hiddenKinds.has(node.data.kind));
-    let edges = graph.edges.filter((edge) => visible.has(edge.data.source) && visible.has(edge.data.target));
+    const filteredIds = new Set(nodes.map((node) => node.data.id));
+    let edges = graph.edges.filter((edge) => filteredIds.has(edge.data.source) && filteredIds.has(edge.data.target));
 
     const requestedFocus = text(params.node);
-    const filteredIds = new Set(nodes.map((node) => node.data.id));
     let focusId = requestedFocus && filteredIds.has(requestedFocus)
       ? requestedFocus
       : topics.find((topic) => filteredIds.has(topic.data.id))?.data.id || nodes[0]?.data.id || '';

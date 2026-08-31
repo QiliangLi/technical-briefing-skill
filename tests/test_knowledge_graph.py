@@ -14,11 +14,18 @@ from briefing_skill.knowledge_graph import (
     graph_schema_errors,
     validate_knowledge_graph,
 )
+from briefing_skill.knowledge_materialization import stable_idea_id, validate_knowledge_store
 from briefing_skill.utils import read_json, write_json
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SCHEMAS = ("knowledge-graph.schema.json",)
+SCHEMAS = (
+    "knowledge-graph.schema.json",
+    "knowledge-index.schema.json",
+    "roadmap.schema.json",
+    "idea.schema.json",
+    "frontier-clusters.schema.json",
+)
 
 
 def _item(item_id: str, issue_date: str, *, url: str, title: str = "证据", topic_id: str = "topic_a",
@@ -96,27 +103,52 @@ def _roadmap(topic_id: str, updated_by_issue: str, branches: list[dict]) -> dict
     }
 
 
-def _idea(idea_id: str, *, topic_ids: list[str], evidence_for: list[dict], evidence_against: list[dict] | None = None,
-          last_updated_issue: str = "2026-08-01") -> dict:
+def _identity() -> dict:
+    return {"problem_key": "fixture_problem", "mechanism_key": "fixture_mechanism", "target_key": "fixture_target"}
+
+
+def _idea(evidence_for: list[dict], evidence_against: list[dict] | None = None,
+          last_updated_issue: str = "2026-08-08") -> dict:
+    all_refs = [*evidence_for, *(evidence_against or [])]
     return {
         "schema_version": 1,
-        "idea_id": idea_id,
-        "identity": {"problem_key": "p", "mechanism_key": "m", "target_key": "t"},
+        "idea_id": stable_idea_id(_identity()),
+        "identity": _identity(),
         "idea_type": "solution_concept",
-        "title": f"Idea {idea_id}",
+        "title": "测试 Idea",
         "problem": "问题。",
         "hypothesis": "假设。",
         "mechanism": "机制。",
         "expected_effect": "预期。",
-        "topic_ids": topic_ids,
+        "topic_ids": ["topic_a"],
         "status": "observing",
         "evidence_for": evidence_for,
         "evidence_against": evidence_against or [],
         "unknowns": ["未知一"],
-        "validation_plan": None,
-        "first_seen_issue": last_updated_issue,
+        "validation_plan": {
+            "mode": "simulation",
+            "minimal_model": "带缓存与路由的最小模拟。",
+            "inputs": ["热度参数"],
+            "baselines": ["无复制基线"],
+            "metrics": ["命中延迟"],
+            "support_criteria": ["延迟下降。"],
+            "reject_criteria": ["无改善。"],
+            "limitations": ["建议未执行。"],
+            "execution_status": "suggestion_only",
+        },
+        "first_seen_issue": min((ref["issue_date"] for ref in all_refs), default=last_updated_issue),
         "last_updated_issue": last_updated_issue,
-        "decision_log": [],
+        "decision_log": [
+            {
+                "event_id": "fixture_decision_1",
+                "issue_date": last_updated_issue,
+                "decision": "evidence_added",
+                "from_status": "observing",
+                "to_status": "observing",
+                "reason": "补充已发布证据。",
+                "evidence_item_ids": [ref["item_id"] for ref in all_refs],
+            }
+        ],
     }
 
 
@@ -176,9 +208,9 @@ def _fixture_root(tmp_path: Path, *, with_knowledge: bool = True) -> Path:
         }
     ]
     _published_issue(tmp_path, "2026-08-01", items, judgements)
-    _item_three = _item("item_three", "2026-08-08", url="https://example.com/three", title="第三条证据")
-    _published_issue(tmp_path, "2026-08-08", [_item_three])
-    _set_index(tmp_path, ["2026-08-01", "2026-08-08"])
+    _published_issue(tmp_path, "2026-08-08", [_item("item_three", "2026-08-08", url="https://example.com/three", title="第三条证据")])
+    _published_issue(tmp_path, "2026-08-15", [_item("item_four", "2026-08-15", url="https://example.com/four", title="第四条证据")])
+    _set_index(tmp_path, ["2026-08-01", "2026-08-08", "2026-08-15"])
     if with_knowledge:
         _write_knowledge(
             tmp_path,
@@ -194,19 +226,22 @@ def _fixture_root(tmp_path: Path, *, with_knowledge: bool = True) -> Path:
                             "status": "emerging",
                             "stages": [],
                             "evidence_timeline": [
-                                {"item_id": "item_one", "issue_date": "2026-08-01", "source_urls": [], "reason": "首见。"}
+                                {
+                                    "item_id": "item_one",
+                                    "issue_date": "2026-08-01",
+                                    "source_urls": ["https://example.com/one"],
+                                    "reason": "首见。",
+                                }
                             ],
                             "open_questions": [],
                             "evidence_item_ids": ["item_one"],
-                            "source_urls": [],
+                            "source_urls": ["https://example.com/one"],
                         }
                     ],
                 )
             ],
             ideas=[
                 _idea(
-                    "idea_test_one",
-                    topic_ids=["topic_a"],
                     evidence_for=[
                         {
                             "item_id": "item_two",
@@ -226,7 +261,14 @@ def _fixture_root(tmp_path: Path, *, with_knowledge: bool = True) -> Path:
                 )
             ],
         )
+        # The graph build now validates the store first, so the fixture must
+        # itself be a fully valid knowledge store.
+        assert validate_knowledge_store(tmp_path) == []
     return tmp_path
+
+
+def _fixture_idea_id() -> str:
+    return stable_idea_id(_identity())
 
 
 def _node_ids(document: dict) -> set[str]:
@@ -260,7 +302,7 @@ def test_build_through_issue_limits_watermark(tmp_path: Path) -> None:
         "issue:2026-08-01",
         "roadmap:topic_a",
         "branch:topic_a:branch_a",
-        "idea:idea_test_one",
+        f"idea:{_fixture_idea_id()}",
     ):
         assert expected in ids
     assert sum(1 for node in document["nodes"] if node["data"]["kind"] == "judgement") == 1
@@ -277,12 +319,12 @@ def test_explicit_relations_use_contract_directions(tmp_path: Path) -> None:
     assert ("roadmap:topic_a", "topic:topic_a", "tracks") in edges
     assert ("branch:topic_a:branch_a", "direction:direction_a", "organizes") in edges
     assert ("branch:topic_a:branch_a", "item:item_one", "uses_evidence") in edges
-    assert ("idea:idea_test_one", "topic:topic_a", "relates_to") in edges
-    assert ("item:item_two", "idea:idea_test_one", "supports_idea") in edges
-    assert ("item:item_three", "idea:idea_test_one", "challenges_idea") in edges
+    assert ("idea:" + _fixture_idea_id(), "topic:topic_a", "relates_to") in edges
+    assert ("item:item_two", "idea:" + _fixture_idea_id(), "supports_idea") in edges
+    assert ("item:item_three", "idea:" + _fixture_idea_id(), "challenges_idea") in edges
     # The reverse direction must never appear for the same fact.
     assert ("direction:direction_a", "topic:topic_a", "has_direction") not in edges
-    assert ("idea:idea_test_one", "item:item_two", "supports_idea") not in edges
+    assert ("idea:" + _fixture_idea_id(), "item:item_two", "supports_idea") not in edges
 
 
 def _judgement_digest_of(document: dict) -> str:
@@ -310,11 +352,25 @@ def test_judgement_digest_ignores_evidence_order_and_uses_title(tmp_path: Path) 
 def test_watermarks_are_layered_not_merged(tmp_path: Path) -> None:
     root = _fixture_root(tmp_path)
     document = build_knowledge_graph(root)
-    assert document["archive_through_issue"] == "2026-08-08"
-    assert document["knowledge_through_issue"] == "2026-08-01"
+    assert document["archive_through_issue"] == "2026-08-15"
+    assert document["knowledge_through_issue"] == "2026-08-08"
 
 
-def test_dangling_references_enter_unresolved(tmp_path: Path) -> None:
+def test_invalid_knowledge_store_fails_the_build_before_deriving_nodes(tmp_path: Path) -> None:
+    root = _fixture_root(tmp_path)
+    idea_path = root / "knowledge" / "ideas" / f"{_fixture_idea_id()}.json"
+    idea = read_json(idea_path)
+    # A schema-valid-looking edit that breaks the semantic identity contract.
+    idea["idea_id"] = "idea_spoofed"
+    write_json(idea_path, idea)
+    with pytest.raises(ValueError, match="knowledge store failed validation"):
+        build_knowledge_graph(root)
+    # Store validation must run before any graph file is replaced.
+    with pytest.raises(ValueError, match="knowledge store failed validation"):
+        build_knowledge_graph_file(root)
+
+
+def test_dangling_judgement_evidence_enters_unresolved_and_idea_refs_fail_the_store(tmp_path: Path) -> None:
     root = _fixture_root(tmp_path)
     issue_path = root / "archive" / "issues" / "2026-08-01" / "issue.json"
     issue = read_json(issue_path)
@@ -322,17 +378,23 @@ def test_dangling_references_enter_unresolved(tmp_path: Path) -> None:
         {"title": "悬空判断", "body": "引用不存在的条目。", "evidence_item_ids": ["missing_item"]}
     )
     write_json(issue_path, issue)
-    idea_path = root / "knowledge" / "ideas" / "idea_test_one.json"
-    idea = read_json(idea_path)
-    idea["evidence_for"].append({"item_id": "ghost_item", "issue_date": "2026-08-01", "source_urls": ["https://example.com/x"], "reason": "悬空。"})
-    write_json(idea_path, idea)
     document = build_knowledge_graph(root)
     reasons = {entry["reason"] for entry in document["unresolved"]}
     assert "dangling_judgement_evidence" in reasons
-    assert "dangling_idea_evidence" in reasons
     # Dangling references never become drawn edges.
     assert all("item:missing_item" not in edge["data"]["source"] for edge in document["edges"])
     assert document["stats"]["unresolved_count"] == len(document["unresolved"])
+
+    # Knowledge-side dangling references are semantic store errors: the build
+    # must fail instead of silently shipping a graph built from broken inputs.
+    idea_path = root / "knowledge" / "ideas" / f"{_fixture_idea_id()}.json"
+    idea = read_json(idea_path)
+    idea["evidence_for"].append(
+        {"item_id": "ghost_item", "issue_date": "2026-08-01", "source_urls": ["https://example.com/x"], "reason": "悬空。"}
+    )
+    write_json(idea_path, idea)
+    with pytest.raises(ValueError, match="knowledge store failed validation"):
+        build_knowledge_graph(root)
 
 
 def test_unresolved_over_budget_fails_the_build(tmp_path: Path) -> None:
@@ -348,21 +410,20 @@ def test_unresolved_over_budget_fails_the_build(tmp_path: Path) -> None:
         build_knowledge_graph(root)
 
 
-def test_relation_kind_mismatch_fails(tmp_path: Path) -> None:
+def test_roadmap_only_direction_materializes_an_explicit_node(tmp_path: Path) -> None:
     root = _fixture_root(tmp_path)
     roadmap = read_json(root / "knowledge" / "roadmaps" / "topic_a.json")
-    roadmap["branches"][0]["direction_ids"] = []
-    write_json(root / "knowledge" / "roadmaps" / "topic_a.json", roadmap)
-    document = build_knowledge_graph(root)
-    edges = _edges(document)
-    assert all(relation != "organizes" for _, _, relation in edges)
-    # A direction id that appears nowhere still materializes an explicit node;
-    # the organizes edge then links branch -> direction with valid kinds.
     roadmap["branches"][0]["direction_ids"] = ["direction_only_in_roadmap"]
     write_json(root / "knowledge" / "roadmaps" / "topic_a.json", roadmap)
     document = build_knowledge_graph(root)
-    assert ("branch:topic_a:branch_a", "direction:direction_only_in_roadmap", "organizes") in _edges(document)
+    edges = _edges(document)
+    # A direction id that appears nowhere in the archive still materializes an
+    # explicit node from the Roadmap structure; the organizes edge then links
+    # branch -> direction with valid kinds.
+    assert ("branch:topic_a:branch_a", "direction:direction_only_in_roadmap", "organizes") in edges
     assert "direction:direction_only_in_roadmap" in _node_ids(document)
+    # Direction ids absent from both archive and Roadmap never appear.
+    assert not any(edge[2] == "organizes" and "direction_a" == edge[1].split(":", 1)[1] for edge in edges)
 
 
 def test_missing_direction_records_unresolved_without_edge(tmp_path: Path) -> None:
@@ -472,8 +533,8 @@ def test_archive_counts_match_graph_stats(tmp_path: Path) -> None:
     kinds = {}
     for node in document["nodes"]:
         kinds[node["data"]["kind"]] = kinds.get(node["data"]["kind"], 0) + 1
-    assert kinds["item"] == 3
-    assert kinds["issue"] == 2
+    assert kinds["item"] == 4
+    assert kinds["issue"] == 3
     assert kinds["topic"] == 1
     assert kinds["direction"] == 1
     assert kinds["judgement"] == 1
@@ -485,17 +546,19 @@ def test_archive_counts_match_graph_stats(tmp_path: Path) -> None:
 
 def test_duplicate_item_across_issues_merges_with_coverage_window(tmp_path: Path) -> None:
     root = _fixture_root(tmp_path)
-    repeat = _item("item_one", "2026-08-15", url="https://example.com/one-again", title="第一条证据（复现）")
-    _published_issue(root, "2026-08-15", [repeat])
-    _set_index(root, ["2026-08-01", "2026-08-08", "2026-08-15"])
+    # Republish item_four (not cited by any knowledge object) in a later issue
+    # under the same stable id; knowledge refs stay valid.
+    repeat = _item("item_four", "2026-08-22", url="https://example.com/four-again", title="第四条证据（复现）")
+    _published_issue(root, "2026-08-22", [repeat])
+    _set_index(root, ["2026-08-01", "2026-08-08", "2026-08-15", "2026-08-22"])
     document = build_knowledge_graph(root)
-    item_nodes = [node for node in document["nodes"] if node["data"]["id"] == "item:item_one"]
+    item_nodes = [node for node in document["nodes"] if node["data"]["id"] == "item:item_four"]
     assert len(item_nodes) == 1
-    assert item_nodes[0]["data"]["first_issue_date"] == "2026-08-01"
-    assert item_nodes[0]["data"]["last_issue_date"] == "2026-08-15"
+    assert item_nodes[0]["data"]["first_issue_date"] == "2026-08-15"
+    assert item_nodes[0]["data"]["last_issue_date"] == "2026-08-22"
     edges = _edges(document)
-    assert ("item:item_one", "issue:2026-08-01", "published_in") in edges
-    assert ("item:item_one", "issue:2026-08-15", "published_in") in edges
+    assert ("item:item_four", "issue:2026-08-15", "published_in") in edges
+    assert ("item:item_four", "issue:2026-08-22", "published_in") in edges
     assert len({node["position"]["x"] for node in document["nodes"]}) > 1
 
 
@@ -519,9 +582,22 @@ def test_cli_exposes_graph_build_and_validate(tmp_path: Path) -> None:
     assert '"valid": true' in validate.stdout
 
 
-def test_committed_repo_builds_and_validates() -> None:
+def test_committed_repo_builds_in_memory_and_matches_the_published_graph() -> None:
+    # Build in memory and compare every stable field against the committed
+    # document; the test suite must never rewrite the tracked artifact.
     document = build_knowledge_graph(REPO_ROOT)
     assert document["archive_through_issue"], "committed archive must produce a watermark"
     assert graph_schema_errors(REPO_ROOT, document) == []
-    write_json(REPO_ROOT / "knowledge" / "graph.json", document)
+    committed = read_json(REPO_ROOT / "knowledge" / "graph.json")
+    for key in (
+        "schema_version",
+        "archive_through_issue",
+        "knowledge_through_issue",
+        "input_digest",
+        "stats",
+        "nodes",
+        "edges",
+        "unresolved",
+    ):
+        assert committed.get(key) == document.get(key), f"committed graph.json diverges on {key}"
     assert validate_knowledge_graph(REPO_ROOT) == []

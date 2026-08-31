@@ -100,6 +100,13 @@ def test_knowledge_graph_page_and_idea_evidence_views_declare_their_contracts():
         "Claim 尚未物化",
     ):
         assert phrase in idea_view, phrase
+    # The path/graph mode switch and the mobile layered path render in BOTH
+    # evidence modes: the graph view must stay reachable from normal
+    # navigation, and the mobile evidence path must never be blank.
+    assert "const modeSwitch" in idea_view
+    assert 'mode === "graph" ? `<div class="segmented-tabs">' not in idea_view
+    assert 'const mobile = mobileMarkup(row, idea, model, "evidence", mode)' in idea_view
+    assert "evidencePathMarkup" in idea_view
     compact_css = "".join(graph_css.split())
     assert "grid-template-columns:248pxminmax(0,1fr)344px" in compact_css
     assert "@media(max-width:767px)" in compact_css

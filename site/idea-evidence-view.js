@@ -263,10 +263,17 @@ const IdeaEvidenceView = (() => {
     const body = mode === "graph"
       ? graphView(row, idea, model, params)
       : pathView(row, idea);
-    const mobile = mode === "graph" ? mobileMarkup(row, idea, model, "evidence", "graph") : "";
+    // The path/graph switch stays reachable in both modes, and the mobile
+    // layered path renders for every evidence mode — the desktop-only path
+    // view is hidden below 768px.
+    const mobile = mobileMarkup(row, idea, model, "evidence", mode);
+    const modeSwitch = `<div class="segmented-tabs" role="tablist" aria-label="证据视图模式">
+      <a href="${evidenceHref(row, { view: "evidence", mode: "path" })}" ${mode !== "graph" ? 'aria-current="page"' : ""}>证据链</a>
+      <a href="${evidenceHref(row, { view: "evidence", mode: "graph" })}" ${mode === "graph" ? 'aria-current="page"' : ""}>关系图</a>
+    </div>`;
     $("#appMain").innerHTML = `<div class="page-stack evidence-explorer">
       ${pageHeader({ title: "Idea 证据视图", description: "追踪判断从来源、证据到 Roadmap 与 Idea 决策的完整路径。", breadcrumb: `<a href="#ideas">Idea Hub</a><span>/</span><span>${esc(row.title)}</span>` })}
-      <div class="desktop-evidence-tabs">${tabsMarkup(row, "evidence", mode)}${mode === "graph" ? `<div class="segmented-tabs"><a href="${evidenceHref(row, { view: "evidence", mode: "path" })}" ${mode !== "graph" ? 'aria-current="page"' : ""}>证据链</a><a href="${evidenceHref(row, { view: "evidence", mode: "graph" })}" ${mode === "graph" ? 'aria-current="page"' : ""}>关系图</a></div>` : ""}</div>
+      <div class="desktop-evidence-tabs">${tabsMarkup(row, "evidence", mode)}${modeSwitch}</div>
       ${contextBar(row, idea, model, mode)}
       ${mobile}
       ${body}
