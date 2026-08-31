@@ -14,6 +14,7 @@ This directory separates current documentation from dated project records. Start
 - [Technical intelligence workbench UI screen content brief](designs/2026-08-30-technical-intelligence-ui-screen-content-brief.md)
 - [Technical intelligence workbench UI style brief pack](designs/2026-08-30-technical-intelligence-ui-style-brief-pack.md)
 - [Evidence Graph UI generation brief](designs/2026-08-31-evidence-graph-ui-generation-brief.md)
+- [Daily briefing knowledge graph and Idea Hub evidence view design](designs/2026-09-01-daily-briefing-knowledge-graph-design.md)
 
 Create non-trivial designs under `designs/` before implementation. Once an implementation is complete, move durable behavior into the current architecture, operations, or contracts documentation. Historical design records belong under `history/designs/` only after that transfer is complete.
 
