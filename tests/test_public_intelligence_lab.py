@@ -36,6 +36,8 @@ def test_public_site_uses_the_editorial_routed_shell():
     assert "editorial-tokens.css" in html
     assert "editorial-components.css" in html
     assert "editorial-pages.css" in html
+    assert "evidence-graph.css" in html
+    assert "evidence-graph.js" in html
     assert "styles.css" not in html
     assert "workbench-overrides.css" not in html
     assert "register=product" in tokens
@@ -137,7 +139,10 @@ def test_route_reader_merge_and_radar_dedupe_contracts():
 
     assert output["route"] == {"name": "ideas", "params": {"status": "seed", "topic": "agent"}}
     assert output["featureRoute"] == {"name": "features", "params": {"feature": "team-feedback-loop"}}
-    assert output["evidenceRoute"] == {"name": "evidence", "params": {"idea": "idea-1"}}
+    assert output["evidenceRoute"] == {
+        "name": "evidence",
+        "params": {"idea": "idea-1", "view": "atlas", "scope": "all", "mode": "topic"},
+    }
     assert output["merged"]["title"] == "读者标题"
     assert output["merged"]["summary"] == "读者导语"
     assert output["merged"]["machine_title"] == "机器标题"
@@ -202,7 +207,7 @@ def test_local_feedback_toggle_switch_export_and_clear():
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 @pytest.mark.parametrize(
     "script",
-    ["data-contract.js", "feedback-store.js", "app.js", "workbench-view.js"],
+    ["data-contract.js", "feedback-store.js", "evidence-graph.js", "app.js", "workbench-view.js"],
 )
 def test_public_javascript_parses(script: str):
     result = subprocess.run(

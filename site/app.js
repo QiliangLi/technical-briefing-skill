@@ -218,6 +218,8 @@ function selectedIdea(route) {
 async function renderRoute() {
   const token = ++state.renderToken;
   state.route = BriefingData.parseRoute(location.hash);
+  document.body.dataset.route = state.route.name;
+  document.body.dataset.view = state.route.params.view || "";
   const navRoute = state.route.name === "features" ? "home" : state.route.name;
   $$(".primary-nav a").forEach((link) =>
     link.classList.toggle("active", link.dataset.route === navRoute),
@@ -231,6 +233,15 @@ async function renderRoute() {
     if (state.route.name === "roadmaps") context = await selectedRoadmap(state.route);
     if (state.route.name === "ideas" || state.route.name === "evidence") {
       context = selectedIdea(state.route);
+    }
+    if (state.route.name === "evidence") {
+      context.graphContext = {
+        items: state.items,
+        issues: state.issues,
+        roadmaps: state.knowledge?.roadmaps || [],
+        roadmapObjects: state.roadmapObjects,
+        candidateRelations: [],
+      };
     }
     if (token !== state.renderToken) return;
     renderWorkbenchView(state.route, context);

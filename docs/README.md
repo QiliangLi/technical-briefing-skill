@@ -14,7 +14,6 @@ This directory separates current documentation from dated project records. Start
 - [Technical intelligence workbench UI screen content brief](designs/2026-08-30-technical-intelligence-ui-screen-content-brief.md)
 - [Technical intelligence workbench UI style brief pack](designs/2026-08-30-technical-intelligence-ui-style-brief-pack.md)
 - [Evidence Graph UI generation brief](designs/2026-08-31-evidence-graph-ui-generation-brief.md)
-- [Evidence Graph UI pixel-accurate implementation plan](designs/2026-08-31-evidence-graph-ui-implementation-spec.md)
 
 Create non-trivial designs under `designs/` before implementation. Once an implementation is complete, move durable behavior into the current architecture, operations, or contracts documentation. Historical design records belong under `history/designs/` only after that transfer is complete.
 
@@ -47,3 +46,4 @@ These files define durable interfaces and quality rules. Prompt and schema detai
 [History](history/README.md) contains old plans, release snapshots, reviews, conversations, and exploratory design notes. Files there explain how the repository evolved; they must not be used as the source of truth for current commands or defaults.
 
 - [Implemented editorial workbench UI design](history/designs/2026-08-31-editorial-workbench-ui-implementation-spec.md)
+- [Implemented Evidence Graph UI design](history/designs/2026-08-31-evidence-graph-ui-implementation-spec.md)
