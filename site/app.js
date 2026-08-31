@@ -6,6 +6,9 @@ const state = {
   itemById: new Map(),
   knowledge: null,
   knowledgeError: null,
+  knowledgeGraph: null,
+  knowledgeGraphError: null,
+  knowledgeGraphPromise: null,
   ideaObjects: new Map(),
   roadmapObjects: new Map(),
   featurePlan: null,
@@ -135,6 +138,24 @@ async function loadKnowledgeObject(path) {
   return getJson(`${state.roots.knowledge}/${normalized}`);
 }
 
+/* knowledge/graph.json is a derived publication. It is loaded lazily by the
+ * routes that need it (#knowledge and Idea evidence/graph views), never by the
+ * Idea Hub list, and a failure here degrades those pages instead of the site. */
+async function loadKnowledgeGraph() {
+  if (state.knowledgeGraphPromise) return state.knowledgeGraphPromise;
+  state.knowledgeGraphPromise = (async () => {
+    try {
+      const raw = await getJson(`${state.roots.knowledge}/graph.json`);
+      state.knowledgeGraph = BriefingData.validateKnowledgeGraph(raw);
+    } catch (error) {
+      state.knowledgeGraph = null;
+      state.knowledgeGraphError = error;
+    }
+    return state.knowledgeGraph;
+  })();
+  return state.knowledgeGraphPromise;
+}
+
 async function loadData() {
   const [archiveResult, knowledgeResult, featurePlan] = await Promise.all([
     resolveRoot("archive"),
@@ -217,7 +238,18 @@ function selectedIdea(route) {
 
 async function renderRoute() {
   const token = ++state.renderToken;
+  // A route switch must never leak the previous canvas, listeners, or zoom.
+  if (typeof GraphRenderer !== "undefined") GraphRenderer.destroyActive();
   state.route = BriefingData.parseRoute(location.hash);
+  if (state.route.legacy) {
+    // Old bookmarks render the new surface immediately and the address bar is
+    // normalized once, without adding a history entry.
+    const params = new URLSearchParams(
+      Object.entries(state.route.params).filter(([, value]) => value != null && value !== ""),
+    ).toString();
+    history.replaceState(null, "", `#${state.route.name}${params ? `?${params}` : ""}`);
+    state.route = BriefingData.parseRoute(location.hash);
+  }
   document.body.dataset.route = state.route.name;
   document.body.dataset.view = state.route.params.view || "";
   const navRoute = state.route.name === "features" ? "home" : state.route.name;
@@ -231,17 +263,16 @@ async function renderRoute() {
   try {
     let context = {};
     if (state.route.name === "roadmaps") context = await selectedRoadmap(state.route);
-    if (state.route.name === "ideas" || state.route.name === "evidence") {
+    if (state.route.name === "ideas" && state.route.params.idea) {
       context = selectedIdea(state.route);
+      if (state.route.params.view === "evidence" || state.route.params.view === "gaps") {
+        context.graph = await loadKnowledgeGraph();
+        context.graphError = state.knowledgeGraphError;
+      }
     }
-    if (state.route.name === "evidence") {
-      context.graphContext = {
-        items: state.items,
-        issues: state.issues,
-        roadmaps: state.knowledge?.roadmaps || [],
-        roadmapObjects: state.roadmapObjects,
-        candidateRelations: [],
-      };
+    if (state.route.name === "knowledge") {
+      context.graph = await loadKnowledgeGraph();
+      context.graphError = state.knowledgeGraphError;
     }
     if (token !== state.renderToken) return;
     renderWorkbenchView(state.route, context);

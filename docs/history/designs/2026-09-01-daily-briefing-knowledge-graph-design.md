@@ -1,6 +1,7 @@
 # 日报知识图谱与 Idea Hub 证据视图设计
 
-- Status: draft
+- Status: implemented
+- Implemented: 2026-09-01；耐久规则已迁入 docs/contracts/editorial-workbench-ui.md、docs/contracts/knowledge-materialization.md 与 docs/architecture.md
 - Created: 2026-09-01
 - Last updated: 2026-09-01
 
@@ -24,9 +25,9 @@
 
 本设计是以下已实现记录和现有草案的后继设计：
 
-- [Evidence 图谱 UI 像素级还原实施方案](../history/designs/2026-08-31-evidence-graph-ui-implementation-spec.md)
-- [Roadmap、Idea Bank 与证据图谱：现状诊断与优化方案](./2026-08-29-roadmap-idea-bank-evidence-model-redesign.md)
-- [Roadmap、Idea Bank 与证据图谱：最终呈现蓝图与差距分析](./2026-08-29-roadmap-idea-bank-evidence-workbench-blueprint.md)
+- [Evidence 图谱 UI 像素级还原实施方案](./2026-08-31-evidence-graph-ui-implementation-spec.md)
+- [Roadmap、Idea Bank 与证据图谱：现状诊断与优化方案](../../designs/2026-08-29-roadmap-idea-bank-evidence-model-redesign.md)
+- [Roadmap、Idea Bank 与证据图谱：最终呈现蓝图与差距分析](../../designs/2026-08-29-roadmap-idea-bank-evidence-workbench-blueprint.md)
 
 若上述文档与本设计在图谱产品定位、一级导航或前端渲染技术上冲突，以本设计为准；现行行为在实现完成前仍以 [Editorial workbench UI contract](../contracts/editorial-workbench-ui.md) 为准。
 

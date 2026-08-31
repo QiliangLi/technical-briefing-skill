@@ -10,7 +10,7 @@
 - 关联文档：
   - [Roadmap、Idea Bank 与证据图谱：现状诊断与优化方案](./2026-08-29-roadmap-idea-bank-evidence-model-redesign.md)
   - [技术情报工作台：UI 页面内容 Brief](./2026-08-30-technical-intelligence-ui-screen-content-brief.md)
-  - [日报知识图谱与 Idea Hub 证据视图设计](./2026-09-01-daily-briefing-knowledge-graph-design.md)
+  - [日报知识图谱与 Idea Hub 证据视图设计](../history/designs/2026-09-01-daily-briefing-knowledge-graph-design.md)
 
 > 2026-09-01 更新：全局知识图谱改为直接投影日报已有 Topic、Direction、条目和编辑判断；原 Evidence Graph 合并进 Idea Hub。涉及图谱定位、导航和渲染组件时，以新增设计为准。
 

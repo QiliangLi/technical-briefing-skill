@@ -58,6 +58,20 @@ Rendering always produces `email.html` and `email-illustrated.html`. The illustr
 
 Validation promotes an issue to `READY_TO_SEND`. Sending requires explicit user confirmation. Mail transport and archive publication have separate success states so a publication retry cannot resend the email.
 
+## Knowledge graph publication
+
+The public site's knowledge graph is a derived, regenerable artifact, never an authoritative knowledge source:
+
+```text
+archive/index.json + archive/issues/<date>/{issue,papers}.json
+knowledge/index.json + roadmaps/*.json + ideas/*.json
+→ Graph Builder (briefing_skill/knowledge_graph.py, NetworkX-validated)
+→ knowledge/graph.json (deterministic nodes/edges/coordinates, dual watermarks)
+→ static site (#knowledge route, Cytoscape.js renderer)
+```
+
+The builder reads only those authoritative inputs, derives edges only from explicit fields, and reports unresolvable references in an `unresolved` list instead of drawing them. `knowledge/graph.json` carries separate `archive_through_issue` and `knowledge_through_issue` watermarks because the archive and materialized knowledge can lag each other. The Pages workflow rebuilds and validates the graph before assembling the site, so a graph that does not match current inputs blocks publication rather than shipping stale. See `docs/contracts/knowledge-materialization.md` and `docs/contracts/editorial-workbench-ui.md`.
+
 ## Where details live
 
 - Operational behavior is documented in `docs/operations/`.

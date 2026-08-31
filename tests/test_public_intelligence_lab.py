@@ -31,13 +31,32 @@ def test_public_site_uses_the_editorial_routed_shell():
     assert 'data-route="home"' in html
     assert 'data-route="roadmaps"' in html
     assert 'data-route="ideas"' in html
-    assert 'data-route="evidence"' in html
+    assert 'data-route="knowledge"' in html
     assert 'data-route="archive"' in html
-    assert "editorial-tokens.css" in html
-    assert "editorial-components.css" in html
-    assert "editorial-pages.css" in html
-    assert "evidence-graph.css" in html
-    assert "evidence-graph.js" in html
+    assert 'data-route="evidence"' not in html
+    for stylesheet in (
+        "editorial-tokens.css",
+        "editorial-components.css",
+        "editorial-pages.css",
+        "knowledge-graph.css",
+    ):
+        assert stylesheet in html
+    for script in (
+        "./assets/vendor/cytoscape.min.js",
+        "./data-contract.js",
+        "./graph-styles.js",
+        "./graph-renderer.js",
+        "./knowledge-graph-view.js",
+        "./idea-evidence-view.js",
+        "./app.js",
+        "./workbench-view.js",
+    ):
+        assert script in html
+    # The vendor script must load before the renderer adapter.
+    assert html.index("./assets/vendor/cytoscape.min.js") < html.index("./graph-renderer.js")
+    assert "evidence-graph.css" not in html
+    assert "evidence-graph.js" not in html
+    assert "https://cdn" not in html and "http://cdn" not in html
     assert "styles.css" not in html
     assert "workbench-overrides.css" not in html
     assert "register=product" in tokens
@@ -49,6 +68,43 @@ def test_public_site_uses_the_editorial_routed_shell():
     assert "brand-mark.svg" in html
     assert "icons.svg" in html
     assert "平均评分" not in html
+
+
+def test_knowledge_graph_page_and_idea_evidence_views_declare_their_contracts():
+    app = (SITE / "app.js").read_text(encoding="utf-8")
+    knowledge_view = (SITE / "knowledge-graph-view.js").read_text(encoding="utf-8")
+    idea_view = (SITE / "idea-evidence-view.js").read_text(encoding="utf-8")
+    graph_css = (SITE / "knowledge-graph.css").read_text(encoding="utf-8")
+
+    assert "graph.json" in app
+    assert "validateKnowledgeGraph" in app
+    assert "loadKnowledgeGraph" in app
+    assert "destroyActive" in app
+    for phrase in (
+        "structure",
+        "evolution",
+        "judgements",
+        "archive_through_issue",
+        "knowledge_through_issue",
+        "已达",
+        "relationshipList",
+        "kg-canvas",
+        "kg-mobile",
+    ):
+        assert phrase in knowledge_view, phrase
+    for phrase in (
+        "evidencePathMarkup",
+        "reference?.reason",
+        "buildIdeaEvidenceGraphModel",
+        "relationshipList",
+        "Claim 尚未物化",
+    ):
+        assert phrase in idea_view, phrase
+    compact_css = "".join(graph_css.split())
+    assert "grid-template-columns:248pxminmax(0,1fr)344px" in compact_css
+    assert "@media(max-width:767px)" in compact_css
+    assert ".kg-workspace,.graph-workspace,.evidence-path-view{display:none;}" in compact_css
+    assert "prefers-reduced-motion:reduce" in compact_css
 
 
 def test_roadmap_and_idea_views_only_read_materialized_knowledge():
@@ -67,8 +123,9 @@ def test_roadmap_and_idea_views_only_read_materialized_knowledge():
     assert "不是仿真或实验结果" in views
     assert "Candidate 与正式 Idea 使用独立集合" in views
     assert "不会把正式 Idea 倒推成候选" in views
-    assert "renderEvidencePathForIdea" in views
-    assert "reference?.reason" in views
+    assert "renderEvidencePathForIdea" not in views
+    assert "function renderEvidence(" not in views
+    assert "EvidenceGraph" not in views
     assert "row.item_id?[row]" not in compact_views
 
 
@@ -137,12 +194,10 @@ def test_route_reader_merge_and_radar_dedupe_contracts():
         """
     )
 
-    assert output["route"] == {"name": "ideas", "params": {"status": "seed", "topic": "agent"}}
-    assert output["featureRoute"] == {"name": "features", "params": {"feature": "team-feedback-loop"}}
-    assert output["evidenceRoute"] == {
-        "name": "evidence",
-        "params": {"idea": "idea-1", "view": "atlas", "scope": "all", "mode": "topic"},
-    }
+    assert output["route"] == {"name": "ideas", "params": {"status": "seed", "topic": "agent"}, "legacy": False}
+    assert output["featureRoute"] == {"name": "features", "params": {"feature": "team-feedback-loop"}, "legacy": False}
+    assert output["evidenceRoute"]["name"] == "knowledge"
+    assert output["evidenceRoute"]["params"]["lens"] == "evolution"
     assert output["merged"]["title"] == "读者标题"
     assert output["merged"]["summary"] == "读者导语"
     assert output["merged"]["machine_title"] == "机器标题"
@@ -207,7 +262,16 @@ def test_local_feedback_toggle_switch_export_and_clear():
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 @pytest.mark.parametrize(
     "script",
-    ["data-contract.js", "feedback-store.js", "evidence-graph.js", "app.js", "workbench-view.js"],
+    [
+        "data-contract.js",
+        "graph-styles.js",
+        "graph-renderer.js",
+        "knowledge-graph-view.js",
+        "idea-evidence-view.js",
+        "feedback-store.js",
+        "app.js",
+        "workbench-view.js",
+    ],
 )
 def test_public_javascript_parses(script: str):
     result = subprocess.run(

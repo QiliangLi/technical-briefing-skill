@@ -1,4 +1,8 @@
-/* Stable, dependency-free data contracts shared by the static workbench and tests. */
+/* Stable, dependency-free data contracts shared by the static workbench and tests.
+ * Route parsing, legacy-URL normalization, published-JSON validation, and the
+ * two graph projections (knowledge graph, Idea evidence subgraph) live here.
+ * This file never computes layout coordinates; positions come from the build-time
+ * graph document or from the renderer's deterministic layout. */
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -135,336 +139,578 @@
   function parseRoute(hash) {
     const raw = text(hash).replace(/^#/, '');
     const [rawName, query = ''] = raw.split('?');
-    const aliases = {roadmap: 'roadmaps', 'idea-bank': 'ideas', graph: 'evidence', atlas: 'evidence', dashboard: 'home', plan: 'features'};
-    const requested = aliases[rawName] || rawName || 'home';
-    const allowed = new Set(['home', 'roadmaps', 'ideas', 'evidence', 'archive', 'features']);
-    const name = allowed.has(requested) ? requested : 'home';
-    const params = Object.fromEntries(new URLSearchParams(query));
-    if (name === 'evidence') {
-      const aliasView = rawName === 'graph' ? 'graph' : rawName === 'atlas' ? 'atlas' : '';
-      Object.assign(params, normalizeEvidenceParams({...params, view: aliasView || params.view}));
+    let params = Object.fromEntries(new URLSearchParams(query));
+    let name = rawName || 'home';
+    let legacy = false;
+    // Legacy bookmark normalization. Old routes never render a second page;
+    // they map onto the current Knowledge / Idea surfaces once, here.
+    if (name === 'evidence' || name === 'graph' || name === 'atlas') {
+      legacy = true;
+      const legacyView = text(params.view) || (name === 'graph' ? 'graph' : name === 'atlas' ? 'atlas' : 'path');
+      if (params.idea && legacyView !== 'atlas') {
+        name = 'ideas';
+        params = legacyView === 'gaps'
+          ? { idea: params.idea, view: 'gaps' }
+          : normalizeIdeaViewParams({
+              idea: params.idea,
+              view: 'evidence',
+              mode: legacyView === 'graph' ? 'graph' : 'path',
+              depth: params.depth,
+              node: params.node,
+            });
+      } else {
+        name = "knowledge";
+        if (legacyView === "atlas") {
+          // #atlas carries issue/topic scoping that translates into the
+          // evolution lens; #graph without an idea simply lands on #knowledge.
+          const evolutionParams = { lens: "evolution" };
+          if (params.issue) {
+            evolutionParams.from = params.issue;
+            evolutionParams.to = params.issue;
+          }
+          if (params.topic) evolutionParams.topic = params.topic;
+          params = evolutionParams;
+        } else {
+          params = {};
+        }
+      }
+    } else {
+      const aliases = { roadmap: 'roadmaps', 'idea-bank': 'ideas', dashboard: 'home', plan: 'features' };
+      name = aliases[name] || name || 'home';
     }
-    return {name, params};
+    const allowed = new Set(['home', 'roadmaps', 'ideas', 'knowledge', 'archive', 'features']);
+    if (!allowed.has(name)) {
+      name = 'home';
+      params = {};
+    }
+    if (name === 'knowledge') params = normalizeKnowledgeParams(params);
+    if (name === 'ideas' && params.idea) params = normalizeIdeaViewParams(params);
+    return { name, params, legacy };
   }
 
-  function normalizeEvidenceParams(params = {}) {
-    const views = new Set(['path', 'graph', 'gaps', 'atlas']);
-    const view = views.has(text(params.view)) ? text(params.view) : 'path';
-    const rawDepth = Number.parseInt(params.depth, 10);
-    const depth = rawDepth === 2 ? '2' : '1';
-    const candidates = String(params.candidates) === '1' ? '1' : '0';
-    const scope = text(params.scope) === 'latest' ? 'latest' : 'all';
-    const mode = text(params.mode) === 'keyword' ? 'keyword' : 'topic';
-    return {
-      ...params,
-      view,
-      ...(view === 'graph' ? {depth, candidates} : {}),
-      ...(view === 'atlas' ? {scope, mode} : {}),
+  const KNOWLEDGE_LENSES = new Set(['structure', 'evolution', 'judgements']);
+  const KNOWLEDGE_RANGES = new Set(['latest', 'recent3', 'all', 'custom']);
+  const KNOWLEDGE_OVERLAYS = new Set(['roadmap', 'idea']);
+  const KNOWLEDGE_HIDEABLE_KINDS = new Set(['topic', 'direction', 'item', 'judgement', 'issue', 'roadmap', 'roadmap_branch', 'idea']);
+
+  function normalizeKnowledgeParams(params = {}) {
+    const lens = KNOWLEDGE_LENSES.has(text(params.lens)) ? text(params.lens) : 'structure';
+    const from = text(params.from);
+    const to = text(params.to);
+    let range = KNOWLEDGE_RANGES.has(text(params.range)) ? text(params.range) : 'recent3';
+    if (from && to) range = 'custom';
+    const overlays = [...new Set(text(params.overlay).split(',').map((value) => value.trim()).filter((value) => KNOWLEDGE_OVERLAYS.has(value)))].sort();
+    const hidden = [...new Set(text(params.hide).split(',').map((value) => value.trim()).filter((value) => KNOWLEDGE_HIDEABLE_KINDS.has(value)))].sort();
+    const result = {
+      lens,
+      range,
+      overlay: overlays.join(','),
+      hide: hidden.join(','),
     };
+    ['topic', 'direction', 'node'].forEach((key) => {
+      if (text(params[key])) result[key] = text(params[key]);
+    });
+    if (from) result.from = from;
+    if (to) result.to = to;
+    if (String(params.unresolved) === '1') result.unresolved = '1';
+    return result;
+  }
+
+  const IDEA_VIEWS = new Set(['overview', 'evidence', 'gaps']);
+
+  function normalizeIdeaViewParams(params = {}) {
+    const view = IDEA_VIEWS.has(text(params.view)) ? text(params.view) : 'overview';
+    const result = { view };
+    if (text(params.idea)) result.idea = text(params.idea);
+    if (view === 'evidence') {
+      const mode = text(params.mode) === 'graph' ? 'graph' : 'path';
+      result.mode = mode;
+      if (mode === 'graph') {
+        result.depth = Number.parseInt(params.depth, 10) === 2 ? '2' : '1';
+        if (text(params.node)) result.node = text(params.node);
+      }
+    }
+    return result;
   }
 
   function stableGraphId(kind, value) {
     return `${text(kind).toLowerCase()}:${text(value).replace(/\s+/g, '-').replace(/[^\p{L}\p{N}:._-]+/gu, '') || 'unknown'}`;
   }
 
-  function buildEvidenceGraphModel(input = {}) {
-    const params = normalizeEvidenceParams(input.params || {});
+  /* ---------------------------------------------------------------- *
+   * Knowledge graph projection (#knowledge)
+   * ---------------------------------------------------------------- */
+
+  const KNOWLEDGE_LENS_KINDS = {
+    structure: ['topic', 'direction'],
+    evolution: ['topic', 'direction', 'item', 'issue'],
+    judgements: ['topic', 'direction', 'item', 'judgement'],
+  };
+  const SOFT_NODE_LIMIT = 60;
+  const SOFT_EDGE_LIMIT = 120;
+  const HARD_NODE_LIMIT = 250;
+  const HARD_EDGE_LIMIT = 500;
+  const KIND_ORDER = { roadmap: 0, topic: 1, roadmap_branch: 2, direction: 3, item: 4, judgement: 5, issue: 5, idea: 6 };
+
+  function validateKnowledgeGraph(value) {
+    if (
+      !value || typeof value !== 'object' ||
+      value.schema_version !== 1 ||
+      !Array.isArray(value.nodes) || !Array.isArray(value.edges) || !Array.isArray(value.unresolved) ||
+      typeof value.archive_through_issue !== 'string' ||
+      typeof value.knowledge_through_issue !== 'string' ||
+      typeof value.input_digest !== 'string' ||
+      !value.input_digest.startsWith('sha256:') ||
+      !value.stats || typeof value.stats.node_count !== 'number'
+    ) {
+      throw new Error('knowledge/graph.json 不符合 schema_version=1 发布合同');
+    }
+    return value;
+  }
+
+  function buildKnowledgeGraphModel(input = {}) {
+    const params = normalizeKnowledgeParams(input.params || {});
+    const emptyLimits = { nodeLimit: 0, edgeLimit: 0, nodeCount: 0, edgeCount: 0, totalNodeCount: 0, totalEdgeCount: 0, truncated: false };
+    const emptyStats = { nodeCount: 0, edgeCount: 0, unresolvedCount: 0, byKind: {}, byRelation: {} };
+    const graph = input.graph;
+    if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) {
+      return {
+        unavailable: true,
+        params,
+        nodes: [],
+        edges: [],
+        unresolved: [],
+        issueDates: [],
+        focusId: '',
+        requestedFocusMissing: false,
+        limits: emptyLimits,
+        stats: emptyStats,
+      };
+    }
+
+    const issueDates = graph.nodes
+      .filter((node) => node.data.kind === 'issue')
+      .map((node) => text(node.data.issue_date) || text(node.data.label))
+      .filter(Boolean)
+      .sort();
+    const latest = issueDates.at(-1) || '';
+    const recentDates = new Set(issueDates.slice(-3));
+    const overlays = new Set(text(params.overlay).split(',').filter(Boolean));
+    const kinds = new Set(KNOWLEDGE_LENS_KINDS[params.lens] || KNOWLEDGE_LENS_KINDS.structure);
+    if (overlays.has('roadmap')) {
+      kinds.add('roadmap');
+      kinds.add('roadmap_branch');
+    }
+    if (overlays.has('idea')) kinds.add('idea');
+
+    const outgoing = new Map();
+    const incoming = new Map();
+    graph.edges.forEach((edge) => {
+      const data = edge.data;
+      if (!outgoing.has(data.source)) outgoing.set(data.source, []);
+      outgoing.get(data.source).push(data);
+      if (!incoming.has(data.target)) incoming.set(data.target, []);
+      incoming.get(data.target).push(data);
+    });
+
+    function itemInRange(node) {
+      if (params.range === 'all') return true;
+      const date = text(node.data.issue_date) || text(node.data.first_issue_date);
+      if (params.range === 'latest') return Boolean(latest) && date === latest;
+      if (params.range === 'recent3') return recentDates.has(date);
+      if (params.range === 'custom') {
+        if (params.from && date && date < params.from) return false;
+        if (params.to && date && date > params.to) return false;
+        return true;
+      }
+      return true;
+    }
+
+    const topicFilter = text(params.topic);
+    const directionFilter = text(params.direction);
+    const visible = new Set();
+    const topics = graph.nodes.filter((node) => node.data.kind === 'topic' && (!topicFilter || node.data.id === `topic:${topicFilter}`));
+    topics.forEach((node) => visible.add(node.data.id));
+
+    const directions = [];
+    topics.forEach((topic) => {
+      (outgoing.get(topic.data.id) || []).forEach((edge) => {
+        if (edge.relation !== 'has_direction') return;
+        if (directionFilter && edge.target !== `direction:${directionFilter}`) return;
+        if (!visible.has(edge.target)) {
+          visible.add(edge.target);
+          const node = graph.nodes.find((candidate) => candidate.data.id === edge.target);
+          if (node) directions.push(node);
+        }
+      });
+    });
+
+    if (kinds.has('item')) {
+      directions.forEach((direction) => {
+        (outgoing.get(direction.data.id) || []).forEach((edge) => {
+          if (edge.relation !== 'has_item' || visible.has(edge.target)) return;
+          const node = graph.nodes.find((candidate) => candidate.data.id === edge.target);
+          if (node && itemInRange(node)) visible.add(node.data.id);
+        });
+      });
+    }
+    if (kinds.has('issue')) {
+      graph.nodes.forEach((node) => {
+        if (node.data.kind !== 'issue' || visible.has(node.data.id)) return;
+        if (params.range === 'latest') {
+          if (text(node.data.issue_date) === latest) visible.add(node.data.id);
+        } else if (params.range === 'recent3') {
+          if (recentDates.has(text(node.data.issue_date))) visible.add(node.data.id);
+        } else if (params.range === 'custom') {
+          const date = text(node.data.issue_date);
+          if ((!params.from || date >= params.from) && (!params.to || date <= params.to)) visible.add(node.data.id);
+        } else {
+          visible.add(node.data.id);
+        }
+      });
+    }
+    if (kinds.has('judgement')) {
+      graph.nodes.forEach((node) => {
+        if (node.data.kind !== 'judgement' || visible.has(node.data.id)) return;
+        if (itemInRange(node)) visible.add(node.data.id);
+      });
+    }
+    if (overlays.has('roadmap')) {
+      graph.nodes.forEach((node) => {
+        if (visible.has(node.data.id)) return;
+        if (node.data.kind === 'roadmap') {
+          const tracksTopic = (outgoing.get(node.data.id) || []).some((edge) => edge.relation === 'tracks' && visible.has(edge.target));
+          if (tracksTopic || !topics.length) visible.add(node.data.id);
+        }
+      });
+      graph.nodes.forEach((node) => {
+        if (node.data.kind !== 'roadmap_branch' || visible.has(node.data.id)) return;
+        const organizesVisible = (outgoing.get(node.data.id) || []).some((edge) => edge.relation === 'organizes' && visible.has(edge.target));
+        if (organizesVisible) visible.add(node.data.id);
+      });
+    }
+    if (overlays.has('idea')) {
+      graph.nodes.forEach((node) => {
+        if (node.data.kind !== 'idea' || visible.has(node.data.id)) return;
+        const relatesToVisible = (outgoing.get(node.data.id) || []).some((edge) => edge.relation === 'relates_to' && visible.has(edge.target));
+        if (relatesToVisible) visible.add(node.data.id);
+      });
+    }
+
+    if (String(params.unresolved) === '1') {
+      const unresolvedIds = new Set();
+      (graph.unresolved || []).forEach((entry) => {
+        [entry.source_ref, entry.target_ref].forEach((ref) => {
+          if (ref && visible.has(ref)) unresolvedIds.add(ref);
+        });
+      });
+      visible.forEach((id) => {
+        if (!unresolvedIds.has(id)) visible.delete(id);
+      });
+    }
+
+    // Node-type filtering applies after structural reachability so hiding a
+    // bridge kind never rewrites how the remaining graph was derived.
+    const hiddenKinds = new Set(text(params.hide).split(',').filter(Boolean));
+    let nodes = graph.nodes.filter((node) => visible.has(node.data.id) && !hiddenKinds.has(node.data.kind));
+    let edges = graph.edges.filter((edge) => visible.has(edge.data.source) && visible.has(edge.data.target));
+
+    const requestedFocus = text(params.node);
+    const filteredIds = new Set(nodes.map((node) => node.data.id));
+    let focusId = requestedFocus && filteredIds.has(requestedFocus)
+      ? requestedFocus
+      : topics.find((topic) => filteredIds.has(topic.data.id))?.data.id || nodes[0]?.data.id || '';
+    const oneHop = new Set();
+    if (focusId) {
+      (outgoing.get(focusId) || []).forEach((edge) => oneHop.add(edge.target));
+      (incoming.get(focusId) || []).forEach((edge) => oneHop.add(edge.source));
+    }
+
+    const nodeLimit = params.range === 'all' ? HARD_NODE_LIMIT : SOFT_NODE_LIMIT;
+    const edgeLimit = params.range === 'all' ? HARD_EDGE_LIMIT : SOFT_EDGE_LIMIT;
+    let truncated = false;
+    if (nodes.length > nodeLimit) {
+      const priority = (node) => {
+        if (node.data.id === focusId) return 0;
+        if (oneHop.has(node.data.id)) return 1;
+        if (node.data.kind === 'judgement') return 2;
+        return 3;
+      };
+      const keep = new Set(nodes.slice().sort((a, b) => {
+        const priorityDelta = priority(a) - priority(b);
+        if (priorityDelta) return priorityDelta;
+        const dateDelta = text(b.data.issue_date).localeCompare(text(a.data.issue_date));
+        return dateDelta || a.data.id.localeCompare(b.data.id);
+      }).slice(0, nodeLimit).map((node) => node.data.id));
+      nodes = nodes.filter((node) => keep.has(node.data.id));
+      edges = edges.filter((edge) => keep.has(edge.data.source) && keep.has(edge.data.target));
+      truncated = true;
+    }
+    if (edges.length > edgeLimit) {
+      const focusFirst = (edge) => (edge.data.source === focusId || edge.data.target === focusId ? 0 : 1);
+      const keepEdges = edges.slice().sort((a, b) => {
+        const focusDelta = focusFirst(a) - focusFirst(b);
+        return focusDelta || a.data.id.localeCompare(b.data.id);
+      }).slice(0, edgeLimit);
+      const keptEdgeIds = new Set(keepEdges.map((edge) => edge.data.id));
+      edges = edges.filter((edge) => keptEdgeIds.has(edge.data.id));
+      const stillVisible = new Set(edges.flatMap((edge) => [edge.data.source, edge.data.target]));
+      nodes = nodes.filter((node) => stillVisible.has(node.data.id) || node.data.id === focusId);
+      truncated = true;
+    }
+    if (!nodes.some((node) => node.data.id === focusId)) focusId = nodes[0]?.data.id || '';
+
+    const byKind = {};
+    const byRelation = {};
+    graph.nodes.forEach((node) => { byKind[node.data.kind] = (byKind[node.data.kind] || 0) + 1; });
+    graph.edges.forEach((edge) => { byRelation[edge.data.relation] = (byRelation[edge.data.relation] || 0) + 1; });
+
+    return {
+      unavailable: false,
+      params,
+      nodes,
+      edges,
+      unresolved: graph.unresolved || [],
+      issueDates,
+      focusId,
+      requestedFocusMissing: Boolean(requestedFocus && requestedFocus !== focusId),
+      limits: {
+        nodeLimit,
+        edgeLimit,
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+        totalNodeCount: graph.nodes.length,
+        totalEdgeCount: graph.edges.length,
+        truncated,
+      },
+      stats: {
+        nodeCount: graph.nodes.length,
+        edgeCount: graph.edges.length,
+        unresolvedCount: (graph.unresolved || []).length,
+        byKind,
+        byRelation,
+      },
+    };
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Idea evidence subgraph projection (#ideas?...&view=evidence)
+   * ---------------------------------------------------------------- */
+
+  const IDEA_GRAPH_NODE_LIMIT = 60;
+  const IDEA_GRAPH_EDGE_LIMIT = 100;
+  const IDEA_SUBGRAPH_RELATION_LABELS = {
+    relates_to: '关联专题',
+    supports_idea: '支持',
+    challenges_idea: '反对',
+    published_in: '发布于',
+    supports_judgement: '支持判断',
+    uses_evidence: '引用证据',
+    tracks: '跟踪',
+    qualifies: '限定',
+    leads_to: '导向',
+  };
+
+  function buildIdeaEvidenceGraphModel(input = {}) {
+    const params = normalizeIdeaViewParams({ ...(input.params || {}), view: 'evidence' });
+    const depth = params.mode === 'graph' ? (params.depth === '2' ? 2 : 1) : 1;
     const idea = input.idea || {};
     const ideaRow = input.ideaRow || {};
-    const itemRows = Array.isArray(input.items) ? input.items : [];
+    const ideaId = text(idea.idea_id || ideaRow.idea_id);
+    const ideaNodeId = `idea:${ideaId}`;
+    const graph = input.graph && Array.isArray(input.graph.nodes) && Array.isArray(input.graph.edges) ? input.graph : null;
     const itemMap = new Map();
-    itemRows.forEach(item => {
-      [itemId(item), text(item?.id), text(item?.brief_item_id)].filter(Boolean).forEach(id => itemMap.set(id, item));
+    (Array.isArray(input.items) ? input.items : []).forEach((item) => {
+      [itemId(item), text(item?.id), text(item?.brief_item_id)].filter(Boolean).forEach((id) => itemMap.set(id, item));
     });
-    const roadmapRows = Array.isArray(input.roadmaps) ? input.roadmaps : [];
-    const roadmapObjects = input.roadmapObjects instanceof Map
-      ? input.roadmapObjects
-      : new Map(Object.entries(input.roadmapObjects || {}));
+
     const nodes = new Map();
-    const edges = [];
+    const edges = new Map();
     const unresolved = [];
 
-    function addNode(node) {
-      if (!node?.id || nodes.has(node.id)) return nodes.get(node?.id);
-      const value = {
-        subtitle: '', status: '', provenance: {}, href: '', unresolved: false,
-        ...node,
-      };
-      nodes.set(value.id, value);
-      return value;
+    function addNode(raw) {
+      if (!raw?.id || nodes.has(raw.id)) return;
+      const { position, provenance, ...data } = raw;
+      nodes.set(raw.id, { data, position, provenance: provenance || [] });
     }
-    function addEdge(source, target, relation, provenance, confirmation = 'confirmed') {
-      if (!nodes.has(source) || !nodes.has(target)) {
-        unresolved.push({reason: 'dangling_edge', sourceRef: source, targetRef: target});
-        return;
-      }
-      if (!source || !target || !relation || !provenance || !Object.keys(provenance).length) {
-        unresolved.push({reason: 'incomplete_provenance', sourceRef: source, targetRef: target});
-        return;
-      }
-      const id = stableGraphId('edge', `${source}:${relation}:${target}:${edges.length}`);
-      edges.push({id, source, target, relation, confirmation, provenance});
+    function addEdge(source, target, relation, provenance = {}) {
+      if (!nodes.has(source) || !nodes.has(target)) return;
+      const id = `edge:${relation}:${source}->${target}`;
+      if (edges.has(id)) return;
+      edges.set(id, {
+        data: {
+          id,
+          source,
+          target,
+          relation,
+          label: IDEA_SUBGRAPH_RELATION_LABELS[relation] || relation,
+          confirmation: 'explicit',
+        },
+        provenance: [provenance],
+      });
+    }
+    function addGraphObject(node) {
+      if (!node) return;
+      addNode({ ...node.data, position: node.position, provenance: node.provenance });
     }
 
-    const ideaId = stableGraphId('idea', idea.idea_id || ideaRow.idea_id);
     addNode({
-      id: ideaId,
+      id: ideaNodeId,
       kind: 'idea',
-      title: text(idea.title || ideaRow.title) || '未命名 Idea',
-      subtitle: text(idea.hypothesis || idea.idea_type || ideaRow.idea_type),
+      label: text(idea.title || ideaRow.title) || '未命名 Idea',
       status: text(idea.status || ideaRow.status),
-      provenance: {object_id: text(idea.idea_id || ideaRow.idea_id), field: 'idea'},
-      href: idea.idea_id || ideaRow.idea_id ? `#ideas?idea=${encodeURIComponent(idea.idea_id || ideaRow.idea_id)}` : '',
+      summary: text(idea.hypothesis || idea.problem),
+      href: ideaId ? `#ideas?idea=${encodeURIComponent(ideaId)}&view=overview` : '',
+      provenance: [{ path: 'idea', object_id: ideaId, field: 'idea' }],
     });
 
-    const evidenceEntries = [
-      ...(Array.isArray(idea.evidence_for) ? idea.evidence_for.map(row => ({...row, relation: 'supports'})) : []),
-      ...(Array.isArray(idea.evidence_against) ? idea.evidence_against.map(row => ({...row, relation: 'challenges'})) : []),
-    ];
-    const evidenceIds = new Map();
-    evidenceEntries.forEach((entry, index) => {
-      const ref = text(entry.item_id || entry.brief_item_id || entry.evidence_item_id);
-      const item = itemMap.get(ref);
-      const evidenceId = stableGraphId('evidence', ref || `${ideaId}:${index}`);
-      evidenceIds.set(ref, evidenceId);
-      addNode({
-        id: evidenceId,
-        kind: 'evidence',
-        title: '证据记录',
-        subtitle: text(item?.issue_date || entry.issue_date) || '期次未记录',
-        status: item ? '已发布' : '未解析',
-        provenance: {object_id: text(idea.idea_id || ideaRow.idea_id), field: entry.relation === 'supports' ? 'evidence_for' : 'evidence_against', item_id: ref},
-        href: item?.issue_date ? `#archive?date=${encodeURIComponent(item.issue_date)}` : '',
-        unresolved: !item,
-        description: text(entry.reason),
+    const evidenceItemIds = new Set();
+    if (graph) {
+      const nodeById = new Map(graph.nodes.map((node) => [node.data.id, node]));
+      const publishedEdges = graph.edges.filter((edge) =>
+        edge.data.target === ideaNodeId && ['supports_idea', 'challenges_idea'].includes(edge.data.relation));
+      publishedEdges.forEach((edge) => {
+        addGraphObject(nodeById.get(edge.data.source));
+        evidenceItemIds.add(edge.data.source);
+        edges.set(edge.data.id, edge);
       });
-      if (item) {
-        const sourceId = stableGraphId('source', ref || canonicalIdentity(item));
+      graph.edges
+        .filter((edge) => edge.data.source === ideaNodeId && edge.data.relation === 'relates_to')
+        .forEach((edge) => {
+          addGraphObject(nodeById.get(edge.data.target));
+          edges.set(edge.data.id, edge);
+        });
+      if (depth >= 2) {
+        graph.edges.forEach((edge) => {
+          const data = edge.data;
+          const connectsEvidence = evidenceItemIds.has(data.source) || evidenceItemIds.has(data.target);
+          if (!connectsEvidence) return;
+          if (data.relation === 'published_in' || data.relation === 'supports_judgement') {
+            addGraphObject(nodeById.get(data.source));
+            addGraphObject(nodeById.get(data.target));
+            edges.set(data.id, edge);
+          } else if (data.relation === 'uses_evidence' && evidenceItemIds.has(data.target)) {
+            addGraphObject(nodeById.get(data.source));
+            edges.set(data.id, edge);
+          }
+        });
+      }
+    } else {
+      // Fallback projection from the Idea object itself when the published
+      // graph document is unavailable. Still explicit fields only.
+      const entries = [
+        ...(Array.isArray(idea.evidence_for) ? idea.evidence_for.map((row) => ({ ...row, relation: 'supports_idea' })) : []),
+        ...(Array.isArray(idea.evidence_against) ? idea.evidence_against.map((row) => ({ ...row, relation: 'challenges_idea' })) : []),
+      ];
+      entries.forEach((entry) => {
+        const ref = text(entry.item_id || entry.brief_item_id || entry.evidence_item_id);
+        const item = itemMap.get(ref);
+        if (!ref || !item) {
+          unresolved.push({ reason: 'missing_archive_item', source_ref: ref || 'unknown', target_ref: ideaNodeId });
+          return;
+        }
+        const itemNodeId = `item:${ref}`;
         addNode({
-          id: sourceId,
-          kind: 'source',
-          title: text(item.title) || '归档条目',
-          subtitle: [text(item.topic_name), text(item.issue_date)].filter(Boolean).join(' · '),
-          status: '已发布',
-          provenance: {object_id: ref, field: item.url ? 'url' : 'archive'},
-          href: text(item.url),
-          issueDate: text(item.issue_date),
+          id: itemNodeId,
+          kind: 'item',
+          label: text(item.title) || '归档条目',
+          topic_id: text(item.topic_id),
+          direction_id: text(item.direction_id),
+          issue_date: text(item.issue_date),
+          href: text(item.issue_date) ? `#archive?date=${encodeURIComponent(item.issue_date)}&item=${encodeURIComponent(ref)}` : '',
+          provenance: [{ path: 'archive', object_id: ref, field: 'brief_item_id' }],
         });
-        addEdge(sourceId, evidenceId, 'declares', {object_id: ref, field: item.url ? 'url' : 'archive'});
-      } else {
-        unresolved.push({reason: 'missing_archive_item', sourceRef: ref, targetRef: evidenceId});
-      }
-      if (item) {
-        addEdge(evidenceId, ideaId, entry.relation, {
-          object_id: text(idea.idea_id || ideaRow.idea_id),
-          field: entry.relation === 'supports' ? 'evidence_for' : 'evidence_against',
-          item_id: ref,
+        evidenceItemIds.add(itemNodeId);
+        addEdge(itemNodeId, ideaNodeId, entry.relation, { path: 'idea', object_id: ideaId, field: entry.relation === 'supports_idea' ? 'evidence_for' : 'evidence_against' });
+      });
+      (Array.isArray(idea.topic_ids) ? idea.topic_ids : []).forEach((topicId) => {
+        const topicNodeId = `topic:${topicId}`;
+        addNode({
+          id: topicNodeId,
+          kind: 'topic',
+          label: text(topicId),
+          topic_id: text(topicId),
+          provenance: [{ path: 'idea', object_id: ideaId, field: 'topic_ids' }],
         });
-      }
-    });
-
-    if (evidenceEntries.length) {
-      addNode({
-        id: stableGraphId('claim', `${ideaId}:unmaterialized`),
-        kind: 'claim',
-        title: 'Claim 尚未物化',
-        subtitle: '当前来源对象没有可定位 Claim',
-        status: '尚未物化',
-        provenance: {object_id: text(idea.idea_id || ideaRow.idea_id), field: 'evidence_for/evidence_against'},
-        unresolved: true,
+        addEdge(ideaNodeId, topicNodeId, 'relates_to', { path: 'idea', object_id: ideaId, field: 'topic_ids' });
       });
     }
 
+    // Idea-field projections: assumptions and decisions are read-only views of
+    // Idea fields and never receive persistent identities.
     const assumptions = Array.isArray(idea.unknowns) && idea.unknowns.length
-      ? idea.unknowns.map((title, index) => ({title, field: `unknowns[${index}]`}))
-      : text(idea.hypothesis) ? [{title: idea.hypothesis, field: 'hypothesis'}] : [];
+      ? idea.unknowns.map((title, index) => ({ title, field: `unknowns[${index}]` }))
+      : text(idea.hypothesis) ? [{ title: idea.hypothesis, field: 'hypothesis' }] : [];
     assumptions.forEach((assumption, index) => {
-      const id = stableGraphId('assumption', `${idea.idea_id || ideaRow.idea_id}:${index + 1}`);
+      const id = `assumption:${ideaId}:${index + 1}`;
       addNode({
         id,
         kind: 'assumption',
-        title: text(assumption.title),
-        subtitle: '来自 Idea 字段',
+        label: text(assumption.title) || '关键假设',
         status: '待验证',
-        provenance: {object_id: text(idea.idea_id || ideaRow.idea_id), field: assumption.field},
+        href: `#ideas?idea=${encodeURIComponent(ideaId)}&view=gaps`,
+        provenance: [{ path: 'idea', object_id: ideaId, field: assumption.field }],
       });
-      addEdge(ideaId, id, 'qualifies', {object_id: text(idea.idea_id || ideaRow.idea_id), field: assumption.field});
+      addEdge(ideaNodeId, id, 'qualifies', { path: 'idea', object_id: ideaId, field: assumption.field });
     });
-
-    roadmapRows
-      .filter(row => (idea.topic_ids || ideaRow.topic_ids || []).includes(row.topic_id))
-      .forEach(row => {
-        const roadmap = roadmapObjects.get(row.topic_id) || {};
-        const relevantRefs = new Set();
-        (roadmap.branches || []).forEach(branch => {
-          (branch.evidence_item_ids || []).forEach(ref => relevantRefs.add(text(ref)));
-          (branch.evidence_timeline || []).forEach(event => relevantRefs.add(text(event.item_id || event.evidence_item_id)));
-        });
-        const linkedEvidence = [...relevantRefs].filter(ref => evidenceIds.has(ref) && itemMap.has(ref));
-        if (!linkedEvidence.length) return;
-        const roadmapId = stableGraphId('roadmap', row.topic_id);
-        addNode({
-          id: roadmapId,
-          kind: 'roadmap',
-          title: text(row.topic_name || roadmap.topic_name),
-          subtitle: text(roadmap.view_mode || row.change_type),
-          status: text(row.change_type),
-          provenance: {object_id: text(roadmap.roadmap_id || row.topic_id), field: 'branches.evidence_item_ids'},
-          href: `#roadmaps?topic=${encodeURIComponent(row.topic_id)}`,
-        });
-        linkedEvidence.forEach(ref => addEdge(evidenceIds.get(ref), roadmapId, 'leads_to', {
-          object_id: text(roadmap.roadmap_id || row.topic_id), field: 'branches.evidence_item_ids', item_id: ref,
-        }));
-        if (params.depth === '2') {
-          [...relevantRefs].filter(ref => !evidenceIds.has(ref)).forEach(ref => {
-            const item = itemMap.get(ref);
-            if (!item) {
-              unresolved.push({reason: 'missing_roadmap_evidence', sourceRef: ref, targetRef: roadmapId});
-              return;
-            }
-            const evidenceId = stableGraphId('evidence', ref);
-            const sourceId = stableGraphId('source', ref || canonicalIdentity(item));
-            evidenceIds.set(ref, evidenceId);
-            addNode({
-              id: evidenceId,
-              kind: 'evidence',
-              title: '证据记录',
-              subtitle: text(item.issue_date) || '期次未记录',
-              status: '已发布',
-              provenance: {object_id: text(roadmap.roadmap_id || row.topic_id), field: 'branches.evidence_item_ids', item_id: ref},
-              href: item.issue_date ? `#archive?date=${encodeURIComponent(item.issue_date)}` : '',
-            });
-            addNode({
-              id: sourceId,
-              kind: 'source',
-              title: text(item.title) || '归档条目',
-              subtitle: [text(item.topic_name), text(item.issue_date)].filter(Boolean).join(' · '),
-              status: '已发布',
-              provenance: {object_id: ref, field: item.url ? 'url' : 'archive'},
-              href: text(item.url),
-              issueDate: text(item.issue_date),
-            });
-            addEdge(sourceId, evidenceId, 'declares', {object_id: ref, field: item.url ? 'url' : 'archive'});
-            addEdge(evidenceId, roadmapId, 'leads_to', {object_id: text(roadmap.roadmap_id || row.topic_id), field: 'branches.evidence_item_ids', item_id: ref});
-          });
-        }
-      });
-
     (Array.isArray(idea.decision_log) ? idea.decision_log : []).forEach((event, index) => {
-      const rawId = text(event.event_id) || `${idea.idea_id || ideaRow.idea_id}:${index + 1}`;
-      const id = stableGraphId('decision', rawId);
+      const rawId = text(event.event_id) || `${ideaId}:${index + 1}`;
+      const id = `decision:${rawId}`;
       addNode({
         id,
         kind: 'decision',
-        title: text(event.decision) || 'Decision',
-        subtitle: text(event.issue_date),
+        label: text(event.decision) || 'Decision',
         status: text(event.to_status),
+        issue_date: text(event.issue_date),
         description: text(event.reason),
-        provenance: {object_id: rawId, field: 'decision_log'},
+        provenance: [{ path: 'idea', object_id: rawId, field: 'decision_log' }],
       });
-      addEdge(ideaId, id, 'leads_to', {object_id: rawId, field: 'decision_log'});
+      addEdge(ideaNodeId, id, 'leads_to', { path: 'idea', object_id: rawId, field: 'decision_log' });
     });
 
-    if (params.candidates === '1') {
-      (Array.isArray(input.candidateRelations) ? input.candidateRelations : []).forEach(candidate => {
-        if (!candidate.rule_name || !candidate.rule_version || !candidate.provenance) {
-          unresolved.push({reason: 'invalid_candidate_relation', sourceRef: candidate.source, targetRef: candidate.target});
-          return;
-        }
-        addEdge(candidate.source, candidate.target, candidate.relation || 'pending', {
-          ...candidate.provenance, rule_name: candidate.rule_name, rule_version: candidate.rule_version,
-        }, 'candidate');
-      });
-    }
-
-    let nodeRows = [...nodes.values()].sort((a, b) => `${a.kind}:${a.id}`.localeCompare(`${b.kind}:${b.id}`, 'zh-CN'));
-    let edgeRows = edges.sort((a, b) => `${a.source}:${a.target}:${a.relation}`.localeCompare(`${b.source}:${b.target}:${b.relation}`, 'zh-CN'));
+    const IDEA_SUBGRAPH_KIND_ORDER = { idea: 0, item: 1, topic: 2, judgement: 3, issue: 3, roadmap_branch: 4, roadmap: 4, assumption: 5, decision: 5 };
+    let nodeRows = [...nodes.values()].sort((a, b) => (IDEA_SUBGRAPH_KIND_ORDER[a.data.kind] ?? 9) - (IDEA_SUBGRAPH_KIND_ORDER[b.data.kind] ?? 9) || a.data.id.localeCompare(b.data.id));
+    let edgeRows = [...edges.values()].sort((a, b) => a.data.id.localeCompare(b.data.id));
     let truncated = false;
-    if (nodeRows.length > 40) {
-      const directRefs = new Set(evidenceEntries.map(entry => text(entry.item_id || entry.brief_item_id || entry.evidence_item_id)));
-      const priority = node => {
-        if (node.id === ideaId) return 0;
-        if (['assumption', 'roadmap', 'decision', 'claim'].includes(node.kind)) return 1;
-        const ref = text(node.provenance?.item_id || node.provenance?.object_id);
-        if (directRefs.has(ref)) return 2;
+    if (nodeRows.length > IDEA_GRAPH_NODE_LIMIT) {
+      const priority = (node) => {
+        if (node.data.id === ideaNodeId) return 0;
+        if (['assumption', 'decision'].includes(node.data.kind)) return 1;
+        if (evidenceItemIds.has(node.data.id) || node.data.kind === 'topic') return 2;
         return 3;
       };
       const keep = new Set(nodeRows.slice().sort((a, b) => {
         const priorityDelta = priority(a) - priority(b);
         if (priorityDelta) return priorityDelta;
-        const dateDelta = text(b.issueDate || b.subtitle).localeCompare(text(a.issueDate || a.subtitle));
-        return dateDelta || a.id.localeCompare(b.id);
-      }).slice(0, 40).map(node => node.id));
-      nodeRows = nodeRows.filter(node => keep.has(node.id));
-      edgeRows = edgeRows.filter(edge => keep.has(edge.source) && keep.has(edge.target));
+        return text(b.data.issue_date).localeCompare(text(a.data.issue_date)) || a.data.id.localeCompare(b.data.id);
+      }).slice(0, IDEA_GRAPH_NODE_LIMIT).map((node) => node.data.id));
+      nodeRows = nodeRows.filter((node) => keep.has(node.data.id));
+      edgeRows = edgeRows.filter((edge) => keep.has(edge.data.source) && keep.has(edge.data.target));
       truncated = true;
     }
-    if (edgeRows.length > 80) {
-      edgeRows = edgeRows.slice(0, 80);
+    if (edgeRows.length > IDEA_GRAPH_EDGE_LIMIT) {
+      edgeRows = edgeRows.slice(0, IDEA_GRAPH_EDGE_LIMIT);
+      const stillVisible = new Set(edgeRows.flatMap((edge) => [edge.data.source, edge.data.target]));
+      nodeRows = nodeRows.filter((node) => stillVisible.has(node.data.id) || node.data.id === ideaNodeId);
       truncated = true;
     }
+
     const requestedFocus = text(params.node);
-    const renderedIds = new Set(nodeRows.map(node => node.id));
-    const focusId = renderedIds.has(requestedFocus) ? requestedFocus : ideaId;
-    const confirmedRelations = edgeRows.filter(edge => edge.confirmation === 'confirmed' && edge.target === focusId).map(edge => edge.relation);
+    const renderedIds = new Set(nodeRows.map((node) => node.data.id));
+    const focusId = renderedIds.has(requestedFocus) ? requestedFocus : ideaNodeId;
+    const ideaIncoming = edgeRows.filter((edge) => edge.data.target === ideaNodeId).map((edge) => edge.data.relation);
+
     return {
       nodes: nodeRows,
       edges: edgeRows,
       focusId,
       requestedFocusMissing: Boolean(requestedFocus && !renderedIds.has(requestedFocus)),
       unresolved: unresolved.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
-      limits: {depth: Number(params.depth || 1), nodeCount: nodeRows.length, edgeCount: edgeRows.length, truncated},
-      conflict: confirmedRelations.includes('supports') && confirmedRelations.includes('challenges'),
-      candidatesAvailable: Array.isArray(input.candidateRelations) && input.candidateRelations.some(row => row.rule_name && row.rule_version && row.provenance),
-      candidatesEnabled: params.candidates === '1',
+      conflict: ideaIncoming.includes('supports_idea') && ideaIncoming.includes('challenges_idea'),
+      evidenceItemIds: [...evidenceItemIds],
+      usesPublishedGraph: Boolean(graph),
+      limits: { depth, nodeCount: nodeRows.length, edgeCount: edgeRows.length, truncated },
     };
-  }
-
-  function buildArchiveAtlasModel(input = {}) {
-    const params = normalizeEvidenceParams({...input.params, view: 'atlas'});
-    const allIssues = [...(Array.isArray(input.issues) ? input.issues : [])].sort((a, b) => text(a.date).localeCompare(text(b.date)));
-    const latest = allIssues.at(-1);
-    const issueFilter = text(params.issue);
-    const issues = issueFilter
-      ? allIssues.filter(issue => text(issue.date) === issueFilter)
-      : params.scope === 'latest' ? (latest ? [latest] : []) : allIssues;
-    const nodes = [];
-    const edges = [];
-    const topicFilter = text(params.topic);
-    issues.forEach(issue => {
-      const issueId = stableGraphId('issue', issue.date);
-      nodes.push({id: issueId, kind: 'issue', title: text(issue.date), subtitle: `${(issue.papers || []).length} 条内容`, status: '', provenance: {object_id: text(issue.date), field: 'archive.index'}, href: `#archive?date=${encodeURIComponent(issue.date)}`, unresolved: false});
-      const groups = new Map();
-      (issue.papers || []).forEach(item => {
-        const key = params.mode === 'keyword' ? text(item.keywords?.[0]) || '未分类' : text(item.topic_name) || '未分类';
-        const topicId = params.mode === 'topic' ? text(item.topic_id) || norm(key) : norm(key);
-        if (topicFilter && topicId !== topicFilter && key !== topicFilter) return;
-        if (!groups.has(key)) groups.set(key, {id: topicId, items: []});
-        groups.get(key).items.push(item);
-      });
-      [...groups.entries()].sort(([a], [b]) => a.localeCompare(b, 'zh-CN')).forEach(([label, group]) => {
-        const topicId = stableGraphId('topic', `${issue.date}:${group.id || label}`);
-        nodes.push({id: topicId, kind: 'topic', title: label, subtitle: `${group.items.length} 条聚合`, status: '', provenance: {object_id: text(issue.date), field: params.mode === 'topic' ? 'topic_name' : 'keywords'}, href: '', unresolved: false, issueDate: text(issue.date)});
-        edges.push({id: stableGraphId('edge', `${issueId}:contains:${topicId}`), source: issueId, target: topicId, relation: 'contains', confirmation: 'confirmed', provenance: {object_id: text(issue.date), field: 'papers'}});
-        const sortedItems = group.items
-          .slice()
-          .sort((a, b) => `${text(a.title)}:${itemId(a)}`.localeCompare(`${text(b.title)}:${itemId(b)}`, 'zh-CN'));
-        sortedItems.slice(0, 4).forEach(item => {
-            const archiveId = stableGraphId('archive_entry', `${issue.date}:${itemId(item) || canonicalIdentity(item)}`);
-            nodes.push({id: archiveId, kind: 'archive_entry', title: text(item.title) || '未命名条目', subtitle: text(item.role || item.direction_name), status: text(item.role), provenance: {object_id: itemId(item), field: 'archive.papers'}, href: text(item.url), unresolved: false, issueDate: text(issue.date), topicId});
-            edges.push({id: stableGraphId('edge', `${topicId}:contains:${archiveId}`), source: topicId, target: archiveId, relation: 'contains', confirmation: 'confirmed', provenance: {object_id: itemId(item), field: 'topic_name'}});
-          });
-        if (sortedItems.length > 4) {
-          const aggregateId = stableGraphId('aggregate', `${issue.date}:${group.id || label}`);
-          nodes.push({id: aggregateId, kind: 'aggregate', title: `+ ${sortedItems.length - 4} 条摘要`, subtitle: `共 ${sortedItems.length} 条`, status: '', provenance: {object_id: text(issue.date), field: 'archive.papers'}, href: '', unresolved: false, issueDate: text(issue.date), topicId, count: sortedItems.length - 4});
-          edges.push({id: stableGraphId('edge', `${topicId}:contains:${aggregateId}`), source: topicId, target: aggregateId, relation: 'contains', confirmation: 'confirmed', provenance: {object_id: text(issue.date), field: 'topic_name'}});
-        }
-      });
-    });
-    nodes.sort((a, b) => `${a.issueDate || a.title}:${a.kind}:${a.title}:${a.id}`.localeCompare(`${b.issueDate || b.title}:${b.kind}:${b.title}:${b.id}`, 'zh-CN'));
-    edges.sort((a, b) => `${a.source}:${a.target}`.localeCompare(`${b.source}:${b.target}`));
-    const focusId = nodes.some(node => node.id === params.node) ? params.node : nodes.find(node => node.kind === 'archive_entry')?.id || nodes[0]?.id || '';
-    return {nodes, edges, focusId, unresolved: [], limits: {depth: 1, nodeCount: nodes.length, edgeCount: edges.length, truncated: false}, scope: params.scope, mode: params.mode};
   }
 
   function knowledgePath(path) {
@@ -507,19 +753,21 @@
     canonicalIdentity,
     collectItemMap,
     itemId,
-    buildArchiveAtlasModel,
-    buildEvidenceGraphModel,
+    buildIdeaEvidenceGraphModel,
+    buildKnowledgeGraphModel,
     knowledgePath,
     mergeRadarWithoutDuplicates,
     mergeReaderItem,
     norm,
+    normalizeIdeaViewParams,
+    normalizeKnowledgeParams,
     originalEmailPath,
     parseRoute,
-    normalizeEvidenceParams,
     radarFromIssue,
     readerHeadline,
     readerSummary,
     stableGraphId,
+    validateKnowledgeGraph,
     validateKnowledgeIndex,
   };
 });

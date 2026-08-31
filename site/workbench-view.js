@@ -174,7 +174,7 @@ function renderHome() {
         );
       }).join("")}</div>`
     : emptyState("还没有正式 Idea", "长期知识物化后，正式 Idea 会在这里出现。", "idea");
-  const quick = `<div class="link-matrix">${quickLink("#roadmaps", "roadmap", "查看 Roadmap")}${quickLink("#ideas", "idea", "进入 Idea Hub")}${quickLink("#evidence", "evidence", "沿证据路径阅读")}${quickLink("#archive", "archive", "浏览日报归档")}</div>`;
+  const quick = `<div class="link-matrix">${quickLink("#roadmaps", "roadmap", "查看 Roadmap")}${quickLink("#ideas", "idea", "进入 Idea Hub")}${quickLink("#knowledge", "trend", "查看知识图谱")}${quickLink("#archive", "archive", "浏览日报归档")}</div>`;
   $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "首页", description: "把分散的证据转化为清晰的判断，驱动更好的技术决策。", home: true })}${metricStrip(metrics)}<div class="home-grid">${section("本期最重要变化", changes)}${section("风险与异常", riskBody)}${section("本期新产生或更新的 Idea", ideaBody)}${section("快速入口", quick)}</div></div>`;
 }
 
@@ -270,7 +270,7 @@ function renderIdeaDetail(row, idea) {
     renderIdeaHub();
     return;
   }
-  const evidence = [...(idea.evidence_for || []).map((entry) => ({ ...entry, relation: "支持" })), ...(idea.evidence_against || []).map((entry) => ({ ...entry, relation: "反对" }))];
+  const evidence = IdeaEvidenceView.evidenceEntries(idea);
   const sources = new Set(evidence.flatMap((entry) => entry.source_urls || []));
   const origin = idea.decision_log?.[0];
   const latestDecision = idea.decision_log?.at(-1);
@@ -302,373 +302,12 @@ function renderIdeaDetail(row, idea) {
     { key: "source", label: "来源", width: "10%", render: (claim) => claim.source ? `<a href="${esc(claim.source)}" target="_blank" rel="noreferrer">原文 ↗</a>` : "未解析" },
   ], claimRows, { emptyTitle: "尚无证据 Claim", emptyCopy: "Idea 仍可保留，但必须明确证据不足。", cardTitleKey: "id" });
   const suggestion = idea.validation_plan ? editorialNote("验证建议 · 尚未执行", `${idea.validation_plan.minimal_model || idea.validation_plan.mode || "当前只保存验证建议"}。这不是仿真或实验结果。`, "warning") : editorialNote("尚无验证建议", "当前状态未进入 Validation，不展示完整 Plan、Run 或 Result。", "warning");
-  const path = renderEvidencePathForIdea(row, idea, evidence[0]);
+  const path = IdeaEvidenceView.evidencePathMarkup(row, idea, evidence[0]);
   const main = `<div class="page-stack">${overview}<div class="definition-grid">${definition}${assumptions}</div>${section("证据摘要（按 Claim）", claimTable)}${section("最小验证建议", suggestion)}${section("证据路径（阅读路径）", path)}</div>`;
   const timeline = idea.decision_log?.length ? `<ol class="timeline">${idea.decision_log.slice(-5).map((event, index, rows) => `<li ${index === rows.length - 1 ? 'aria-current="step"' : ""}><time>${esc(event.issue_date || "")}</time><span>${esc(event.reason || event.decision || "状态更新")}</span></li>`).join("")}</ol>` : emptyState("没有决策时间线", "当前对象未记录状态事件。", "clock");
   const roadmapLinks = (idea.topic_ids || []).map((topicId) => quickLink(`#roadmaps?topic=${encodeURIComponent(topicId)}`, "roadmap", topicLabel(topicId))).join("");
-  const side = `<aside class="side-rail">${section("Decision Timeline", timeline)}${section("关联 Roadmap", roadmapLinks ? `<div class="side-list">${roadmapLinks}</div>` : emptyState("没有关联 Roadmap", "当前 Idea 尚未绑定 Topic。", "roadmap"))}${section("相关 Open Questions", (idea.unknowns || []).length ? `<ul>${idea.unknowns.map((unknown) => `<li>${esc(unknown)}</li>`).join("")}</ul>` : "<p>暂无。</p>")}${section("操作入口", `<div class="side-list">${quickLink(`#evidence?idea=${encodeURIComponent(row.idea_id)}`, "evidence", "查看 Evidence Path")}${evidence[0]?.source_urls?.[0] ? quickLink(evidence[0].source_urls[0], "source", "查看原始来源", true) : ""}${quickLink("#ideas", "idea", "返回 Idea Hub")}</div>`)}</aside>`;
-  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "Idea 详情", description: "查看一个 Idea 的来龙去脉、证据成熟度与下一步验证建议。", breadcrumb: '<a href="#ideas">Idea Hub</a><span>/</span><span>详情</span>' })}<div class="two-column idea-detail-layout">${main}${side}</div></div>`;
-}
-
-function renderEvidencePathForIdea(row, idea, reference) {
-  const item = evidenceItem(reference);
-  const source = item?.url || reference?.source_urls?.[0] || "";
-  const steps = [
-    { icon: "source", title: "原始来源", note: item?.title || "公开论文或工程资料", href: source },
-    { icon: "trend", title: "证据记录", note: reference?.reason || "结构化提炼与归因", href: item ? issueHref(item.issue_date) : "" },
-    { icon: "idea", title: "Idea Assumption", note: idea.unknowns?.[0] || idea.hypothesis || "关键假设", href: `#ideas?idea=${encodeURIComponent(row.idea_id)}` },
-    { icon: "status", title: "系统综合判断", note: STATUS_LABELS[idea.status] || idea.status || "未知" },
-    { icon: "check", title: "Decision", note: idea.decision_log?.at(-1)?.decision || "持续构建证据" },
-  ];
-  return `<div class="evidence-path">${steps.map((step) => `<div class="path-step">${icon(step.icon)}${step.href ? `<a href="${esc(step.href)}" ${/^https?:/i.test(step.href) ? 'target="_blank" rel="noreferrer"' : ""}><b>${esc(step.title)}</b><span>${esc(step.note)}</span></a>` : `<b>${esc(step.title)}</b><span>${esc(step.note)}</span>`}</div>`).join("")}</div>`;
-}
-
-function evidenceViewHref(view, row, params = {}) {
-  const query = new URLSearchParams(Object.entries({ idea: row?.idea_id, view, ...params }).filter(([, value]) => value != null && value !== "")).toString();
-  return `#evidence?${query}`;
-}
-
-function evidenceViewTabs(view, row) {
-  return `<nav class="evidence-view-tabs" aria-label="Evidence 视图">
-    <a href="${evidenceViewHref("path", row)}" ${view === "path" ? 'aria-current="page"' : ""}>证据链</a>
-    <a href="${evidenceViewHref("graph", row, { depth: 1, candidates: 0 })}" ${view === "graph" ? 'aria-current="page"' : ""}>关系图</a>
-    <a href="${evidenceViewHref("gaps", row)}" ${view === "gaps" ? 'aria-current="page"' : ""}>证据缺口</a>
-    <a href="${evidenceViewHref("atlas", row, { scope: "all", mode: "topic" })}" ${view === "atlas" ? 'aria-current="page"' : ""}>Archive Atlas</a>
-  </nav>`;
-}
-
-function graphKnowledgePercent(model) {
-  return model.nodes.length ? Math.round(model.nodes.filter((node) => !node.unresolved).length / model.nodes.length * 100) : 0;
-}
-
-function evidenceContextBar(row, idea, model, view) {
-  const percent = graphKnowledgePercent(model);
-  const current = model.nodes.find((node) => node.id === model.focusId);
-  const relations = model.edges.filter((edge) => edge.target === current?.id && edge.confirmation === "confirmed").map((edge) => edge.relation);
-  const conflict = relations.includes("supports") && relations.includes("challenges");
-  return `<div class="evidence-context-bar desktop-evidence-view">
-    <div class="evidence-context-item"><span>当前 Idea</span><strong>${esc(row?.title || "未选择")}</strong></div>
-    <div class="evidence-context-item"><span>状态</span>${badge(STATUS_LABELS[idea?.status] || idea?.status || "未知", statusTone(idea?.status))}</div>
-    <div class="evidence-context-item"><span>范围</span><strong>上游与下游 ${esc(model.limits.depth || 1)} 跳</strong></div>
-    <div class="evidence-context-item"><span>知识水位</span><div class="knowledge-meter"><i style="--meter:${percent}%"></i><strong>${percent}%</strong></div></div>
-    ${view === "graph" && conflict ? '<div class="conflict-banner"><b>证据存在冲突</b><span>同一节点同时存在已确认的支持与挑战关系。</span></div>' : ""}
-  </div>`;
-}
-
-function graphDetailMarkup(model, selectedId) {
-  const node = model.nodes.find((candidate) => candidate.id === selectedId) || model.nodes.find((candidate) => candidate.id === model.focusId);
-  if (!node) return emptyState("没有节点详情", "当前投影没有可查看对象。", "question");
-  const incoming = model.edges.filter((edge) => edge.target === node.id);
-  const outgoing = model.edges.filter((edge) => edge.source === node.id);
-  const provenance = Object.entries(node.provenance || {}).map(([key, value]) => `${key}: ${value}`).join(" · ");
-  return `<div class="graph-detail-body">
-    ${model.requestedFocusMissing && selectedId === model.focusId ? '<div class="graph-detail-section"><p>请求的节点不存在，已回退到当前 Idea。</p></div>' : ""}
-    <div class="graph-detail-section"><h3>${esc(node.title)}</h3>${badge(EvidenceGraph.KIND_LABELS[node.kind] || node.kind, node.unresolved ? "negative" : "neutral")}</div>
-    <div class="graph-detail-section"><h3>身份</h3>${fieldRows([{ label: "类型", value: EvidenceGraph.KIND_LABELS[node.kind] || node.kind }, { label: "状态", value: node.status || "未记录" }, { label: "名称", value: node.title }])}</div>
-    ${node.description || node.subtitle ? `<div class="graph-detail-section"><h3>陈述</h3><p>${esc(node.description || node.subtitle)}</p></div>` : ""}
-    <div class="graph-detail-section"><h3>来源与影响</h3>${fieldRows([{ label: "Provenance", value: provenance || "未记录" }, { label: "入边", value: `${incoming.length} 条` }, { label: "出边", value: `${outgoing.length} 条` }])}</div>
-    ${node.unresolved ? '<div class="graph-detail-section"><p>该对象尚未物化或引用未解析，不参与已确认下游关系。</p></div>' : ""}
-  </div><div class="graph-detail-actions">${node.href ? `<a href="${esc(node.href)}" ${/^https?:/i.test(node.href) ? 'target="_blank" rel="noreferrer"' : ""}>打开对象</a>` : ""}<a href="#relationshipList">查看证据链</a></div>`;
-}
-
-function relationshipTableMarkup(model, selectedEdgeId = "") {
-  if (!model.edges.length) return `<div id="relationshipList" class="relationship-table">${emptyState("没有已解析关系", "未解析引用不会绘制到图谱中。", "evidence")}</div>`;
-  const nodeMap = new Map(model.nodes.map((node) => [node.id, node]));
-  return `<div id="relationshipList" class="relationship-table"><table><thead><tr><th style="width:18%">来源对象</th><th style="width:12%">关系</th><th style="width:26%">目标对象</th><th style="width:13%">确认状态</th><th style="width:20%">来源</th><th style="width:11%">更新时间</th></tr></thead><tbody>${model.edges.map((edge) => {
-    const source = nodeMap.get(edge.source);
-    const target = nodeMap.get(edge.target);
-    const provenance = edge.provenance || {};
-    return `<tr tabindex="0" data-relationship-id="${esc(edge.id)}" aria-selected="${edge.id === selectedEdgeId}"><td>${esc(source?.title || edge.source)}</td><td><span class="relationship-symbol ${esc(edge.relation)}"><i class="relation-swatch ${esc(edge.relation)}"></i>${esc(EvidenceGraph.RELATION_LABELS[edge.relation] || edge.relation)}</span></td><td>${esc(target?.title || edge.target)}</td><td>${esc(edge.confirmation === "candidate" ? "候选" : "已确认")}</td><td>${esc(provenance.object_id || provenance.item_id || "已记录")}</td><td>${esc(source?.issueDate || target?.subtitle || "—")}</td></tr>`;
-  }).join("")}</tbody></table></div>`;
-}
-
-function graphFilterMarkup(model, row) {
-  const counts = model.nodes.reduce((map, node) => map.set(node.kind, (map.get(node.kind) || 0) + 1), new Map());
-  return `<aside class="graph-filter-panel" aria-label="图谱筛选">
-    <input class="graph-search" type="search" data-graph-search placeholder="搜索 Claim、Idea、Roadmap 或来源" aria-label="搜索图谱节点" />
-    <div class="graph-panel-section"><h3>当前对象</h3><div class="graph-filter-row">${icon("idea")}<span>Idea：${esc(row?.title || "未选择")}</span></div></div>
-    <div class="graph-panel-section"><h3>节点类型</h3><div class="graph-filter-list">${["source", "evidence", "claim", "idea", "roadmap", "assumption", "decision", "unknown"].map((kind) => `<label class="graph-filter-row"><input type="checkbox" checked data-node-kind="${kind}"><span>${esc(EvidenceGraph.KIND_LABELS[kind])}</span><b>${counts.get(kind) || 0}</b></label>`).join("")}</div></div>
-    <div class="graph-panel-section"><h3>关系类型</h3><div class="graph-filter-list">${["declares", "supports", "challenges", "qualifies", "leads_to", "pending"].map((relation) => `<div class="graph-filter-row"><i class="relation-swatch ${relation}"></i><span>${esc(EvidenceGraph.RELATION_LABELS[relation])}</span><b>${model.edges.filter((edge) => edge.relation === relation).length}</b></div>`).join("")}</div></div>
-    <div class="graph-panel-section"><h3>深度</h3><div class="graph-depth-options"><label><input type="radio" name="graph-depth" value="1" ${model.limits.depth === 1 ? "checked" : ""}>1 跳</label><label><input type="radio" name="graph-depth" value="2" ${model.limits.depth === 2 ? "checked" : ""}>2 跳</label></div></div>
-    <div class="graph-panel-section"><label class="candidate-toggle"><span>显示候选关系</span><input type="checkbox" data-candidates ${model.candidatesEnabled ? "checked" : ""} ${model.candidatesAvailable ? "" : "disabled"}></label><p class="filter-note">${model.candidatesAvailable ? "候选边包含规则版本与 provenance。" : "没有带规则名、版本和 provenance 的候选关系。"}</p></div>
-    <div class="graph-panel-section"><h3>未解析关系</h3><p class="filter-note">${model.unresolved.length ? `${model.unresolved.length} 条引用未进入图谱；可在“证据缺口”查看原因。` : "当前没有悬空引用。"}</p></div>
-  </aside>`;
-}
-
-function mobileEvidencePath(model) {
-  const nodeMap = new Map(model.nodes.map((node) => [node.id, node]));
-  const focus = nodeMap.get(model.focusId) || model.nodes.find((node) => node.kind === "idea");
-  const evidenceEdges = model.edges
-    .filter((edge) => edge.target === focus?.id && ["supports", "challenges"].includes(edge.relation) && nodeMap.get(edge.source)?.kind === "evidence")
-    .slice(0, 3);
-  const evidenceNodes = evidenceEdges.map((edge) => nodeMap.get(edge.source)).filter(Boolean);
-  const nodes = [];
-  const placement = new Map();
-  const add = (node, column, row) => {
-    if (!node || placement.has(node.id)) return;
-    placement.set(node.id, { column, row });
-    nodes.push(node);
-  };
-
-  evidenceNodes.forEach((evidence, index) => {
-    const sourceEdge = model.edges.find((edge) => edge.target === evidence.id && edge.relation === "declares" && nodeMap.get(edge.source)?.kind === "source");
-    add(nodeMap.get(sourceEdge?.source), 1, index + 1);
-    add(evidence, 2, index + 1);
-  });
-
-  const finalRow = Math.max(1, evidenceNodes.length + 1);
-  add(focus, 1, finalRow);
-  const roadmap = model.edges
-    .filter((edge) => edge.relation === "leads_to" && evidenceNodes.some((node) => node.id === edge.source))
-    .map((edge) => nodeMap.get(edge.target))
-    .find((node) => node?.kind === "roadmap");
-  add(roadmap, 2, finalRow);
-
-  const ids = new Set(nodes.map((node) => node.id));
-  const edges = model.edges.filter((edge) => ids.has(edge.source) && ids.has(edge.target) && ["declares", "supports", "challenges", "leads_to"].includes(edge.relation));
-  return { nodes, edges, placement };
-}
-
-function mobileEvidenceMarkup(row, idea, model, view) {
-  const percent = graphKnowledgePercent(model);
-  const path = mobileEvidencePath(model);
-  const relation = model.edges.find((edge) => ["supports", "challenges"].includes(edge.relation));
-  const iconByKind = { source: "evidence", evidence: "trend", idea: "idea", roadmap: "roadmap" };
-  return `<div class="mobile-evidence-view">
-    <div class="mobile-knowledge-card"><div class="mobile-knowledge-main">${icon("trend")}<b>紧凑知识水位</b><div class="knowledge-meter"><i style="--meter:${percent}%"></i></div><strong>${percent}%</strong></div><div class="mobile-knowledge-meta"><span>范围：上游与下游 ${model.limits.depth} 路</span><span>截至：${esc(state.latest?.date || "未记录")}</span></div></div>
-    ${evidenceViewTabs(view, row)}
-    <a class="mobile-focus-card" href="#ideas?idea=${encodeURIComponent(row.idea_id)}">${icon("idea")}<div><b>当前 Idea：${esc(row.title)}</b><span>上游与下游 ${model.limits.depth} 路 · 状态：${esc(STATUS_LABELS[idea.status] || idea.status)}</span></div>${icon("chevron", "chevron")}</a>
-    <section class="mobile-path-card"><div class="mobile-card-head"><h2>证据路径</h2><span>收起⌃</span></div><div class="mobile-path-canvas" data-mobile-path-canvas><svg class="mobile-path-connectors" data-mobile-path-connectors aria-hidden="true"></svg><div class="mobile-path-grid">${path.nodes.map((node) => { const position = path.placement.get(node.id); return `<div class="mobile-path-node ${esc(node.kind)}" data-mobile-node-id="${esc(node.id)}" style="--mobile-col:${position.column};--mobile-row:${position.row}">${icon(iconByKind[node.kind] || "question")}<div><b>${esc(EvidenceGraph.KIND_LABELS[node.kind])}</b><span>${esc(node.title)}</span></div></div>`; }).join("")}</div></div></section>
-    <button class="mobile-filter-button" type="button" data-open-mobile-filter>${icon("sliders")}<span>筛选关系（${new Set(model.edges.map((edge) => edge.relation)).size} 个类型 · 全显示）</span>${icon("chevron")}</button>
-    <section class="mobile-detail-card"><h2>当前节点详情</h2>${fieldRows([{ label: "类型", value: "Idea" }, { label: "名称", value: row.title }, { label: "状态", value: STATUS_LABELS[idea.status] || idea.status }, { label: "范围", value: `上游与下游 ${model.limits.depth} 路` }, { label: "更新时间", value: idea.last_updated_issue || row.last_updated_issue }])}</section>
-    <section class="mobile-relation-card"><div class="mobile-card-head"><h2>关系列表 <small>（展示前 5 条）</small></h2><a href="#relationshipList">查看全部</a></div>${relation ? `<div class="mobile-relation-row"><i></i><span>${esc(model.nodes.find((node) => node.id === relation.source)?.title || "证据记录")}　→ ${esc(EvidenceGraph.RELATION_LABELS[relation.relation])} →　当前 Idea</span>${icon("chevron")}</div>` : `<div class="mobile-relation-row"><i></i><span>当前没有已解析关系</span></div>`}</section>
-    <button class="desktop-help-button" type="button" data-desktop-help>${icon("monitor")}<span>在桌面查看关系图</span></button>
-    <dialog class="mobile-filter-dialog" data-mobile-filter><div class="mobile-dialog-head"><h2>筛选关系</h2><button type="button" data-close-mobile-filter aria-label="关闭筛选">×</button></div><div class="mobile-dialog-body">${graphFilterMarkup(model, row)}</div></dialog>
-  </div>`;
-}
-
-function renderEvidenceGraphView(row, model) {
-  const atLimit = model.limits.nodeCount >= 40;
-  return `<div class="desktop-evidence-view"><div class="graph-workspace">
-    ${graphFilterMarkup(model, row)}
-    <section class="graph-canvas-panel" aria-label="关系图画布"><div class="graph-toolbar"><div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="fit" aria-label="适应画布">适应画布</button></div><div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="out" aria-label="缩小">−</button><span class="graph-control zoom-value" data-zoom-value>100%</span><button class="graph-control" type="button" data-graph-action="in" aria-label="放大">＋</button></div><div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="reset" aria-label="重置画布">↻</button><button class="graph-control" type="button" data-graph-action="expand" aria-label="展开一跳" ${atLimit ? 'disabled title="已达到 40 个节点上限"' : ""}>展开一跳</button></div></div><div class="graph-canvas" tabindex="0" data-graph-canvas aria-label="证据关系图，可用方向键沿关系移动"></div></section>
-    <aside class="graph-detail-panel" aria-label="节点详情"><h2 class="graph-panel-title">当前节点详情</h2><div data-graph-detail>${graphDetailMarkup(model, model.focusId)}</div></aside>
-  </div>${relationshipTableMarkup(model)}</div>`;
-}
-
-function renderEvidencePathView(row, idea, model) {
-  const evidence = [...(idea.evidence_for || []).map((entry) => ({ ...entry, relation: "支持" })), ...(idea.evidence_against || []).map((entry) => ({ ...entry, relation: "反对" }))];
-  const claims = evidence.map((entry) => {
-    const item = evidenceItem(entry);
-    return { source: item?.title || entry.source_urls?.[0] || "未解析", relation: entry.relation, date: item?.issue_date || entry.issue_date || "", boundary: entry.reason || "未记录", href: item?.url || entry.source_urls?.[0] || "" };
-  });
-  const table = dataTable([{ key: "source", label: "原始来源", width: "34%" }, { key: "relation", label: "关系", width: "12%", render: (claim) => badge(claim.relation, statusTone(claim.relation)) }, { key: "date", label: "首次进入日报", width: "16%" }, { key: "boundary", label: "证据边界", width: "30%" }, { key: "href", label: "入口", width: "8%", render: (claim) => claim.href ? `<a href="${esc(claim.href)}" target="_blank" rel="noreferrer">原文</a>` : "缺失" }], claims, { emptyTitle: "没有可解析证据", emptyCopy: "当前 Idea 可以保留，但证据路径仍不完整。", cardTitleKey: "source" });
-  return `<div class="desktop-evidence-view evidence-path-view"><div class="page-stack"><section class="path-surface"><h2>证据路径</h2>${renderEvidencePathForIdea(row, idea, evidence[0])}</section>${section("证据记录清单", table)}${editorialNote("Claim 尚未物化", "当前知识对象没有可定位的 first-class Claim；证据 reason 只作为关系说明，不冒充 Claim。", "warning")}</div><aside class="graph-detail-panel">${graphDetailMarkup(model, model.focusId)}</aside></div>`;
-}
-
-function renderEvidenceGapsView(row, idea, model) {
-  const gaps = (idea.unknowns || []).length ? idea.unknowns : ["持续跟踪新的独立公开来源"];
-  return `<div class="desktop-evidence-view evidence-path-view"><section class="gaps-surface"><h2>当前证据缺口</h2><p>这些缺口直接来自 Idea 的 unknowns；页面不补写实验结果或推断关系。</p><div class="gaps-grid">${gaps.map((gap, index) => `<article class="gap-card"><b>缺口 ${index + 1}</b><span>${esc(gap)}</span></article>`).join("")}</div>${model.unresolved.length ? editorialNote("未解析关系", `${model.unresolved.length} 条引用因缺少目标对象或 provenance 未进入图谱。`, "negative") : editorialNote("关系引用完整", "当前投影中的已确认边都能定位来源和目标。")}</section><aside class="graph-detail-panel">${graphDetailMarkup(model, model.focusId)}</aside></div>`;
-}
-
-function atlasControlsMarkup(model, row) {
-  const issueDates = state.issues.map((issue) => issue.date).sort().reverse();
-  const topics = model.mode === "keyword"
-    ? [...new Set(state.items.flatMap((item) => item.keywords || []).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-CN")).slice(0, 10).map((keyword) => ({ id: keyword, title: keyword }))
-    : [...new Map(state.items.filter((item) => item.topic_name).map((item) => [item.topic_id || item.topic_name, { id: item.topic_id || item.topic_name, title: item.topic_name }])).values()].sort((a, b) => a.title.localeCompare(b.title, "zh-CN")).slice(0, 10);
-  const routeParams = state.route.params;
-  return `<aside class="atlas-controls"><div class="atlas-control-group"><div class="atlas-segmented"><a href="${evidenceViewHref("atlas", row, { scope: "latest", mode: model.mode })}" aria-current="${model.scope === "latest"}">最新一期</a><a href="${evidenceViewHref("atlas", row, { scope: "all", mode: model.mode })}" aria-current="${model.scope === "all" && !routeParams.issue}">全部归档</a></div></div><div class="atlas-control-group"><h3>浏览方式</h3><div class="atlas-segmented"><a href="${evidenceViewHref("atlas", row, { scope: model.scope, mode: "topic" })}" aria-current="${model.mode === "topic"}">按 Topic</a><a href="${evidenceViewHref("atlas", row, { scope: model.scope, mode: "keyword" })}" aria-current="${model.mode === "keyword"}">按关键词</a></div></div><div class="atlas-control-group"><h3>期次筛选</h3><div class="graph-filter-list">${issueDates.map((date) => `<a class="graph-filter-row" href="${evidenceViewHref("atlas", row, { scope: "all", mode: model.mode, issue: date, topic: routeParams.topic })}" aria-current="${routeParams.issue === date}"><span>□</span><span>${esc(date)}</span><b>${state.items.filter((item) => item.issue_date === date).length}</b></a>`).join("")}</div></div><div class="atlas-control-group"><h3>Topic 筛选</h3><div class="graph-filter-list"><a class="graph-filter-row" href="${evidenceViewHref("atlas", row, { scope: model.scope, mode: model.mode, issue: routeParams.issue })}" aria-current="${!routeParams.topic}"><span>□</span><span>全部 Topic</span></a>${topics.map((topic) => `<a class="graph-filter-row" href="${evidenceViewHref("atlas", row, { scope: model.scope, mode: model.mode, issue: routeParams.issue, topic: topic.id })}" aria-current="${routeParams.topic === topic.id}"><span>□</span><span>${esc(topic.title)}</span></a>`).join("")}</div></div></aside>`;
-}
-
-function renderArchiveAtlasView(row, model) {
-  return `<div class="desktop-evidence-view"><div class="atlas-disclaimer">这里的连接表示归档结构和关键词聚合，不表示支持、挑战或因果关系。</div><div class="atlas-workspace">${atlasControlsMarkup(model, row)}<section class="atlas-canvas-shell"><div class="atlas-lane-head"><span>日报期次</span><span>Topic</span><span>归档条目</span></div><div class="atlas-canvas" tabindex="0" data-atlas-canvas aria-label="Archive Atlas 结构图"></div><div class="atlas-toolbar"><div class="graph-control-group"><button class="graph-control" type="button" data-atlas-action="out" aria-label="缩小">−</button><span class="graph-control zoom-value" data-atlas-zoom>100%</span><button class="graph-control" type="button" data-atlas-action="in" aria-label="放大">＋</button></div><button class="graph-control-group graph-control" type="button" data-atlas-action="fit" aria-label="适应画布">适应画布</button></div></section><aside class="atlas-detail"><h2 class="graph-panel-title">条目信息</h2><div data-atlas-detail>${graphDetailMarkup(model, model.focusId)}</div></aside></div></div>`;
-}
-
-function replaceEvidenceUrl(params) {
-  const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value != null && value !== "")).toString();
-  history.replaceState(null, "", `#evidence?${query}`);
-  state.route = BriefingData.parseRoute(location.hash);
-}
-
-function bindGraphView(row, model) {
-  const canvas = $("[data-graph-canvas]");
-  if (!canvas) return;
-  const renderer = new EvidenceGraph.EvidenceGraphRenderer(canvas, model, {
-    onSelectNode: (id) => {
-      $("[data-graph-detail]").innerHTML = graphDetailMarkup(model, id);
-      replaceEvidenceUrl({ ...state.route.params, idea: row.idea_id, view: "graph", node: id });
-    },
-    onSelectEdge: (id) => $$('[data-relationship-id]').forEach((entry) => entry.setAttribute("aria-selected", String(entry.dataset.relationshipId === id))),
-    onExpand: () => go("evidence", { ...state.route.params, idea: row.idea_id, view: "graph", depth: 2 }),
-    onZoom: (value) => { const label = $("[data-zoom-value]"); if (label) label.textContent = `${value}%`; },
-  });
-  $$('[data-graph-action]').forEach((button) => button.addEventListener("click", () => {
-    if (button.dataset.graphAction === "fit") renderer.fit();
-    if (button.dataset.graphAction === "in") renderer.zoom(.1);
-    if (button.dataset.graphAction === "out") renderer.zoom(-.1);
-    if (button.dataset.graphAction === "reset") renderer.reset();
-    if (button.dataset.graphAction === "expand") go("evidence", { ...state.route.params, idea: row.idea_id, view: "graph", depth: 2 });
-  }));
-  $$('[data-relationship-id]').forEach((entry) => {
-    const choose = () => renderer.selectEdge(entry.dataset.relationshipId, true);
-    entry.addEventListener("click", choose);
-    entry.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(); } });
-  });
-  $$('[name="graph-depth"]').forEach((input) => input.addEventListener("change", () => go("evidence", { ...state.route.params, idea: row.idea_id, view: "graph", depth: input.value })));
-  $("[data-candidates]")?.addEventListener("change", (event) => go("evidence", { ...state.route.params, idea: row.idea_id, view: "graph", candidates: event.target.checked ? 1 : 0 }));
-  const graphFilterPanel = canvas.closest(".graph-workspace")?.querySelector(".graph-filter-panel");
-  const graphSearch = graphFilterPanel?.querySelector("[data-graph-search]");
-  const graphKindInputs = graphFilterPanel ? [...graphFilterPanel.querySelectorAll('[data-node-kind]')] : [];
-  const applyGraphFilters = () => {
-    const needle = norm(graphSearch?.value);
-    const enabledKinds = new Set(graphKindInputs.filter((input) => input.checked).map((input) => input.dataset.nodeKind));
-    const visibleIds = new Set();
-    canvas.querySelectorAll("[data-node-id]").forEach((element) => {
-      const node = model.nodes.find((candidate) => candidate.id === element.dataset.nodeId);
-      const visible = enabledKinds.has(node?.kind) && !(needle && !norm(`${node?.title} ${node?.subtitle} ${node?.kind}`).includes(needle));
-      element.hidden = !visible;
-      if (visible) visibleIds.add(element.dataset.nodeId);
-    });
-    canvas.querySelectorAll("[data-edge-id]").forEach((element) => {
-      const edge = model.edges.find((candidate) => candidate.id === element.dataset.edgeId);
-      element.toggleAttribute("hidden", !edge || !visibleIds.has(edge.source) || !visibleIds.has(edge.target));
-    });
-  };
-  graphSearch?.addEventListener("input", applyGraphFilters);
-  graphKindInputs.forEach((input) => input.addEventListener("change", applyGraphFilters));
-}
-
-function bindAtlasView(model) {
-  const canvas = $("[data-atlas-canvas]");
-  if (!canvas) return;
-  const renderer = new EvidenceGraph.EvidenceGraphRenderer(canvas, model, {
-    mode: "atlas",
-    onSelectNode: (id) => { $("[data-atlas-detail]").innerHTML = graphDetailMarkup(model, id); replaceEvidenceUrl({ ...state.route.params, view: "atlas", node: id }); },
-    onZoom: (value) => { const label = $("[data-atlas-zoom]"); if (label) label.textContent = `${value}%`; },
-  });
-  $$('[data-atlas-action]').forEach((button) => button.addEventListener("click", () => {
-    if (button.dataset.atlasAction === "fit") renderer.fit();
-    if (button.dataset.atlasAction === "in") renderer.zoom(.1);
-    if (button.dataset.atlasAction === "out") renderer.zoom(-.1);
-  }));
-}
-
-function bindMobileEvidence(row, model) {
-  const dialog = $("[data-mobile-filter]");
-  const canvas = $("[data-mobile-path-canvas]");
-  const path = mobileEvidencePath(model);
-  const drawConnectors = () => {
-    const svg = canvas?.querySelector("[data-mobile-path-connectors]");
-    if (!svg || !canvas || getComputedStyle(canvas).display === "none") return;
-    const canvasRect = canvas.getBoundingClientRect();
-    const nodeRects = new Map();
-    canvas.querySelectorAll("[data-mobile-node-id]").forEach((element) => {
-      if (element.hidden) return;
-      const rect = element.getBoundingClientRect();
-      nodeRects.set(element.dataset.mobileNodeId, {
-        x: rect.left - canvasRect.left,
-        y: rect.top - canvasRect.top,
-        width: rect.width,
-        height: rect.height,
-      });
-    });
-    const incomingTotals = new Map();
-    path.edges.forEach((edge) => {
-      if (nodeRects.has(edge.source) && nodeRects.has(edge.target)) incomingTotals.set(edge.target, (incomingTotals.get(edge.target) || 0) + 1);
-    });
-    const incomingSeen = new Map();
-    const routedMobileEdge = (edge, source, target, offset) => {
-      if (edge.relation === "declares") return EvidenceGraph.routeEvidenceEdge(source, target, offset).d;
-      const sourceNode = path.nodes.find((node) => node.id === edge.source);
-      const targetNode = path.nodes.find((node) => node.id === edge.target);
-      const singleColumn = window.matchMedia("(max-width: 359px)").matches;
-      const sourceY = source.y + source.height / 2 + (!singleColumn && edge.relation === "leads_to" ? 10 : !singleColumn ? 5 : 0);
-      const targetY = target.y + target.height / 2 + offset;
-      let sourceX;
-      let targetX;
-      let gutterX;
-      if (singleColumn || Math.abs(source.x - target.x) < 12) {
-        sourceX = source.x;
-        targetX = target.x;
-        gutterX = Math.max(10, Math.min(source.x, target.x) - 18 + offset);
-      } else if (targetNode?.kind === "idea" && sourceNode?.kind === "evidence") {
-        sourceX = source.x;
-        targetX = target.x + target.width;
-        gutterX = (sourceX + targetX) / 2 + offset;
-      } else {
-        return EvidenceGraph.routeEvidenceEdge(source, target, offset).d;
-      }
-      const firstDirection = Math.sign(gutterX - sourceX) || 1;
-      const verticalDirection = Math.sign(targetY - sourceY) || 1;
-      const lastDirection = Math.sign(targetX - gutterX) || 1;
-      const radius = Math.max(3, Math.min(9, Math.abs(gutterX - sourceX) / 2, Math.abs(targetY - sourceY) / 2, Math.abs(targetX - gutterX) / 2));
-      return `M ${sourceX} ${sourceY} H ${gutterX - firstDirection * radius} Q ${gutterX} ${sourceY} ${gutterX} ${sourceY + verticalDirection * radius} V ${targetY - verticalDirection * radius} Q ${gutterX} ${targetY} ${gutterX + lastDirection * radius} ${targetY} H ${targetX}`;
-    };
-    const relationNames = [...new Set(path.edges.map((edge) => edge.relation))];
-    const markers = relationNames.map((name) => `<marker id="mobile-arrow-${esc(name)}" class="relation-${esc(name)}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z"></path></marker>`).join("");
-    const lines = path.edges.map((edge) => {
-      const source = nodeRects.get(edge.source);
-      const target = nodeRects.get(edge.target);
-      if (!source || !target) return "";
-      const seen = incomingSeen.get(edge.target) || 0;
-      incomingSeen.set(edge.target, seen + 1);
-      const offset = (seen - ((incomingTotals.get(edge.target) || 1) - 1) / 2) * 8;
-      const label = EvidenceGraph.RELATION_LABELS[edge.relation] || edge.relation;
-      return `<path class="relation-${esc(edge.relation)}" d="${routedMobileEdge(edge, source, target, offset)}" marker-end="url(#mobile-arrow-${esc(edge.relation)})"><title>${esc(label)}</title></path>`;
-    }).join("");
-    svg.setAttribute("viewBox", `0 0 ${canvas.clientWidth} ${canvas.clientHeight}`);
-    svg.innerHTML = `<defs>${markers}</defs>${lines}`;
-  };
-  const scheduleDraw = () => requestAnimationFrame(drawConnectors);
-  window.mobileEvidenceResizeObserver?.disconnect();
-  if (canvas && typeof ResizeObserver !== "undefined") {
-    window.mobileEvidenceResizeObserver = new ResizeObserver(scheduleDraw);
-    window.mobileEvidenceResizeObserver.observe(canvas);
-  }
-  scheduleDraw();
-  $("[data-open-mobile-filter]")?.addEventListener("click", () => dialog?.showModal());
-  $("[data-close-mobile-filter]")?.addEventListener("click", () => dialog?.close());
-  $("[data-desktop-help]")?.addEventListener("click", () => window.alert("关系图的平移、缩放和完整关系列表适合在宽度至少 768px 的桌面浏览器中查看。"));
-  const mobileKindInputs = dialog ? [...dialog.querySelectorAll('[data-node-kind]')] : [];
-  const mobileSearch = dialog?.querySelector('[data-graph-search]');
-  const applyMobileFilters = () => {
-    const enabledKinds = new Set(mobileKindInputs.filter((input) => input.checked).map((input) => input.dataset.nodeKind));
-    const needle = norm(mobileSearch?.value);
-    $$('.mobile-path-node').forEach((element) => {
-      const node = path.nodes.find((candidate) => candidate.id === element.dataset.mobileNodeId);
-      element.hidden = !enabledKinds.has(node?.kind) || Boolean(needle && !norm(element.textContent).includes(needle));
-    });
-    scheduleDraw();
-  };
-  mobileKindInputs.forEach((input) => input.addEventListener("change", applyMobileFilters));
-  dialog?.querySelectorAll('[name="graph-depth"]').forEach((input) => input.addEventListener("change", () => go("evidence", { ...state.route.params, idea: row.idea_id, view: "graph", depth: input.value })));
-  dialog?.querySelector('[data-candidates]')?.addEventListener("change", (event) => go("evidence", { ...state.route.params, idea: row.idea_id, view: "graph", candidates: event.target.checked ? 1 : 0 }));
-  mobileSearch?.addEventListener("input", applyMobileFilters);
-}
-
-function renderEvidence(row, idea, graphContext = {}) {
-  const view = state.route.params.view || "path";
-  const isAtlas = view === "atlas";
-  if ((!row || !idea) && !isAtlas) {
-    $("#appMain").innerHTML = `${pageHeader({ title: "Evidence Explorer", description: "用证据回答 Roadmap 为什么变化、Idea 为什么存在，以及当前缺少什么。" })}${emptyState("没有可聚焦的 Idea", "长期知识中尚无正式 Idea。", "evidence")}`;
-    return;
-  }
-  const graphModel = BriefingData.buildEvidenceGraphModel({ ideaRow: row, idea, params: state.route.params, ...graphContext });
-  const atlasModel = BriefingData.buildArchiveAtlasModel({ issues: graphContext.issues || state.issues, params: state.route.params });
-  const activeModel = isAtlas ? atlasModel : graphModel;
-  const title = isAtlas ? "Archive Atlas（结构浏览视图）" : "Evidence Explorer";
-  const description = isAtlas ? "这里的连接表示归档结构和关键词聚合，不表示支持或因果关系。" : "追踪判断从来源、证据到 Roadmap 与 Idea 决策的完整路径。";
-  const content = view === "graph" ? renderEvidenceGraphView(row, graphModel)
-    : view === "atlas" ? renderArchiveAtlasView(row, atlasModel)
-      : view === "gaps" ? renderEvidenceGapsView(row, idea, graphModel)
-        : state.route.params.task === "missing" ? renderEvidenceGapsView(row, idea, graphModel)
-          : renderEvidencePathView(row, idea, graphModel);
-  const mobile = row && idea ? mobileEvidenceMarkup(row, idea, graphModel, view) : "";
-  $("#appMain").innerHTML = `<div class="page-stack evidence-explorer">${pageHeader({ title, description })}<div class="desktop-evidence-tabs">${evidenceViewTabs(view, row)}</div>${evidenceContextBar(row, idea, activeModel, view)}${mobile}${content}</div>`;
-  if (view === "graph") bindGraphView(row, graphModel);
-  if (view === "atlas") bindAtlasView(atlasModel);
-  if (row && idea) bindMobileEvidence(row, graphModel);
-  document.querySelector('.evidence-view-tabs a[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "center" });
+  const side = `<aside class="side-rail">${section("Decision Timeline", timeline)}${section("关联 Roadmap", roadmapLinks ? `<div class="side-list">${roadmapLinks}</div>` : emptyState("没有关联 Roadmap", "当前 Idea 尚未绑定 Topic。", "roadmap"))}${section("相关 Open Questions", (idea.unknowns || []).length ? `<ul>${idea.unknowns.map((unknown) => `<li>${esc(unknown)}</li>`).join("")}</ul>` : "<p>暂无。</p>")}${section("操作入口", `<div class="side-list">${quickLink(`#ideas?idea=${encodeURIComponent(row.idea_id)}&view=evidence&mode=path`, "evidence", "查看证据链与关系图")}${quickLink(`#ideas?idea=${encodeURIComponent(row.idea_id)}&view=gaps`, "claim", "查看证据缺口")}${evidence[0]?.source_urls?.[0] ? quickLink(evidence[0].source_urls[0], "source", "查看原始来源", true) : ""}${quickLink("#ideas", "idea", "返回 Idea Hub")}</div>`)}</aside>`;
+  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "Idea 详情", description: "查看一个 Idea 的来龙去脉、证据成熟度与下一步验证建议。", breadcrumb: '<a href="#ideas">Idea Hub</a><span>/</span><span>详情</span>' })}<div class="desktop-evidence-tabs">${IdeaEvidenceView.tabsMarkup(row, "overview")}</div><div class="two-column idea-detail-layout">${main}${side}</div></div>`;
 }
 
 function impactForItem(item) {
@@ -737,9 +376,13 @@ function renderFeatures() {
 function renderWorkbenchView(route, context = {}) {
   if (route.name === "home") renderHome();
   else if (route.name === "roadmaps") renderRoadmap(context.row, context.object);
-  else if (route.name === "ideas" && route.params.idea) renderIdeaDetail(context.row, context.object);
+  else if (route.name === "ideas" && route.params.idea && route.params.view === "evidence") {
+    IdeaEvidenceView.renderEvidence(context.row, context.object, context);
+  } else if (route.name === "ideas" && route.params.idea && route.params.view === "gaps") {
+    IdeaEvidenceView.renderGaps(context.row, context.object, context);
+  } else if (route.name === "ideas" && route.params.idea) renderIdeaDetail(context.row, context.object);
   else if (route.name === "ideas") renderIdeaHub();
-  else if (route.name === "evidence") renderEvidence(context.row, context.object, context.graphContext);
+  else if (route.name === "knowledge") KnowledgeGraphView.render(context);
   else if (route.name === "archive") renderArchive();
   else if (route.name === "features") renderFeatures();
   else renderHome();

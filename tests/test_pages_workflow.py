@@ -11,3 +11,19 @@ def test_pages_workflow_publishes_knowledge_store() -> None:
 
     assert "- 'knowledge/**'" in workflow
     assert 'cp -R knowledge "$publish_dir/knowledge"' in workflow
+
+
+def test_pages_workflow_gates_publication_on_a_fresh_derived_graph() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "pages.yml").read_text(
+        encoding="utf-8"
+    )
+
+    # The graph is rebuilt deterministically and validated against the current
+    # archive/knowledge inputs before the site is assembled; a stale or broken
+    # graph must stop publication instead of shipping it.
+    gate = workflow.find("Rebuild and validate the derived knowledge graph")
+    assemble = workflow.find("Assemble static site")
+    assert gate != -1 and assemble != -1 and gate < assemble
+    assert "knowledge graph build" in workflow
+    assert "knowledge graph validate" in workflow
+    assert "python3 -m pip install --quiet -e ." in workflow
