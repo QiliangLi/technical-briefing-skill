@@ -36,12 +36,18 @@
       position: node.position || (options.positions || {})[node.data.id] || undefined,
     }));
     const edges = (options.edges || []).map((edge) => ({ data: edge.data }));
+    // Overview zoom must keep labels and strokes readable; the stylesheet is
+    // zoom-parameterized and refreshed in coarse buckets so panning/zooming
+    // does not restyle on every frame.
+    const buildStyles = typeof options.styles === 'function'
+      ? options.styles
+      : root.GraphStyles && ((zoom) => root.GraphStyles.cytoscapeStylesheet({ zoom }));
     let cy;
     try {
       cy = root.cytoscape({
         container,
         elements: { nodes, edges },
-        style: options.styles || (root.GraphStyles ? root.GraphStyles.cytoscapeStylesheet() : []),
+        style: buildStyles ? buildStyles(1) : [],
         layout: options.layout === 'breadthfirst'
           ? {
               name: 'breadthfirst',
@@ -62,6 +68,18 @@
     } catch (error) {
       if (typeof options.onFailure === 'function') options.onFailure(error);
       return null;
+    }
+
+    if (buildStyles) {
+      let lastBucket = null;
+      const refreshAdaptiveStyle = () => {
+        const bucket = Math.round(cy.zoom() * 10);
+        if (bucket === lastBucket) return;
+        lastBucket = bucket;
+        cy.style(buildStyles(cy.zoom())).update();
+      };
+      cy.on('zoom', refreshAdaptiveStyle);
+      refreshAdaptiveStyle();
     }
 
     const handle = {

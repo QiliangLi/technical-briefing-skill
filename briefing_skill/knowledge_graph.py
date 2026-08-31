@@ -83,28 +83,28 @@ KIND_RANK: dict[str, int] = {
 # roadmap branches stack in the topic column below the topic band.
 KIND_COLUMNS: dict[str, float] = {
     "roadmap": 0.0,
-    "topic": 360.0,
-    "roadmap_branch": 360.0,
-    "direction": 740.0,
-    "item": 1120.0,
-    "judgement": 1500.0,
-    "issue": 1880.0,
-    "idea": 2260.0,
+    "topic": 280.0,
+    "roadmap_branch": 280.0,
+    "direction": 540.0,
+    "item": 1340.0,
+    "judgement": 1560.0,
+    "issue": 1780.0,
+    "idea": 2000.0,
 }
 KIND_ROW_HEIGHTS: dict[str, float] = {
-    "roadmap": 150.0,
-    "topic": 150.0,
+    "roadmap": 132.0,
+    "topic": 132.0,
     "roadmap_branch": 150.0,
-    "direction": 60.0,
+    "direction": 76.0,
     "item": 90.0,
     "judgement": 130.0,
     "issue": 110.0,
     "idea": 160.0,
 }
-# Directions cluster beside their topic in compact sub-rows so the default
-# structure lens stays readable after one fit.
-DIRECTIONS_PER_ROW = 3
-DIRECTION_COLUMN_GAP = 210.0
+# Directions cluster beside their primary (first-seen) topic in compact
+# sub-rows so the default structure lens stays readable after one fit.
+DIRECTIONS_PER_ROW = 4
+DIRECTION_COLUMN_GAP = 196.0
 JUDGEMENTS_PER_COLUMN = 10
 JUDGEMENT_COLUMN_GAP = 420.0
 # Branch nodes stack in the topic column below the topic band so overlay lanes

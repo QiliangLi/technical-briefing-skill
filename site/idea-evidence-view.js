@@ -187,7 +187,10 @@ const IdeaEvidenceView = (() => {
     };
     if (GraphRenderer.available() && model.nodes.length) {
       handle = GraphRenderer.mountGraph(canvas, {
-        nodes: model.nodes,
+        nodes: model.nodes.map((node) => ({
+          data: { ...node.data, label: GraphStyles.displayLabel(node.data) },
+          position: node.position,
+        })),
         edges: model.edges,
         layout: model.nodes.every((node) => node.position) ? "preset" : "breadthfirst",
         focusId: model.focusId,

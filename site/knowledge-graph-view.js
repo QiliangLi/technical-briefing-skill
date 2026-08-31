@@ -47,12 +47,12 @@ const KnowledgeGraphView = (() => {
   function watermarkMarkup(graph) {
     const archive = graph?.archive_through_issue || "暂无归档";
     const knowledge = graph?.knowledge_through_issue || "未物化";
-    const digest = graph?.input_digest ? `${graph.input_digest.slice(7, 19)}` : "—";
+    const digest = graph?.input_digest ? graph.input_digest.slice(7, 17) : "—";
     return `<div class="knowledge-status" aria-label="图谱新鲜度">
       <div class="status-card">${icon("calendar")}<div><span>日报结构更新至</span><strong>${esc(archive)}</strong></div></div>
       <div class="status-card positive">${icon("book")}<div><span>长期知识更新至</span><strong>${esc(knowledge)}</strong></div></div>
-      <div class="status-card"><div><span>构建输入摘要</span><strong>sha256:${esc(digest)}</strong></div></div>
-    </div><div class="status-summary">${icon("status")}<span>两个水位独立计算：归档 ${esc(archive)} · 长期知识 ${esc(knowledge)}</span></div>`;
+      <div class="status-card">${icon("source")}<div><span>构建输入摘要</span><strong>sha256:${esc(digest)}</strong></div></div>
+    </div><div class="status-summary">${icon("status")}<span>两个水位独立计算：归档 ${esc(archive)} · 长期知识 ${esc(knowledge)} · 输入摘要 sha256:${esc(digest)}</span></div>`;
   }
 
   function metricsMarkup(model) {
@@ -111,7 +111,7 @@ const KnowledgeGraphView = (() => {
     return `<aside class="graph-filter-panel kg-filter-panel" aria-label="知识图谱筛选">
       <div class="graph-panel-section">
         <h3>搜索</h3>
-        <input class="graph-search" type="search" data-kg-search placeholder="搜索 Topic、Direction、条目或判断" aria-label="搜索图谱对象" autocomplete="off">
+        <input class="graph-search" type="search" data-kg-search placeholder="搜索 Topic、Direction 或条目" aria-label="搜索图谱对象" autocomplete="off">
         <div class="kg-search-results" data-kg-search-results aria-live="polite"></div>
       </div>
       <div class="graph-panel-section"><h3>透镜</h3><div class="graph-filter-list">${LENS_META.map((lens) => filterRow(knowledgeHref({ ...params, lens: lens.id }), lens.label, "", params.lens === lens.id)).join("")}</div></div>
@@ -142,11 +142,11 @@ const KnowledgeGraphView = (() => {
         <div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="fit" aria-label="适应画布">适应画布</button></div>
         <div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="out" aria-label="缩小">−</button><span class="graph-control zoom-value" data-zoom-value>100%</span><button class="graph-control" type="button" data-graph-action="in" aria-label="放大">＋</button></div>
         <div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="reset" aria-label="重置画布">↻</button></div>
-        <span class="kg-canvas-status" data-kg-status>${esc(status)}</span>
       </div>
       <div class="kg-canvas-frame">
         <div class="kg-canvas" tabindex="0" data-kg-canvas role="application" aria-label="知识图谱画布，可用方向键沿关系移动，回车展开"></div>
         <div class="kg-canvas-grid" aria-hidden="true"></div>
+        <span class="kg-canvas-status" data-kg-status>${esc(status)}</span>
         <div class="kg-canvas-fallback" data-kg-fallback hidden>图形渲染不可用；下方关系列表展示同一份显示模型。</div>
       </div>
     </section>`;
@@ -313,7 +313,10 @@ const KnowledgeGraphView = (() => {
 
     if (canvas && desktop && model.nodes.length && GraphRenderer.available()) {
       handle = GraphRenderer.mountGraph(canvas, {
-        nodes: model.nodes,
+        nodes: model.nodes.map((node) => ({
+          data: { ...node.data, label: GraphStyles.displayLabel(node.data) },
+          position: node.position,
+        })),
         edges: model.edges,
         layout: "preset",
         focusId: model.focusId,
