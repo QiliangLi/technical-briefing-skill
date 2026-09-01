@@ -12,6 +12,7 @@ const state = {
   ideaObjects: new Map(),
   roadmapObjects: new Map(),
   featurePlan: null,
+  feedback: null,
   roots: { archive: "./archive", knowledge: "./knowledge" },
   route: { name: "home", params: {} },
   renderToken: 0,
@@ -341,6 +342,13 @@ function bindShell() {
 
 async function bootWorkbench() {
   bindShell();
+  // Browser-local demo feedback on brief items; storage failures disable the
+  // toggles instead of breaking the read-only site.
+  try {
+    state.feedback = new BriefingFeedback.LocalFeedbackStore(window.localStorage);
+  } catch (_) {
+    state.feedback = null;
+  }
   try {
     await loadData();
   } catch (error) {

@@ -122,6 +122,38 @@ function quickLink(href, iconName, label, external = false) {
   return `<a class="quick-link" href="${esc(href)}" ${external ? 'target="_blank" rel="noreferrer"' : ""}>${icon(iconName)}<span>${esc(label)}</span>${icon("chevron")}</a>`;
 }
 
+/* Browser-local demo feedback on brief items. It never leaves localStorage,
+ * never claims to change real Roadmap/Idea/selection state, and ships no
+ * export, count, or clear console on purpose. */
+function feedbackButtons(targetType, targetId) {
+  if (!state.feedback || !targetId) return "";
+  const current = state.feedback.current(targetType, targetId);
+  const option = (reaction, label) =>
+    `<button type="button" class="feedback-reaction${current === reaction ? " active" : ""}" data-reaction="${reaction}" aria-pressed="${current === reaction}">${esc(label)}</button>`;
+  return `<div class="feedback-buttons" data-feedback-type="${esc(targetType)}" data-feedback-target="${esc(targetId)}">
+    ${option("interested", "感兴趣")}${option("not_interested", "不感兴趣")}
+    <small class="feedback-note">仅保存在当前浏览器，不参与真实筛选。</small>
+  </div>`;
+}
+
+function bindFeedbackEvents(container = document) {
+  if (!state.feedback || !container?.querySelectorAll) return;
+  container.querySelectorAll(".feedback-buttons .feedback-reaction").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const wrap = button.closest(".feedback-buttons");
+      if (!wrap?.dataset.feedbackType || !wrap.dataset.feedbackTarget) return;
+      state.feedback.toggle(wrap.dataset.feedbackType, wrap.dataset.feedbackTarget, button.dataset.reaction);
+      const current = state.feedback.current(wrap.dataset.feedbackType, wrap.dataset.feedbackTarget);
+      wrap.querySelectorAll(".feedback-reaction").forEach((row) => {
+        const active = row.dataset.reaction === current;
+        row.classList.toggle("active", active);
+        row.setAttribute("aria-pressed", String(active));
+      });
+    });
+  });
+}
+
 function renderHome() {
   const latest = state.latest;
   const roadmaps = [...(state.knowledge?.roadmaps || [])].sort((a, b) => text(b.updated_by_issue).localeCompare(text(a.updated_by_issue)));

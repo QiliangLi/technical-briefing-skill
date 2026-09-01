@@ -48,6 +48,7 @@ def test_public_site_uses_the_editorial_routed_shell():
         "./graph-renderer.js",
         "./knowledge-graph-view.js",
         "./idea-evidence-view.js",
+        "./feedback-store.js",
         "./app.js",
         "./workbench-view.js",
     ):
@@ -152,11 +153,33 @@ def test_public_shell_does_not_expose_fake_write_controls():
     html = (SITE / "index.html").read_text(encoding="utf-8")
     views = (SITE / "workbench-view.js").read_text(encoding="utf-8")
 
-    assert "feedback-store.js" not in html
     assert "导出 JSON" not in html
     assert "清空" not in html
     assert "添加证据" not in views
     assert "新建实验" not in views
+
+
+def test_item_feedback_is_browser_local_demo_only():
+    app = (SITE / "app.js").read_text(encoding="utf-8")
+    views = (SITE / "workbench-view.js").read_text(encoding="utf-8")
+    knowledge_view = (SITE / "knowledge-graph-view.js").read_text(encoding="utf-8")
+    idea_view = (SITE / "idea-evidence-view.js").read_text(encoding="utf-8")
+
+    # The store initializes defensively and every surface renders through the
+    # shared primitives with the browser-local disclaimer.
+    assert "BriefingFeedback.LocalFeedbackStore" in app
+    assert "feedbackButtons" in views and "bindFeedbackEvents" in views
+    assert "state.feedback.toggle" in views
+    assert "仅保存在当前浏览器，不参与真实筛选" in views
+    assert 'feedbackButtons("brief_item"' in knowledge_view
+    assert 'feedbackButtons("brief_item"' in idea_view
+    assert "bindFeedbackEvents(panel)" in knowledge_view
+    assert "bindFeedbackEvents(panel)" in idea_view
+    # No export, count, or clear console anywhere in the new surfaces.
+    for surface in (views, knowledge_view, idea_view):
+        assert "exportData" not in surface
+        assert "listEvents()" not in surface
+        assert "feedbackCount" not in surface
 
 
 def test_idea_collections_are_separate_and_feature_plan_remains_public():

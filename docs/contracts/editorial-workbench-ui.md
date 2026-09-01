@@ -43,6 +43,7 @@ Old routes never render a second page; `site/data-contract.js` maps them once du
 - `site/graph-styles.js` owns node/relation selector styles, arrowheads, focus and dimmed states, and the kind/relation label tables shared by both graph surfaces.
 - `site/knowledge-graph.css` owns the knowledge-graph workspace, graph-surface chrome, relationship lists, and graph-only responsive behavior including the mobile layered paths.
 - `site/editorial-tokens.css`, `site/editorial-components.css`, and `site/editorial-pages.css` keep their previous ownership.
+- `site/feedback-store.js` owns the browser-local feedback event store (append-only toggle events in localStorage). It performs no network calls, no real state writes, and is rendered only through the shared `feedbackButtons()`/`bindFeedbackEvents()` primitives in `site/workbench-view.js`.
 - `site/assets/vendor/` holds the locked, self-hosted Cytoscape.js distribution with its license and version record. Runtime CDN requests are prohibited.
 - `site/assets/brand-mark.svg` and `site/assets/icons.svg` are fixed, committed assets; graph node/filter symbols use the same monochrome sprite. Runtime image generation is prohibited.
 
@@ -59,7 +60,7 @@ The previous `styles.css`, `workbench-overrides.css`, `intelligence-lab.css`, At
 - The Idea evidence projection may add read-only `assumption`/`decision` nodes derived from Idea fields, labeled as such, without persistent identities. When `knowledge/graph.json` is unavailable, the Idea evidence projection falls back to building the same explicit relations directly from Idea fields and archive items.
 - Display limits: default views cap at 60 nodes / 120 edges; "all issues" caps at 250 nodes / 500 edges. Capping keeps the focused node's one-hop neighborhood and explicit judgement relations first, then recent issues, then stable IDs, and states the real counts and the capping reason instead of silently dropping.
 - Node selection updates the graph highlight, the detail panel, the relationship list, and the URL together. Edge selection updates the relation detail and list row. Search lists matches first and changes canvas focus only on confirmation.
-- Public pages do not expose Owner, budget, approval, private results, internal comments, or fake write actions.
+- Public pages do not expose Owner, budget, approval, private results, internal comments, or fake write actions. The only local interaction is the brief-item feedback toggle (感兴趣/不感兴趣) in the item detail panels: a browser-local demo backed by `site/feedback-store.js` that must stay labeled as browser-local, never claim to affect real Roadmap/Idea/selection state, and ships no export, count, or clear console.
 
 ## Visual and responsive contract
 

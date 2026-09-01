@@ -126,6 +126,7 @@ const IdeaEvidenceView = (() => {
         { label: "出边", value: `${outgoing.length} 条` },
       ])}</div>
       ${node.data.href ? `<div class="graph-detail-actions"><a href="${esc(node.data.href)}" ${/^https?:/i.test(node.data.href) ? 'target="_blank" rel="noreferrer"' : ""}>打开对象</a></div>` : ""}
+      ${node.data.kind === "item" ? feedbackButtons("brief_item", nodeShortId(node.data.id)) : ""}
     </div>`;
   }
 
@@ -182,7 +183,10 @@ const IdeaEvidenceView = (() => {
     let selectedEdgeId = "";
     const updateDetail = () => {
       const panel = $("[data-graph-detail]");
-      if (panel) panel.innerHTML = graphDetailMarkup(model, selectedNodeId, selectedEdgeId);
+      if (panel) {
+        panel.innerHTML = graphDetailMarkup(model, selectedNodeId, selectedEdgeId);
+        bindFeedbackEvents(panel);
+      }
       $$("[data-relationship-id]").forEach((entry) => entry.setAttribute("aria-selected", String(entry.dataset.relationshipId === selectedEdgeId)));
     };
     if (GraphRenderer.available() && model.nodes.length) {

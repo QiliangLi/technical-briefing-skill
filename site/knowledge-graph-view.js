@@ -232,6 +232,7 @@ const KnowledgeGraphView = (() => {
     if (data.kind === "roadmap_branch") actions.push(`<a href="#roadmaps?topic=${encodeURIComponent(data.topic_id)}&branch=${encodeURIComponent(data.branch_id)}">进入 Roadmap 分支</a>`);
     if (data.kind === "idea") actions.push(`<a href="#ideas?idea=${encodeURIComponent(nodeShortId(data.id))}&view=overview">进入 Idea</a>`);
     if (actions.length) sections.push(`<div class="graph-detail-actions">${actions.join("")}</div>`);
+    if (data.kind === "item") sections.push(feedbackButtons("brief_item", nodeShortId(data.id)));
     return `<div class="graph-detail-body">${sections.join("")}</div>`;
   }
 
@@ -307,7 +308,10 @@ const KnowledgeGraphView = (() => {
 
     const updateDetail = () => {
       const panel = $("[data-kg-detail]");
-      if (panel) panel.innerHTML = nodeDetailMarkup(model, graph, selectedNodeId, selectedEdgeId);
+      if (panel) {
+        panel.innerHTML = nodeDetailMarkup(model, graph, selectedNodeId, selectedEdgeId);
+        bindFeedbackEvents(panel);
+      }
       $$("[data-relationship-id]").forEach((row) => row.setAttribute("aria-selected", String(row.dataset.relationshipId === selectedEdgeId)));
     };
 
