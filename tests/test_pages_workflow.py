@@ -37,10 +37,11 @@ def test_pages_workflow_gates_publication_on_a_fresh_derived_graph() -> None:
     assert manifest_build != -1 and manifest_validate != -1
     assert graph_validate != -1 and graph_validate < manifest_build < manifest_validate < assemble
     assert "python3 -m pip install --quiet -e ." in workflow
-    # The gate rewrites knowledge/graph.json inside the runner checkout; the
-    # publish step must restore it so the orphan-branch switch stays clean.
+    # The graph and manifest gates rewrite knowledge/graph.json and
+    # knowledge/manifest.json inside the runner checkout; the publish step
+    # must restore both so the orphan-branch switch stays clean.
     publish = workflow.find("Publish gh-pages branch")
-    restore = workflow.find("git checkout -- knowledge/graph.json")
+    restore = workflow.find("git checkout -- knowledge/graph.json knowledge/manifest.json")
     assert publish != -1 and restore != -1 and publish < restore
 
 
