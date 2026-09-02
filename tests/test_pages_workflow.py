@@ -29,6 +29,11 @@ def test_pages_workflow_gates_publication_on_a_fresh_derived_graph() -> None:
     assert "knowledge graph build" in workflow
     assert "knowledge graph validate" in workflow
     assert "python3 -m pip install --quiet -e ." in workflow
+    # The gate rewrites knowledge/graph.json inside the runner checkout; the
+    # publish step must restore it so the orphan-branch switch stays clean.
+    publish = workflow.find("Publish gh-pages branch")
+    restore = workflow.find("git checkout -- knowledge/graph.json")
+    assert publish != -1 and restore != -1 and publish < restore
 
 
 def test_pages_workflow_triggers_on_graph_builder_and_schema_changes() -> None:
