@@ -8,6 +8,14 @@ on:
       - 'archive/**'
       - 'knowledge/**'
       - 'pics/**'
+      - 'briefing.py'
+      - 'briefing_skill/knowledge_graph.py'
+      - 'briefing_skill/knowledge_materialization.py'
+      - 'briefing_skill/bootstrap.py'
+      - 'schemas/**'
+      - 'scripts/scan_public_traces.py'
+      - 'pyproject.toml'
+      - 'requirements.txt'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -25,6 +33,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Rebuild and validate the derived knowledge graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet -e .
+          # Gate 1: the authoritative knowledge store must itself be schema-
+          # and semantic-valid; a malformed Roadmap/Idea must not ride through
+          # inside a graph that happens to match the graph schema.
+          python3 briefing.py knowledge validate
+          # Gate 2: the published graph is regenerated deterministically from
+          # the authoritative inputs; validate fails publication when archive
+          # or knowledge inputs no longer match the graph being shipped.
+          python3 briefing.py knowledge graph build
+          python3 briefing.py knowledge graph validate
 
       - name: Assemble static site
         shell: bash

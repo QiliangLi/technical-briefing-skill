@@ -13,7 +13,7 @@ This directory separates current documentation from dated project records. Start
 - [Roadmap, Idea Bank, and Evidence Workbench blueprint](designs/2026-08-29-roadmap-idea-bank-evidence-workbench-blueprint.md)
 - [Technical intelligence workbench UI screen content brief](designs/2026-08-30-technical-intelligence-ui-screen-content-brief.md)
 - [Technical intelligence workbench UI style brief pack](designs/2026-08-30-technical-intelligence-ui-style-brief-pack.md)
-- [Technical intelligence workbench editorial UI implementation spec](designs/2026-08-31-editorial-workbench-ui-implementation-spec.md)
+- [Evidence Graph UI generation brief](designs/2026-08-31-evidence-graph-ui-generation-brief.md)
 
 Create non-trivial designs under `designs/` before implementation. Once an implementation is complete, move durable behavior into the current architecture, operations, or contracts documentation. Historical design records belong under `history/designs/` only after that transfer is complete.
 
@@ -30,6 +30,7 @@ These files describe how a current installation behaves and how to diagnose it.
 
 - [Repository change governance](contracts/change-governance.md)
 - [Code review invariants](contracts/code-review-invariants.md)
+- [Editorial workbench UI](contracts/editorial-workbench-ui.md)
 - [Archive reader](contracts/archive-reader-contract.md)
 - [Human edit feedback](contracts/human-edit-feedback.md)
 - [Illustrated publication](contracts/illustrated-publication.md)
@@ -43,3 +44,6 @@ These files define durable interfaces and quality rules. Prompt and schema detai
 ## History
 
 [History](history/README.md) contains old plans, release snapshots, reviews, conversations, and exploratory design notes. Files there explain how the repository evolved; they must not be used as the source of truth for current commands or defaults.
+
+- [Implemented editorial workbench UI design](history/designs/2026-08-31-editorial-workbench-ui-implementation-spec.md)
+- [Implemented Evidence Graph UI design](history/designs/2026-08-31-evidence-graph-ui-implementation-spec.md)

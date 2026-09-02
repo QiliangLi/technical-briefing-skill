@@ -1,6 +1,6 @@
 # 技术情报工作台：编辑部风格 UI 实现规格
 
-- Status: draft
+- Status: implemented
 - Created: 2026-08-31
 - Last updated: 2026-08-31
 - 视觉基准：风格 3，独立技术杂志与数字编辑部
@@ -9,21 +9,21 @@
 
 关联设计：
 
-- [UI 页面内容 Brief](./2026-08-30-technical-intelligence-ui-screen-content-brief.md)
-- [UI Style Brief Pack](./2026-08-30-technical-intelligence-ui-style-brief-pack.md)
-- [最终呈现蓝图与差距分析](./2026-08-29-roadmap-idea-bank-evidence-workbench-blueprint.md)
-- [Roadmap、Idea Bank 与 Evidence 模型重设计](./2026-08-29-roadmap-idea-bank-evidence-model-redesign.md)
+- [UI 页面内容 Brief](../../designs/2026-08-30-technical-intelligence-ui-screen-content-brief.md)
+- [UI Style Brief Pack](../../designs/2026-08-30-technical-intelligence-ui-style-brief-pack.md)
+- [最终呈现蓝图与差距分析](../../designs/2026-08-29-roadmap-idea-bank-evidence-workbench-blueprint.md)
+- [Roadmap、Idea Bank 与 Evidence 模型重设计](../../designs/2026-08-29-roadmap-idea-bank-evidence-model-redesign.md)
 
 参考图片：
 
 | 页面 | 风格 3：视觉验收基准 | 风格 2：弹性结构参考 |
 |---|---|---|
-| 首页 | [查看图片](<./风格3/ChatGPT Image 2026年8月31日 01_35_35 (1).png>) | [查看图片](<./风格2/ChatGPT Image 2026年8月31日 01_35_21 (1).png>) |
-| Evidence Explorer | [查看图片](<./风格3/ChatGPT Image 2026年8月31日 01_35_36 (2).png>) | [查看图片](<./风格2/ChatGPT Image 2026年8月31日 01_35_21 (2).png>) |
-| Roadmap 详情 | [查看图片](<./风格3/ChatGPT Image 2026年8月31日 01_35_36 (3).png>) | [查看图片](<./风格2/ChatGPT Image 2026年8月31日 01_35_21 (3).png>) |
-| Idea Hub | [查看图片](<./风格3/ChatGPT Image 2026年8月31日 01_35_37 (4).png>) | [查看图片](<./风格2/ChatGPT Image 2026年8月31日 01_35_21 (4).png>) |
-| Idea 详情 | [查看图片](<./风格3/ChatGPT Image 2026年8月31日 01_35_38 (5).png>) | [查看图片](<./风格2/ChatGPT Image 2026年8月31日 01_35_22 (5).png>) |
-| 归档 | [查看图片](<./风格3/ChatGPT Image 2026年8月31日 01_35_38 (6).png>) | [查看图片](<./风格2/ChatGPT Image 2026年8月31日 01_35_22 (6).png>) |
+| 首页 | [查看图片](<../../designs/风格3/ChatGPT Image 2026年8月31日 01_35_35 (1).png>) | [查看图片](<../../designs/风格2/ChatGPT Image 2026年8月31日 01_35_21 (1).png>) |
+| Evidence Explorer | [查看图片](<../../designs/风格3/ChatGPT Image 2026年8月31日 01_35_36 (2).png>) | [查看图片](<../../designs/风格2/ChatGPT Image 2026年8月31日 01_35_21 (2).png>) |
+| Roadmap 详情 | [查看图片](<../../designs/风格3/ChatGPT Image 2026年8月31日 01_35_36 (3).png>) | [查看图片](<../../designs/风格2/ChatGPT Image 2026年8月31日 01_35_21 (3).png>) |
+| Idea Hub | [查看图片](<../../designs/风格3/ChatGPT Image 2026年8月31日 01_35_37 (4).png>) | [查看图片](<../../designs/风格2/ChatGPT Image 2026年8月31日 01_35_21 (4).png>) |
+| Idea 详情 | [查看图片](<../../designs/风格3/ChatGPT Image 2026年8月31日 01_35_38 (5).png>) | [查看图片](<../../designs/风格2/ChatGPT Image 2026年8月31日 01_35_22 (5).png>) |
+| 归档 | [查看图片](<../../designs/风格3/ChatGPT Image 2026年8月31日 01_35_38 (6).png>) | [查看图片](<../../designs/风格2/ChatGPT Image 2026年8月31日 01_35_22 (6).png>) |
 
 风格 2 图片不参与颜色、字体、圆角、阴影和桌面像素差异验收，只用于理解内容长度变化、卡片伸缩、栏目重排和窄屏降级。
 
@@ -960,3 +960,4 @@ Style Brief Pack           记录风格候选和生成依据
 - 2026-08-31：网页元素必须模板化，运行时不调用文生图工具。
 - 2026-08-31：视觉实现不得反向要求日报增加不必要的深度分析。
 - 2026-08-31：以 1586 × 992 为桌面像素对照基准，其他尺寸遵循本文响应式规则。
+- 2026-08-31：已完成静态编辑部工作台实现；稳定的路由、文件边界、数据约束、响应式与回滚规则转入 `docs/contracts/editorial-workbench-ui.md`。

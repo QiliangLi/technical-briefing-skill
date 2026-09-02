@@ -35,6 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .issue_stage import install_issue_stage
     from .issue_style_polish import install_issue_style_polish
     from .knowledge_materialization import install_knowledge_materialization
+    from .knowledge_graph import install_knowledge_graph
     from .no_human_review import install_no_human_review_gate
     from .primary_fulltext_cache import install_primary_fulltext_cache
     from .project_insight import install_project_insight_layer
@@ -146,6 +147,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Published machine records feed a separate, bounded Roadmap/Idea materializer.
     # It never reads candidates, full text, or reader projections.
     install_knowledge_materialization()
+    # The knowledge graph is a derived, regenerable publication built from the
+    # archive and materialized knowledge; its builder never becomes an
+    # authoritative knowledge source.
+    install_knowledge_graph()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))

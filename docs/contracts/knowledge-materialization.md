@@ -9,6 +9,7 @@
 ```text
 knowledge/
 ├── index.json
+├── graph.json                        # 派生发布物，可随时删除重建
 ├── roadmaps/<topic_id>.json
 ├── ideas/<idea_id>.json
 ├── frontier-clusters.json
@@ -46,6 +47,49 @@ ID 和 URL。它从该 Topic 的完整已发布证据重新物化 Roadmap。新�
 python3 briefing.py knowledge status --issue 2026-08-21
 python3 briefing.py knowledge validate
 ```
+
+## 派生知识图谱（knowledge/graph.json）
+
+`knowledge/graph.json` 是由 Graph Builder 从权威输入生成的发布派生物，
+不是新的权威知识库。权威来源仍然只有 `archive/`、`knowledge/index.json`
+指向的 Roadmap 与 Idea 文件；任何图谱节点都必须能反向定位到其中至少一个对象。
+
+构建与校验：
+
+```bash
+python3 briefing.py knowledge graph build      # 确定性重建并原子替换
+python3 briefing.py knowledge graph validate   # 与当前输入比对新鲜度
+```
+
+构建规则：
+
+- 构建前先运行完整的长期知识仓库校验（与 `knowledge validate` 同一套 Schema
+  与语义校验）。Roadmap 或 Idea 文件无效时构建直接失败，不会把残缺输入
+  伪装成一张符合 graph Schema 的图；因此知识侧的悬空引用是构建失败，
+  `unresolved` 主要承载 Archive 侧（如编辑判断引用）的悬空引用。
+- 关系只来自显式字段（`direction_id`、`synthesis.judgements[].evidence_item_ids`、
+  Roadmap branch 的 `direction_ids`/`evidence_item_ids`/evidence_timeline、
+  Idea 的 `topic_ids`/`evidence_for`/`evidence_against`）；Topic 名、Direction 名
+  和关键词只用于显示与搜索，不用于补边。
+- 缺少目标、关系类型或 provenance 的引用进入 `unresolved`，不绘制成已确认边；
+  超过允许阈值（当前 20 条）时构建失败，不覆盖上一份有效文件。
+- NetworkX 只做构建期结构校验（重复、悬空端点、关系端点 kind、自环与连通分析）；
+  坐标由稳定分层算法计算，输出顺序固定为
+  `kind rank → topic_id → direction_id → issue_date → stable id`。
+- 同一输入连续构建两次，除 `generated_at` 外必须字节等价；测试可用
+  `SOURCE_DATE_EPOCH` 固定时间。
+- 文档携带 `archive_through_issue` 与 `knowledge_through_issue` 两个独立水位，
+  分别来自归档期次和 Roadmap/Idea 的更新期次，不得合并成一个“已更新”标签。
+- `input_digest` 覆盖所有参与构图的输入文件；前端只用它诊断构建版本，
+  不计算、不修补。
+
+发布时机：GitHub Pages 工作流在组装站点前依次执行
+`knowledge validate`（权威知识仓库自身必须有效）、
+`knowledge graph build` 与 `knowledge graph validate` 作为发布门禁——
+输入与图谱不一致时停止发布陈旧图谱，而不是静默上线。图谱构建器、
+Schema 或依赖文件的变化同样触发 Pages 部署，保证 `gh-pages` 不会继续
+运行旧代码构建的图。本地归档发布后应同样运行 build 保持工作区新鲜；
+图谱构建失败不影响邮件生成或发送。
 
 ## 判断边界
 

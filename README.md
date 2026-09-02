@@ -102,6 +102,15 @@ pytest -q
 
 成本、数量和时间窗口都由 [config/settings.yaml](config/settings.yaml) 控制。README 不复制这些易变默认值，避免配置修改后出现两套说法。
 
+## 公开站点
+
+`site/` 是发布到 GitHub Pages 的只读工作台：`首页 / Roadmap / Idea Hub / 知识图谱 / 归档`。知识图谱页与 Idea 证据图读取由 Graph Builder 生成的 `knowledge/graph.json`（浏览器依赖为自托管、锁定版本的 Cytoscape.js，无 CDN 请求）。本地预览：
+
+```bash
+python3 briefing.py knowledge graph build   # 保证图谱与当前输入一致
+python3 -m http.server 8000                 # 在仓库根目录启动后访问 http://127.0.0.1:8000/site/
+```
+
 ## 仓库导航
 
 | 路径 | 用途 |
@@ -115,6 +124,8 @@ pytest -q
 | [briefing_skill/](briefing_skill/) | Python 实现 |
 | [tests/](tests/) 与 [eval/](eval/) | 自动化测试和质量回归集 |
 | [archive/](archive/) | 已发布简报的公开归档 |
+| [knowledge/](knowledge/) | Roadmap、Idea 与派生知识图谱的公开知识库 |
+| [site/](site/) | 发布到 GitHub Pages 的静态工作台 |
 | [published-assets/](published-assets/) | 邮件可访问的已发布图片 |
 | `workspace/` | 被忽略的本地运行状态、缓存和任务文件 |
 

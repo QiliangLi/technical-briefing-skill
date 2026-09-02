@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "knowledge-graph.schema.json",
+  "title": "Daily briefing knowledge graph derived publication",
+  "description": "knowledge/graph.json is a regenerable derived artifact built from archive/ and materialized knowledge/. It is never an authoritative knowledge source.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "archive_through_issue",
+    "knowledge_through_issue",
+    "input_digest",
+    "stats",
+    "nodes",
+    "edges",
+    "unresolved"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "archive_through_issue": { "type": "string" },
+    "knowledge_through_issue": { "type": "string" },
+    "input_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Digest over the canonical content of every input file that participated in the build. The frontend consumes it for diagnostics only."
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_count", "edge_count", "unresolved_count"],
+      "properties": {
+        "node_count": { "type": "integer", "minimum": 0 },
+        "edge_count": { "type": "integer", "minimum": 0 },
+        "unresolved_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "position", "provenance"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "label"],
+            "properties": {
+              "id": { "type": "string", "minLength": 3, "pattern": "^[a-z_]+:[A-Za-z0-9_.:-]+$" },
+              "kind": {
+                "enum": [
+                  "topic",
+                  "direction",
+                  "item",
+                  "judgement",
+                  "issue",
+                  "roadmap",
+                  "roadmap_branch",
+                  "idea"
+                ]
+              },
+              "label": { "type": "string", "minLength": 1 },
+              "topic_id": { "type": "string" },
+              "direction_id": { "type": "string" },
+              "branch_id": { "type": "string" },
+              "issue_date": { "type": "string" },
+              "first_issue_date": { "type": "string" },
+              "last_issue_date": { "type": "string" },
+              "published_at": { "type": ["string", "null"] },
+              "role": { "type": "string" },
+              "source_level": { "type": ["string", "null"] },
+              "status": { "type": "string" },
+              "summary": { "type": "string" },
+              "body": { "type": "string" },
+              "evidence_item_ids": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "href": { "type": "string" }
+            }
+          },
+          "position": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x", "y"],
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          },
+          "provenance": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/provenanceEntry" }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data", "provenance"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "source", "target", "relation", "label", "confirmation"],
+            "properties": {
+              "id": { "type": "string", "minLength": 3 },
+              "source": { "type": "string", "minLength": 3 },
+              "target": { "type": "string", "minLength": 3 },
+              "relation": {
+                "enum": [
+                  "has_direction",
+                  "has_item",
+                  "published_in",
+                  "supports_judgement",
+                  "tracks",
+                  "organizes",
+                  "uses_evidence",
+                  "relates_to",
+                  "supports_idea",
+                  "challenges_idea"
+                ]
+              },
+              "label": { "type": "string", "minLength": 1 },
+              "confirmation": { "const": "explicit" }
+            }
+          },
+          "provenance": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/provenanceEntry" }
+          }
+        }
+      }
+    },
+    "unresolved": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason"],
+        "properties": {
+          "reason": {
+            "enum": [
+              "dangling_judgement_evidence",
+              "dangling_roadmap_evidence",
+              "dangling_idea_evidence",
+              "missing_item_direction",
+              "missing_branch_id"
+            ]
+          },
+          "source_ref": { "type": "string" },
+          "target_ref": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "provenanceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Site-root-relative path of an authoritative input, e.g. archive/issues/2026-08-29/issue.json"
+        },
+        "object_id": { "type": "string" },
+        "field": { "type": "string" }
+      }
+    }
+  }
+}
