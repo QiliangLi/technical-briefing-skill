@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
 from briefing_skill.deep_selection_guard import select_deep_budget_with_complete_technology_value
+from briefing_skill.efficiency import DEFAULT_DEEP_TOPICS
 from briefing_skill.topic_local_deep import (
     pick_topic_local_refill_rows,
     select_topic_local_deep_budget,
@@ -27,6 +30,10 @@ def _settings():
             "max_fact_candidates_per_topic": 4,
         }
     }
+
+
+def _deep_topics() -> list[str]:
+    return list(DEFAULT_DEEP_TOPICS)
 
 
 def test_each_topic_gets_its_own_top_four_without_global_competition():
@@ -64,17 +71,7 @@ def test_topic_with_fewer_than_four_candidates_is_not_padded():
 
 
 def test_nine_topics_can_each_keep_four_candidates_under_the_36_hard_cap():
-    topics = [
-        "tpn",
-        "memory_dsa",
-        "dpu_inline",
-        "agent_acceleration",
-        "cross_region",
-        "optical_network",
-        "ai_chip_accelerator",
-        "storage_media",
-        "accelerator_io_datapath",
-    ]
+    topics = _deep_topics()
     rows = [
         _row(index, topic, 100 - index)
         for topic in topics
@@ -89,6 +86,33 @@ def test_nine_topics_can_each_keep_four_candidates_under_the_36_hard_cap():
         len([row for row in selected if row["topic_id"] == topic]) == 4
         for topic in topics
     )
+
+
+def test_nine_topic_fallback_derives_a_36_item_hard_cap():
+    rows = [
+        _row(index, topic, 100 - index)
+        for topic in _deep_topics()
+        for index in range(1, 5)
+    ]
+
+    selected, deferred = select_topic_local_deep_budget(
+        rows,
+        {"efficiency": {"deep_topics": _deep_topics()}},
+    )
+
+    assert len(selected) == 36
+    assert deferred == []
+
+
+def test_tenth_topic_fails_closed_when_topic_local_top_four_exceeds_36():
+    rows = [
+        _row(index, topic, 100 - index)
+        for topic in [*_deep_topics(), "unexpected_tenth_topic"]
+        for index in range(1, 5)
+    ]
+
+    with pytest.raises(RuntimeError, match="max_fact_candidates_hard_cap"):
+        select_topic_local_deep_budget(rows, _settings())
 
 
 def test_final_selector_uses_technology_value_without_overwriting_relevance():
@@ -163,3 +187,14 @@ def test_refill_preserves_pr20_assessed_before_missing_value_order():
     )
 
     assert [row["id"] for row in selected] == ["tpn-6"]
+
+
+def test_refill_fallback_can_fill_the_36th_item_without_capacity_keys():
+    selected = pick_topic_local_refill_rows(
+        [_row(4, "accelerator_io_datapath", 90)],
+        existing_total=35,
+        existing_topic_counts={"accelerator_io_datapath": 3},
+        settings={"efficiency": {"deep_topics": _deep_topics()}},
+    )
+
+    assert [row["id"] for row in selected] == ["accelerator_io_datapath-4"]

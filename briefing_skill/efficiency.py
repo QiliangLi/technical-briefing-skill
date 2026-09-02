@@ -14,6 +14,10 @@ DEFAULT_DEEP_TOPICS = (
     "cross_region", "optical_network", "ai_chip_accelerator",
     "storage_media", "accelerator_io_datapath",
 )
+DEFAULT_FACT_CANDIDATES_PER_TOPIC = 4
+DEFAULT_FACT_CANDIDATES_HARD_CAP = (
+    len(DEFAULT_DEEP_TOPICS) * DEFAULT_FACT_CANDIDATES_PER_TOPIC
+)
 DEFAULT_RADAR_TOPICS = ("ai_infra_horizontal",)
 
 

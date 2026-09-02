@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Iterable
 
+from .efficiency import (
+    DEFAULT_FACT_CANDIDATES_HARD_CAP,
+    DEFAULT_FACT_CANDIDATES_PER_TOPIC,
+)
 from .technology_value import technology_selection_score
 
 
@@ -11,6 +15,32 @@ def _number(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _selection_limits(settings: dict[str, Any]) -> tuple[int, int]:
+    policy = dict(settings.get("efficiency") or {})
+    per_topic_max = max(
+        1,
+        int(
+            policy.get(
+                "max_fact_candidates_per_topic",
+                DEFAULT_FACT_CANDIDATES_PER_TOPIC,
+            )
+        ),
+    )
+    hard_cap = max(
+        per_topic_max,
+        int(
+            policy.get(
+                "max_fact_candidates_hard_cap",
+                policy.get(
+                    "max_fact_candidates_total",
+                    DEFAULT_FACT_CANDIDATES_HARD_CAP,
+                ),
+            )
+        ),
+    )
+    return per_topic_max, hard_cap
 
 
 def _rank_rows(
@@ -57,12 +87,7 @@ def select_topic_local_deep_budget(
     fall behind assessed rows in a mixed run, and every topic receives its own Top4.
     """
 
-    policy = dict(settings.get("efficiency") or {})
-    per_topic_max = max(1, int(policy.get("max_fact_candidates_per_topic", 4)))
-    hard_cap = max(
-        per_topic_max,
-        int(policy.get("max_fact_candidates_hard_cap", policy.get("max_fact_candidates_total", 32))),
-    )
+    per_topic_max, hard_cap = _selection_limits(settings)
 
     source_rows = [dict(row) for row in rows]
     any_assessed = any(row.get("technology_value_score") is not None for row in source_rows)
@@ -102,12 +127,7 @@ def pick_topic_local_refill_rows(
 ) -> list[dict[str, Any]]:
     """Refill failed Deep work from the same topic before any slot can disappear."""
 
-    policy = dict(settings.get("efficiency") or {})
-    per_topic_max = max(1, int(policy.get("max_fact_candidates_per_topic", 4)))
-    hard_cap = max(
-        per_topic_max,
-        int(policy.get("max_fact_candidates_hard_cap", policy.get("max_fact_candidates_total", 32))),
-    )
+    per_topic_max, hard_cap = _selection_limits(settings)
     remaining_total = max(0, hard_cap - max(0, int(existing_total)))
     if not remaining_total:
         return []

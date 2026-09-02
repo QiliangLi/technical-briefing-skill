@@ -114,6 +114,7 @@ def install_quality_guards() -> None:
 
     from . import pipeline as pipeline_module
     from .discovery_stage import _preferred_domains
+    from .efficiency import DEFAULT_DEEP_TOPICS
     from .tasks import TaskService
 
     _install_renderer_length_guard()
@@ -134,17 +135,7 @@ def install_quality_guards() -> None:
             return 0
         deep_topics = set(
             policy.get("deep_topics")
-            or (
-                "tpn",
-                "memory_dsa",
-                "dpu_inline",
-                "agent_acceleration",
-                "cross_region",
-                "optical_network",
-                "ai_chip_accelerator",
-                "storage_media",
-                "accelerator_io_datapath",
-            )
+            or DEFAULT_DEEP_TOPICS
         )
         raw_rows = self.db.fetchall(
             """
