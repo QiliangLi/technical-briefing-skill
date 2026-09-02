@@ -34,6 +34,46 @@ function newestKnowledgeDate() {
   return dates.sort().at(-1) || "未物化";
 }
 
+/* knowledge/manifest.json publication projection (see
+ * docs/contracts/knowledge-materialization.md). Missing manifest means the
+ * freshness state is unknown and the site must degrade to honest pending
+ * notes instead of reusing old Roadmap summaries as this issue's change. */
+function publicationState() {
+  return state.manifest?.publication_state || null;
+}
+
+const PUBLICATION_STATE_LABELS = {
+  archive_only: { label: "等待知识任务", tone: "warning", note: "归档已发布，知识任务尚未准备" },
+  analysis_pending: { label: "分析进行中", tone: "warning", note: "长期判断正在按期分析" },
+  knowledge_complete: { label: "已同步", tone: "positive", note: "长期知识已追上最新归档" },
+  analysis_failed: { label: "分析失败", tone: "negative", note: "保留上一份完整知识快照" },
+};
+
+function publicationLabel() {
+  const stateKey = publicationState();
+  if (!stateKey) return { label: "清单缺失", tone: "warning", note: "缺少 knowledge/manifest.json" };
+  return PUBLICATION_STATE_LABELS[stateKey] || { label: stateKey, tone: "warning", note: "" };
+}
+
+/* Seed baselines describe their own evidence boundary, not a technical
+ * judgement; they must be labeled instead of presented as "current view". */
+function isSeedSummary(value = "") {
+  return /现有公开归档为|条专题证据|首版先保留|尚未声称存在明确阶段|首版证据时间线/.test(String(value));
+}
+
+function issueLag(issueDate) {
+  if (!issueDate || !state.latest) return 99;
+  const latestIndex = state.issues.findIndex((row) => row.date === state.latest.date);
+  const index = state.issues.findIndex((row) => row.date === issueDate);
+  return index < 0 ? 99 : Math.max(0, latestIndex - index);
+}
+
+const EVIDENCE_STATE_LABELS = {
+  evidence_building: "证据积累中",
+  supported_with_limits: "有边界支持",
+  contested: "存在分歧",
+};
+
 function lagCount() {
   if (!state.latest) return 0;
   const materialized = newestKnowledgeDate();
@@ -47,13 +87,14 @@ function knowledgeStatusMarkup() {
   const archived = state.latest?.date || "暂无归档";
   const materialized = newestKnowledgeDate();
   const lag = lagCount();
-  const lagLabel = state.knowledgeError ? "部分失败" : lag ? `落后 ${lag} 期` : "完整";
-  const lagTone = state.knowledgeError ? "negative" : lag ? "warning" : "positive";
+  const publication = publicationLabel();
+  const syncLabel = state.knowledgeError ? "部分失败" : publication.label === "已同步" && !lag ? "完整" : `${publication.label}${lag ? ` · 落后 ${lag} 期` : ""}`;
+  const syncTone = state.knowledgeError || publication.tone === "negative" ? "negative" : lag || publication.tone === "warning" ? "warning" : "positive";
   return `<div class="knowledge-status" aria-label="知识状态">
     <div class="status-card">${icon("calendar")}<div><span>归档最新</span><strong>${esc(archived)}</strong></div></div>
     <div class="status-card positive">${icon("book")}<div><span>知识物化</span><strong>${esc(materialized)}</strong></div></div>
-    <div class="status-card ${lagTone}">${icon("alert")}<div><span>同步状态</span><strong>${esc(lagLabel)}</strong></div></div>
-  </div><div class="status-summary">${icon("status")}<span>归档 ${esc(archived)} · 知识 ${esc(materialized)} · ${esc(lagLabel)}</span></div>`;
+    <div class="status-card ${syncTone}">${icon("alert")}<div><span>同步状态</span><strong>${esc(syncLabel)}</strong></div></div>
+  </div><div class="status-summary">${icon("status")}<span>归档 ${esc(archived)} · 知识 ${esc(materialized)} · ${esc(syncLabel)}</span></div>`;
 }
 
 function pageHeader({ title, description, home = false, breadcrumb = "" }) {
@@ -103,10 +144,11 @@ function dossierCard(item, options = {}) {
 
 function dataTable(columns, rows, options = {}) {
   if (!rows.length) return emptyState(options.emptyTitle || "没有数据", options.emptyCopy || "当前公开数据中没有可展示记录。", options.emptyIcon || "claim");
+  const alignClass = (column) => (column.align === "center" ? " cell-center" : column.numeric ? " numeric" : "");
   const table = `<div class="data-table-wrap"><table class="data-table"><thead><tr>${columns
-    .map((column) => `<th${column.width ? ` style="width:${esc(column.width)}"` : ""}>${esc(column.label)}</th>`)
+    .map((column) => `<th${column.width ? ` style="width:${esc(column.width)}"` : ""} class="${alignClass(column).trim()}">${esc(column.label)}</th>`)
     .join("")}</tr></thead><tbody>${rows
-    .map((row) => `<tr>${columns.map((column) => `<td class="${column.numeric ? "numeric" : ""}">${column.render ? column.render(row) : esc(row[column.key] || "")}</td>`).join("")}</tr>`)
+    .map((row) => `<tr>${columns.map((column) => `<td class="${alignClass(column).trim()}">${column.render ? column.render(row) : esc(row[column.key] || "")}</td>`).join("")}</tr>`)
     .join("")}</tbody></table></div>`;
   const cards = `<div class="table-cards">${rows
     .map((row) => `<article class="definition-card"><h3>${esc(row[options.cardTitleKey || columns[0].key] || "记录")}</h3>${fieldRows(columns.slice(1).map((column) => ({ label: column.label, value: column.render ? column.render(row) : row[column.key], html: Boolean(column.render) })))}</article>`)
@@ -154,72 +196,191 @@ function bindFeedbackEvents(container = document) {
   });
 }
 
-function renderHome() {
+/* Home first screen: watermark → this issue's real material change (from the
+ * Issue Change Projection only) → honest pending/empty states. The homepage
+ * never backfills old Roadmap summaries or historical Ideas to look full. */
+function homeChangesBody() {
   const latest = state.latest;
-  const roadmaps = [...(state.knowledge?.roadmaps || [])].sort((a, b) => text(b.updated_by_issue).localeCompare(text(a.updated_by_issue)));
-  const ideas = [...(state.knowledge?.ideas || [])].sort((a, b) => text(b.last_updated_issue).localeCompare(text(a.last_updated_issue)));
-  const latestItems = latest?.papers || [];
-  const missingSources = latestItems.filter((row) => !row.url).length;
-  const changedTopics = roadmaps.filter((row) => row.updated_by_issue === latest?.date && row.change_type !== "no_material_change").length;
-  const ideaChanges = ideas.filter((row) => row.last_updated_issue === latest?.date).length;
-  const metrics = [
-    { label: "本期期次", value: latest?.date || "暂无", note: latest ? `${latestItems.length} 条公开记录` : "等待归档", icon: "calendar" },
-    { label: "发生实质变化的 Topic", value: changedTopics, note: "以长期知识更新时间为准", icon: "claim", tone: "positive" },
-    { label: "新 Idea Candidate", value: 0, note: "公开数据未提供 Candidate 集合", icon: "idea", tone: "negative" },
-    { label: "Idea 状态变化", value: ideaChanges, note: "较上一期的已记录变化", icon: "status" },
-    { label: "异常与知识落后", value: `${missingSources} / ${lagCount()}`, note: "缺来源 / 落后期数", icon: "alert", tone: missingSources || lagCount() ? "negative" : "positive" },
-  ];
-  const changeRows = roadmaps.slice(0, 4).map((row) => ({
-    topic: row.topic_name,
-    judgment: row.summary || "暂无长期判断摘要",
-    trigger: row.updated_by_issue || "未记录",
-    evidence: row.change_type === "no_material_change" ? "无实质变化" : "长期知识已更新",
-    roadmap: row.change_type === "no_material_change" ? "未进入" : "已进入",
-    topic_id: row.topic_id,
-  }));
-  const changes = dataTable(
+  const publication = publicationLabel();
+  if (!state.manifest) {
+    return editorialNote(
+      "发布清单缺失",
+      "缺少 knowledge/manifest.json，无法确认长期知识是否已同步本期归档。本页不回填历史 Roadmap 摘要充当本期变化。",
+      "warning",
+    );
+  }
+  if (publicationState() !== "knowledge_complete") {
+    const pending = state.manifest.pending_issues || [];
+    const pendingList = pending.length ? `待分析期次：${pending.join("、")}。` : "";
+    const progress = publicationState() === "analysis_pending"
+      ? `本期知识任务 ${state.manifest.completed_topics}/${state.manifest.affected_topics} 已完成。`
+      : publication.note || "";
+    return editorialNote(
+      latest ? `本期已归档（${latest.date}），长期判断${publication.label}` : "暂无归档",
+      `${progress}${pendingList} 分析完成后，这里展示本期真实的 material change；不会用旧 Roadmap 摘要填充。`,
+      publication.tone === "negative" ? "negative" : "warning",
+    );
+  }
+  const diff = state.issueDiff;
+  if (!diff) {
+    return editorialNote("本期投影缺失", "发布清单声明知识已同步，但本期 Issue Change Projection 不可用。页面降级为“分析未完成”，不做浏览器推断。", "warning");
+  }
+  const changes = (diff.topic_changes || []).filter((row) => row.change_kind === "material_change");
+  const noops = (diff.topic_changes || []).filter((row) => row.change_kind === "no_material_change");
+  if (!changes.length) {
+    return emptyState(
+      "本期没有实质变化",
+      noops.length
+        ? `本期 ${noops.length} 个 Topic 明确记录为无实质变化；新增证据未改变已有长期判断。`
+        : "本期没有 Topic 记录实质变化。",
+      "claim",
+    );
+  }
+  return dataTable(
     [
-      { key: "topic", label: "Topic", width: "18%", render: (row) => `<a href="#roadmaps?topic=${encodeURIComponent(row.topic_id)}"><strong>${esc(row.topic)}</strong></a>` },
-      { key: "judgment", label: "当前一句话判断", width: "45%" },
-      { key: "trigger", label: "更新期次", width: "13%" },
-      { key: "evidence", label: "当前证据状态", width: "15%", render: (row) => badge(row.evidence, statusTone(row.evidence)) },
-      { key: "roadmap", label: "Roadmap", width: "12%", render: (row) => badge(row.roadmap, statusTone(row.roadmap)) },
+      { key: "topic", label: "Topic", width: "16%", render: (row) => `<a href="#roadmaps?topic=${encodeURIComponent(row.topic_id)}"><strong>${esc(row.topic)}</strong></a>` },
+      { key: "changed", label: "本期变化", width: "30%" },
+      { key: "judgment", label: "当前判断", width: "32%" },
+      { key: "evidence", label: "证据状态", width: "10%", align: "center", render: (row) => badge(row.evidence, row.evidence === "contested" ? "negative" : row.evidence === "evidence_building" ? "warning" : "positive") },
+      { key: "impact", label: "影响对象", width: "12%", render: (row) => esc(row.impact) },
     ],
-    changeRows,
+    changes.map((row) => ({
+      topic: row.topic_name,
+      topic_id: row.topic_id,
+      changed: row.what_changed || "未记录",
+      judgment: row.current_judgement || "本期变化未附独立当前判断；进入 Roadmap 查看证据时间线。",
+      evidence: EVIDENCE_STATE_LABELS[row.evidence_state] || row.evidence_state || "未知",
+      impact: (row.affected_branches || []).length ? (row.affected_branches || []).join("、") : "整个 Topic",
+    })),
     { emptyTitle: "本期没有实质变化", emptyCopy: "新增论文未改变已有长期判断。", cardTitleKey: "topic" },
   );
+}
+
+function homeIdeaBody() {
+  if (!state.manifest || publicationState() !== "knowledge_complete") {
+    return emptyState("等待本期分析", "长期知识同步后，这里展示本期真实发生的 Idea 状态事件；不展示历史 Idea 凑数。", "idea");
+  }
+  const events = state.issueDiff?.idea_events || [];
+  if (!events.length) return emptyState("本期没有 Idea 状态变化", "本期没有 Idea 记录跨状态事件。", "idea");
+  return `<div class="dossier-grid idea-cards" style="--card-count:${Math.min(3, events.length)}">${events.slice(0, 3).map((event, index) => dossierCard(
+    { title: event.title, summary: event.reason || "" },
+    {
+      index: index + 1,
+      badges: [
+        { label: STATUS_LABELS[event.to_status] || event.to_status || "状态事件", tone: statusTone(event.to_status || event.decision) },
+      ],
+      footer: `<a href="#ideas?idea=${encodeURIComponent(event.idea_id)}">查看 Idea 证据与决策 →</a>`,
+    },
+  )).join("")}</div>`;
+}
+
+function renderHome() {
+  const latest = state.latest;
+  const latestItems = latest?.papers || [];
+  const missingSources = latestItems.filter((row) => !row.url).length;
+  const lag = lagCount();
+  const publication = publicationLabel();
+  const manifest = state.manifest;
+  const metrics = [
+    { label: "本期期次", value: latest?.date || "暂无", note: latest ? `${latestItems.length} 条公开记录` : "等待归档", icon: "calendar" },
+    { label: "长期知识水位", value: newestKnowledgeDate(), note: lag ? `落后最新归档 ${lag} 期` : "与最新归档同期", icon: "book", tone: lag ? "warning" : "positive" },
+    { label: "知识分析状态", value: publication.label, note: manifest?.pending_issues?.length ? `待分析 ${manifest.pending_issues.length} 期` : publication.note, icon: "status", tone: publication.tone },
+    { label: "缺来源记录", value: missingSources, note: "本期未解析到原始来源", icon: "alert", tone: missingSources ? "negative" : "positive" },
+  ];
+  const changes = section("本期最重要变化", homeChangesBody(), { note: latest ? `绑定 ${latest.date} 的 Issue Change Projection` : "等待第一期归档" });
   const riskBody = `<div class="risk-list">
-    <div class="risk-record ${lagCount() ? "warning" : ""}">${icon("clock")}<div><b>${lagCount() ? "知识物化落后" : "知识物化已同步"}</b><span>${lagCount() ? `长期知识落后最新归档 ${lagCount()} 期` : "归档与长期知识处于同一期"}</span></div></div>
+    <div class="risk-record ${publication.tone === "positive" && !lag ? "" : publication.tone === "negative" ? "negative" : "warning"}">${icon("clock")}<div><b>长期知识：${esc(publication.label)}</b><span>${lag ? `知识物化落后最新归档 ${lag} 期；${manifest?.pending_issues?.length ? `待分析 ${manifest.pending_issues.length} 期` : "等待知识任务"}。` : publication.note}</span></div></div>
     <div class="risk-record warning">${icon("source")}<div><b>来源记录检查</b><span>${missingSources ? `${missingSources} 条公开记录未解析到原始来源` : "本期公开记录均保留来源入口"}</span></div></div>
-    <div class="risk-record">${icon("status")}<div><b>阶段判断克制</b><span>${roadmaps.length} 个 Topic 中，证据不足时继续显示 Signal Timeline</span></div></div>
+    <div class="risk-record">${icon("status")}<div><b>阶段判断克制</b><span>${(state.knowledge?.roadmaps || []).length} 个 Topic 中，证据不足时继续显示 Signal Timeline</span></div></div>
   </div>`;
-  const ideaBody = ideas.length
-    ? `<div class="dossier-grid idea-cards" style="--card-count:${Math.min(3, ideas.length)}">${ideas.slice(0, 3).map((row, index) => {
-        const object = state.ideaObjects.get(row.idea_id) || {};
-        return dossierCard(
-          { title: row.title, summary: object.hypothesis || object.expected_effect || "" },
-          {
-            index: index + 1,
-            badges: [IDEA_TYPE_LABELS[row.idea_type] || row.idea_type, { label: STATUS_LABELS[row.status] || row.status, tone: statusTone(row.status) }],
-            footer: `<a href="#ideas?idea=${encodeURIComponent(row.idea_id)}">查看 Idea 证据与决策 →</a>`,
+  const ideaBody = section("本期新产生或更新的 Idea", homeIdeaBody());
+  const quick = `<div class="link-matrix">${quickLink("#roadmaps", "roadmap", "浏览 Roadmap 总览")}${quickLink("#ideas", "idea", "进入 Idea Hub")}${quickLink("#knowledge", "trend", "查看知识图谱")}${quickLink("#archive", "archive", "浏览日报归档")}</div>`;
+  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "首页", description: "把分散的证据转化为清晰的判断，驱动更好的技术决策。", home: true })}${metricStrip(metrics)}<div class="home-grid">${changes}${section("风险与异常", riskBody)}${ideaBody}${section("快速入口", quick)}</div></div>`;
+}
+
+const VIEW_MODE_LABELS = { evidence_timeline: "Signal Timeline", landscape: "Landscape", trajectory: "Trajectory" };
+
+function roadmapOverviewRows() {
+  return (state.knowledge?.roadmaps || [])
+    .map((row) => {
+      const object = state.roadmapObjects.get(row.topic_id) || {};
+      const branches = Array.isArray(object.branches) ? object.branches : [];
+      return {
+        ...row,
+        view_mode: object.view_mode || "",
+        branch_count: branches.length,
+        open_questions: branches.reduce((sum, branch) => sum + ((branch.open_questions || []).length || 0), 0),
+        lag: issueLag(row.updated_by_issue),
+      };
+    })
+    .sort((a, b) => text(b.updated_by_issue).localeCompare(text(a.updated_by_issue)));
+}
+
+function renderRoadmapOverview() {
+  const rows = roadmapOverviewRows();
+  const filters = [
+    { id: "all", label: "全部 Topic" },
+    { id: "changed", label: "本期变化" },
+    { id: "gaps", label: "待补证据" },
+    { id: "stale", label: "长期未更新" },
+  ];
+  const listRows = (filterId) => rows.filter((row) => {
+    if (filterId === "changed") return row.updated_by_issue === state.latest?.date;
+    if (filterId === "gaps") return row.view_mode === "evidence_timeline";
+    if (filterId === "stale") return row.lag >= 3;
+    return true;
+  });
+  const renderList = (filterId) => {
+    const filtered = listRows(filterId);
+    return dataTable(
+      [
+        { key: "topic", label: "Topic", width: "18%", render: (row) => `<a href="#roadmaps?topic=${encodeURIComponent(row.topic_id)}"><strong>${esc(row.topic_name)}</strong></a>` },
+        {
+          key: "state",
+          label: "当前状态",
+          width: "34%",
+          render: (row) => {
+            const baseline = isSeedSummary(row.summary)
+              ? ' <span class="status-badge warning" title="当前摘要仍为基线证据时间线说明，尚未形成独立判断。">基线时间线</span>'
+              : "";
+            return `${esc(row.summary || "暂无状态摘要")}${baseline}`;
           },
-        );
-      }).join("")}</div>`
-    : emptyState("还没有正式 Idea", "长期知识物化后，正式 Idea 会在这里出现。", "idea");
-  const quick = `<div class="link-matrix">${quickLink("#roadmaps", "roadmap", "查看 Roadmap")}${quickLink("#ideas", "idea", "进入 Idea Hub")}${quickLink("#knowledge", "trend", "查看知识图谱")}${quickLink("#archive", "archive", "浏览日报归档")}</div>`;
-  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "首页", description: "把分散的证据转化为清晰的判断，驱动更好的技术决策。", home: true })}${metricStrip(metrics)}<div class="home-grid">${section("本期最重要变化", changes)}${section("风险与异常", riskBody)}${section("本期新产生或更新的 Idea", ideaBody)}${section("快速入口", quick)}</div></div>`;
+        },
+        { key: "mode", label: "模式", width: "13%", align: "center", render: (row) => esc(VIEW_MODE_LABELS[row.view_mode] || "未记录") },
+        { key: "updated", label: "最近变化", width: "11%", align: "center", render: (row) => esc(row.updated_by_issue || "未记录") },
+        { key: "lag", label: "知识滞后", width: "10%", align: "center", render: (row) => badge(row.lag ? `落后 ${row.lag} 期` : "同期", row.lag >= 3 ? "negative" : row.lag ? "warning" : "positive") },
+        { key: "counts", label: "路线 / 问题", width: "14%", align: "center", render: (row) => esc(`${row.branch_count} / ${row.open_questions}`) },
+      ],
+      filtered,
+      { emptyTitle: "没有匹配的 Roadmap", emptyCopy: "切换筛选条件查看其他 Topic。", cardTitleKey: "topic" },
+    );
+  };
+  const tabs = `<div class="segmented-tabs roadmap-overview-tabs" role="tablist" aria-label="Roadmap 筛选">${filters.map((filter, index) => `<button type="button" role="tab" aria-selected="${index === 0}" data-roadmap-filter="${filter.id}">${esc(filter.label)}</button>`).join("")}</div>`;
+  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "Roadmap 总览", description: "先浏览全部 Topic 的当前状态、证据边界与知识滞后，再进入单条 Roadmap 详情。" })}${tabs}<div data-roadmap-list>${renderList("all")}</div></div>`;
+  $$("[data-roadmap-filter]").forEach((button) => button.addEventListener("click", () => {
+    $$("[data-roadmap-filter]").forEach((tab) => tab.setAttribute("aria-selected", String(tab === button)));
+    const target = $("[data-roadmap-list]");
+    if (target) target.innerHTML = renderList(button.dataset.roadmapFilter);
+  }));
 }
 
 function renderRoadmap(row, roadmap) {
   if (!row || !roadmap) {
-    $("#appMain").innerHTML = `${pageHeader({ title: "Roadmap 详情", description: "阅读技术路线、判断变化与证据边界。" })}${emptyState("Roadmap 尚未物化", "系统不会用日期列表或 next_action 临时拼装替代品。", "roadmap")}`;
+    $("#appMain").innerHTML = `${pageHeader({ title: "Roadmap 详情", description: "阅读技术路线、判断变化与证据边界。", breadcrumb: '<a href="#roadmaps">Roadmap 总览</a><span>/</span><span>未找到</span>' })}${emptyState("Roadmap 不存在或尚未物化", "请求的 Topic 没有对应的物化 Roadmap；可先在总览中选择。", "roadmap")}`;
     return;
   }
+  const entries = [...(state.knowledge?.roadmaps || [])].sort((a, b) => text(a.topic_name).localeCompare(text(b.topic_name), "zh"));
+  const position = entries.findIndex((entry) => entry.topic_id === row.topic_id);
+  const previousEntry = position > 0 ? entries[position - 1] : null;
+  const nextEntry = position >= 0 && position < entries.length - 1 ? entries[position + 1] : null;
   const branches = Array.isArray(roadmap.branches) ? roadmap.branches : [];
   const branch = branches.find((candidate) => candidate.branch_id === state.route.params.branch) || branches[0] || null;
-  const viewMode = { evidence_timeline: "Signal Timeline", landscape: "Landscape", trajectory: "Trajectory" }[roadmap.view_mode] || roadmap.view_mode || "未知";
-  const selector = `<select class="object-select" aria-label="选择 Roadmap" onchange="go('roadmaps',{topic:this.value})">${state.knowledge.roadmaps.map((entry) => `<option value="${esc(entry.topic_id)}" ${entry.topic_id === row.topic_id ? "selected" : ""}>${esc(entry.topic_name)}</option>`).join("")}</select>`;
-  const summary = `<div class="object-summary"><div class="summary-cell"><span>Topic 名称</span>${selector}</div><div class="summary-cell"><span>当前一句话判断</span><p>${esc(roadmap.summary || row.summary || "暂无判断摘要")}</p></div><div class="summary-cell"><span>当前模式</span><strong>${esc(viewMode)}</strong></div></div>`;
+  const viewMode = VIEW_MODE_LABELS[roadmap.view_mode] || roadmap.view_mode || "未知";
+  const baselineBadge = isSeedSummary(roadmap.summary || row.summary)
+    ? '<span class="status-badge warning" title="该摘要来自首版基线，只描述证据时间线，不是当前技术判断。">基线时间线</span>'
+    : "";
+  const topicNav = `<nav class="topic-nav" aria-label="相邻 Topic">${previousEntry ? `<a href="#roadmaps?topic=${encodeURIComponent(previousEntry.topic_id)}">← ${esc(previousEntry.topic_name)}</a>` : "<span></span>"}<a href="#roadmaps">总览</a>${nextEntry ? `<a href="#roadmaps?topic=${encodeURIComponent(nextEntry.topic_id)}">${esc(nextEntry.topic_name)} →</a>` : "<span></span>"}</nav>`;
+  const summary = `<div class="object-summary"><div class="summary-cell"><span>Topic</span><strong>${esc(row.topic_name)}</strong>${topicNav}</div><div class="summary-cell"><span>当前一句话判断</span><p>${esc(roadmap.summary || row.summary || "暂无判断摘要")} ${baselineBadge}</p></div><div class="summary-cell"><span>当前模式</span><strong>${esc(viewMode)}</strong></div></div>`;
   const trackCards = branches.slice(0, 6).map((track, index) => dossierCard(
     { title: track.name, summary: track.summary || "" },
     { index: index + 1, fields: [
@@ -247,13 +408,26 @@ function renderRoadmap(row, roadmap) {
   const relatedIdeas = (state.knowledge.ideas || []).filter((idea) => idea.topic_ids?.includes(row.topic_id));
   const questions = (branch?.open_questions || []).length ? `<ul>${branch.open_questions.map((question) => `<li>${esc(question)}</li>`).join("")}</ul>` : `<p>当前物化对象未记录 Open Questions。</p>`;
   const side = `<aside class="side-rail">${section("当前状态", editorialNote(viewMode, roadmap.view_mode === "evidence_timeline" ? "部分证据不足，当前只能形成可追溯的信号时间线。" : "当前模式来自长期知识对象。"))}${section("入口与来源", `<div class="side-list">${quickLink(issueHref(roadmap.updated_by_issue), "book", "进入更新期日报", true)}${(branch?.source_urls || []).slice(0, 2).map((url, index) => quickLink(url, "source", `原始来源 ${index + 1}`, true)).join("")}</div>`)}${section("相关 Idea", relatedIdeas.length ? `<div class="side-list">${relatedIdeas.map((idea) => quickLink(`#ideas?idea=${encodeURIComponent(idea.idea_id)}`, "idea", idea.title)).join("")}</div>` : emptyState("没有关联 Idea", "当前 Topic 尚未关联正式 Idea。", "idea"))}${section("Open Questions", questions)}${section("Roadmap 基本信息", fieldRows([{ label: "版本", value: `v${roadmap.version}` }, { label: "更新期次", value: roadmap.updated_by_issue }, { label: "证据范围", value: roadmap.evidence_scope }]))}</aside>`;
-  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "Roadmap 详情", description: "沿主要路线、关键证据与未决问题阅读一个技术方向。" })}${summary}<div class="two-column roadmap-layout">${main}${side}</div></div>`;
+  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "Roadmap 详情", description: "沿主要路线、关键证据与未决问题阅读一个技术方向。", breadcrumb: `<a href="#roadmaps">Roadmap 总览</a><span>/</span><span>${esc(row.topic_name)}</span>` })}${summary}<div class="two-column roadmap-layout">${main}${side}</div></div>`;
 }
+
+/* Next gate an Idea must clear to leave its current status. Gates that need
+ * objects the public data model does not have yet are labeled as such instead
+ * of being presented as reachable today. */
+const IDEA_NEXT_GATES = {
+  seed: "证据继续支持同一问题与机制后进入观察",
+  observing: "证据与验证计划成熟后进入待验证",
+  ready_for_validation: "批准并创建实验 Run（Run 对象尚未建立）",
+  promising: "沉淀为立项候选",
+  proposal_candidate: "立项评审（流程尚未建立）",
+  rejected: "出现新的已发布证据后可重新打开",
+};
 
 function ideaCard(row, mode, index) {
   const object = state.ideaObjects.get(row.idea_id) || {};
   const support = object.evidence_for?.length || 0;
   const against = object.evidence_against?.length || 0;
+  const latestDecision = object.decision_log?.at(-1);
   return dossierCard(
     { title: row.title, summary: object.hypothesis || object.problem || "" },
     {
@@ -261,10 +435,11 @@ function ideaCard(row, mode, index) {
       className: `${mode === "portfolio" ? "portfolio-card" : ""} ${mode === "validation" ? "validation-card" : ""} compact-dossier`,
       badges: [IDEA_TYPE_LABELS[row.idea_type] || row.idea_type, { label: STATUS_LABELS[row.status] || row.status, tone: statusTone(row.status) }],
       fields: [
-        { label: "产生方式", value: object.decision_log?.[0]?.decision === "created" ? "已记录的系统综合" : "历史对象" },
+        { label: "为什么在当前状态", value: latestDecision?.reason || "历史 Seed，未记录状态决策" },
+        { label: "下一道门槛", value: IDEA_NEXT_GATES[row.status] || "未记录" },
+        { label: "最大阻塞", value: object.unknowns?.[0] || "未记录" },
+        { label: "验证建议", value: object.validation_plan ? "已有建议，尚未执行" : "未记录" },
         { label: "证据摘要", value: `支持 ${support} · 反对 ${against} · 未知 ${(object.unknowns || []).length}` },
-        { label: "最大未知", value: object.unknowns?.[0] || "未记录" },
-        { label: "关联 Topic", value: (row.topic_ids || []).map(topicLabel).join("、") },
       ],
       footer: `<a href="#ideas?idea=${encodeURIComponent(row.idea_id)}">查看详情与下一步 →</a>`,
     },
@@ -275,26 +450,35 @@ function topicLabel(topicId) {
   return state.knowledge?.roadmaps?.find((row) => row.topic_id === topicId)?.topic_name || topicId;
 }
 
+/* Honest Idea Hub: until real IdeaCandidate / TransitionEvent / ExperimentRun
+ * objects exist, this page shows only the actual Idea Portfolio grouped by
+ * status. Candidate and Validation stages that have no data source are marked
+ * "未启用"; the page never renders a fake three-stage funnel with empty rails. */
 function renderIdeaHub() {
   const all = state.knowledge?.ideas || [];
-  const validationStatuses = new Set(["ready_for_validation", "promising", "proposal_candidate"]);
-  const validation = all.filter((row) => validationStatuses.has(row.status));
-  const portfolio = all.filter((row) => !validationStatuses.has(row.status));
-  const candidates = [];
+  const groups = [
+    { id: "observing", title: "观察中", statuses: ["seed", "observing"] },
+    { id: "ready", title: "待验证", statuses: ["ready_for_validation"] },
+    { id: "promising", title: "有希望", statuses: ["promising"] },
+    { id: "proposal", title: "立项候选", statuses: ["proposal_candidate"] },
+    { id: "rejected", title: "已淘汰", statuses: ["rejected"] },
+  ]
+    .map((group) => ({ ...group, rows: all.filter((row) => group.statuses.includes(row.status)) }))
+    .filter((group) => group.rows.length);
   const latestChanges = all.filter((row) => row.last_updated_issue === state.latest?.date).length;
   const metrics = [
-    { label: "Candidate Inbox", value: candidates.length, note: "公开候选集合", icon: "idea", tone: "negative" },
-    { label: "Idea Portfolio", value: portfolio.length, note: "已入库的正式 Idea", icon: "claim", tone: "positive" },
-    { label: "Validation", value: validation.length, note: "已进入验证", icon: "status" },
-    { label: "本期状态变化", value: latestChanges, note: "较上一期的净变化", icon: "trend", tone: "warning" },
+    { label: "正式 Idea Portfolio", value: all.length, note: "已入库并持续维护", icon: "claim", tone: "positive" },
+    { label: "本期状态变化", value: latestChanges, note: "较上一期的已记录变化", icon: "trend", tone: latestChanges ? "warning" : "" },
+    { label: "Candidate Inbox", value: "未启用", note: "候选对象尚未建立数据模型", icon: "idea", tone: "" },
+    { label: "Validation", value: "未启用", note: "实验 Run / Result 对象尚未建立", icon: "status", tone: "" },
   ];
-  const column = (key, title, note, rows, emptyCopy) => `<section class="editorial-section hub-column ${key === "candidate" ? "active" : ""}" data-hub-panel="${key}"><div class="hub-column-head"><div><h2>${title}</h2><p>${note}</p></div><span class="hub-count">${rows.length}</span></div><div class="hub-stack">${rows.length ? rows.map((row, index) => ideaCard(row, key, index + 1)).join("") : emptyState(`没有${title}记录`, emptyCopy, "idea")}</div></section>`;
-  const tabs = `<div class="segmented-tabs hub-tabs" role="tablist" aria-label="Idea 集合"><button role="tab" aria-selected="true" data-hub-tab="candidate">Candidate ${candidates.length}</button><button role="tab" aria-selected="false" data-hub-tab="portfolio">Portfolio ${portfolio.length}</button><button role="tab" aria-selected="false" data-hub-tab="validation">Validation ${validation.length}</button></div>`;
-  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "Idea Hub", description: "查看哪些在排队、哪些已入库、哪些在验证中。" })}${metricStrip(metrics)}${tabs}<div class="idea-hub-grid">${column("candidate", "Candidate Inbox", "系统提出，尚未确认", candidates, "当前公开数据不包含 Candidate 集合；不会把正式 Idea 倒推成候选。")}${column("portfolio", "Idea Portfolio", "已接受并持续维护", portfolio, "还没有正式 Idea。")}${column("validation", "Validation", "已经进入验证", validation, "当前没有 Idea 进入验证；建议不会冒充已执行实验。")}</div>${editorialNote("状态说明", "Candidate 与正式 Idea 使用独立集合；证据不足、来源不独立或与已有 Idea 相似时会明确说明。")}</div>`;
-  $$("[data-hub-tab]").forEach((button) => button.addEventListener("click", () => {
-    $$("[data-hub-tab]").forEach((tab) => tab.setAttribute("aria-selected", String(tab === button)));
-    $$("[data-hub-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.hubPanel === button.dataset.hubTab));
-  }));
+  const lifecycle = editorialNote(
+    "目标流程（只读说明）",
+    "Candidate 提案 → 接受且通过身份去重 → 正式 Idea → 证据与验证计划达标 → 待验证 → 批准并创建 Run → 验证 → 结果回流。其中 Candidate Inbox 与实验验证两阶段的数据对象尚未建立，本页不展示它们的计数、进度或入口；验证建议（validation_plan）始终只是建议，尚未执行。",
+    "",
+  );
+  const columns = groups.map((group) => `<section class="editorial-section" aria-label="${esc(group.title)}"><div class="hub-column-head"><div><h2>${esc(group.title)}</h2><p>${esc(group.rows.length)} 个 Idea</p></div><span class="hub-count">${group.rows.length}</span></div><div class="hub-stack">${group.rows.map((row, index) => ideaCard(row, "portfolio", index + 1)).join("")}</div></section>`).join("");
+  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "Idea Hub", description: "查看正式 Idea Portfolio 的真实分组、当前阻塞与下一道门槛。" })}${metricStrip(metrics)}${lifecycle}<div class="idea-portfolio-grid">${columns || emptyState("还没有正式 Idea", "长期知识物化后，正式 Idea 会在这里出现。", "idea")}</div>${editorialNote("状态边界", "Candidate 与正式 Idea 使用独立集合；证据不足、来源不独立或与已有 Idea 相似时会明确说明。三个并排“漏斗栏”已移除，因为在 Candidate 与实验对象上线前，它们只是集合而不是流程。")}</div>`;
 }
 
 function renderIdeaDetail(row, idea) {
@@ -407,6 +591,7 @@ function renderFeatures() {
 
 function renderWorkbenchView(route, context = {}) {
   if (route.name === "home") renderHome();
+  else if (route.name === "roadmaps" && context.overview) renderRoadmapOverview();
   else if (route.name === "roadmaps") renderRoadmap(context.row, context.object);
   else if (route.name === "ideas" && route.params.idea && route.params.view === "evidence") {
     IdeaEvidenceView.renderEvidence(context.row, context.object, context);

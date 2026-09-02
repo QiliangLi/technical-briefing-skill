@@ -36,6 +36,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .issue_style_polish import install_issue_style_polish
     from .knowledge_materialization import install_knowledge_materialization
     from .knowledge_graph import install_knowledge_graph
+    from .knowledge_publication import install_knowledge_publication
     from .no_human_review import install_no_human_review_gate
     from .primary_fulltext_cache import install_primary_fulltext_cache
     from .project_insight import install_project_insight_layer
@@ -151,6 +152,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # archive and materialized knowledge; its builder never becomes an
     # authoritative knowledge source.
     install_knowledge_graph()
+    # Freshness manifest and Issue Change Projection are derived publication
+    # projections; their gates keep "schema valid" from being mistaken for
+    # "knowledge caught up with the archive".
+    install_knowledge_publication()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))

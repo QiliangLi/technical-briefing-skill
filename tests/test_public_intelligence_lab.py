@@ -126,11 +126,16 @@ def test_roadmap_and_idea_views_only_read_materialized_knowledge():
     assert "project_insights" not in views
     assert ".next_action" not in views
     assert "latest.next_action" not in views
-    assert "系统不会用日期列表或 next_action 临时拼装替代品" in views
+    # Bare #roadmaps renders the browsable overview; unknown topics 404
+    # honestly instead of silently falling back to the first entry.
+    assert "overview: true" in app
+    assert "Roadmap 不存在或尚未物化" in views
+    # The native select must no longer be the roadmap navigation.
+    assert "object-select" not in views
+    assert "onchange=" not in views
     assert "验证建议 · 尚未执行" in views
     assert "不是仿真或实验结果" in views
     assert "Candidate 与正式 Idea 使用独立集合" in views
-    assert "不会把正式 Idea 倒推成候选" in views
     assert "renderEvidencePathForIdea" not in views
     assert "function renderEvidence(" not in views
     assert "EvidenceGraph" not in views
@@ -182,21 +187,74 @@ def test_item_feedback_is_browser_local_demo_only():
         assert "feedbackCount" not in surface
 
 
+def test_home_is_change_first_and_honest_about_freshness():
+    app = (SITE / "app.js").read_text(encoding="utf-8")
+    views = (SITE / "workbench-view.js").read_text(encoding="utf-8")
+
+    # The homepage reads the freshness manifest and the Issue Change
+    # Projection, and never backfills old Roadmap summaries as this issue's
+    # change.
+    assert "manifest.json" in app
+    assert "issue-diffs" in app
+    assert "homeChangesBody" in views
+    assert "发布清单缺失" in views
+    assert "本期已归档" in views
+    assert "本期没有实质变化" in views
+    assert "不回填历史 Roadmap 摘要" in views
+    # Seed template copy is labeled as baseline instead of shown as judgement.
+    assert "isSeedSummary" in views
+    assert "基线时间线" in views
+    # Column widths must not exceed 100%.
+    assert 'width: "16%"' in views and 'width: "30%"' in views and 'width: "32%"' in views
+    assert 'width: "45%"' not in views
+
+
 def test_idea_collections_are_separate_and_feature_plan_remains_public():
     views = (SITE / "workbench-view.js").read_text(encoding="utf-8")
     feature_plan = json.loads((SITE / "feature-plan.json").read_text(encoding="utf-8"))
 
-    assert 'data-hub-panel="${key}"' in views
-    assert 'data-hub-tab="candidate"' in views
-    assert 'data-hub-tab="portfolio"' in views
-    assert 'data-hub-tab="validation"' in views
-    assert "const candidates = []" in views
-    assert "validationStatuses" in views
-    assert 'role="tablist"' in views
+    # Honest Portfolio mode: no fake three-column funnel while Candidate and
+    # Validation objects do not exist; counts show 未启用 instead of fake 0s.
+    assert 'value: "未启用"' in views
+    assert "data-hub-tab" not in views
+    assert "const candidates = []" not in views
+    assert "目标流程（只读说明）" in views
+    assert "尚未建立数据模型" in views
+    assert "Run 对象尚未建立" in views
+    assert "已有建议，尚未执行" in views
+    assert "为什么在当前状态" in views
+    assert "下一道门槛" in views
     assert "正在迭代" in views
     assert "接下来" in views
     assert feature_plan["schema_version"] == 1
     assert {row["status"] for row in feature_plan["items"]} == {"iterating", "planned"}
+
+
+def test_knowledge_overview_focus_and_tech_info_contract():
+    knowledge_view = (SITE / "knowledge-graph-view.js").read_text(encoding="utf-8")
+    graph_css = (SITE / "knowledge-graph.css").read_text(encoding="utf-8")
+    renderer = (SITE / "graph-renderer.js").read_text(encoding="utf-8")
+
+    # Bare structure lens renders the topic-cluster overview; the canvas fits
+    # the focused one-hop neighborhood when a topic is selected.
+    assert "overviewMode" in knowledge_view
+    assert "overviewMarkup" in knowledge_view
+    assert "进入局部图" in knowledge_view
+    assert "全局概览" in knowledge_view
+    assert "聚焦当前对象" in knowledge_view
+    assert "fitFocus" in knowledge_view and "fitFocus" in renderer
+    # The raw digest is build diagnostics in a collapsed tech-info block.
+    assert "kg-tech-info" in knowledge_view
+    assert "输入校验码" in knowledge_view
+    assert "data-copy-digest" in knowledge_view
+    assert "构建输入摘要" not in knowledge_view
+    # Relationship list paginates (20 rows per page) but keeps all rows in DOM.
+    assert "RELATION_PAGE_SIZE = 20" in knowledge_view
+    assert "data-relationship-page" in knowledge_view
+    assert "rel-pager" in graph_css
+    assert "kg-overview-grid" in graph_css
+    # Sub-1280px workspaces drop the detail rail below the canvas.
+    assert "grid-template-columns:220pxminmax(0,1fr)" in "".join(graph_css.split())
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

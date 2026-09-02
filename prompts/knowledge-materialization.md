@@ -39,6 +39,14 @@ Allowed judgement states are:
 Python decides `material_change` versus `no_material_change` by comparing branch/stage
 judgements. New evidence by itself does not force a version bump.
 
+The Roadmap `summary` is the homepage "current judgement" source. It must answer
+"how should we see this topic now" in one actionable sentence grounded in cited
+evidence (for example, which branch is winning, what the limiting factor is, or
+what would change the judgement). It must never be a template about evidence
+counts, "证据时间线", or waiting for more data; the Issue Change Projection
+validator rejects such copy. When the evidence genuinely supports only a signal
+timeline, say what the signals show and what observation would upgrade the view.
+
 ## Ideas
 
 Return only new or updated Ideas; unchanged existing Ideas may be omitted.

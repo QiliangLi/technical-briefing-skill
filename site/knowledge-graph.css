@@ -78,7 +78,11 @@
 .graph-panel-section h3 { margin: 0 0 7px; font: 700 12px/18px var(--font-ui); }
 .graph-search { width: 100%; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); }
 .graph-filter-list { display: grid; gap: 2px; }
-.graph-filter-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; min-height: 23px; gap: 5px; font-size: 11px; }
+/* Filter rows are icon-less label+count links: the label owns the flexible
+ * column. Rows that do carry a leading icon/checkbox restore the icon column
+ * so the text never falls into an 18px first cell. */
+.graph-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 23px; gap: 5px; font-size: 11px; }
+.graph-filter-row:has(> svg), .graph-filter-row:has(input) { grid-template-columns: 18px minmax(0, 1fr) auto; }
 .graph-filter-list a.graph-filter-row { color: var(--ink-2); text-decoration: none; }
 .graph-filter-list a.graph-filter-row:hover, .graph-filter-list a.graph-filter-row[aria-current="true"] { color: var(--graph-navy); background: var(--accent-soft); }
 .graph-filter-row input { width: 14px; height: 14px; margin: 0; accent-color: var(--graph-navy); }
@@ -111,6 +115,7 @@
 .graph-toolbar { position: absolute; z-index: 20; top: 12px; right: 12px; display: flex; gap: 6px; }
 .graph-control-group { display: flex; overflow: hidden; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); box-shadow: var(--shadow); }
 .graph-control { min-width: 32px; height: 32px; padding: 0 9px; border: 0; border-left: 1px solid var(--line-soft); background: transparent; font-size: 12px; cursor: pointer; }
+a.graph-control { display: inline-flex; align-items: center; color: var(--ink-2); text-decoration: none; }
 .graph-control:first-child { border-left: 0; }
 .graph-control:hover { background: var(--accent-hover-bg); }
 .graph-control.zoom-value { min-width: 56px; cursor: default; }
@@ -136,6 +141,7 @@
 .relationship-table td { height: 52px; padding: 6px 18px; border-bottom: 1px solid var(--line-soft); font-size: 11px; overflow-wrap: anywhere; }
 .relationship-table tbody tr { cursor: pointer; }
 .relationship-table tbody tr:hover, .relationship-table tbody tr[aria-selected="true"] { background: var(--accent-soft); }
+.rel-pager { min-height: 44px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 4px 12px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 11px; }
 .relationship-symbol { display: flex; align-items: center; gap: 8px; color: var(--graph-navy); }
 .relationship-symbol.supports_idea { color: var(--graph-support); }
 .relationship-symbol.challenges_idea, .relationship-symbol.relates_to { color: var(--graph-challenge); }
@@ -164,6 +170,25 @@
 .kg-page .page-heading p { margin: 2px 0 0; font-size: 14px; line-height: 22px; }
 .kg-page .knowledge-status { align-self: center; }
 .kg-page .status-card { width: 176px; min-height: 64px; }
+
+/* Tech-info disclosure: the raw input digest is build diagnostics, not a
+ * content summary, so it lives collapsed below the first screen. */
+.kg-tech-info { margin-top: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); font-size: 12px; }
+.kg-tech-info summary { min-height: 32px; display: flex; align-items: center; color: var(--ink-3); cursor: pointer; }
+.kg-tech-info .field-list { margin-top: 6px; }
+.kg-tech-info .field-row { align-items: center; }
+.kg-digest { overflow-wrap: anywhere; font-family: var(--font-mono, monospace); font-size: 11px; color: var(--ink-2); }
+.kg-copy-digest { margin-left: 10px; height: 28px; min-width: 56px; border: 1px solid var(--line); }
+
+/* Global overview cards (#knowledge?lens=structure without a topic). */
+.kg-overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 10px; padding: 12px 14px 14px; }
+.kg-overview-card { min-width: 0; min-height: 128px; padding: 12px 14px; display: grid; align-content: start; gap: 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-raised); color: var(--ink-1); text-decoration: none; }
+.kg-overview-card:hover { border-color: var(--graph-navy); background: var(--accent-soft); }
+.kg-overview-card b { font-family: var(--font-display); font-size: 15px; line-height: 22px; }
+.kg-overview-card span { color: var(--ink-2); font-size: 12px; }
+.kg-overview-card small { color: var(--ink-3); font-size: 11px; }
+.kg-overview-card em { margin-top: 4px; color: var(--graph-navy); font-size: 12px; font-style: normal; font-weight: 650; }
+.kg-overview-card .status-badge { justify-self: start; }
 
 .kg-lens-tabs {
   display: flex; width: min(100%, 1040px); height: 58px; margin-top: 12px;
@@ -246,18 +271,24 @@
 
 /* ---------- Responsive bands ---------- */
 
+.kg-workspace.filters-collapsed { grid-template-columns: minmax(0, 1fr) 344px; }
+.kg-workspace.filters-collapsed .kg-filter-panel { display: none; }
+
 @media (max-width: 1439px) {
   .kg-workspace, .graph-workspace { grid-template-columns: 232px minmax(560px, 1fr) 320px; }
   .evidence-explorer .status-card, .kg-page .status-card { width: 160px; }
 }
+/* Below 1280px the detail panel drops below the canvas instead of squeezing
+ * it; the canvas keeps at least ~700px even on a 1024px viewport. */
 @media (max-width: 1279px) {
-  .kg-workspace, .graph-workspace { grid-template-columns: 220px minmax(460px, 1fr) 300px; }
+  .kg-workspace, .graph-workspace { grid-template-columns: 220px minmax(0, 1fr); }
+  .kg-detail-panel, .graph-detail-panel { grid-column: 1 / -1; min-height: 280px; border-top: 1px solid var(--line); }
+  .kg-workspace.filters-collapsed { grid-template-columns: minmax(0, 1fr); }
   .evidence-context-item { padding-inline: 13px; }
   .kg-lens-tabs a { min-width: 190px; }
 }
 @media (max-width: 1023px) and (min-width: 768px) {
   .kg-workspace, .graph-workspace { grid-template-columns: 210px minmax(0, 1fr); }
-  .kg-detail-panel, .graph-detail-panel { grid-column: 1 / -1; min-height: 300px; border-top: 1px solid var(--line); }
   .conflict-banner { min-width: 330px; }
   .evidence-path-view { grid-template-columns: minmax(0, 1fr); }
 }
@@ -304,6 +335,10 @@
   .mobile-focus-card span { margin-top: 2px; color: var(--ink-2); font-size: 12px; }
   .mobile-focus-card .chevron { width: 18px; height: 18px; stroke: var(--ink-1); }
   .mobile-path-card, .mobile-detail-card, .mobile-relation-card { margin: 0 14px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); }
+.kg-mobile-overlays > summary { cursor: pointer; list-style: none; }
+.kg-mobile-overlays > summary::-webkit-details-marker { display: none; }
+.kg-mobile-overlays > summary::after { content: "展开"; color: var(--graph-navy); font-size: 12px; font-weight: 650; }
+.kg-mobile-overlays[open] > summary::after { content: "收起"; }
   .mobile-card-head { display: flex; min-height: 44px; align-items: center; justify-content: space-between; padding: 0 10px; }
   .mobile-card-head h2 { margin: 0; font: 700 15px/22px var(--font-ui); }
   .mobile-card-head span, .mobile-card-head small { color: var(--ink-3); font-size: 11px; }

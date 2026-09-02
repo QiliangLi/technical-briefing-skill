@@ -47,12 +47,66 @@ const KnowledgeGraphView = (() => {
   function watermarkMarkup(graph) {
     const archive = graph?.archive_through_issue || "暂无归档";
     const knowledge = graph?.knowledge_through_issue || "未物化";
-    const digest = graph?.input_digest ? graph.input_digest.slice(7, 17) : "—";
+    const digest = graph?.input_digest || "";
+    const manifest = state.manifest;
+    const publication = publicationLabel();
+    const pendingCount = manifest?.pending_issues?.length || 0;
+    const analysisValue = manifest
+      ? `${publication.label}${pendingCount ? ` · 待 ${pendingCount} 期` : ""}`
+      : "清单缺失";
+    const generated = graph?.generated_at ? String(graph.generated_at).replace("T", " ").slice(0, 16) : "未记录";
     return `<div class="knowledge-status" aria-label="图谱新鲜度">
       <div class="status-card">${icon("calendar")}<div><span>日报结构更新至</span><strong>${esc(archive)}</strong></div></div>
       <div class="status-card positive">${icon("book")}<div><span>长期知识更新至</span><strong>${esc(knowledge)}</strong></div></div>
-      <div class="status-card">${icon("source")}<div><span>构建输入摘要</span><strong>sha256:${esc(digest)}</strong></div></div>
-    </div><div class="status-summary">${icon("status")}<span>两个水位独立计算：归档 ${esc(archive)} · 长期知识 ${esc(knowledge)} · 输入摘要 sha256:${esc(digest)}</span></div>`;
+      <div class="status-card ${publication.tone}">${icon("status")}<div><span>分析状态</span><strong>${esc(analysisValue)}</strong></div></div>
+    </div><div class="status-summary">${icon("status")}<span>两个水位独立计算：归档 ${esc(archive)} · 长期知识 ${esc(knowledge)} · ${esc(analysisValue)}</span></div>
+    <details class="kg-tech-info">
+      <summary>技术信息</summary>
+      <dl class="field-list">
+        <div class="field-row"><dt>构建时间</dt><dd>${esc(generated)} UTC</dd></div>
+        <div class="field-row"><dt>输入校验码</dt><dd><code class="kg-digest">${esc(digest || "—")}</code><button type="button" class="graph-control kg-copy-digest" data-copy-digest${digest ? "" : " disabled"}>复制</button></dd></div>
+      </dl>
+      <p class="filter-note">输入校验码（input digest）是构建输入的完整性校验值，不是内容摘要；用于诊断当前发布由哪些输入构建。</p>
+    </details>`;
+  }
+
+  /* Global overview: topic cluster cards instead of fitting 40 nodes into a
+   * narrow canvas. Clicking a topic opens its readable local graph. */
+  function overviewMarkup(graph) {
+    const topics = (graph?.nodes || []).filter((node) => node.data.kind === "topic");
+    const directionsByTopic = new Map();
+    const itemDirections = new Map();
+    (graph?.edges || []).forEach((edge) => {
+      const data = edge.data;
+      if (data.relation === "has_direction") {
+        const list = directionsByTopic.get(data.source) || [];
+        list.push(data.target);
+        directionsByTopic.set(data.source, list);
+      }
+      // has_item edges run direction → item; the source is the direction.
+      if (data.relation === "has_item") itemDirections.set(data.source, (itemDirections.get(data.source) || 0) + 1);
+    });
+    const cards = topics.map((node) => {
+      const topicId = node.data.topic_id || nodeShortId(node.data.id);
+      const indexRow = (state.knowledge?.roadmaps || []).find((row) => row.topic_id === topicId);
+      const directions = directionsByTopic.get(node.data.id) || [];
+      const items = directions.reduce((sum, directionId) => sum + (itemDirections.get(directionId) || 0), 0);
+      const lag = issueLag(indexRow?.updated_by_issue);
+      const lagBadge = !indexRow?.updated_by_issue
+        ? badge("未物化", "warning")
+        : badge(lag ? `落后 ${lag} 期` : "同期", lag >= 3 ? "negative" : lag ? "warning" : "positive");
+      return `<a class="kg-overview-card" href="${esc(knowledgeHref({ lens: "structure", topic: topicId, range: "recent3" }))}">
+        <b>${esc(node.data.label)}</b>
+        <span>${directions.length} 条路线 · ${items} 条已发布条目</span>
+        <small>最近知识更新 ${esc(indexRow?.updated_by_issue || "未物化")}</small>
+        ${lagBadge}
+        <em>进入局部图 →</em>
+      </a>`;
+    }).join("");
+    return `<section class="editorial-section kg-overview" aria-label="全局概览">
+      <div class="section-head"><div><h2>全局概览</h2><p>${topics.length} 个 Topic 聚类。点击进入单个 Topic 的可读局部图；完整节点与关系列表在局部图和关系列表中提供，不做静默缺失。</p></div></div>
+      <div class="kg-overview-grid">${cards}</div>
+    </section>`;
   }
 
   function metricsMarkup(model) {
@@ -135,10 +189,12 @@ const KnowledgeGraphView = (() => {
 
   function canvasPanelMarkup(model) {
     const status = model.limits.truncated
-      ? `显示 ${model.limits.nodeCount}/${model.limits.totalNodeCount} 节点 · ${model.limits.edgeCount}/${model.limits.totalEdgeCount} 边（已达上限，按聚焦一跳、判断关联与期次裁剪）`
-      : `${model.limits.nodeCount} 节点 · ${model.limits.edgeCount} 边`;
+      ? `当前范围 ${model.limits.nodeCount} / 全图 ${model.limits.totalNodeCount} 节点 · ${model.limits.edgeCount} / ${model.limits.totalEdgeCount} 边（已达上限，按聚焦一跳、判断关联与期次裁剪）`
+      : `当前范围 ${model.limits.nodeCount} / 全图 ${model.limits.totalNodeCount} 节点 · ${model.limits.edgeCount} 边`;
     return `<section class="graph-canvas-panel kg-canvas-panel" aria-label="知识图画布">
       <div class="graph-toolbar">
+        <div class="graph-control-group"><button class="graph-control" type="button" data-kg-toggle-filters aria-label="收起或展开筛选栏">筛选</button></div>
+        <div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="focus" aria-label="聚焦当前对象">聚焦当前对象</button>${state.route.params.topic ? `<a class="graph-control" href="${esc(knowledgeHref({ lens: "structure" }))}">全局概览</a>` : ""}</div>
         <div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="fit" aria-label="适应画布">适应画布</button></div>
         <div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="out" aria-label="缩小">−</button><span class="graph-control zoom-value" data-zoom-value>100%</span><button class="graph-control" type="button" data-graph-action="in" aria-label="放大">＋</button></div>
         <div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="reset" aria-label="重置画布">↻</button></div>
@@ -236,15 +292,20 @@ const KnowledgeGraphView = (() => {
     return `<div class="graph-detail-body">${sections.join("")}</div>`;
   }
 
+  /* Full relationship list with 20-row pages. Every row stays in the DOM
+   * (hidden pages included) so the table remains the complete, accessible
+   * source of truth; pagination only toggles visibility. */
+  const RELATION_PAGE_SIZE = 20;
   function relationshipTableMarkup(model, selectedEdgeId = "") {
     if (!model.edges.length) return `<div id="relationshipList" class="relationship-table">${emptyState("没有已确认关系", "当前筛选下没有可绘制关系；未解析引用不会进入图谱。", "evidence")}</div>`;
     const nodeMap = new Map(model.nodes.map((node) => [node.data.id, node]));
-    return `<div id="relationshipList" class="relationship-table"><table><thead><tr><th style="width:26%">来源对象</th><th style="width:13%">关系</th><th style="width:26%">目标对象</th><th style="width:10%">确认状态</th><th style="width:15%">Provenance</th><th style="width:10%">期次</th></tr></thead><tbody>${model.edges.map((edge) => {
+    const totalPages = Math.ceil(model.edges.length / RELATION_PAGE_SIZE);
+    return `<div id="relationshipList" class="relationship-table"><table><thead><tr><th style="width:26%">来源对象</th><th style="width:13%">关系</th><th style="width:26%">目标对象</th><th style="width:10%">确认状态</th><th style="width:15%">Provenance</th><th style="width:10%">期次</th></tr></thead><tbody>${model.edges.map((edge, index) => {
       const source = nodeMap.get(edge.data.source);
       const target = nodeMap.get(edge.data.target);
       const provenance = (edge.provenance || [])[0] || {};
-      return `<tr tabindex="0" data-relationship-id="${esc(edge.data.id)}" aria-selected="${edge.data.id === selectedEdgeId}"><td>${esc(source?.data.label || edge.data.source)}</td><td><span class="relationship-symbol ${esc(edge.data.relation)}"><i class="relation-swatch ${esc(edge.data.relation)}"></i>${esc(relationLabel(edge.data.relation))}</span></td><td>${esc(target?.data.label || edge.data.target)}</td><td>已确认</td><td>${esc(provenance.path || "已记录")}</td><td>${esc(source?.data.issue_date || target?.data.issue_date || "—")}</td></tr>`;
-    }).join("")}</tbody></table></div>`;
+      return `<tr tabindex="0" data-relationship-id="${esc(edge.data.id)}" data-relationship-page="${Math.floor(index / RELATION_PAGE_SIZE)}" ${index >= RELATION_PAGE_SIZE ? "hidden" : ""} aria-selected="${edge.data.id === selectedEdgeId}"><td>${esc(source?.data.label || edge.data.source)}</td><td><span class="relationship-symbol ${esc(edge.data.relation)}"><i class="relation-swatch ${esc(edge.data.relation)}"></i>${esc(relationLabel(edge.data.relation))}</span></td><td>${esc(target?.data.label || edge.data.target)}</td><td>已确认</td><td>${esc(provenance.path || "已记录")}</td><td>${esc(source?.data.issue_date || target?.data.issue_date || "—")}</td></tr>`;
+    }).join("")}</tbody></table>${totalPages > 1 ? `<div class="rel-pager"><button type="button" class="graph-control" data-rel-page="prev" disabled>上一页</button><span data-rel-page-label>第 1 / ${totalPages} 页 · 共 ${model.edges.length} 条</span><button type="button" class="graph-control" data-rel-page="next">下一页</button></div>` : ""}</div>`;
   }
 
   function unresolvedMarkup(model) {
@@ -275,10 +336,10 @@ const KnowledgeGraphView = (() => {
     return `<div class="kg-mobile">
       <div class="mobile-knowledge-card"><div class="mobile-knowledge-main">${icon("status")}<b>当前焦点</b><strong>${esc(focusNode?.data.label || "未选择")}</strong></div><div class="mobile-knowledge-meta"><span>归档 ${esc(graph?.archive_through_issue || "—")}</span><span>长期知识 ${esc(graph?.knowledge_through_issue || "—")}</span></div></div>
       <button class="mobile-filter-button" type="button" data-open-mobile-filter>${icon("sliders")}<span>筛选与透镜（${model.limits.nodeCount} 节点 · ${model.limits.edgeCount} 边）</span>${icon("chevron")}</button>
-      <section class="mobile-path-card"><div class="mobile-card-head"><h2>当前对象的关系</h2><span>${neighbors.length} 条</span></div><ul class="kg-mobile-list">${neighbors.length ? neighbors.slice(0, 12).map((edge) => listItem(neighborNode(edge), edge)).join("") : "<li><span class='kg-mobile-empty'>当前焦点没有可见关系，先在筛选中放宽期次或类型。</span></li>"}</ul></section>
+      <section class="mobile-path-card"><div class="mobile-card-head"><h2>当前对象的关系</h2><span>${neighbors.length} 条</span></div><ul class="kg-mobile-list">${neighbors.length ? neighbors.slice(0, 12).map((edge) => listItem(neighborNode(edge), edge)).join("") : "<li><span class='kg-mobile-empty'>当前焦点没有可见关系，先在筛选中放宽期次或类型。</span></li>"}${neighbors.length > 12 ? `<li><a href="#relationshipList"><span class='kg-mobile-empty'>在下方关系列表中查看全部 ${neighbors.length} 条（每页 ${RELATION_PAGE_SIZE} 条）。</span></a></li>` : ""}</ul></section>
       <section class="mobile-path-card"><div class="mobile-card-head"><h2>最近条目</h2><span>按期次倒序</span></div><ul class="kg-mobile-list">${recentItems.length ? recentItems.map((node) => `<li><a href="${esc(node.data.href || `#archive?date=${encodeURIComponent(node.data.issue_date)}`)}">${icon("claim")}<span><b>${esc(node.data.label)}</b><small>${esc(node.data.issue_date || "")}</small></span>${icon("chevron")}</a></li>`).join("") : "<li><span class='kg-mobile-empty'>当前透镜不展示条目，切到“演化”透镜。</span></li>"}</ul></section>
       <section class="mobile-path-card"><div class="mobile-card-head"><h2>编辑判断</h2><span>${recentJudgements.length} 条</span></div><ul class="kg-mobile-list">${recentJudgements.length ? recentJudgements.map((node) => `<li><a href="${esc(node.data.href)}">${icon("status")}<span><b>${esc(node.data.label)}</b><small>${esc(node.data.issue_date)}</small></span>${icon("chevron")}</a></li>`).join("") : "<li><span class='kg-mobile-empty'>当前透镜不展示判断，切到“编辑判断”透镜。</span></li>"}</ul></section>
-      <section class="mobile-path-card"><div class="mobile-card-head"><h2>Roadmap / Idea 影响</h2><span>叠层</span></div><ul class="kg-mobile-list">${overlayNodes.length ? overlayNodes.map((node) => `<li><a href="${esc(node.data.href || "#knowledge")}">${icon(GraphStyles.KIND_META[node.data.kind]?.icon || "roadmap")}<span><b>${esc(node.data.label)}</b><small>${esc(kindLabel(node.data.kind))}</small></span>${icon("chevron")}</a></li>`).join("") : "<li><span class='kg-mobile-empty'>叠层默认关闭，在筛选中打开 Roadmap 或 Idea 叠层。</span></li>"}</ul></section>
+      <details class="mobile-path-card kg-mobile-overlays"><summary class="mobile-card-head"><h2>Roadmap / Idea 影响</h2><span>叠层</span></summary><ul class="kg-mobile-list">${overlayNodes.length ? overlayNodes.map((node) => `<li><a href="${esc(node.data.href || "#knowledge")}">${icon(GraphStyles.KIND_META[node.data.kind]?.icon || "roadmap")}<span><b>${esc(node.data.label)}</b><small>${esc(kindLabel(node.data.kind))}</small></span>${icon("chevron")}</a></li>`).join("") : "<li><span class='kg-mobile-empty'>叠层默认关闭，在筛选中打开 Roadmap 或 Idea 叠层。</span></li>"}</ul></details>
       <dialog class="mobile-filter-dialog" data-mobile-filter><div class="mobile-dialog-head"><h2>筛选与透镜</h2><button type="button" data-close-mobile-filter aria-label="关闭筛选">×</button></div><div class="mobile-dialog-body" data-mobile-filter-body></div></dialog>
     </div>`;
   }
@@ -316,13 +377,18 @@ const KnowledgeGraphView = (() => {
     };
 
     if (canvas && desktop && model.nodes.length && GraphRenderer.available()) {
+      // A topic-scoped local graph uses the deterministic breadthfirst layout
+      // so a handful of nodes fill the canvas at readable zoom instead of
+      // preserving the whole-graph preset coordinate spread.
+      const compactLocal = Boolean(params.topic) && model.nodes.length <= 12;
       handle = GraphRenderer.mountGraph(canvas, {
         nodes: model.nodes.map((node) => ({
           data: { ...node.data, label: GraphStyles.displayLabel(node.data) },
           position: node.position,
         })),
         edges: model.edges,
-        layout: "preset",
+        layout: compactLocal ? "breadthfirst" : "preset",
+        spacingFactor: compactLocal ? 0.7 : undefined,
         focusId: model.focusId,
         onSelectNode: (data) => {
           selectedNodeId = data.id;
@@ -351,8 +417,13 @@ const KnowledgeGraphView = (() => {
           if (fallback) fallback.hidden = false;
         },
       });
-      if (handle) handle.selectNode(model.focusId, false);
-      else {
+      if (handle) {
+        handle.selectNode(model.focusId, false);
+        // A topic-scoped local graph fits its one-hop neighborhood so node
+        // text stays readable; wider lenses keep the classic whole-model fit.
+        if (params.topic) handle.fitFocus();
+        else handle.fit();
+      } else {
         const fallback = $("[data-kg-fallback]");
         if (fallback) fallback.hidden = false;
       }
@@ -364,10 +435,48 @@ const KnowledgeGraphView = (() => {
     $$('[data-graph-action]').forEach((button) => button.addEventListener("click", () => {
       if (!handle) return;
       if (button.dataset.graphAction === "fit") handle.fit();
+      if (button.dataset.graphAction === "focus") handle.fitFocus();
       if (button.dataset.graphAction === "in") handle.zoomBy(0.15);
       if (button.dataset.graphAction === "out") handle.zoomBy(-0.15);
       if (button.dataset.graphAction === "reset") handle.reset();
     }));
+
+    // Desktop filter rail can be collapsed to give the canvas more width.
+    $("[data-kg-toggle-filters]")?.addEventListener("click", () => {
+      $(".kg-workspace")?.classList.toggle("filters-collapsed");
+    });
+
+    // Copy the raw input digest from the tech-info disclosure.
+    $("[data-copy-digest]")?.addEventListener("click", async (event) => {
+      const digest = state.knowledgeGraph?.input_digest || "";
+      if (!digest) return;
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(digest);
+        button.textContent = "已复制";
+      } catch (_) {
+        button.textContent = "复制失败";
+      }
+      setTimeout(() => { button.textContent = "复制"; }, 1600);
+    });
+
+    // Relationship list pagination: rows stay in the DOM; pages toggle visibility.
+    const relationshipRows = () => $$("#relationshipList [data-relationship-page]");
+    let relationshipPage = 0;
+    const applyRelationshipPage = () => {
+      const totalPages = Math.max(1, Math.ceil(relationshipRows().length / RELATION_PAGE_SIZE));
+      relationshipPage = Math.min(Math.max(0, relationshipPage), totalPages - 1);
+      relationshipRows().forEach((row) => { row.hidden = Number(row.dataset.relationshipPage) !== relationshipPage; });
+      const label = $("[data-rel-page-label]");
+      if (label) label.textContent = `第 ${relationshipPage + 1} / ${totalPages} 页`;
+      const prev = $('[data-rel-page="prev"]');
+      const next = $('[data-rel-page="next"]');
+      if (prev) prev.disabled = relationshipPage === 0;
+      if (next) next.disabled = relationshipPage >= totalPages - 1;
+    };
+    $('[data-rel-page="prev"]')?.addEventListener("click", () => { relationshipPage -= 1; applyRelationshipPage(); });
+    $('[data-rel-page="next"]')?.addEventListener("click", () => { relationshipPage += 1; applyRelationshipPage(); });
+    if (relationshipRows().length) applyRelationshipPage();
 
     $$("[data-relationship-id]").forEach((row) => {
       const choose = () => {
@@ -457,15 +566,30 @@ const KnowledgeGraphView = (() => {
   function render(context = {}) {
     const params = BriefingData.normalizeKnowledgeParams(state.route.params);
     const graph = context.graph || null;
-    const model = BriefingData.buildKnowledgeGraphModel({ graph, params });
     if (!graph) {
       $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "知识图谱", description: "把历期日报沉淀的 Topic、Direction、条目与编辑判断连成可追溯的一张图。" })}
         ${editorialNote("图谱数据暂不可用", "knowledge/graph.json 缺失或不符合发布合同，页面不会用推测关系补图。可先浏览 Roadmap、Idea Hub 与归档。", "negative")}</div>`;
       return;
     }
+    const model = BriefingData.buildKnowledgeGraphModel({ graph, params });
+    // Bare #knowledge?lens=structure shows the topic-cluster overview instead
+    // of fitting every Topic+Direction node into a narrow canvas. A topic
+    // param (or another lens) opens the full workspace with its local graph.
+    const overviewMode = params.lens === "structure" && !params.topic && !params.node;
+    if (overviewMode) {
+      $("#appMain").innerHTML = `<div class="page-stack kg-page">
+        ${pageHeader({ title: "知识图谱", description: "先在全局概览中选择 Topic，再进入可读的局部图；连接表示分类、时间定位与显式引用，不表示支持或因果结论。" })}
+        ${watermarkMarkup(graph)}${metricsMarkup(model)}
+        ${lensTabsMarkup(params)}
+        ${overviewMarkup(graph)}
+        ${section(`未解析引用（${model.unresolved.length}）`, unresolvedMarkup(model), { note: "缺少目标、关系类型或 provenance 的引用不会绘制成已确认边。" })}
+      </div>`;
+      document.querySelector(".kg-lens-tabs a[aria-current='page']")?.scrollIntoView({ block: "nearest", inline: "center" });
+      return;
+    }
     const detailAside = `<aside class="graph-detail-panel kg-detail-panel" aria-label="节点详情"><h2 class="graph-panel-title">当前详情</h2><div data-kg-detail></div></aside>`;
     const desktopWorkspace = `<div class="kg-workspace">${filterPanelMarkup(model, graph, params)}${canvasPanelMarkup(model)}${detailAside}</div>`;
-    const relationshipSection = section("关系列表", relationshipTableMarkup(model), {
+    const relationshipSection = section(`关系列表（${model.limits.edgeCount} 条）`, relationshipTableMarkup(model), {
       note: "与画布同一份显示模型；箭头方向由关系枚举决定。",
       action: `<a class="section-action" href="#relationshipList">查看全部</a>`,
     });

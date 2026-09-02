@@ -71,12 +71,13 @@
   // Overview zoom makes fixed model-space strokes and fonts illegible
   // (1.5px borders vanish, 10.5px labels shrink to ~6px). The stylesheet is
   // therefore parameterized by the current zoom: fonts and strokes are scaled
-  // so they never drop below readable screen-space minimums, while zoomed-in
-  // views (zoom >= 1) keep the base design values.
+  // so they never drop below readable screen-space minimums (12px for the
+  // smallest label class), while zoomed-in views keep the base design values
+  // or slightly above to honor the same floor.
   function adaptFactors(zoom) {
     const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
     return {
-      font: Math.min(1.45, Math.max(1, 1.0 / z)),
+      font: Math.min(2.4, Math.max(1, 12 / (10.5 * z))),
       stroke: 1 / z,
     };
   }

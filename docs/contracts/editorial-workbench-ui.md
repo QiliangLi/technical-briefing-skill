@@ -6,14 +6,16 @@ The public GitHub Pages surface is a read-only editorial workbench implemented w
 
 The primary Hash routes are:
 
-- `#home`: current issue changes, Idea updates, and visible risks;
-- `#roadmaps?topic=<topic_id>&branch=<branch_id>`: one materialized Roadmap and its evidence boundary;
-- `#ideas`: Candidate, Portfolio, and Validation collections kept visually and structurally separate;
+- `#home`: the freshness watermark (archive head, materialization watermark, analysis state), this issue's real material change from the Issue Change Projection, honest pending/empty states, and visible risks;
+- `#roadmaps`: the browsable Roadmap overview — one row or card per Topic with current state, mode, last material change, knowledge lag, branch/open-question counts, and filters (本期变化 / 待补证据 / 长期未更新);
+- `#roadmaps?topic=<topic_id>&branch=<branch_id>`: one materialized Roadmap and its evidence boundary, with breadcrumb back to the overview and previous/next Topic navigation (a native `<select>` is never the primary navigation);
+- `#ideas`: the honest Idea Portfolio — formal Ideas grouped by recorded status, a read-only lifecycle note that labels Candidate Inbox and Validation as 未启用 until real data objects exist; there is no three-column funnel with empty rails or fake zero counts;
 - `#ideas?idea=<idea_id>&view=overview`: one materialized Idea, its decision history, evidence summary, and validation suggestion;
 - `#ideas?idea=<idea_id>&view=evidence&mode=path`: the readable Idea evidence path;
 - `#ideas?idea=<idea_id>&view=evidence&mode=graph&node=<node_id>&depth=<1|2>`: the Idea evidence subgraph with synchronized node detail and relationship list;
 - `#ideas?idea=<idea_id>&view=gaps`: evidence gaps taken from the selected Idea's recorded unknowns;
-- `#knowledge?lens=structure&topic=<topic_id>&direction=<direction_id>&node=<node_id>`: the default Topic/Direction skeleton lens;
+- `#knowledge` with `lens=structure` and no `topic`/`node`: the global overview — one cluster card per Topic (direction/item counts, last knowledge update, lag badge); clicking a card opens the readable local graph;
+- `#knowledge?lens=structure&topic=<topic_id>&direction=<direction_id>&node=<node_id>`: the Topic/Direction skeleton lens; entering a topic-scoped graph fits the focused one-hop neighborhood instead of fitting every node;
 - `#knowledge?lens=evolution&topic=<topic_id>&from=<date>&to=<date>&node=<node_id>`: issue-by-issue expansion of Direction items;
 - `#knowledge?lens=judgements&topic=<topic_id>&node=<node_id>`: editor judgements and their explicit evidence items.
 
@@ -52,7 +54,9 @@ The previous `styles.css`, `workbench-overrides.css`, `intelligence-lab.css`, At
 ## Data and evidence boundary
 
 - Archive pages consume published archive JSON and Reader sidecars. Roadmap and Idea pages consume only `knowledge/index.json` and the materialized object files named by it. The `#knowledge` page and the Idea evidence graph consume `knowledge/graph.json`, a regenerable derived publication.
-- `knowledge/graph.json` carries `archive_through_issue` and `knowledge_through_issue` watermarks that are computed and displayed separately; one "graph updated" label must never hide knowledge lagging the archive.
+- The homepage additionally consumes `knowledge/manifest.json` and, when the manifest declares `knowledge_complete`, `knowledge/issue-diffs/<archive_head>.json`. The "本期最重要变化" section renders only the projection's `topic_changes`/`idea_events`; a missing manifest, a non-complete state, or a missing diff renders an explicit pending/degraded note. The homepage never backfills old Roadmap summaries as this issue's change, never lists historical Ideas to look full, and never synthesizes judgement text in the browser.
+- Seed baseline copy ("…积累了 N 条专题证据…首版先保留…时间线") is labeled as a baseline timeline (`基线时间线` badge) on Roadmap surfaces and is rejected by the projection's semantic validator inside judgement fields; it must never be displayed as a current judgement.
+- `knowledge/graph.json` carries `archive_through_issue` and `knowledge_through_issue` watermarks that are computed and displayed separately; one "graph updated" label must never hide knowledge lagging the archive. The graph page's status area shows the analysis state from the manifest; the raw `input_digest` lives in a collapsed 技术信息 disclosure named 输入校验码 with a copy button — it is build diagnostics, never a content summary.
 - Only relations explicitly present in the inputs may be drawn: archive Topic/Direction fields, `synthesis.judgements[].evidence_item_ids`, Roadmap branch `direction_ids`/`evidence_item_ids`/evidence timelines, and Idea `topic_ids`/`evidence_for`/`evidence_against`. Topic names, direction names, and keywords are display and search material only; the frontend never adds edges from titles, names, or keywords.
 - Hiding a node kind removes its nodes and every edge that no longer has both endpoints in the final node set; filters can never leave dangling edges or degrade the canvas. Topic/Direction filters constrain items, and judgements/issues are visible only through their explicit `supports_judgement`/`published_in` connections to the visible items, so another Topic's judgements never leak into a filtered view.
 - Arrow direction belongs to the relation enumeration. The frontend never swaps source and target to make an arrow "look better". Structural `has_direction`/`has_item`/`tracks`/`organizes` edges are containment or organization, never support, causality, or evolution claims.
@@ -64,18 +68,31 @@ The previous `styles.css`, `workbench-overrides.css`, `intelligence-lab.css`, At
 
 ## Visual and responsive contract
 
-The reference desktop viewport is 1586×992 with a 72px sticky top navigation, a 1540px maximum content width, and 24px page gutters. The visual system uses warm off-white surfaces, ink and navy text, restrained brick/olive semantic states, serif display type, sans-serif UI type, 4–6px radii, hairline borders, and no decorative motion. The knowledge-graph workspace uses a fixed-elastic-fixed three-column grid (248px filters | canvas | 344px details).
+The reference desktop viewport is 1586×992 with a 72px sticky top navigation, a 1540px maximum content width, and 24px page gutters. The visual system uses warm off-white surfaces, ink and navy text, restrained brick/olive semantic states, serif display type, sans-serif UI type, 4–6px radii, hairline borders, and no decorative motion. The knowledge-graph workspace uses a fixed-elastic-fixed three-column grid (248px filters | canvas | 344px details); the desktop filter rail can be collapsed from the canvas toolbar, and below 1280px the detail panel drops beneath the canvas so a 1024px viewport still leaves the canvas readable (~700px+).
+
+Semantic alignment contract (shared classes, not per-page one-offs):
+
+| Content | Horizontal | Vertical | Wrapping |
+| --- | --- | --- | --- |
+| Titles, judgements, summaries, sources | left | top | allowed |
+| Status, type, short enums, dates | center | middle | at most two short lines |
+| Quantities | right (or metric-card centered) | middle | never |
+| Icon + single-line label | left | middle | label may ellipsize |
+| CTA / actions | center | middle | never, ≥44px hit area |
+
+Long judgement and summary columns stay left-aligned for readability; `.data-table th/td.cell-center` implements the centered variant. Table column widths must sum to ≤100%; status badges carry `max-width: 100%` and short labels so they can never overflow their cell. All grid/flex children keep `min-width: 0`; `overflow-x: clip` is a last-resort guard, not an acceptance test — checks must inspect element bounds.
 
 Node kinds are differentiated by outline shape, icon, and text label in addition to color. State changes use 120–180ms opacity, border, and position feedback only. The canvas may use a low-contrast positioning grid; no glow, glass, gradient text, or HUD effects.
 
-Breakpoints are implemented at 1440, 1280, 1024, 768, 480, and 320px behavior bands. At widths below 768px:
+Breakpoints are implemented at 1440, 1280, 1024, 768, 480, and 320px behavior bands. Data tables switch to definition-list cards at ≤1023px, before a fixed table can no longer hold its content. At widths below 768px:
 
 - the navigation becomes a 56px title bar and menu;
 - knowledge status becomes one summary row;
-- tables become definition-list cards instead of horizontal scrollers;
-- the knowledge-graph workspace and Idea graph canvas do not mount. `#knowledge` renders a layered path (current object's relations → recent items → judgements → Roadmap/Idea influence) and the relationship list; the Idea evidence views render the evidence path and relationship list;
+- the knowledge-graph workspace and Idea graph canvas do not mount. `#knowledge` renders a layered path (current object's relations → recent items → judgements → Roadmap/Idea influence in a collapsed disclosure) and the relationship list; the Idea evidence views render the evidence path and relationship list;
 - filters enter a native bottom-sheet dialog;
 - all visible interactive targets remain at least 44×44px.
+
+The relationship list paginates at 20 rows per page, but every row stays in the DOM (hidden pages included) so it remains the complete, accessible source of truth; the pager states the real page and total counts.
 
 Both `html` and `body` use `overflow-x: clip`. Graph containers never widen the page. Reduced-motion preferences remove non-essential transitions, canvas fitting lands directly in its final state, and SVG/Canvas graphics are hidden from screen readers while the DOM relationship list carries the complete relation set.
 
@@ -84,6 +101,8 @@ Both `html` and `body` use `overflow-x: clip`. Graph containers never widen the 
 - When Cytoscape.js fails to load or mount, the page states that graph rendering is unavailable and the relationship list plus node details — built from the same display model — remain fully usable.
 - A URL node that does not exist in the current filter keeps the filters and falls back to the default focus with a visible note.
 - A missing or invalid `knowledge/graph.json` shows an explicit unavailability note on `#knowledge` and degrades the Idea evidence graph to the explicit-fields projection; Roadmap, Idea Overview, and Archive pages are unaffected.
+- A missing `knowledge/manifest.json`, a non-`knowledge_complete` publication state, or a missing/unusable issue diff renders the homepage's honest pending/degraded note ("发布清单缺失" / "本期已归档，长期判断正在分析" / "本期投影缺失"); the site never falls back to browser-inferred change summaries or seed template copy.
+- `#roadmaps` without a topic renders the overview; a `topic` that does not resolve to a materialized Roadmap renders an explicit not-found state instead of silently selecting the first entry.
 
 ## Verification and rollback
 

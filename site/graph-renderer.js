@@ -54,7 +54,7 @@
               roots: options.focusId ? [options.focusId] : undefined,
               directed: true,
               padding: 40,
-              spacingFactor: 1.15,
+              spacingFactor: options.spacingFactor ?? 1.15,
               animate: false,
               maximal: false,
             }
@@ -144,6 +144,15 @@
 
     handle.fit = function fit(padding = 40) {
       cy.fit(undefined, padding);
+    };
+
+    /* Fit the focused node's one-hop neighborhood instead of the whole graph,
+     * so a local view keeps node labels readable. */
+    handle.fitFocus = function fitFocus(padding = 80) {
+      const focusId = handle.selectedNodeId;
+      const focusNode = focusId ? cy.getElementById(focusId) : cy.collection();
+      const targets = focusNode.nonempty() ? focusNode.closedNeighborhood() : cy.elements();
+      if (!targets.empty()) cy.fit(targets, padding);
     };
 
     handle.zoomBy = function zoomBy(delta) {

@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Issue Change Projection",
+  "description": "Derived homepage/Roadmap projection for one published issue, binding change text to explicit applied tasks and published evidence. Regenerable; the frontend renders it as-is and never synthesizes judgements in the browser.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "issue_date",
+    "knowledge_snapshot_id",
+    "status",
+    "topic_changes",
+    "idea_events"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "issue_date": { "type": "string" },
+    "knowledge_snapshot_id": {
+      "type": ["string", "null"],
+      "pattern": "^knowledge-[0-9a-f]{16}$",
+      "description": "Snapshot identity shared with the manifest and graph build; null only while the graph has not been rebuilt."
+    },
+    "status": {
+      "enum": ["complete", "partial"],
+      "description": "partial: the issue is newer than the materialization watermark and must never be shown as finished analysis."
+    },
+    "topic_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "topic_id",
+          "topic_name",
+          "change_kind",
+          "origin",
+          "task_id",
+          "roadmap_version",
+          "what_changed",
+          "evidence_state",
+          "affected_branches",
+          "evidence_item_ids"
+        ],
+        "properties": {
+          "topic_id": { "type": "string" },
+          "topic_name": { "type": "string" },
+          "change_kind": {
+            "enum": ["material_change", "no_material_change", "baseline_seed"]
+          },
+          "origin": {
+            "enum": ["applied_task", "seed_baseline"],
+            "description": "seed_baseline rows come from the one-time seed and carry no homepage judgement."
+          },
+          "task_id": { "type": ["string", "null"] },
+          "roadmap_version": { "type": ["integer", "null"], "minimum": 1 },
+          "current_judgement": {
+            "type": "string",
+            "minLength": 8,
+            "description": "Actionable answer to 'how do we see this now'. Semantic validation rejects seed template copy here."
+          },
+          "what_changed": {
+            "type": "string",
+            "minLength": 4,
+            "description": "What changed relative to the previous snapshot."
+          },
+          "why_it_matters": {
+            "type": "string",
+            "minLength": 4,
+            "description": "Optional editorial consequence for technology choices."
+          },
+          "affected_branches": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "evidence_state": {
+            "enum": ["evidence_building", "supported_with_limits", "contested"]
+          },
+          "confidence": {
+            "enum": ["low", "medium", "high"]
+          },
+          "evidence_item_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "idea_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["idea_id", "title", "decision", "from_status", "to_status", "reason", "evidence_item_ids"],
+        "properties": {
+          "idea_id": { "type": "string", "pattern": "^idea_[a-f0-9]{20}$" },
+          "title": { "type": "string" },
+          "decision": { "type": "string" },
+          "from_status": { "type": ["string", "null"] },
+          "to_status": { "type": ["string", "null"] },
+          "reason": { "type": "string" },
+          "evidence_item_ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

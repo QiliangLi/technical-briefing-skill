@@ -9,6 +9,8 @@ const state = {
   knowledgeGraph: null,
   knowledgeGraphError: null,
   knowledgeGraphPromise: null,
+  manifest: null,
+  issueDiff: null,
   ideaObjects: new Map(),
   roadmapObjects: new Map(),
   featurePlan: null,
@@ -180,6 +182,15 @@ async function loadData() {
     return;
   }
   state.roots.knowledge = knowledgeResult.root;
+  /* knowledge/manifest.json is a derived freshness projection; its absence
+   * degrades to "publication manifest missing" instead of stale summaries
+   * being shown as this issue's change. */
+  state.manifest = await optionalJson(`${state.roots.knowledge}/manifest.json`);
+  if (state.manifest?.publication_state === "knowledge_complete" && state.manifest.archive_head_issue) {
+    state.issueDiff = await optionalJson(
+      `${state.roots.knowledge}/issue-diffs/${state.manifest.archive_head_issue}.json`,
+    );
+  }
   try {
     state.knowledge = BriefingData.validateKnowledgeIndex(knowledgeResult.index);
     const [ideaPairs, roadmapPairs] = await Promise.all([
@@ -223,7 +234,11 @@ function go(route, params = {}) {
 
 async function selectedRoadmap(route) {
   const entries = state.knowledge?.roadmaps || [];
-  const row = entries.find((candidate) => candidate.topic_id === route.params.topic) || entries[0];
+  // A bare #roadmaps renders the browsable overview; only an explicit topic
+  // param selects a detail page, and unknown topics 404 honestly instead of
+  // silently falling back to the first entry.
+  if (!route.params.topic) return { overview: true, row: null, object: null };
+  const row = entries.find((candidate) => candidate.topic_id === route.params.topic) || null;
   if (!row) return { row: null, object: null };
   if (!state.roadmapObjects.has(row.topic_id)) {
     state.roadmapObjects.set(row.topic_id, await loadKnowledgeObject(row.path));

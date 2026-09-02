@@ -104,11 +104,12 @@ pytest -q
 
 ## 公开站点
 
-`site/` 是发布到 GitHub Pages 的只读工作台：`首页 / Roadmap / Idea Hub / 知识图谱 / 归档`。知识图谱页与 Idea 证据图读取由 Graph Builder 生成的 `knowledge/graph.json`（浏览器依赖为自托管、锁定版本的 Cytoscape.js，无 CDN 请求）。本地预览：
+`site/` 是发布到 GitHub Pages 的只读工作台：`首页 / Roadmap / Idea Hub / 知识图谱 / 归档`。首页与 Roadmap 总览读取派生的新鲜度清单（`knowledge/manifest.json`）与逐期变化投影（`knowledge/issue-diffs/`）；知识图谱页与 Idea 证据图读取由 Graph Builder 生成的 `knowledge/graph.json`（浏览器依赖为自托管、锁定版本的 Cytoscape.js，无 CDN 请求）。本地预览：
 
 ```bash
-python3 briefing.py knowledge graph build   # 保证图谱与当前输入一致
-python3 -m http.server 8000                 # 在仓库根目录启动后访问 http://127.0.0.1:8000/site/
+python3 briefing.py knowledge graph build     # 保证图谱与当前输入一致
+python3 briefing.py knowledge manifest build  # 刷新新鲜度清单（需先完成 graph build）
+python3 -m http.server 8000                   # 在仓库根目录启动后访问 http://127.0.0.1:8000/site/
 ```
 
 ## 仓库导航
@@ -124,7 +125,7 @@ python3 -m http.server 8000                 # 在仓库根目录启动后访问 
 | [briefing_skill/](briefing_skill/) | Python 实现 |
 | [tests/](tests/) 与 [eval/](eval/) | 自动化测试和质量回归集 |
 | [archive/](archive/) | 已发布简报的公开归档 |
-| [knowledge/](knowledge/) | Roadmap、Idea 与派生知识图谱的公开知识库 |
+| [knowledge/](knowledge/) | Roadmap、Idea、派生知识图谱与新鲜度投影的公开知识库 |
 | [site/](site/) | 发布到 GitHub Pages 的静态工作台 |
 | [published-assets/](published-assets/) | 邮件可访问的已发布图片 |
 | `workspace/` | 被忽略的本地运行状态、缓存和任务文件 |

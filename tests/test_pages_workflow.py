@@ -28,6 +28,14 @@ def test_pages_workflow_gates_publication_on_a_fresh_derived_graph() -> None:
     assert "knowledge validate" in workflow
     assert "knowledge graph build" in workflow
     assert "knowledge graph validate" in workflow
+    # Freshness gate: the manifest is rebuilt after the graph and validated;
+    # a manifest claiming knowledge_complete while watermarks lag must fail
+    # publication instead of shipping stale summaries as current change.
+    manifest_build = workflow.find("knowledge manifest build")
+    manifest_validate = workflow.find("knowledge manifest validate")
+    graph_validate = workflow.find("knowledge graph validate")
+    assert manifest_build != -1 and manifest_validate != -1
+    assert graph_validate != -1 and graph_validate < manifest_build < manifest_validate < assemble
     assert "python3 -m pip install --quiet -e ." in workflow
     # The gate rewrites knowledge/graph.json inside the runner checkout; the
     # publish step must restore it so the orphan-branch switch stays clean.
