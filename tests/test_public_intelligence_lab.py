@@ -234,15 +234,25 @@ def test_knowledge_overview_focus_and_tech_info_contract():
     knowledge_view = (SITE / "knowledge-graph-view.js").read_text(encoding="utf-8")
     graph_css = (SITE / "knowledge-graph.css").read_text(encoding="utf-8")
     renderer = (SITE / "graph-renderer.js").read_text(encoding="utf-8")
+    index_html = (SITE / "index.html").read_text(encoding="utf-8")
 
     # Bare structure lens renders the topic-cluster overview; the canvas fits
-    # the focused one-hop neighborhood when a topic is selected.
+    # its lens first-screen set, not the whole model and not an unconditional
+    # topic one-hop.
     assert "overviewMode" in knowledge_view
     assert "overviewMarkup" in knowledge_view
     assert "进入局部图" in knowledge_view
     assert "全局概览" in knowledge_view
     assert "聚焦当前对象" in knowledge_view
     assert "fitFocus" in knowledge_view and "fitFocus" in renderer
+    assert "compactLocal" not in knowledge_view
+    # The lens layout layer owns coordinates and the initial viewport.
+    assert "knowledge-layout.js" in index_html
+    assert "KnowledgeLayout.build" in knowledge_view
+    assert "lensStatusText" in knowledge_view
+    assert "自动聚焦" in knowledge_view
+    # Collapsing the filter rail recalculates canvas size and fit range.
+    assert "handle.cy.resize()" in knowledge_view
     # The raw digest is build diagnostics in a collapsed tech-info block.
     assert "kg-tech-info" in knowledge_view
     assert "输入校验码" in knowledge_view
@@ -255,6 +265,26 @@ def test_knowledge_overview_focus_and_tech_info_contract():
     assert "kg-overview-grid" in graph_css
     # Sub-1280px workspaces drop the detail rail below the canvas.
     assert "grid-template-columns:220pxminmax(0,1fr)" in "".join(graph_css.split())
+    # Lens empty states are explicit; the shared skeleton never impersonates a
+    # successful lens switch.
+    assert "本透镜当前没有专属数据" in knowledge_view
+    assert "扩大到全部期次" in knowledge_view
+    assert "kg-structure-context" in knowledge_view
+    assert "kg-lens-empty" in graph_css
+
+
+def test_lens_layout_module_is_pure_and_lens_specific():
+    layout_js = (SITE / "knowledge-layout.js").read_text(encoding="utf-8")
+
+    # The layout layer reads the display model only; it must never fetch data,
+    # mutate the graph document, or compute DOM.
+    for forbidden in ("fetch(", "document.", "cytoscape", "window.location"):
+        assert forbidden not in layout_js, forbidden
+    assert "function build(" in layout_js
+    for lens in ("structure", "evolution", "judgements"):
+        assert lens in layout_js
+    assert "lensEmptyState" in layout_js
+    assert "edgeStats" in layout_js
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
@@ -354,6 +384,7 @@ def test_local_feedback_toggle_switch_export_and_clear():
         "data-contract.js",
         "graph-styles.js",
         "graph-renderer.js",
+        "knowledge-layout.js",
         "knowledge-graph-view.js",
         "idea-evidence-view.js",
         "feedback-store.js",

@@ -14,7 +14,6 @@ This directory separates current documentation from dated project records. Start
 - [Technical intelligence workbench UI screen content brief](designs/2026-08-30-technical-intelligence-ui-screen-content-brief.md)
 - [Technical intelligence workbench UI style brief pack](designs/2026-08-30-technical-intelligence-ui-style-brief-pack.md)
 - [Evidence Graph UI generation brief](designs/2026-08-31-evidence-graph-ui-generation-brief.md)
-- [Knowledge graph long-edge and lens differentiation diagnosis](designs/2026-09-02-knowledge-graph-lens-and-edge-diagnosis.md)
 
 Create non-trivial designs under `designs/` before implementation. Once an implementation is complete, move durable behavior into the current architecture, operations, or contracts documentation. Historical design records belong under `history/designs/` only after that transfer is complete.
 
@@ -51,3 +50,4 @@ These files define durable interfaces and quality rules. Prompt and schema detai
 - [Implemented Evidence Graph UI design](history/designs/2026-08-31-evidence-graph-ui-implementation-spec.md)
 - [Implemented daily briefing knowledge graph design](history/designs/2026-09-01-daily-briefing-knowledge-graph-design.md)
 - [Implemented GitHub Pages presentation, freshness, and analysis hardening](history/designs/2026-09-02-github-pages-presentation-and-freshness-hardening.md)
+- [Implemented knowledge graph long-edge and lens differentiation diagnosis](history/designs/2026-09-02-knowledge-graph-lens-and-edge-diagnosis.md)

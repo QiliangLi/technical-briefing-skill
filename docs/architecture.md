@@ -67,7 +67,8 @@ archive/index.json + archive/issues/<date>/{issue,papers}.json
 knowledge/index.json + roadmaps/*.json + ideas/*.json
 → Graph Builder (briefing_skill/knowledge_graph.py, NetworkX-validated)
 → knowledge/graph.json (deterministic nodes/edges/coordinates, dual watermarks)
-→ static site (#knowledge route, Cytoscape.js renderer)
+→ static site (#knowledge route: data-contract.js filtered model
+   → knowledge-layout.js per-lens local layout → Cytoscape.js renderer)
 ```
 
 The builder reads only those authoritative inputs, derives edges only from explicit fields, and reports unresolvable references in an `unresolved` list instead of drawing them. `knowledge/graph.json` carries separate `archive_through_issue` and `knowledge_through_issue` watermarks because the archive and materialized knowledge can lag each other. The Pages workflow rebuilds and validates the graph before assembling the site, so a graph that does not match current inputs blocks publication rather than shipping stale.

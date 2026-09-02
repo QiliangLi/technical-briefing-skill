@@ -187,10 +187,55 @@ const KnowledgeGraphView = (() => {
     </aside>`;
   }
 
-  function canvasPanelMarkup(model) {
-    const status = model.limits.truncated
-      ? `当前范围 ${model.limits.nodeCount} / 全图 ${model.limits.totalNodeCount} 节点 · ${model.limits.edgeCount} / ${model.limits.totalEdgeCount} 边（已达上限，按聚焦一跳、判断关联与期次裁剪）`
-      : `当前范围 ${model.limits.nodeCount} / 全图 ${model.limits.totalNodeCount} 节点 · ${model.limits.edgeCount} 边`;
+  /* Lens-specific canvas summary: the status line answers "what am I looking
+   * at" per lens instead of a generic node count. */
+  function lensStatusText(model, layout) {
+    const counts = layout.counts;
+    let summary;
+    if (layout.lens === "evolution") {
+      summary = `${counts.directions} Direction · ${counts.items} 条目 · ${counts.issues} 期`;
+    } else if (layout.lens === "judgements") {
+      summary = `${counts.judgements} 判断 · ${counts.supportEdges} 条显式证据关系`;
+    } else {
+      summary = `${counts.topics} Topic · ${counts.directions} Direction${counts.overlays ? ` · ${counts.overlays} 叠层对象` : ""}`;
+    }
+    if (model.limits.truncated) {
+      summary += `（已达 ${model.limits.nodeLimit} 节点上限，按聚焦、判断关联与期次裁剪；建议选择 Direction 或更短期次）`;
+    }
+    return summary;
+  }
+
+  function structureContextList(model) {
+    const rows = model.nodes
+      .filter((node) => ["topic", "direction"].includes(node.data.kind))
+      .sort((a, b) => (a.data.kind === b.data.kind ? byStableId(a.data.id, b.data.id) : a.data.kind === "topic" ? -1 : 1));
+    if (!rows.length) return "";
+    return `<details class="kg-structure-context"><summary>结构上下文（${rows.length}）</summary><ul class="kg-evidence-list">${rows.map((node) => `<li>${esc(kindLabel(node.data.kind))} · ${esc(node.data.label)}</li>`).join("")}</ul></details>`;
+  }
+
+  function byStableId(a, b) {
+    return String(a || "").localeCompare(String(b || ""));
+  }
+
+  function canvasPanelMarkup(model, layout) {
+    const status = lensStatusText(model, layout);
+    const focusNode = layout.viewport
+      ? model.nodes.find((node) => node.data.id === layout.viewport.focusId)
+      : null;
+    const autoFocus = layout.viewport?.automatic && focusNode
+      ? `<span class="kg-auto-focus">自动聚焦：${esc(focusNode.data.label)}</span>`
+      : "";
+    const frame = layout.empty
+      ? `<div class="kg-lens-empty">
+          ${emptyState("本透镜当前没有专属数据", layout.empty.reason, "question")}
+          <div class="kg-lens-empty-actions">
+            ${state.route.params.range !== "all" ? `<a class="graph-control" href="${esc(knowledgeHref({ ...state.route.params, range: "all", from: "", to: "" }))}">扩大到全部期次</a>` : ""}
+            <a class="graph-control" href="${esc(knowledgeHref({ lens: "structure", topic: state.route.params.topic || "" }))}">返回结构</a>
+          </div>
+          ${structureContextList(model)}
+        </div>`
+      : `<div class="kg-canvas" tabindex="0" data-kg-canvas role="application" aria-label="知识图谱画布，可用方向键沿关系移动，回车展开"></div>
+        <div class="kg-canvas-grid" aria-hidden="true"></div>`;
     return `<section class="graph-canvas-panel kg-canvas-panel" aria-label="知识图画布">
       <div class="graph-toolbar">
         <div class="graph-control-group"><button class="graph-control" type="button" data-kg-toggle-filters aria-label="收起或展开筛选栏">筛选</button></div>
@@ -200,9 +245,8 @@ const KnowledgeGraphView = (() => {
         <div class="graph-control-group"><button class="graph-control" type="button" data-graph-action="reset" aria-label="重置画布">↻</button></div>
       </div>
       <div class="kg-canvas-frame">
-        <div class="kg-canvas" tabindex="0" data-kg-canvas role="application" aria-label="知识图谱画布，可用方向键沿关系移动，回车展开"></div>
-        <div class="kg-canvas-grid" aria-hidden="true"></div>
-        <span class="kg-canvas-status" data-kg-status>${esc(status)}</span>
+        ${frame}
+        <span class="kg-canvas-status" data-kg-status>${esc(status)}${autoFocus ? ` · ${autoFocus}` : ""}</span>
         <div class="kg-canvas-fallback" data-kg-fallback hidden>图形渲染不可用；下方关系列表展示同一份显示模型。</div>
       </div>
     </section>`;
@@ -316,11 +360,14 @@ const KnowledgeGraphView = (() => {
     return `<div class="gaps-grid">${rows}</div>`;
   }
 
-  function mobileMarkup(model, graph) {
+  function mobileMarkup(model, graph, layout) {
     const focusNode = model.nodes.find((node) => node.data.id === model.focusId) || model.nodes[0];
     const adjacency = (id) => model.edges.filter((edge) => edge.data.source === id || edge.data.target === id);
     const neighbors = focusNode ? adjacency(focusNode.data.id) : [];
     const neighborNode = (edge) => model.nodes.find((node) => node.data.id === (edge.data.source === focusNode?.data.id ? edge.data.target : edge.data.source));
+    const lensEmptyLine = layout?.empty
+      ? `<p class="kg-mobile-empty-note">${esc(layout.empty.reason)}可在筛选中调整期次范围，或切换透镜。</p>`
+      : "";
     const listItem = (node, edge) => node
       ? `<li><button type="button" data-mobile-node="${esc(node.data.id)}">${icon(GraphStyles.KIND_META[node.data.kind]?.icon || "question")}<span><b>${esc(node.data.label)}</b><small>${esc(relationLabel(edge.data.relation))} · ${esc(kindLabel(node.data.kind))}</small></span>${icon("chevron")}</button></li>`
       : "";
@@ -334,7 +381,7 @@ const KnowledgeGraphView = (() => {
       .slice(0, 5);
     const overlayNodes = model.nodes.filter((node) => ["roadmap", "roadmap_branch", "idea"].includes(node.data.kind)).slice(0, 8);
     return `<div class="kg-mobile">
-      <div class="mobile-knowledge-card"><div class="mobile-knowledge-main">${icon("status")}<b>当前焦点</b><strong>${esc(focusNode?.data.label || "未选择")}</strong></div><div class="mobile-knowledge-meta"><span>归档 ${esc(graph?.archive_through_issue || "—")}</span><span>长期知识 ${esc(graph?.knowledge_through_issue || "—")}</span></div></div>
+      <div class="mobile-knowledge-card"><div class="mobile-knowledge-main">${icon("status")}<b>当前焦点</b><strong>${esc(focusNode?.data.label || "未选择")}</strong></div><div class="mobile-knowledge-meta"><span>归档 ${esc(graph?.archive_through_issue || "—")}</span><span>长期知识 ${esc(graph?.knowledge_through_issue || "—")}</span></div>${lensEmptyLine}</div>
       <button class="mobile-filter-button" type="button" data-open-mobile-filter>${icon("sliders")}<span>筛选与透镜（${model.limits.nodeCount} 节点 · ${model.limits.edgeCount} 边）</span>${icon("chevron")}</button>
       <section class="mobile-path-card"><div class="mobile-card-head"><h2>当前对象的关系</h2><span>${neighbors.length} 条</span></div><ul class="kg-mobile-list">${neighbors.length ? neighbors.slice(0, 12).map((edge) => listItem(neighborNode(edge), edge)).join("") : "<li><span class='kg-mobile-empty'>当前焦点没有可见关系，先在筛选中放宽期次或类型。</span></li>"}${neighbors.length > 12 ? `<li><a href="#relationshipList"><span class='kg-mobile-empty'>在下方关系列表中查看全部 ${neighbors.length} 条（每页 ${RELATION_PAGE_SIZE} 条）。</span></a></li>` : ""}</ul></section>
       <section class="mobile-path-card"><div class="mobile-card-head"><h2>最近条目</h2><span>按期次倒序</span></div><ul class="kg-mobile-list">${recentItems.length ? recentItems.map((node) => `<li><a href="${esc(node.data.href || `#archive?date=${encodeURIComponent(node.data.issue_date)}`)}">${icon("claim")}<span><b>${esc(node.data.label)}</b><small>${esc(node.data.issue_date || "")}</small></span>${icon("chevron")}</a></li>`).join("") : "<li><span class='kg-mobile-empty'>当前透镜不展示条目，切到“演化”透镜。</span></li>"}</ul></section>
@@ -359,13 +406,15 @@ const KnowledgeGraphView = (() => {
     if (typeof renderRoute === "function") renderRoute();
   }
 
-  function bind(model, graph, params) {
+  function bind(model, graph, params, layout) {
     bindBreakpoint();
     const canvas = $("[data-kg-canvas]");
     const desktop = typeof matchMedia === "function" ? matchMedia("(min-width: 768px)").matches : true;
     let handle = null;
-    let selectedNodeId = model.focusId;
+    const viewport = layout.viewport;
+    let selectedNodeId = viewport?.focusId || model.focusId;
     let selectedEdgeId = "";
+    let lastFitIds = viewport?.fitIds || null;
 
     const updateDetail = () => {
       const panel = $("[data-kg-detail]");
@@ -376,20 +425,18 @@ const KnowledgeGraphView = (() => {
       $$("[data-relationship-id]").forEach((row) => row.setAttribute("aria-selected", String(row.dataset.relationshipId === selectedEdgeId)));
     };
 
-    if (canvas && desktop && model.nodes.length && GraphRenderer.available()) {
-      // A topic-scoped local graph uses the deterministic breadthfirst layout
-      // so a handful of nodes fill the canvas at readable zoom instead of
-      // preserving the whole-graph preset coordinate spread.
-      const compactLocal = Boolean(params.topic) && model.nodes.length <= 12;
+    if (canvas && desktop && model.nodes.length && GraphRenderer.available() && !layout.empty) {
+      // Coordinates come from the lens layout layer (site/knowledge-layout.js):
+      // whole-graph preset positions are only kept as a per-node fallback.
       handle = GraphRenderer.mountGraph(canvas, {
         nodes: model.nodes.map((node) => ({
           data: { ...node.data, label: GraphStyles.displayLabel(node.data) },
-          position: node.position,
+          position: (layout.positions && layout.positions[node.data.id]) || node.position,
         })),
         edges: model.edges,
-        layout: compactLocal ? "breadthfirst" : "preset",
-        spacingFactor: compactLocal ? 0.7 : undefined,
-        focusId: model.focusId,
+        layout: "preset",
+        focusId: viewport?.focusId || model.focusId,
+        highlightIds: viewport?.highlightIds || undefined,
         onSelectNode: (data) => {
           selectedNodeId = data.id;
           selectedEdgeId = "";
@@ -418,10 +465,12 @@ const KnowledgeGraphView = (() => {
         },
       });
       if (handle) {
-        handle.selectNode(model.focusId, false);
-        // A topic-scoped local graph fits its one-hop neighborhood so node
-        // text stays readable; wider lenses keep the classic whole-model fit.
-        if (params.topic) handle.fitFocus();
+        const focusId = viewport?.focusId || model.focusId;
+        handle.selectNode(focusId, false);
+        // The lens viewport fits its own first-screen set (structure skeleton,
+        // evolution time slice, judgement evidence cluster) — never the whole
+        // graph's coordinate spread, and never an unconditional topic one-hop.
+        if (lastFitIds && lastFitIds.length) handle.fitToIds(lastFitIds);
         else handle.fit();
       } else {
         const fallback = $("[data-kg-fallback]");
@@ -441,9 +490,15 @@ const KnowledgeGraphView = (() => {
       if (button.dataset.graphAction === "reset") handle.reset();
     }));
 
-    // Desktop filter rail can be collapsed to give the canvas more width.
+    // Desktop filter rail can be collapsed to give the canvas more width; the
+    // canvas size and fit range must be recalculated for the new geometry.
     $("[data-kg-toggle-filters]")?.addEventListener("click", () => {
       $(".kg-workspace")?.classList.toggle("filters-collapsed");
+      if (handle) {
+        handle.cy.resize();
+        if (lastFitIds && lastFitIds.length) handle.fitToIds(lastFitIds);
+        else handle.fit();
+      }
     });
 
     // Copy the raw input digest from the tech-info disclosure.
@@ -572,6 +627,10 @@ const KnowledgeGraphView = (() => {
       return;
     }
     const model = BriefingData.buildKnowledgeGraphModel({ graph, params });
+    // Lens layout: per-lens coordinates, default focus, first-screen set, and
+    // empty-state detection for the CURRENT filtered model (see
+    // site/knowledge-layout.js). Whole-graph positions are never used here.
+    const layout = KnowledgeLayout.build(model, { lens: params.lens, params });
     // Bare #knowledge?lens=structure shows the topic-cluster overview instead
     // of fitting every Topic+Direction node into a narrow canvas. A topic
     // param (or another lens) opens the full workspace with its local graph.
@@ -588,9 +647,12 @@ const KnowledgeGraphView = (() => {
       return;
     }
     const detailAside = `<aside class="graph-detail-panel kg-detail-panel" aria-label="节点详情"><h2 class="graph-panel-title">当前详情</h2><div data-kg-detail></div></aside>`;
-    const desktopWorkspace = `<div class="kg-workspace">${filterPanelMarkup(model, graph, params)}${canvasPanelMarkup(model)}${detailAside}</div>`;
+    const desktopWorkspace = `<div class="kg-workspace">${filterPanelMarkup(model, graph, params)}${canvasPanelMarkup(model, layout)}${detailAside}</div>`;
+    const lensEmptyNote = layout.empty
+      ? "当前透镜没有专属对象；以下为折叠在画布空状态中的结构上下文关系，不代表透镜切换成功。"
+      : "与画布同一份显示模型；箭头方向由关系枚举决定。";
     const relationshipSection = section(`关系列表（${model.limits.edgeCount} 条）`, relationshipTableMarkup(model), {
-      note: "与画布同一份显示模型；箭头方向由关系枚举决定。",
+      note: lensEmptyNote,
       action: `<a class="section-action" href="#relationshipList">查看全部</a>`,
     });
     const unresolvedSection = section(`未解析引用（${model.unresolved.length}）`, unresolvedMarkup(model), { note: "缺少目标、关系类型或 provenance 的引用不会绘制成已确认边。" });
@@ -598,12 +660,12 @@ const KnowledgeGraphView = (() => {
       ${pageHeader({ title: "知识图谱", description: "把历期日报沉淀的 Topic、Direction、条目与编辑判断连成可追溯的一张图；连接表示分类、时间定位与显式引用，不表示支持或因果结论。" })}
       ${watermarkMarkup(graph)}${metricsMarkup(model)}
       ${lensTabsMarkup(params)}
-      ${mobileMarkup(model, graph)}
+      ${mobileMarkup(model, graph, layout)}
       ${desktopWorkspace}
       ${relationshipSection}
       ${unresolvedSection}
     </div>`;
-    bind(model, graph, params);
+    bind(model, graph, params, layout);
     document.querySelector(".kg-lens-tabs a[aria-current='page']")?.scrollIntoView({ block: "nearest", inline: "center" });
   }
 

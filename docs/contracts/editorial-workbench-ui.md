@@ -96,6 +96,22 @@ The relationship list paginates at 20 rows per page, but every row stays in the 
 
 Both `html` and `body` use `overflow-x: clip`. Graph containers never widen the page. Reduced-motion preferences remove non-essential transitions, canvas fitting lands directly in its final state, and SVG/Canvas graphics are hidden from screen readers while the DOM relationship list carries the complete relation set.
 
+## Lens layout, focus, and empty-state contract
+
+The canvas never renders whole-graph coordinates. `site/data-contract.js` produces the filtered display model (visible nodes/edges only); `site/knowledge-layout.js` — a dependency-free, DOM-free module — then generates deterministic per-lens coordinates and the initial viewport for the CURRENT model. Node count thresholds never choose the layout algorithm; the lens and its explicit range do. The layout reads only kind, relation, issue date, and stable IDs; it never adds, drops, or rewrites nodes or edges, and the relationship list is built from the same model.
+
+Per lens:
+
+- `structure`: Topic in a context column, Directions in a compact stack (overlay objects in a trailing column). Default focus is the Topic and the first screen fits the whole local skeleton; only an explicit `node` focuses that node's one hop.
+- `evolution`: Issue columns as time, Direction lanes as rows; items sit in their Direction × Issue cell, dense cells wrap into sub-columns, and issue anchors sit at the vertical center of their column so `has_item`/`published_in` edges stay inside their lane or column. Default focus is the URL `direction` if given, otherwise the lane with the most recent item activity, labeled `自动聚焦：…` in the canvas status; the first screen fits that Direction's time slice and always contains at least one Direction, one Item, and one Issue.
+- `judgements`: judgement-centered evidence clusters (evidence items in a column left of their judgement), packed into bounded columns; uncited skeleton items form a compact context grid. Default focus is the latest Judgement and the first screen fits its evidence cluster.
+
+Initial-focus priority: a valid URL `node` first, then the lens default, then the lens empty state, and only last the Topic. `fitFocus()` runs only from the explicit 聚焦当前对象 button; collapsing the filter rail resizes the canvas and re-applies the current fit. The renderer accepts an explicit highlight set so a lens first screen keeps its Issue/Judgement nodes readable even though they sit two hops from the focus.
+
+The canvas status line is lens-specific — structure: `N Topic · M Direction`; evolution: `N Direction · M 条目 · K 期`; judgements: `N 判断 · M 条显式证据关系` — and states truncation and scope warnings when caps apply. When a lens has zero of its own objects (structure: Directions; evolution: Items+Issues; judgements: Judgements+`supports_judgement`), the canvas area shows the reason, the current scope, and actions (`扩大到全部期次` / `返回结构`); the shared skeleton survives only as a collapsed 结构上下文 list, and the relationship list and mobile copy state the same fact. The site never borrows another Topic's judgements or renders an uncited item as a judgement.
+
+Edge-length acceptance (enforced by tests over every Topic × `latest|recent3|all`): semantic edges (`has_item`, `published_in`, `supports_judgement`) keep max ≤ 4× their relation's median length, containment edges are bounded outright, coordinates stay bounded (no 10k-unit filtered voids), and identical input produces identical coordinates.
+
 ## Browser failure behavior
 
 - When Cytoscape.js fails to load or mount, the page states that graph rendering is unavailable and the relationship list plus node details — built from the same display model — remain fully usable.

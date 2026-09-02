@@ -1,8 +1,17 @@
 # 知识图谱长边与透镜区分度诊断
 
-- Status: draft
+- Status: implemented
 - Created: 2026-09-02
 - Last updated: 2026-09-02
+
+> 实现记录(2026-09-02):P0 与 P1 已实现并吸收进当前文档——透镜局部布局、
+> 默认焦点、首屏集合、透镜状态条、空状态与边长验收见
+> `docs/contracts/editorial-workbench-ui.md`(Lens layout, focus, and
+> empty-state contract 一节);`site/knowledge-layout.js` 的模块所有权见
+> `docs/architecture.md`;线上/仓库联合发布检查见
+> `docs/operations/knowledge-freshness.md`。`knowledge/graph.json.position`
+> 保留为兼容/调试坐标,Topic 局部视图不再使用。持久规则以当前文档为准,
+> 本文保留为诊断记录。
 
 ## Problem and evidence
 

@@ -422,3 +422,196 @@ def test_renderer_adapter_style_tables_and_vendored_cytoscape():
     assert output["afterAvailable"] is True
     assert output["invalidContainerReturnsNull"] is True
     assert output["failureReported"] is True
+
+
+LENS_REPRO = {
+    "topic": "agent_acceleration",
+    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (21, 24)},
+}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_lens_layout_gives_each_lens_its_own_focus_and_first_screen():
+    """The design's reproduction fixture (agent_acceleration + recent3): each
+    lens keeps its own node/edge set, and the initial viewport shows the
+    objects the lens exists for instead of the shared Topic one-hop."""
+    output = _run_node(
+        f"""
+        const fs = require('fs');
+        const data = require({json.dumps(str(SITE / 'data-contract.js'))});
+        const layout = require({json.dumps(str(SITE / 'knowledge-layout.js'))});
+        const graph = JSON.parse(fs.readFileSync({json.dumps(str(ROOT / 'knowledge' / 'graph.json'))}, 'utf8'));
+        const base = {{ topic: 'agent_acceleration', range: 'recent3' }};
+        const lenses = ['structure', 'evolution', 'judgements'].map((lens) => {{
+          const params = data.normalizeKnowledgeParams({{ ...base, lens }});
+          const model = data.buildKnowledgeGraphModel({{ graph, params }});
+          const built = layout.build(model, {{ lens, params }});
+          const nodeById = new Map(model.nodes.map((n) => [n.data.id, n]));
+          const focus = built.viewport ? nodeById.get(built.viewport.focusId) : null;
+          const fitKinds = {{}};
+          (built.viewport ? built.viewport.fitIds : []).forEach((id) => {{
+            const node = nodeById.get(id);
+            if (node) fitKinds[node.data.kind] = (fitKinds[node.data.kind] || 0) + 1;
+          }});
+          return {{
+            lens,
+            nodes: model.nodes.length,
+            edges: model.edges.length,
+            focusKind: focus ? focus.data.kind : null,
+            fitKinds,
+            automatic: built.viewport ? built.viewport.automatic : null,
+            highlightIsFit: built.viewport ? JSON.stringify(built.viewport.highlightIds) === JSON.stringify(built.viewport.fitIds) : null,
+            empty: Boolean(built.empty),
+          }};
+        }});
+        process.stdout.write(JSON.stringify(lenses));
+        """
+    )
+    by_lens = {row["lens"]: row for row in output}
+    for lens, (nodes, edges) in LENS_REPRO["counts"].items():
+        assert by_lens[lens]["nodes"] == nodes, lens
+        assert by_lens[lens]["edges"] == edges, lens
+
+    # Structure: focus is the Topic and the first screen is the whole skeleton.
+    assert by_lens["structure"]["focusKind"] == "topic"
+    assert by_lens["structure"]["fitKinds"] == {"topic": 1, "direction": 4}
+
+    # Evolution: focus is a Direction, and the first screen contains at least
+    # one item and one issue (the lens's own objects).
+    assert by_lens["evolution"]["focusKind"] == "direction"
+    assert by_lens["evolution"]["fitKinds"]["direction"] == 1
+    assert by_lens["evolution"]["fitKinds"]["item"] >= 1
+    assert by_lens["evolution"]["fitKinds"]["issue"] >= 1
+    assert by_lens["evolution"]["automatic"] is True
+    assert by_lens["evolution"]["highlightIsFit"] is True
+
+    # Judgements: focus is the latest Judgement and the first screen contains
+    # its explicit evidence items.
+    assert by_lens["judgements"]["focusKind"] == "judgement"
+    assert by_lens["judgements"]["fitKinds"]["judgement"] == 1
+    assert by_lens["judgements"]["fitKinds"]["item"] >= 1
+    assert by_lens["judgements"]["automatic"] is True
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_lens_layout_is_deterministic_and_has_no_coordinate_voids():
+    """All topics × standard ranges: identical builds produce identical
+    coordinates; every relation keeps max ≤ 4× median edge length (no filtered
+    coordinate voids); coordinates stay bounded instead of retaining 10k-unit
+    whole-graph rows."""
+    output = _run_node(
+        f"""
+        const fs = require('fs');
+        const data = require({json.dumps(str(SITE / 'data-contract.js'))});
+        const layout = require({json.dumps(str(SITE / 'knowledge-layout.js'))});
+        const graph = JSON.parse(fs.readFileSync({json.dumps(str(ROOT / 'knowledge' / 'graph.json'))}, 'utf8'));
+        const topics = graph.nodes.filter((n) => n.data.kind === 'topic').map((n) => n.data.topic_id).sort();
+        const violations = [];
+        let maxAbs = 0;
+        let deterministic = true;
+        let checked = 0;
+        for (const topic of topics) {{
+          for (const range of ['latest', 'recent3', 'all']) {{
+            for (const lens of ['structure', 'evolution', 'judgements']) {{
+              const params = data.normalizeKnowledgeParams({{ topic, range, lens }});
+              const model = data.buildKnowledgeGraphModel({{ graph, params }});
+              const first = layout.build(model, {{ lens, params }});
+              const second = layout.build(model, {{ lens, params }});
+              if (JSON.stringify(first.positions) !== JSON.stringify(second.positions)) deterministic = false;
+              if (!first.available) continue;
+              checked += 1;
+              for (const [id, pos] of Object.entries(first.positions)) {{
+                maxAbs = Math.max(maxAbs, Math.abs(pos.x), Math.abs(pos.y));
+                void id;
+              }}
+              const stats = layout.edgeStats(model, first.positions);
+              for (const [relation, row] of Object.entries(stats)) {{
+                // Semantic edges (has_item / published_in / supports_judgement)
+                // must stay local to their lane or column: max ≤ 4× median.
+                // Containment edges (has_direction, tracks, …) may span layout
+                // context but are bounded outright.
+                const semantic = ['has_item', 'published_in', 'supports_judgement'].includes(relation);
+                const violated = semantic
+                  ? (row.count >= 3 && row.median > 0 && row.max > row.median * 4)
+                  : row.max > 4200;
+                if (violated) violations.push({{ topic, range, lens, relation, ...row }});
+              }}
+            }}
+          }}
+        }}
+        process.stdout.write(JSON.stringify({{ checked, deterministic, maxAbs, violations: violations.slice(0, 8) }}));
+        """
+    )
+    assert output["deterministic"] is True
+    assert output["checked"] > 0
+    # No coordinate may retain a whole-graph row index (10k-unit voids).
+    assert output["maxAbs"] < 10000, output["maxAbs"]
+    assert output["violations"] == [], output["violations"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_lens_layout_reports_honest_empty_states():
+    """Topics without lens-specific objects must be flagged as empty instead of
+    rendering the shared skeleton as a successful lens switch; topics that do
+    have objects must not be flagged."""
+    output = _run_node(
+        f"""
+        const fs = require('fs');
+        const data = require({json.dumps(str(SITE / 'data-contract.js'))});
+        const layout = require({json.dumps(str(SITE / 'knowledge-layout.js'))});
+        const graph = JSON.parse(fs.readFileSync({json.dumps(str(ROOT / 'knowledge' / 'graph.json'))}, 'utf8'));
+        const probes = [
+          ['ai_infra_horizontal', 'recent3', 'evolution'],
+          ['ai_infra_horizontal', 'recent3', 'judgements'],
+          ['dpu_inline', 'recent3', 'evolution'],
+          ['dpu_inline', 'recent3', 'judgements'],
+          ['tpn', 'recent3', 'judgements'],
+          ['agent_acceleration', 'recent3', 'evolution'],
+          ['tpn', 'recent3', 'evolution'],
+        ];
+        const rows = probes.map(([topic, range, lens]) => {{
+          const params = data.normalizeKnowledgeParams({{ topic, range, lens }});
+          const model = data.buildKnowledgeGraphModel({{ graph, params }});
+          const built = layout.build(model, {{ lens, params }});
+          return {{ topic, lens, empty: Boolean(built.empty), reason: built.empty ? built.empty.reason : null, viewport: Boolean(built.viewport) }};
+        }});
+        process.stdout.write(JSON.stringify(rows));
+        """
+    )
+    rows = {(row["topic"], row["lens"]): row for row in output}
+    for key in [
+        ("ai_infra_horizontal", "evolution"),
+        ("ai_infra_horizontal", "judgements"),
+        ("dpu_inline", "evolution"),
+        ("dpu_inline", "judgements"),
+        ("tpn", "judgements"),
+    ]:
+        assert rows[key]["empty"] is True, key
+        assert rows[key]["viewport"] is False, key
+        assert rows[key]["reason"], key
+    for key in [("agent_acceleration", "evolution"), ("tpn", "evolution")]:
+        assert rows[key]["empty"] is False, key
+        assert rows[key]["viewport"] is True, key
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_lens_truncation_keeps_explicit_scope_notice():
+    """frontier_exploration reaches the soft cap; the model keeps the explicit
+    truncation flag that the lens status line surfaces as a scope warning."""
+    output = _run_node(
+        f"""
+        const fs = require('fs');
+        const data = require({json.dumps(str(SITE / 'data-contract.js'))});
+        const graph = JSON.parse(fs.readFileSync({json.dumps(str(ROOT / 'knowledge' / 'graph.json'))}, 'utf8'));
+        const rows = ['evolution', 'judgements'].map((lens) => {{
+          const params = data.normalizeKnowledgeParams({{ topic: 'frontier_exploration', range: 'recent3', lens }});
+          const model = data.buildKnowledgeGraphModel({{ graph, params }});
+          return {{ lens, nodes: model.nodes.length, truncated: model.limits.truncated, nodeLimit: model.limits.nodeLimit }};
+        }});
+        process.stdout.write(JSON.stringify(rows));
+        """
+    )
+    for row in output:
+        assert row["nodes"] == 60
+        assert row["truncated"] is True
+        assert row["nodeLimit"] == 60

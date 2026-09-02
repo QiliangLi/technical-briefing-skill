@@ -93,20 +93,34 @@
       },
     };
 
+    /* Highlight the focused node's closed neighborhood, or an explicit set of
+     * node ids when the caller supplies one (lens-specific first screens keep
+     * their issue/judgement nodes readable even though they sit two hops out). */
+    const highlightOverride = Array.isArray(options.highlightIds) && options.highlightIds.length
+      ? options.highlightIds
+      : null;
+
     function applyFocus(nodeId) {
       const focusNode = nodeId ? cy.getElementById(nodeId) : cy.collection();
       if (nodeId && focusNode.empty()) return;
       const all = cy.elements();
-      const neighborhood = focusNode.empty() ? cy.collection() : focusNode.closedNeighborhood();
       all.removeClass('dim neighbor focused edge-focus');
-      if (focusNode.empty()) {
+      let keep = cy.collection();
+      if (highlightOverride) {
+        highlightOverride.forEach((id) => {
+          const el = cy.getElementById(id);
+          if (!el.empty()) keep = keep.union(el);
+        });
+      } else if (!focusNode.empty()) {
+        keep = focusNode.closedNeighborhood();
+      } else {
         cy.edges().addClass('dim');
         return;
       }
-      focusNode.addClass('focused');
-      focusNode.neighborhood().nodes().addClass('neighbor');
-      neighborhood.edges().addClass('edge-focus');
-      all.not(neighborhood).addClass('dim');
+      if (!focusNode.empty()) focusNode.addClass('focused');
+      keep.nodes().addClass('neighbor');
+      keep.edges().addClass('edge-focus');
+      all.not(keep).addClass('dim');
     }
 
     handle.selectNode = function selectNode(nodeId, notify = true) {
@@ -144,6 +158,18 @@
 
     handle.fit = function fit(padding = 40) {
       cy.fit(undefined, padding);
+    };
+
+    /* Fit an explicit set of node ids (the lens first screen) instead of the
+     * whole model or a computed neighborhood. */
+    handle.fitToIds = function fitToIds(ids, padding = 60) {
+      if (!Array.isArray(ids) || !ids.length) return;
+      let targets = cy.collection();
+      ids.forEach((id) => {
+        const el = cy.getElementById(id);
+        if (!el.empty()) targets = targets.union(el);
+      });
+      if (!targets.empty()) cy.fit(targets, padding);
     };
 
     /* Fit the focused node's one-hop neighborhood instead of the whole graph,

@@ -92,3 +92,16 @@ Pages 工作流在 graph 门禁之后执行
 
 回滚:manifest 与 issue diff 都是附加的可重建投影,回滚前端或知识代码不需要
 回滚 Archive;删除这两类文件后按上文命令重建即可。
+
+## 线上/仓库联合发布检查
+
+发布完成不等于线上生效。部署后必须访问页面本身(而不是只看构建状态):
+
+1. 三个图谱透镜路由(结构/演化/编辑判断,带 `topic` 与 `range=recent3`)的
+   状态条摘要与本地 `knowledge/graph.json` 构建结果一致;
+2. 首页水位显示 `knowledge_complete`,且 `archive_head_issue` 与
+   `materialized_through_issue` 相同;
+3. 页面首屏不再出现旧的“构建输入摘要”卡片(应为折叠的“技术信息”);
+4. 页面静态资源版本参数包含当前布局模块(`knowledge-layout.js`);
+5. 线上知识水位落后仓库时,按“积压回填”流程补齐后再部署,不要用旧站点
+   状态反推本地实现是否正确。
