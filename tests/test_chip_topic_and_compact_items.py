@@ -11,17 +11,18 @@ from briefing_skill.tasks import brief_item_validation_errors
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_config_loads_eight_deep_topics_plus_two_observation_topics():
+def test_config_loads_nine_deep_topics_plus_two_observation_topics():
     config = ConfigBundle.load(Paths(ROOT))
     topic_ids = [topic["id"] for topic in config.topic_list()]
-    assert len(topic_ids) == 10
-    assert topic_ids[-4:] == [
+    assert len(topic_ids) == 11
+    assert topic_ids[-5:] == [
         "ai_chip_accelerator",
         "storage_media",
+        "accelerator_io_datapath",
         "frontier_exploration",
         "ai_infra_horizontal",
     ]
-    assert len(config.settings["efficiency"]["deep_topics"]) == 8
+    assert len(config.settings["efficiency"]["deep_topics"]) == 9
 
 
 def test_chip_topic_has_focused_directions_and_context():
@@ -36,7 +37,7 @@ def test_chip_topic_has_focused_directions_and_context():
     assert "HBF" in topic["directions"][2]["arxiv_query"]
     assert config.context_path(Paths(ROOT), topic["id"]).is_file()
     horizontal = config.topic("ai_infra_horizontal")
-    assert "八个深度专题" in horizontal["description"]
+    assert "九个深度专题" in horizontal["description"]
 
 
 def test_readable_item_character_budget_accepts_230_to_330_chars():
@@ -59,10 +60,10 @@ def test_readable_schema_and_issue_capacity_match_topic_local_top4_policy():
     assert config.settings["brief_item_max_chars"] == 330
     assert schema["properties"]["core_conclusion"]["maxLength"] == 95
     assert schema["properties"]["boundary"]["maxLength"] == 55
-    assert config.scoring["expanded_v2"]["core_max"] == 32
-    assert config.scoring["expanded_v2"]["observation_max"] == 32
-    assert config.scoring["expanded_v2"]["total_max"] == 32
+    assert config.scoring["expanded_v2"]["core_max"] == 36
+    assert config.scoring["expanded_v2"]["observation_max"] == 36
+    assert config.scoring["expanded_v2"]["total_max"] == 36
     assert config.scoring["expanded_v2"]["max_per_topic"] == 4
-    assert config.settings["efficiency"]["max_fact_candidates_total"] == 32
-    assert config.settings["efficiency"]["max_fact_candidates_hard_cap"] == 32
+    assert config.settings["efficiency"]["max_fact_candidates_total"] == 36
+    assert config.settings["efficiency"]["max_fact_candidates_hard_cap"] == 36
     assert config.settings["efficiency"]["max_fact_candidates_per_topic"] == 4

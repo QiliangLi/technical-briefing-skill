@@ -310,6 +310,15 @@ class EmailService:
                     "agent_acceleration": ("agent", "code", "read", "grep", "工具", "代码"),
                     "cross_region": ("跨域", "跨区", "crossregion", "迁移", "kvcache"),
                     "optical_network": ("光交换", "ocs", "optical", "光路"),
+                    "accelerator_io_datapath": (
+                        "gpudirect",
+                        "cufile",
+                        "gpuinitiated",
+                        "scada",
+                        "storage-next",
+                        "存储路径",
+                        "io直通",
+                    ),
                 }
                 judgement_lower = str(judgement).lower()
                 tokens = {

@@ -113,6 +113,7 @@ def install_quality_guards() -> None:
     """Tighten gap search, batch validation, and configured length handling."""
 
     from . import pipeline as pipeline_module
+    from .discovery_stage import _preferred_domains
     from .tasks import TaskService
 
     _install_renderer_length_guard()
@@ -141,6 +142,8 @@ def install_quality_guards() -> None:
                 "cross_region",
                 "optical_network",
                 "ai_chip_accelerator",
+                "storage_media",
+                "accelerator_io_datapath",
             )
         )
         raw_rows = self.db.fetchall(
@@ -175,31 +178,6 @@ def install_quality_guards() -> None:
             queries = direction.get("queries") or []
             if not queries:
                 continue
-            domains: list[str] = []
-            if topic["id"] == "agent_acceleration":
-                domains = [
-                    "arxiv.org",
-                    "openreview.net",
-                    "github.com",
-                    "simonwillison.net",
-                    "latent.space",
-                ]
-            elif topic["id"] == "optical_network":
-                domains = [
-                    "ofcconference.org",
-                    "dl.acm.org",
-                    "arxiv.org",
-                    "research.google",
-                ]
-            elif topic["id"] == "ai_chip_accelerator":
-                domains = [
-                    "arxiv.org",
-                    "dl.acm.org",
-                    "ieeexplore.ieee.org",
-                    "nvidia.com",
-                    "amd.com",
-                    "cloud.google.com",
-                ]
             self.tasks.create(
                 self.run_id,
                 "agent_web_search",
@@ -210,7 +188,7 @@ def install_quality_guards() -> None:
                     "direction_id": direction["id"],
                     "direction_name": direction["name"],
                     "query": queries[0],
-                    "preferred_domains": domains,
+                    "preferred_domains": _preferred_domains(str(topic["id"])),
                     "freshness_days": max_age_days,
                     "date_from": date_from.isoformat(),
                     "date_to": date_to.isoformat(),

@@ -62,12 +62,10 @@ class Pipeline:
             if not queries:
                 continue
             query = queries[0]
-            domains = []
             # Open technical sources first; the current Agent may broaden when needed.
-            if topic["id"] == "agent_acceleration":
-                domains = ["arxiv.org", "openreview.net", "github.com", "simonwillison.net", "latent.space"]
-            elif topic["id"] == "optical_network":
-                domains = ["ofcconference.org", "dl.acm.org", "arxiv.org", "research.google"]
+            from .discovery_stage import _preferred_domains
+
+            domains = _preferred_domains(str(topic["id"]))
             input_data = {
                 "topic_id": topic["id"],
                 "topic_name": topic["name"],

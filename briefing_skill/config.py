@@ -32,7 +32,12 @@ def _load_topics(paths: Paths) -> dict[str, Any]:
     # Focused and exploration topics live in small extension files so adding one does
     # not require rewriting the large base taxonomy. Extensions are inserted before
     # the legacy horizontal Radar topic and otherwise behave like normal topics.
-    for filename in ("topics-chip.yaml", "topics-media.yaml", "topics-frontier.yaml"):
+    for filename in (
+        "topics-chip.yaml",
+        "topics-media.yaml",
+        "topics-io.yaml",
+        "topics-frontier.yaml",
+    ):
         extension_path = paths.config / filename
         if not extension_path.exists():
             continue
@@ -59,8 +64,9 @@ def _load_topics(paths: Paths) -> dict[str, Any]:
         if topic.get("id") == "ai_infra_horizontal":
             description = str(topic.get("description") or "")
             topic["description"] = (
-                description.replace("前六个专题", "八个深度专题")
-                .replace("七个深度专题", "八个深度专题")
+                description.replace("前六个专题", "九个深度专题")
+                .replace("七个深度专题", "九个深度专题")
+                .replace("八个深度专题", "九个深度专题")
             )
             break
     return topics
@@ -112,6 +118,7 @@ class ConfigBundle:
             "optical_network": "optical-network.md",
             "ai_chip_accelerator": "ai-chip-accelerator.md",
             "storage_media": "storage-media.md",
+            "accelerator_io_datapath": "accelerator-io-datapath.md",
             "frontier_exploration": "frontier-exploration.md",
             "ai_infra_horizontal": "ai-infra-horizontal.md",
         }

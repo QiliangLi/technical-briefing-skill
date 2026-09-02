@@ -37,6 +37,15 @@ def _preferred_domains(topic_id: str) -> list[str]:
             "amd.com",
             "cloud.google.com",
         ]
+    if topic_id == "accelerator_io_datapath":
+        return [
+            "nvidia.com",
+            "marvell.com",
+            "micron.com",
+            "arxiv.org",
+            "dl.acm.org",
+            "usenix.org",
+        ]
     return []
 
 

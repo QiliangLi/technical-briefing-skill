@@ -9,16 +9,21 @@ def test_topics_and_aihot_priority():
     root = Path(__file__).resolve().parents[1]
     config = ConfigBundle.load(Paths(root))
     topics = {topic["id"]: topic for topic in config.topic_list()}
-    assert len(topics) == 10
+    assert len(topics) == 11
     assert topics["agent_acceleration"]["aihot_priority"] == "highest"
     assert topics["tpn"]["aihot_priority"] == "high"
     assert topics["ai_chip_accelerator"]["aihot_priority"] == "high"
     assert topics["ai_chip_accelerator"]["max_items_per_issue"] == 4
     assert topics["storage_media"]["aihot_priority"] == "medium"
     assert topics["storage_media"]["max_items_per_issue"] == 2
+    assert topics["accelerator_io_datapath"]["aihot_priority"] == "high"
+    assert topics["accelerator_io_datapath"]["max_items_per_issue"] == 4
     assert "code_graph" in {d["id"] for d in topics["agent_acceleration"]["directions"]}
     assert "chiplet_packaging" in {d["id"] for d in topics["ai_chip_accelerator"]["directions"]}
     assert "flash_nand_hbf" in {d["id"] for d in topics["storage_media"]["directions"]}
+    assert "accelerator_initiated_io" in {
+        d["id"] for d in topics["accelerator_io_datapath"]["directions"]
+    }
     assert topics["ai_infra_horizontal"]["aihot_priority"] == "highest"
     frontier = topics["frontier_exploration"]
     assert frontier["name"] == "边界探索"

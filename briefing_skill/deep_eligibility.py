@@ -106,6 +106,17 @@ DEEP_ENTRY_CONTRACTS: dict[str, dict[str, Any]] = {
         "min_technology_value_score": 12,
         "boundary": "The core advance must be a storage medium/device or media-controller co-design; HBM-only, CXL memory semantics, and DPU storage offload belong to other topics.",
     },
+    "accelerator_io_datapath": {
+        "allowed_core_contributions": [
+            "accelerator_storage_direct_path",
+            "accelerator_initiated_io",
+            "accelerator_storage_stack",
+            "accelerator_storage_controller_codesign",
+        ],
+        "min_relevance_score": 65,
+        "min_technology_value_score": 12,
+        "boundary": "The core contribution must directly change I/O initiation, control, data movement, copying, isolation, or device co-design between an accelerator and persistent storage; generic storage software, media improvements, DPU offload, and GPU networking alone belong elsewhere.",
+    },
 }
 
 

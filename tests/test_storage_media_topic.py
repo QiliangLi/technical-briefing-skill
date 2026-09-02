@@ -24,10 +24,10 @@ def test_storage_media_is_loaded_as_deep_topic_with_topic_local_top4_capacity():
     deep_topics = efficiency["deep_topics"]
     assert "storage_media" in deep_topics
     assert efficiency["max_fact_candidates_per_topic"] == 4
-    assert efficiency["max_fact_candidates_hard_cap"] == 32
-    assert efficiency["max_fact_candidates_total"] == 32
+    assert efficiency["max_fact_candidates_hard_cap"] == 36
+    assert efficiency["max_fact_candidates_total"] == 36
     assert config.scoring["expanded_v2"]["max_per_topic"] == 4
-    assert config.scoring["expanded_v2"]["total_max"] == 32
+    assert config.scoring["expanded_v2"]["total_max"] == 36
     assert config.context_path(paths, "storage_media").is_file()
 
     ordered_ids = [item["id"] for item in config.topic_list()]

@@ -1,6 +1,6 @@
 ---
 name: technical-briefing-skill
-description: Collect, verify, deduplicate, analyse, illustrate, format, validate, and email recurring internal technical briefings. Use for 技术情报简报、技术信息收集、论文与博客筛选、Agent/AI/KVCache/DPU/DSA/TPN/AI芯片与加速器/跨域传输/光交换信息追踪、Guizang图文卡片、定期邮件简报、去重和断点恢复。
+description: Collect, verify, deduplicate, analyse, illustrate, format, validate, and email recurring internal technical briefings. Use for 技术情报简报、技术信息收集、论文与博客筛选、Agent/AI/KVCache/DPU/DSA/TPN/AI芯片与加速器/I/O直通与存储数据路径/跨域传输/光交换信息追踪、Guizang图文卡片、定期邮件简报、去重和断点恢复。
 ---
 
 # Technical Briefing Skill
@@ -19,6 +19,7 @@ description: Collect, verify, deduplicate, analyse, illustrate, format, validate
 - 同一GitHub项目在专题补充中的多条低价值release可以聚合显示，但不得把不同论文或Top4深度条目强行合并。
 - 不得在Python中绑定某家模型API。
 - 不得依赖聊天上下文记住历史；常规状态、relevance cache与使用记录写入SQLite，外部历史回填游标写入SQLite `source_state`，回填报告写入被忽略的`workspace/backfill/`，跨期facts写入本地`workspace/cache/facts/`。
+- Topic、Direction、判断卡或容量配置变更只从新run边界启用；存在按旧配置创建的非终态run时，必须先用原配置完成或明确终止，不得用新配置继续解释旧任务图，也不得追溯改写已发布Topic身份。
 - Skill本身不产生定时触发；由Cron或宿主Agent任务系统调用CLI。
 
 ## 首次使用
@@ -250,9 +251,11 @@ npx skills add https://github.com/KKKKhazix/human-writing --global --agent codex
 4. AI芯片与加速器，包括GPU/NPU/TPU/ASIC、Chiplet、先进封装、内存接口和软硬件协同；
 5. Agent语义加速，包括CodeGraph、Read/Grep/Glob、上下文构建和工具执行链；
 6. KVCache、Agent Cache和记忆的跨域传输；
-7. AI/GPU集群光交换网络。
+7. AI/GPU集群光交换网络；
+8. 存储介质与器件，包括NAND/Flash/HBF、新型非易失存储、HDD和介质—控制器协同；
+9. 加速器直连I/O与存储数据路径，包括直接数据路径、GPU/NPU主动发起I/O、加速器存储软件快路径和细粒度I/O控制器协同。
 
-基础专题定义在`config/topics.yaml`，芯片、存储介质与边界探索分别定义在`config/topics-chip.yaml`、`config/topics-media.yaml`和`config/topics-frontier.yaml`。运行时合并全部专题；当前数量和深度/Radar路由以这些文件及`config/settings.yaml`为准。
+基础专题定义在`config/topics.yaml`，芯片、存储介质、加速器存储I/O与边界探索分别定义在`config/topics-chip.yaml`、`config/topics-media.yaml`、`config/topics-io.yaml`和`config/topics-frontier.yaml`。运行时合并全部专题；当前数量和深度/Radar路由以这些文件及`config/settings.yaml`为准。
 
 每个深度专题采用两层输出：
 
@@ -375,6 +378,7 @@ AI解释图的个人角色只由`assets/persona/ian-qiliang/overlay.md`和`asset
 发送前必须满足：
 
 - `expanded_v2`单专题深度解读不超过4条；同专题同项目默认不超过1条深读；
+- `expanded_v2`整期详细条目不超过`config/scoring.yaml`配置的36条安全上限；不足时不得用弱信息补齐；
 - Top4之外的专题补充只包含已判定相关的A级内容，每条1～2句并链接原文；Release Family必须保留每个原始release链接；
 - 每条Machine Item五个事实正文域满足任务输入和当前配置的长度预算；Reader Projection按内容自然展开，不要求机械呈现五个槽位；
 - 每条深度解读至少一个A级来源；

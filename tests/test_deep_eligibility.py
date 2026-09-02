@@ -131,8 +131,36 @@ def test_all_configured_deep_topics_have_machine_readable_entry_contracts():
         "optical_network",
         "ai_chip_accelerator",
         "storage_media",
+        "accelerator_io_datapath",
     }
     assert all(contract["allowed_core_contributions"] for contract in DEEP_ENTRY_CONTRACTS.values())
+
+
+def test_accelerator_storage_path_requires_an_allowed_core_contribution():
+    candidate = _candidate("direct_storage_path")
+    direct = _result(
+        matched_direction_id="direct_storage_path",
+        core_contribution="accelerator_storage_direct_path",
+    )
+    generic = _result(
+        matched_direction_id="direct_storage_path",
+        core_contribution="other",
+    )
+
+    admitted, _ = derive_deep_eligibility(
+        direct,
+        candidate,
+        DEEP_ENTRY_CONTRACTS["accelerator_io_datapath"],
+    )
+    rejected, reason = derive_deep_eligibility(
+        generic,
+        candidate,
+        DEEP_ENTRY_CONTRACTS["accelerator_io_datapath"],
+    )
+
+    assert admitted is True
+    assert rejected is False
+    assert "core contribution is outside" in reason
 
 
 def test_contract_fingerprint_changes_when_machine_rule_changes(monkeypatch):

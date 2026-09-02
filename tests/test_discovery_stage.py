@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from briefing_skill.discovery_stage import discovery_batch_semantic_errors
+from briefing_skill.discovery_stage import _preferred_domains, discovery_batch_semantic_errors
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -106,6 +106,13 @@ def test_discovery_stage_creates_one_task_for_multiple_lanes() -> None:
     assert 'prompt="agent-web-search-batch.md"' in prepare
     assert 'schema="web-search-batch.schema.json"' in prepare
     assert "return 1" in prepare
+
+
+def test_accelerator_io_gap_search_prefers_vendor_and_primary_domains() -> None:
+    domains = _preferred_domains("accelerator_io_datapath")
+
+    assert {"nvidia.com", "marvell.com", "micron.com"}.issubset(domains)
+    assert {"arxiv.org", "dl.acm.org", "usenix.org"}.issubset(domains)
 
 
 def test_batch_prompt_explicitly_forbids_cross_lane_transfer() -> None:

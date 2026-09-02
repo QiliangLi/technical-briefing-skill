@@ -22,8 +22,8 @@ def _row(index: int, topic: str, score: float, *, technology_value: float | None
 def _settings():
     return {
         "efficiency": {
-            "max_fact_candidates_total": 32,
-            "max_fact_candidates_hard_cap": 32,
+            "max_fact_candidates_total": 36,
+            "max_fact_candidates_hard_cap": 36,
             "max_fact_candidates_per_topic": 4,
         }
     }
@@ -61,6 +61,34 @@ def test_topic_with_fewer_than_four_candidates_is_not_padded():
     assert len([row for row in selected if row["topic_id"] == "tpn"]) == 2
     assert len([row for row in selected if row["topic_id"] == "cross_region"]) == 1
     assert deferred == []
+
+
+def test_nine_topics_can_each_keep_four_candidates_under_the_36_hard_cap():
+    topics = [
+        "tpn",
+        "memory_dsa",
+        "dpu_inline",
+        "agent_acceleration",
+        "cross_region",
+        "optical_network",
+        "ai_chip_accelerator",
+        "storage_media",
+        "accelerator_io_datapath",
+    ]
+    rows = [
+        _row(index, topic, 100 - index)
+        for topic in topics
+        for index in range(1, 5)
+    ]
+
+    selected, deferred = select_topic_local_deep_budget(rows, _settings())
+
+    assert len(selected) == 36
+    assert deferred == []
+    assert all(
+        len([row for row in selected if row["topic_id"] == topic]) == 4
+        for topic in topics
+    )
 
 
 def test_final_selector_uses_technology_value_without_overwriting_relevance():

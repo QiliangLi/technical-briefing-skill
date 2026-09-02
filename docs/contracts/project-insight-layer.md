@@ -64,7 +64,7 @@ The schema keeps the new top-level field optional so unfinished pre-PR18 `issue_
 
 ## Topic coverage
 
-Project context cards are built dynamically from `ConfigBundle.topic_list()` rather than from a hard-coded subset. The regression suite requires every configured topic to have both non-empty project questions and a project judgement card. This currently covers all seven deep topics plus the horizontal AI-Infra radar topic, including the separately loaded AI-chip/accelerator extension.
+Project context cards are built dynamically from `ConfigBundle.topic_list()` rather than from a hard-coded subset. The regression suite requires every configured topic to have both non-empty project questions and a project judgement card. This currently covers all nine deep topics plus the Frontier and horizontal AI-Infra observation topics, including the separately loaded chip, storage-media, accelerator-storage-I/O, and frontier extensions.
 
 Only topics represented by selected core items are sent to one issue-synthesis task, avoiding irrelevant project context.
 
@@ -88,7 +88,7 @@ These metrics describe evidence-bound project judgements; they are not a quality
 
 Project Insight reuses the existing `issue_synthesis` task, so task count does not increase. The only incremental Agent cost is the compact project context plus the structured insight output. It does not change:
 
-- the 16-item deep Fact budget;
+- the configured 36-item deep Fact safety budget;
 - the Front `<=18k` first-read budget;
 - the one-pass `<=9k` Evidence Repair budget;
 - source-resolution or A-level primary-source requirements;
