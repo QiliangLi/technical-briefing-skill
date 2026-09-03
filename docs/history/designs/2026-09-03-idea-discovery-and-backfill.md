@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | draft |
+| Status | implemented |
 | Created | 2026-09-03 |
 | Last updated | 2026-09-03 |
 
@@ -180,3 +180,6 @@ Idea Hub 增加真实 Candidate Inbox。默认展示 `proposed` 和 `deferred`�
 - 2026-09-03 决定先形成设计草案，不修改代码、Schema、Prompt 或生产知识数据。
 - 2026-09-03 建议用独立 Candidate 对象承接发现结果，并把历史回填与正式 Idea 写入分成两轮。
 - 2026-09-03 保留 `published_archive_only`、Radar 不得直接支持 Idea、正式 Idea 稳定身份和逐期回填等现有边界。
+- 2026-09-03 用户要求按设计实现，设计进入 accepted 并在代码、Schema、Prompt、迁移、测试与当前文档完成后标记 implemented。
+- 2026-09-03 初筛 6 组均落为可审计 Candidate；其中 5 组通过身份和来源独立性审阅进入正式 Idea，Coding Agent 结构化检索因与既有工具分层 Idea 的 lineage 尚未厘清而保留为 deferred。
+- 2026-09-03 历史台账逐期覆盖 10 期归档中的全部已发布记录；正式 Machine 条目得到 Candidate 或 reasoned no-op，Radar 明确记录为不具备直接升格资格。

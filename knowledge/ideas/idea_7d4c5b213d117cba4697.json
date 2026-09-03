@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_7d4c5b213d117cba4697",
+  "identity": {
+    "problem_key": "cross_model_kv_recomputation",
+    "mechanism_key": "latent_kv_migration_refresh",
+    "target_key": "heterogeneous_model_serving"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "跨模型 KV 迁移需要把映射误差与刷新频率一起调度",
+  "problem": "异构模型协作时无法直接复用 KV 状态，重复 Prefill 会抵消多模型路由收益。",
+  "hypothesis": "若把潜空间 KV 映射误差、迁移成本与周期性刷新联合建模，可找到优于重复 Prefill 的可用边界。",
+  "mechanism": "为模型对学习或构造 KV 潜空间映射，在误差或会话漂移超过阈值时局部刷新，并由调度器选择迁移或重算。",
+  "expected_effect": "在质量约束内降低重复 Prefill 时间与跨模型状态传输成本，并明确失效阈值。",
+  "topic_ids": [
+    "tpn",
+    "cross_region"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "aea2c5f288fa3cb1f1c150fd",
+      "issue_date": "2026-08-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.03893v1"
+      ],
+      "reason": "《闭式线性映射复用跨模型KVCache，减少重复Prefill》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "3a70069639846632bc128f55",
+      "issue_date": "2026-08-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.20617v1"
+      ],
+      "reason": "《XKV：异构模型间的双cache潜空间通信》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "aec0bff49869dc80b9a03c53",
+      "issue_date": "2026-08-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.20927v1"
+      ],
+      "reason": "《MentorPulse：跨模型潜引导的刷新机制》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "2c397aec024504c233edf92f",
+      "issue_date": "2026-09-03",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.00891v1"
+      ],
+      "reason": "《CacheBridge跨模型KV迁移成本三降》为该候选的问题、机制或边界提供已发布依据。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "不同架构与层数差异下映射误差何时不可接受",
+    "刷新频率是否会吞掉迁移节省",
+    "长上下文与多轮漂移的质量边界"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "构造两组异构模型对，在相同提示与质量阈值下比较重算、一次映射和阈值刷新。",
+    "inputs": [
+      "多轮长上下文请求",
+      "至少两组异构模型对"
+    ],
+    "baselines": [
+      "每次完整 Prefill",
+      "无刷新 KV 映射"
+    ],
+    "metrics": [
+      "首 token 延迟",
+      "迁移字节",
+      "输出质量偏差",
+      "刷新次数"
+    ],
+    "support_criteria": [
+      "质量偏差受控且端到端延迟稳定下降"
+    ],
+    "reject_criteria": [
+      "刷新或映射成本在主要负载上不低于完整 Prefill"
+    ],
+    "limitations": [
+      "公开结果尚不足以覆盖所有模型架构"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-23",
+  "last_updated_issue": "2026-09-03",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_cc74c1c22d091a7dc8de",
+      "issue_date": "2026-09-03",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "Candidate candidate_7d4c5b213d117cba4697 通过身份、来源独立性和可验证性审阅后进入正式 Idea。",
+      "evidence_item_ids": [
+        "aea2c5f288fa3cb1f1c150fd",
+        "3a70069639846632bc128f55",
+        "aec0bff49869dc80b9a03c53",
+        "2c397aec024504c233edf92f"
+      ]
+    }
+  ]
+}

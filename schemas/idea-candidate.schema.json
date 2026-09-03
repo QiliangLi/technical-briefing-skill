@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Evidence-bound Idea candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "candidate_id", "identity", "idea_type", "title", "problem",
+    "hypothesis", "mechanism", "target", "expected_effect", "topic_ids", "origin",
+    "evidence", "evidence_item_ids", "source_urls", "independence_groups", "unknowns",
+    "validation_plan", "disposition", "disposition_reason", "related_candidate_ids",
+    "related_idea_ids", "first_seen_issue", "last_updated_issue", "decision_log"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "candidate_id": {"type": "string", "pattern": "^candidate_[a-f0-9]{20}$"},
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["problem_key", "mechanism_key", "target_key"],
+      "properties": {
+        "problem_key": {"type": "string", "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"},
+        "mechanism_key": {"type": "string", "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"},
+        "target_key": {"type": "string", "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"}
+      }
+    },
+    "idea_type": {"enum": ["research_hypothesis", "solution_concept"]},
+    "title": {"type": "string", "minLength": 1},
+    "problem": {"type": "string", "minLength": 1},
+    "hypothesis": {"type": "string", "minLength": 1},
+    "mechanism": {"type": "string", "minLength": 1},
+    "target": {"type": "string", "minLength": 1},
+    "expected_effect": {"type": "string", "minLength": 1},
+    "topic_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "origin": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "trigger_issue", "rationale"],
+      "properties": {
+        "kind": {"enum": ["single_evidence", "cross_source_synthesis", "cross_issue_synthesis", "roadmap_gap", "legacy_seed"]},
+        "trigger_issue": {"type": "string", "format": "date"},
+        "rationale": {"type": "string", "minLength": 1}
+      }
+    },
+    "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/evidence"}},
+    "evidence_item_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "source_urls": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "format": "uri"}},
+    "independence_groups": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "unknowns": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "validation_plan": {"$ref": "#/$defs/validation_plan"},
+    "disposition": {"enum": ["proposed", "accepted", "duplicate", "deferred", "dismissed"]},
+    "disposition_reason": {"type": "string", "minLength": 1},
+    "related_candidate_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^candidate_[a-f0-9]{20}$"}},
+    "related_idea_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^idea_[a-f0-9]{20}$"}},
+    "first_seen_issue": {"type": "string", "format": "date"},
+    "last_updated_issue": {"type": "string", "format": "date"},
+    "decision_log": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/decision"}}
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["item_id", "issue_date", "source_urls", "reason", "independence_group"],
+      "properties": {
+        "item_id": {"type": "string", "minLength": 1},
+        "issue_date": {"type": "string", "format": "date"},
+        "source_urls": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "format": "uri"}},
+        "reason": {"type": "string", "minLength": 1},
+        "independence_group": {"type": "string", "minLength": 1}
+      }
+    },
+    "validation_plan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "minimal_model", "inputs", "baselines", "metrics", "support_criteria", "reject_criteria", "limitations", "execution_status"],
+      "properties": {
+        "mode": {"enum": ["simulation", "data_analysis", "benchmark", "prototype", "continued_observation"]},
+        "minimal_model": {"type": "string", "minLength": 1},
+        "inputs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "baselines": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "metrics": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "support_criteria": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "reject_criteria": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "execution_status": {"const": "suggestion_only"}
+      }
+    },
+    "decision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["event_id", "issue_date", "decision", "from_disposition", "to_disposition", "reason", "evidence_item_ids", "actor"],
+      "properties": {
+        "event_id": {"type": "string", "minLength": 1},
+        "issue_date": {"type": "string", "format": "date"},
+        "decision": {"enum": ["proposed", "evidence_added", "accepted", "duplicate", "deferred", "dismissed", "reopened"]},
+        "from_disposition": {"type": ["string", "null"]},
+        "to_disposition": {"enum": ["proposed", "accepted", "duplicate", "deferred", "dismissed"]},
+        "reason": {"type": "string", "minLength": 1},
+        "evidence_item_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "actor": {"enum": ["agent", "human", "migration"]}
+      }
+    }
+  }
+}

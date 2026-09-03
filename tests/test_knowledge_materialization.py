@@ -488,7 +488,8 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     index = read_json(REPO_ROOT / "knowledge" / "index.json")
     assert index["schema_version"] == 1
     assert len(index["roadmaps"]) == 9
-    assert len(index["ideas"]) == 6
+    assert len(index["ideas"]) == 11
+    assert len(index["idea_candidates"]) == 6
     # The store has been re-materialized issue by issue through the bounded
     # task queue (2026-08-23/26/29 backfill, plus the 2026-09-03 issue that
     # added the optical_network roadmap), so two more category clusters joined
@@ -497,7 +498,7 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     assert all(cluster["status"] == "temporary" for cluster in index["frontier_clusters"])
     assert all(cluster["promotion_target"] is None for cluster in index["frontier_clusters"])
     assert "frontier_exploration" not in {entry["topic_id"] for entry in index["roadmaps"]}
-    for entry in [*index["roadmaps"], *index["ideas"]]:
+    for entry in [*index["roadmaps"], *index["ideas"], *index["idea_candidates"]]:
         assert entry["path"].startswith("knowledge/")
         assert (REPO_ROOT / entry["path"]).is_file()
     for entry in index["roadmaps"]:
@@ -508,6 +509,18 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     for entry in index["ideas"]:
         idea = read_json(REPO_ROOT / entry["path"])
         assert idea["validation_plan"]["execution_status"] == "suggestion_only"
+    for entry in index["idea_candidates"]:
+        candidate = read_json(REPO_ROOT / entry["path"])
+        assert candidate["validation_plan"]["execution_status"] == "suggestion_only"
+    graph = read_json(REPO_ROOT / "knowledge" / "graph.json")
+    assert all(not str(node["data"]["id"]).startswith("candidate_") for node in graph["nodes"])
+    manifest = read_json(REPO_ROOT / "knowledge" / "manifest.json")
+    assert manifest["candidate_analysis_state"] == "complete"
+    assert manifest["candidate_counts"] == {"proposed": 0, "accepted": 5, "duplicate": 0, "deferred": 1, "dismissed": 0}
+    backfill = read_json(REPO_ROOT / "knowledge" / "candidate-backfill.json")
+    audited = [row for issue in backfill["issues"] for row in issue["items"]]
+    assert len(audited) == 264
+    assert sum(row["reason_code"] != "ineligible_radar" for row in audited) == 177
 
 
 def test_rejection_and_reopen_require_append_only_audit_records():
@@ -517,7 +530,7 @@ def test_rejection_and_reopen_require_append_only_audit_records():
     idea_path = next(
         REPO_ROOT / entry["path"]
         for entry in index["ideas"]
-        if entry["idea_type"] == "research_hypothesis" and "cross_region" in entry["topic_ids"]
+        if entry["idea_id"] == "idea_d994d97852383184acfe"
     )
     previous = read_json(idea_path)
 

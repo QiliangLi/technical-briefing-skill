@@ -35,6 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .issue_stage import install_issue_stage
     from .issue_style_polish import install_issue_style_polish
     from .knowledge_materialization import install_knowledge_materialization
+    from .idea_discovery import install_idea_discovery
     from .knowledge_graph import install_knowledge_graph
     from .knowledge_publication import install_knowledge_publication
     from .no_human_review import install_no_human_review_gate
@@ -148,6 +149,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Published machine records feed a separate, bounded Roadmap/Idea materializer.
     # It never reads candidates, full text, or reader projections.
     install_knowledge_materialization()
+    # Candidate discovery is an independent, auditable layer between published
+    # evidence and formal Ideas. It owns bounded extraction/synthesis tasks and
+    # exclusive promotion tasks; the legacy materializer remains compatible.
+    install_idea_discovery()
     # The knowledge graph is a derived, regenerable publication built from the
     # archive and materialized knowledge; its builder never becomes an
     # authoritative knowledge source.

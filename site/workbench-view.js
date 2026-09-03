@@ -13,12 +13,19 @@ const IDEA_TYPE_LABELS = {
   research_hypothesis: "Research Hypothesis",
   solution_concept: "Solution Concept",
 };
+const CANDIDATE_DISPOSITION_LABELS = {
+  proposed: "待审",
+  accepted: "已接受",
+  duplicate: "已合并",
+  deferred: "待厘清",
+  dismissed: "已放弃",
+};
 
 function statusTone(value = "") {
   const normalized = norm(value);
-  if (/reject|fail|conflict|失效|冲突|反对/.test(normalized)) return "negative";
-  if (/ready|promising|established|complete|support|materialchange|支持|进入|完成/.test(normalized)) return "positive";
-  if (/seed|observe|emerging|unknown|limit|lag|warning|不足|限制|待|落后/.test(normalized)) return "warning";
+  if (/reject|dismiss|fail|conflict|失效|冲突|反对|放弃/.test(normalized)) return "negative";
+  if (/ready|promising|established|complete|support|accept|materialchange|支持|接受|进入|完成/.test(normalized)) return "positive";
+  if (/seed|observe|emerging|proposed|defer|unknown|limit|lag|warning|不足|限制|待|落后/.test(normalized)) return "warning";
   return "neutral";
 }
 
@@ -450,12 +457,34 @@ function topicLabel(topicId) {
   return state.knowledge?.roadmaps?.find((row) => row.topic_id === topicId)?.topic_name || topicId;
 }
 
-/* Honest Idea Hub: until real IdeaCandidate / TransitionEvent / ExperimentRun
- * objects exist, this page shows only the actual Idea Portfolio grouped by
- * status. Candidate and Validation stages that have no data source are marked
- * "未启用"; the page never renders a fake three-stage funnel with empty rails. */
+function candidateCard(row, index) {
+  const object = state.candidateObjects.get(row.candidate_id) || {};
+  return dossierCard(
+    { title: row.title, summary: object.hypothesis || object.problem || "" },
+    {
+      index,
+      className: "candidate-card compact-dossier",
+      badges: [
+        "Candidate · 尚未成为正式 Idea",
+        { label: CANDIDATE_DISPOSITION_LABELS[row.disposition] || row.disposition, tone: statusTone(row.disposition) },
+      ],
+      fields: [
+        { label: "问题", value: object.problem },
+        { label: "机制", value: object.mechanism },
+        { label: "目标对象", value: object.target },
+        { label: "处置依据", value: object.disposition_reason },
+        { label: "证据", value: `${(object.evidence_item_ids || []).length} 条 · ${(object.independence_groups || []).length} 个独立来源组` },
+      ],
+      footer: `<span>触发期次 ${esc(row.trigger_issue || "未记录")} · ${esc((row.topic_ids || []).map(topicLabel).join("、"))}</span>`,
+    },
+  );
+}
+
+/* Honest Idea Hub: IdeaCandidate is a real, separately counted audit object.
+ * ExperimentRun / Result still does not exist and remains explicitly disabled. */
 function renderIdeaHub() {
   const all = state.knowledge?.ideas || [];
+  const candidates = state.knowledge?.idea_candidates || [];
   const groups = [
     { id: "observing", title: "观察中", statuses: ["seed", "observing"] },
     { id: "ready", title: "待验证", statuses: ["ready_for_validation"] },
@@ -466,19 +495,37 @@ function renderIdeaHub() {
     .map((group) => ({ ...group, rows: all.filter((row) => group.statuses.includes(row.status)) }))
     .filter((group) => group.rows.length);
   const latestChanges = all.filter((row) => row.last_updated_issue === state.latest?.date).length;
+  const inbox = candidates.filter((row) => ["proposed", "deferred"].includes(row.disposition));
+  const audit = candidates.filter((row) => ["accepted", "duplicate", "dismissed"].includes(row.disposition));
+  const latestCandidates = candidates.filter((row) => row.trigger_issue === state.latest?.date).length;
+  const latestDecisions = { accepted: 0, duplicate: 0, dismissed: 0 };
+  const candidateStateLabel = {
+    complete: "候选分析已追平",
+    analysis_pending: "候选分析进行中",
+    archive_only: "候选分析待开始",
+    analysis_failed: "候选分析失败",
+  }[state.manifest?.candidate_analysis_state] || "候选水位未知";
+  candidates.forEach((row) => {
+    const object = state.candidateObjects.get(row.candidate_id) || {};
+    const event = [...(object.decision_log || [])].reverse().find((entry) => entry.issue_date === state.latest?.date);
+    if (event && Object.hasOwn(latestDecisions, event.to_disposition)) latestDecisions[event.to_disposition] += 1;
+  });
   const metrics = [
     { label: "正式 Idea Portfolio", value: all.length, note: "已入库并持续维护", icon: "claim", tone: "positive" },
-    { label: "本期状态变化", value: latestChanges, note: "较上一期的已记录变化", icon: "trend", tone: latestChanges ? "warning" : "" },
-    { label: "Candidate Inbox", value: "未启用", note: "候选对象尚未建立数据模型", icon: "idea", tone: "" },
+    { label: "本期状态变化", value: latestChanges, note: "正式 Idea 的已记录变化", icon: "trend", tone: latestChanges ? "warning" : "" },
+    { label: "待审 Candidate", value: inbox.length, note: `${candidateStateLabel} · 本期新增 ${latestCandidates}`, icon: "idea", tone: inbox.length ? "warning" : "positive" },
+    { label: "本期候选处置", value: `${latestDecisions.accepted}/${latestDecisions.duplicate}/${latestDecisions.dismissed}`, note: "接受 / 合并 / 放弃", icon: "status", tone: "" },
     { label: "Validation", value: "未启用", note: "实验 Run / Result 对象尚未建立", icon: "status", tone: "" },
   ];
   const lifecycle = editorialNote(
-    "目标流程（只读说明）",
-    "Candidate 提案 → 接受且通过身份去重 → 正式 Idea → 证据与验证计划达标 → 待验证 → 批准并创建 Run → 验证 → 结果回流。其中 Candidate Inbox 与实验验证两阶段的数据对象尚未建立，本页不展示它们的计数、进度或入口；验证建议（validation_plan）始终只是建议，尚未执行。",
+    "对象边界（只读说明）",
+    "Candidate 提案经过身份、来源独立性和 lineage 审阅后，才可接受为正式 Idea。Candidate 与 Portfolio 分开计数；实验 Run / Result 尚未建立，validation_plan 始终只是建议。",
     "",
   );
+  const inboxMarkup = `<div class="dossier-grid candidate-inbox-grid">${inbox.map((row, index) => candidateCard(row, index + 1)).join("") || emptyState("没有待审 Candidate", "所有已发现候选都已获得明确处置。", "idea")}</div>`;
+  const auditMarkup = `<details class="candidate-audit"><summary>查看候选审计记录（${audit.length}）</summary><div class="dossier-grid candidate-audit-grid">${audit.map((row, index) => candidateCard(row, index + 1)).join("") || emptyState("暂无历史处置", "接受、合并或放弃的 Candidate 会保留在这里。", "archive")}</div></details>`;
   const columns = groups.map((group) => `<section class="editorial-section" aria-label="${esc(group.title)}"><div class="hub-column-head"><div><h2>${esc(group.title)}</h2><p>${esc(group.rows.length)} 个 Idea</p></div><span class="hub-count">${group.rows.length}</span></div><div class="hub-stack">${group.rows.map((row, index) => ideaCard(row, "portfolio", index + 1)).join("")}</div></section>`).join("");
-  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "Idea Hub", description: "查看正式 Idea Portfolio 的真实分组、当前阻塞与下一道门槛。" })}${metricStrip(metrics)}${lifecycle}<div class="idea-portfolio-grid">${columns || emptyState("还没有正式 Idea", "长期知识物化后，正式 Idea 会在这里出现。", "idea")}</div>${editorialNote("状态边界", "Candidate 与正式 Idea 使用独立集合；证据不足、来源不独立或与已有 Idea 相似时会明确说明。三个并排“漏斗栏”已移除，因为在 Candidate 与实验对象上线前，它们只是集合而不是流程。")}</div>`;
+  $("#appMain").innerHTML = `<div class="page-stack">${pageHeader({ title: "Idea Hub", description: "查看候选审计与正式 Idea Portfolio 的真实状态。" })}${metricStrip(metrics)}${lifecycle}${section("Candidate Inbox", `${inboxMarkup}${auditMarkup}`, { note: "默认展示待审与待厘清对象；已处置记录可展开审计" })}<div class="idea-portfolio-grid">${columns || emptyState("还没有正式 Idea", "候选通过人工确认和身份去重后，正式 Idea 会在这里出现。", "idea")}</div>${editorialNote("状态边界", "Candidate 与正式 Idea 使用独立集合；候选卡明确标记尚未成为正式 Idea。Validation 仍未启用，不展示伪造的 Run、Result 或实验进度。")}</div>`;
 }
 
 function renderIdeaDetail(row, idea) {

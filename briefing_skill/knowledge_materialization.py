@@ -884,6 +884,22 @@ def rebuild_knowledge_index(root: Path) -> dict[str, Any]:
                 "last_updated_issue": value["last_updated_issue"],
             }
         )
+    idea_candidates = []
+    for path in sorted((knowledge_root / "idea-candidates").glob("candidate_*.json")):
+        value = read_json(path)
+        idea_candidates.append(
+            {
+                "candidate_id": value["candidate_id"],
+                "title": value["title"],
+                "idea_type": value["idea_type"],
+                "disposition": value["disposition"],
+                "topic_ids": value["topic_ids"],
+                "origin_kind": value["origin"]["kind"],
+                "trigger_issue": value["origin"]["trigger_issue"],
+                "path": str(path.relative_to(root)),
+                "last_updated_issue": value["last_updated_issue"],
+            }
+        )
     frontier_path = knowledge_root / "frontier-clusters.json"
     frontier_value = read_json(frontier_path, {}) if frontier_path.is_file() else {
         "schema_version": SCHEMA_VERSION,
@@ -896,6 +912,7 @@ def rebuild_knowledge_index(root: Path) -> dict[str, Any]:
         "evidence_scope": EVIDENCE_SCOPE,
         "roadmaps": roadmaps,
         "ideas": ideas,
+        "idea_candidates": idea_candidates,
         "frontier_clusters": frontier_clusters,
     }
     errors = _validate_schema(root, "knowledge-index.schema.json", index)
@@ -1119,6 +1136,11 @@ def validate_knowledge_store(root: Path) -> list[str]:
                 evidence=evidence,
             )
         )
+    # Imported locally to avoid a module cycle: Candidate validation depends on
+    # the published-evidence and Idea validators in this module.
+    from .idea_discovery import validate_candidate_store
+
+    errors.extend(validate_candidate_store(root))
     return errors
 
 

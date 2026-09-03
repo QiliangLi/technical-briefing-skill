@@ -318,6 +318,36 @@ relevance复用的目标是避免60天滚动池中同一个不可变版本反复
 - Radar只链接并展示原始网页来源；发布前对邮件、归档公开JSON和Pages数据做上游痕迹负向扫描（品牌、域名、provider字段），任何AI HOT可见痕迹都会使发布失败；
 - Radar在知识层固定为`evidence_kind=discovery_signal`、`claim_strength=unverified`，只能聚类与计数，不得直接支持或否决Roadmap阶段与Idea。
 
+## Idea Candidate 发现与升格
+
+日报归档后，长期知识流程对本期每条正式 Machine Item 运行独立的 Direct
+Candidate 任务，并对本期涉及的每个 Topic 运行一次有界 Synthesis 任务。任务只读
+已发布证据、前一 Candidate/Idea snapshot 和对应 Roadmap，不读全文、Reader、
+候选池或其他任务输入。每条 Direct trigger 必须得到 Candidate 或带原因的 no-op。
+
+```bash
+python3 briefing.py knowledge candidates prepare --issue <issue>
+python3 briefing.py knowledge candidates next --issue <issue>
+python3 briefing.py knowledge candidates apply --task <task_id>
+python3 briefing.py knowledge candidates status --issue <issue>
+```
+
+Candidate 只是一份可审计提案，不能进入正式 Idea Portfolio、确认关系图或本期
+Idea 状态变化。`proposed` 必须通过人工确认，并由独占 promotion task 绑定旧 Idea
+digest 后才能写入正式 Idea。`duplicate` 必须指向已有 Candidate 或 Idea；
+`deferred` 与 `dismissed` 必须保留原因和追加式 decision log。同一论文的不同版本
+或跨期复报共享 canonical independence group，不得伪装成独立来源。Radar 必须先
+经原始来源事实流程进入稳定 Topic，不能直接支持 Candidate 升格。
+
+```bash
+python3 briefing.py knowledge candidates promote --candidate <candidate_id>
+python3 briefing.py knowledge candidates apply-promotion --task <task_id>
+```
+
+`validation_plan.execution_status` 始终为 `suggestion_only`。Candidate 发现或升格
+失败时只修复同一任务输出并重试，不跳期，也不手工改写 application、index 或
+manifest。
+
 ## 视觉规则
 
 生产流程不再运行逐条`visual_routing`。每一期只创建一个`illustrated_publication`任务，在已经事实检查并完成综合判断的最终简报上做整期视觉策划，然后固定生成两份邮件：

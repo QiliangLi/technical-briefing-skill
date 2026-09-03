@@ -98,6 +98,63 @@ def _application_records(root: Path) -> list[dict[str, Any]]:
     return applications
 
 
+def _candidate_analysis(root: Path, dates: list[str]) -> dict[str, Any]:
+    """Derive Candidate freshness independently from Roadmap/Idea freshness."""
+
+    counts = {key: 0 for key in ("proposed", "accepted", "duplicate", "deferred", "dismissed")}
+    for path in (root / "knowledge" / "idea-candidates").glob("candidate_*.json"):
+        disposition = str(read_json(path, {}).get("disposition") or "")
+        if disposition in counts:
+            counts[disposition] += 1
+
+    report = read_json(root / "knowledge" / "candidate-backfill.json", {})
+    watermark = str(report.get("through_issue") or "") or None
+    if watermark not in dates:
+        watermark = None
+    remaining = [date for date in dates if watermark is None or date > watermark]
+
+    application_ids = {
+        str(read_json(path, {}).get("task_id") or "")
+        for path in (root / "knowledge" / "candidate-applications").glob("*.json")
+    }
+    for issue_date in list(remaining):
+        current = [
+            row
+            for row in PublishedArchive.evidence(PublishedArchive(root).load_issue(issue_date))
+            if row.get("topic_id") != FRONTIER_TOPIC_ID
+        ]
+        task_paths = sorted((root / "workspace" / "knowledge" / "candidate-tasks" / issue_date).glob("*.input.json"))
+        if not task_paths and current:
+            break
+        bindings = [read_json(path, {}).get("_task") or {} for path in task_paths]
+        expected_direct = {str(row["item_id"]) for row in current}
+        expected_synthesis = {str(row["topic_id"]) for row in current if row.get("topic_id")}
+        actual_direct = {
+            str(row.get("entity_id") or "") for row in bindings if row.get("type") == "idea_candidate_direct"
+        }
+        actual_synthesis = {
+            str(row.get("entity_id") or "") for row in bindings if row.get("type") == "idea_candidate_synthesis"
+        }
+        task_ids = {str(row.get("id") or "") for row in bindings}
+        complete = (
+            actual_direct == expected_direct
+            and actual_synthesis == expected_synthesis
+            and (not expected_direct or bool(task_ids))
+            and task_ids.issubset(application_ids)
+        )
+        if not complete:
+            break
+        watermark = issue_date
+
+    pending = [date for date in dates if watermark is None or date > watermark]
+    first_prepared = bool(
+        pending
+        and list((root / "workspace" / "knowledge" / "candidate-tasks" / pending[0]).glob("*.input.json"))
+    )
+    state = "complete" if not pending else "analysis_pending" if first_prepared else "archive_only"
+    return {"state": state, "watermark": watermark, "pending": pending, "counts": counts}
+
+
 def _graph_snapshot(root: Path) -> str | None:
     """``knowledge-<digest16>`` snapshot id derived from the built graph."""
 
@@ -132,7 +189,13 @@ def _snapshot_id_for_digest(digest: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build_manifest(root: Path, *, state: str | None = None, note: str = "") -> dict[str, Any]:
+def build_manifest(
+    root: Path,
+    *,
+    state: str | None = None,
+    candidate_state: str | None = None,
+    note: str = "",
+) -> dict[str, Any]:
     dates = _archive_dates(root)
     archive_head = dates[-1] if dates else ""
     materialized = _store_issue_watermark(root)
@@ -140,6 +203,13 @@ def build_manifest(root: Path, *, state: str | None = None, note: str = "") -> d
     prepared = _prepared_issue_dates(root)
     prepared_pending = sorted(set(pending) & prepared)
     applications = _application_records(root)
+    candidate = _candidate_analysis(root, dates)
+    if candidate_state is not None:
+        if candidate_state != "analysis_failed":
+            raise ValueError("candidate_state override only supports analysis_failed")
+        if not candidate["pending"]:
+            raise ValueError("candidate analysis_failed requires pending Candidate issues")
+        candidate["state"] = candidate_state
 
     if state is None:
         if not pending:
@@ -178,14 +248,24 @@ def build_manifest(root: Path, *, state: str | None = None, note: str = "") -> d
         "pending_issues": pending,
         "affected_topics": affected,
         "completed_topics": completed,
+        "candidate_analysis_state": candidate["state"],
+        "candidate_through_issue": candidate["watermark"],
+        "candidate_pending_issues": candidate["pending"],
+        "candidate_counts": candidate["counts"],
         "snapshot_id": _graph_snapshot(root),
         "publication_note": str(note or ""),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
-def write_manifest(root: Path, *, state: str | None = None, note: str = "") -> dict[str, Any]:
-    manifest = build_manifest(root, state=state, note=note)
+def write_manifest(
+    root: Path,
+    *,
+    state: str | None = None,
+    candidate_state: str | None = None,
+    note: str = "",
+) -> dict[str, Any]:
+    manifest = build_manifest(root, state=state, candidate_state=candidate_state, note=note)
     errors = _validate_schema(root, "knowledge-manifest.schema.json", manifest)
     if errors:
         raise ValueError("invalid knowledge manifest: " + "; ".join(errors[:8]))
@@ -208,6 +288,19 @@ def manifest_semantic_errors(root: Path, manifest: dict[str, Any]) -> list[str]:
     target = expected_pending[0] if expected_pending else None
     if manifest.get("analysis_target_issue") != target:
         errors.append(f"analysis_target_issue must be {target or '<none>'}")
+    candidate = _candidate_analysis(root, dates)
+    manifest_candidate_state = manifest.get("candidate_analysis_state")
+    if manifest_candidate_state == "analysis_failed":
+        if not candidate["pending"]:
+            errors.append("candidate analysis_failed requires pending Candidate issues")
+    elif manifest_candidate_state != candidate["state"]:
+        errors.append(f"candidate_analysis_state must be {candidate['state']}")
+    if manifest.get("candidate_through_issue") != candidate["watermark"]:
+        errors.append(f"candidate_through_issue must be {candidate['watermark'] or '<none>'}")
+    if manifest.get("candidate_pending_issues") != candidate["pending"]:
+        errors.append(f"candidate_pending_issues must be {candidate['pending']}")
+    if manifest.get("candidate_counts") != candidate["counts"]:
+        errors.append("candidate_counts do not match persisted Candidate dispositions")
 
     state = manifest.get("publication_state")
     if state not in PUBLICATION_STATES:
@@ -546,7 +639,12 @@ def install_knowledge_publication() -> None:
         root = Path(args.root).resolve() if getattr(args, "root", None) else cli.discover_root()
         if args.publication == "manifest":
             if args.action == "build":
-                manifest = write_manifest(root, state=args.state, note=args.note)
+                manifest = write_manifest(
+                    root,
+                    state=args.state,
+                    candidate_state=args.candidate_state,
+                    note=args.note,
+                )
                 print(json.dumps(manifest, ensure_ascii=False, indent=2))
                 return 0
             errors = validate_manifest(root)
@@ -572,6 +670,7 @@ def install_knowledge_publication() -> None:
         actions = p.add_subparsers(dest="action", required=True)
         build = actions.add_parser("build")
         build.add_argument("--state", choices=list(PUBLICATION_STATES))
+        build.add_argument("--candidate-state", choices=["analysis_failed"])
         build.add_argument("--note", default="")
         build.set_defaults(func=cmd_publication, publication="manifest")
         validate = actions.add_parser("validate")

@@ -12,6 +12,7 @@ const state = {
   manifest: null,
   issueDiff: null,
   ideaObjects: new Map(),
+  candidateObjects: new Map(),
   roadmapObjects: new Map(),
   featurePlan: null,
   feedback: null,
@@ -193,15 +194,19 @@ async function loadData() {
   }
   try {
     state.knowledge = BriefingData.validateKnowledgeIndex(knowledgeResult.index);
-    const [ideaPairs, roadmapPairs] = await Promise.all([
+    const [ideaPairs, candidatePairs, roadmapPairs] = await Promise.all([
       Promise.all(
         state.knowledge.ideas.map(async (row) => [row.idea_id, await loadKnowledgeObject(row.path)]),
+      ),
+      Promise.all(
+        (state.knowledge.idea_candidates || []).map(async (row) => [row.candidate_id, await loadKnowledgeObject(row.path)]),
       ),
       Promise.all(
         state.knowledge.roadmaps.map(async (row) => [row.topic_id, await loadKnowledgeObject(row.path)]),
       ),
     ]);
     state.ideaObjects = new Map(ideaPairs);
+    state.candidateObjects = new Map(candidatePairs);
     state.roadmapObjects = new Map(roadmapPairs);
   } catch (error) {
     state.knowledge = null;
@@ -307,6 +312,9 @@ function buildSearchIndex() {
   );
   (state.knowledge?.ideas || []).forEach((row) =>
     rows.push({ kind: "Idea", title: row.title, note: row.status, href: `#ideas?idea=${encodeURIComponent(row.idea_id)}` }),
+  );
+  (state.knowledge?.idea_candidates || []).forEach((row) =>
+    rows.push({ kind: "Candidate", title: row.title, note: `尚未成为正式 Idea · ${row.disposition}`, href: "#ideas" }),
   );
   state.items.forEach((row) =>
     rows.push({ kind: "日报条目", title: row.title, note: `${row.issue_date} · ${row.topic_name || "未分类"}`, href: row.url || issueHref(row.issue_date) }),

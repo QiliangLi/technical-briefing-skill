@@ -14,15 +14,51 @@ knowledge/
 ├── issue-diffs/<issue_date>.json     # 派生发布投影：单期 Issue Change Projection
 ├── roadmaps/<topic_id>.json
 ├── ideas/<idea_id>.json
+├── idea-candidates/<candidate_id>.json # 候选提案与追加式处置审计
+├── candidate-backfill.json           # 首轮历史逐期审阅水位与逐条 Candidate/no-op 台账
 ├── frontier-clusters.json
 ├── history/roadmaps/<topic_id>/vN.json
-└── applications/<task_id>.json       # apply 后生成，可用于幂等审计
+├── applications/<task_id>.json       # Roadmap/Idea 物化 apply 审计
+└── candidate-applications/<task_id>.json # Candidate 发现与升格 apply 审计
 ```
 
 `index.json` 中的 `path` 均从站点根目录开始，例如
 `knowledge/roadmaps/agent_acceleration.json`。`manifest.json` 与
 `issue-diffs/` 是可重新生成的发布投影，不是新的权威知识来源；
 删除后可用下文命令重建。
+
+## Candidate 发现与正式 Idea 升格
+
+Candidate 发现与 Topic 物化相互独立。每期为每条非 Radar 正式证据准备一个
+`idea_candidate_direct` 任务，为每个受影响 Topic 准备一个
+`idea_candidate_synthesis` 任务：
+
+```bash
+python3 briefing.py knowledge candidates prepare --issue 2026-09-03
+python3 briefing.py knowledge candidates next --issue 2026-09-03
+python3 briefing.py knowledge candidates apply --task <task_id>
+python3 briefing.py knowledge candidates status --issue 2026-09-03
+```
+
+Direct apply 要求每个 trigger 得到 Candidate 或带枚举原因的 no-op。Candidate
+引用的 item、期次、URL 和 canonical independence group 必须回到任务中的已发布
+Machine 证据；同一 arXiv 基础 ID 的跨版本复报仍是一组。Candidate 使用问题、
+机制与目标三元组生成稳定 ID，保留 `proposed / accepted / duplicate / deferred /
+dismissed` disposition 和追加式 decision log。`duplicate` 必须指向有效对象；Radar
+不可直接支持 Candidate。
+
+只有 `proposed` Candidate 可以准备独占升格任务。任务绑定 Candidate digest 与
+同身份旧 Idea digest；任一对象在 prepare 后改变都会拒绝 apply：
+
+```bash
+python3 briefing.py knowledge candidates promote --candidate <candidate_id>
+python3 briefing.py knowledge candidates apply-promotion --task <task_id>
+```
+
+升格成功会在一个可恢复事务内写入 Idea、把 Candidate 标记为 `accepted`、保存
+application 并重建 index。进程在提交标记前中断时，下次 Candidate 操作按 journal
+恢复旧快照；Schema 或语义校验失败时不会开始写入。Candidate 从不进入正式 Idea
+数组或知识图谱确认关系。
 
 ## 新日报后的增量更新
 
@@ -60,6 +96,10 @@ python3 briefing.py knowledge validate
 `archive_head_issue`、分析目标 `analysis_target_issue`、物化水位
 `materialized_through_issue`、`publication_state`、`pending_issues`、
 `affected_topics`/`completed_topics` 和与 graph 同源的 `snapshot_id`。
+清单同时包含 `candidate_analysis_state`、`candidate_through_issue`、
+`candidate_pending_issues` 和各 disposition 的 `candidate_counts`。Candidate 水位
+要求每条正式证据得到 Candidate/no-op 且对应 Topic synthesis 已 apply；它与正式
+知识水位独立，不能用其中一个替代另一个。
 `publication_state` 区分：
 
 - `archive_only`：归档已发布，尚未为待分析期次准备知识任务；

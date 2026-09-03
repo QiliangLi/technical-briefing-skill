@@ -52,6 +52,14 @@ These boundaries are part of correctness. Shared Agent sessions may reduce start
 
 Machine Items are the durable fact model used by Evidence Gate, Fact Check, Roadmap, Idea analysis, and later simulations. Reader Projection is created once per active run after the machine layer passes its checks. It can omit or reorder material for readability, but it cannot add facts or become a cross-run cache.
 
+After archive publication, Idea discovery is a separate bounded layer. A Direct task
+reviews each new formal Machine Item and must emit either an `IdeaCandidate` or a
+reasoned no-op; a Topic Synthesis task can combine current evidence with prior
+published evidence and a Roadmap gap. Candidate identity, source independence, and
+lineage are resolved before a human-approved, Idea-exclusive promotion task writes a
+formal Idea. Candidate objects remain audit records and never become confirmed graph
+nodes or Idea events merely because they exist.
+
 ## Publication boundary
 
 Rendering always produces `email.html` and `email-illustrated.html`. The illustrated version adds explanatory images without changing the text. Recipient-visible images must use stable absolute publication URLs before send and archive.
@@ -73,7 +81,11 @@ knowledge/index.json + roadmaps/*.json + ideas/*.json
 
 The builder reads only those authoritative inputs, derives edges only from explicit fields, and reports unresolvable references in an `unresolved` list instead of drawing them. `knowledge/graph.json` carries separate `archive_through_issue` and `knowledge_through_issue` watermarks because the archive and materialized knowledge can lag each other. The Pages workflow rebuilds and validates the graph before assembling the site, so a graph that does not match current inputs blocks publication rather than shipping stale.
 
-Freshness is stated, not implied. After the graph gates, the same workflow rebuilds and validates `knowledge/manifest.json` (`briefing_skill/knowledge_publication.py`) and validates the per-issue projections under `knowledge/issue-diffs/`. The manifest records the archive head, the materialization watermark, the analysis target, and a `publication_state` (`archive_only` → `analysis_pending` → `knowledge_complete`, plus operator-marked `analysis_failed`); the issue diffs bind homepage "current judgement" text to applied tasks, published evidence, and the graph snapshot id. A manifest claiming `knowledge_complete` while watermarks lag, the graph is stale, or the head issue's diff is missing fails publication; pending states publish with an explicit pending notice, and the homepage renders the projections as-is instead of repackaging old Roadmap summaries as this issue's change. See `docs/contracts/knowledge-materialization.md` and `docs/contracts/editorial-workbench-ui.md`.
+`knowledge/index.json` also publishes `idea_candidates`, but Graph Builder deliberately
+ignores that collection. The static Idea Hub loads Candidate objects for the inbox and
+audit history while keeping formal Idea counts and confirmed graph relations separate.
+
+Freshness is stated, not implied. After the graph gates, the same workflow rebuilds and validates `knowledge/manifest.json` (`briefing_skill/knowledge_publication.py`) and validates the per-issue projections under `knowledge/issue-diffs/`. The manifest records both the formal knowledge watermark and the independent Candidate discovery watermark/counts. Formal `publication_state` remains `archive_only` → `analysis_pending` → `knowledge_complete` (plus operator-marked `analysis_failed`); `candidate_analysis_state` independently reports whether every published item has a Candidate or reasoned no-op. The issue diffs bind homepage "current judgement" text to applied tasks, published evidence, and the graph snapshot id. A manifest claiming `knowledge_complete` while watermarks lag, the graph is stale, or the head issue's diff is missing fails publication; pending states publish with an explicit pending notice, and the homepage renders the projections as-is instead of repackaging old Roadmap summaries as this issue's change. See `docs/contracts/knowledge-materialization.md` and `docs/contracts/editorial-workbench-ui.md`.
 
 ## Where details live
 

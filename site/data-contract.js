@@ -743,6 +743,9 @@
     if (!value || value.schema_version !== 1 || !Array.isArray(value.roadmaps) || !Array.isArray(value.ideas)) {
       throw new Error('knowledge/index.json 不符合 schema_version=1 合同');
     }
+    if (value.idea_candidates != null && !Array.isArray(value.idea_candidates)) {
+      throw new Error('knowledge/index.json 的 idea_candidates 必须是数组');
+    }
     return value;
   }
 

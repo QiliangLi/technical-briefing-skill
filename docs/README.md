@@ -9,7 +9,6 @@ This directory separates current documentation from dated project records. Start
 ## Active designs
 
 - [Design document rules and template](designs/README.md)
-- [Idea continuous discovery and historical backfill](designs/2026-09-03-idea-discovery-and-backfill.md)
 - [Roadmap, Idea Bank, and Evidence model redesign](designs/2026-08-29-roadmap-idea-bank-evidence-model-redesign.md)
 - [Roadmap, Idea Bank, and Evidence Workbench blueprint](designs/2026-08-29-roadmap-idea-bank-evidence-workbench-blueprint.md)
 - [Technical intelligence workbench UI screen content brief](designs/2026-08-30-technical-intelligence-ui-screen-content-brief.md)
@@ -52,3 +51,4 @@ These files define durable interfaces and quality rules. Prompt and schema detai
 - [Implemented daily briefing knowledge graph design](history/designs/2026-09-01-daily-briefing-knowledge-graph-design.md)
 - [Implemented GitHub Pages presentation, freshness, and analysis hardening](history/designs/2026-09-02-github-pages-presentation-and-freshness-hardening.md)
 - [Implemented knowledge graph long-edge and lens differentiation diagnosis](history/designs/2026-09-02-knowledge-graph-lens-and-edge-diagnosis.md)
+- [Implemented Idea continuous discovery and historical backfill](history/designs/2026-09-03-idea-discovery-and-backfill.md)

@@ -18,6 +18,8 @@ cat knowledge/manifest.json
 | `publication_state: archive_only` 且有 `pending_issues` | 归档已发布但任务未准备 | 对最旧待分析期次执行 `knowledge prepare` |
 | `publication_state: analysis_pending` | 任务已准备/执行中 | 用 `knowledge status --issue <date>` 查看进度 |
 | `publication_state: analysis_failed` | 运维显式标记的失败 | 按"analysis_failed 恢复"处理 |
+| `candidate_analysis_state: archive_only` | 有期次尚未做 Candidate 发现 | 对最旧 `candidate_pending_issues` 执行 `knowledge candidates prepare` |
+| `candidate_analysis_state: analysis_pending` | Candidate Direct/Synthesis 任务未全部 apply | 用 `knowledge candidates status --issue <date>` 查看进度 |
 
 首页与图谱页面读取同一 manifest:状态未追平时首页展示“本期已归档,长期判断
 正在分析”等诚实提示,不会用旧 Roadmap 摘要冒充本期变化。
@@ -32,6 +34,10 @@ python3 briefing.py knowledge prepare --issue <oldest-pending>
 python3 briefing.py knowledge next --issue <issue>        # 逐任务执行
 python3 briefing.py knowledge apply --task <task_id>
 python3 briefing.py knowledge status --issue <issue>      # 全部 applied 后继续
+python3 briefing.py knowledge candidates prepare --issue <issue>
+python3 briefing.py knowledge candidates next --issue <issue> # 每个 Direct/Synthesis 任务
+python3 briefing.py knowledge candidates apply --task <task_id>
+python3 briefing.py knowledge candidates status --issue <issue>
 python3 briefing.py knowledge validate
 python3 briefing.py knowledge graph build && python3 briefing.py knowledge graph validate
 python3 briefing.py knowledge diff build --issue <issue>
@@ -44,6 +50,9 @@ python3 briefing.py knowledge manifest build && python3 briefing.py knowledge ma
   不要在后续期次 apply 后重建(判断字段以构建当时的 Roadmap 状态为准)。
 - 单个 Topic 失败不会发布半更新知识:apply 校验失败时不产生 application,
   修复输出后对同一任务重试即可。
+- Candidate 失败同样修复原任务重试；不要跳过最旧 Candidate pending 期次。
+  apply 使用 `knowledge/.candidate-transaction.json` 恢复未提交的多文件更新，
+  journal 不应手工删除。
 - 全部待分析期次完成后,manifest 才会变为 `knowledge_complete`;
   Pages 门禁允许中间状态上线,但首页只显示 pending 进度。
 
@@ -55,6 +64,10 @@ snapshot 继续可读,Archive 不受影响):
 ```bash
 python3 briefing.py knowledge manifest build --state analysis_failed \
   --note "2026-08-29 tpn 任务语义校验失败,等待修复"
+
+# 正式知识可继续完整发布，但 Candidate 发现失败时单独标记
+python3 briefing.py knowledge manifest build --candidate-state analysis_failed \
+  --note "Candidate 任务失败，保留上一份 Candidate/Idea 快照"
 ```
 
 恢复步骤:修复任务输出 → 对同一任务重新 `apply` → 按“积压回填”完成

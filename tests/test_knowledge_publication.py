@@ -160,6 +160,12 @@ def test_manifest_states_move_archive_only_to_knowledge_complete(tmp_path: Path)
     manifest = write_manifest(root)
     assert manifest["publication_state"] == "archive_only"
     assert manifest["pending_issues"] == ["2026-08-01"]
+    assert manifest["candidate_analysis_state"] == "archive_only"
+    assert manifest["candidate_pending_issues"] == ["2026-08-01"]
+    assert validate_manifest(root) == []
+
+    failed_candidates = write_manifest(root, candidate_state="analysis_failed", note="injected Candidate failure")
+    assert failed_candidates["candidate_analysis_state"] == "analysis_failed"
     assert validate_manifest(root) == []
 
     # Preparing tasks flips the state to analysis_pending.

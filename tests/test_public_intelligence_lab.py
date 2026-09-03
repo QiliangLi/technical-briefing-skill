@@ -213,14 +213,16 @@ def test_idea_collections_are_separate_and_feature_plan_remains_public():
     views = (SITE / "workbench-view.js").read_text(encoding="utf-8")
     feature_plan = json.loads((SITE / "feature-plan.json").read_text(encoding="utf-8"))
 
-    # Honest Portfolio mode: no fake three-column funnel while Candidate and
-    # Validation objects do not exist; counts show 未启用 instead of fake 0s.
+    # Candidate is now a real, separately counted collection. Validation still
+    # has no Run/Result data model and remains honestly disabled.
     assert 'value: "未启用"' in views
     assert "data-hub-tab" not in views
     assert "const candidates = []" not in views
-    assert "目标流程（只读说明）" in views
-    assert "尚未建立数据模型" in views
-    assert "Run 对象尚未建立" in views
+    assert "Candidate Inbox" in views
+    assert "Candidate · 尚未成为正式 Idea" in views
+    assert "待审 Candidate" in views
+    assert "本期候选处置" in views
+    assert "实验 Run / Result 对象尚未建立" in views
     assert "已有建议，尚未执行" in views
     assert "为什么在当前状态" in views
     assert "下一道门槛" in views
