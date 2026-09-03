@@ -128,8 +128,11 @@ def test_bootstrap_installs_discovery_after_coverage_policy() -> None:
     assert source.index("install_coverage_policy()") < source.index("install_discovery_stage()")
 
 
-def test_planner_topic_scopes_gap_lanes_against_cross_topic_generic_words(tmp_path) -> None:
-    """Regression for docs/designs/2026-09-03-topic-scoped-gap-coverage.md.
+def test_planner_topic_scopes_gap_lanes_against_cross_topic_generic_words(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Regression for docs/history/designs/2026-09-03-topic-scoped-gap-coverage.md.
 
     Cross-topic A-level records whose abstracts merely contain generic words
     (accelerator + storage / fine-grained + queue) must not mark the
@@ -140,13 +143,20 @@ def test_planner_topic_scopes_gap_lanes_against_cross_topic_generic_words(tmp_pa
     import json
     from types import SimpleNamespace
 
+    from briefing_skill import quality_guard
     from briefing_skill.config import ConfigBundle
-    from briefing_skill.coverage_policy import install_coverage_policy
+    from briefing_skill.coverage_policy import primary_direction_is_diversely_covered
     from briefing_skill.db import Database
     from briefing_skill.discovery_stage import plan_coverage_gap_searches
     from briefing_skill.paths import Paths
 
-    install_coverage_policy()
+    # Exercise the production coverage-policy replacement without installing all
+    # process-global policy wrappers into unrelated tests in the same pytest run.
+    monkeypatch.setattr(
+        quality_guard,
+        "primary_direction_is_covered",
+        primary_direction_is_diversely_covered,
+    )
     config = ConfigBundle.load(Paths(ROOT))
     db = Database(tmp_path / "briefing.sqlite")
     db.init()
@@ -207,12 +217,12 @@ def test_planner_topic_scopes_gap_lanes_against_cross_topic_generic_words(tmp_pa
         "accelerator_io_datapath:direct_storage_path",
     }
     real_gaps = {"storage_media:magnetic_recording", "optical_network:hybrid_network"}
-    for topic, direction in config.iter_directions():
+    for index, (topic, direction) in enumerate(config.iter_directions()):
         key = f"{topic['id']}:{direction['id']}"
         if key in io_gap_directions or key in real_gaps:
             continue
         insert(
-            f"cover-{len(key)}-{abs(hash(key)) % 10_000}",
+            f"cover-{index}",
             level="A",
             hint_topic=topic["id"],
             hint_dir=direction["id"],

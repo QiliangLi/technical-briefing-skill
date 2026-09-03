@@ -10,11 +10,16 @@
 - 运行时路径:`briefing_skill/coverage_policy.py` 的 `primary_direction_is_diversely_covered` 改为逐行调用共享谓词,仅对通过行计 `_project_key`,保留 TPN 两项目阈值;`coverage_policy` 单向导入 `quality_guard`,无循环依赖。bootstrap 替换(coverage_policy.py 的 install 覆盖 `quality_guard.primary_direction_is_covered`)保持不变,生产路径经替换后的函数生效。
 - 测试:`tests/test_topic_coverage_policy.py` 新增跨 Topic 泛词不可覆盖、同 Topic 精确 hint 与关键词兜底可覆盖、同 Topic B 级/discovery-only/未解析 URL 不可覆盖、TPN 两项目必须同属 TPN、bootstrap 替换路径 topic-scoped 五组断言;并把原 `cross_region` 兜底断言按新契约反转为不可覆盖。`tests/test_discovery_stage.py` 新增 planner 级回归:以本期等价 fixture(其他方向均有同 Topic A 级覆盖、两条真实缺口、跨 Topic 泛词 A 级记录、预算 4)断言前四条 lane 正为新 Topic 四方向。
 - 只读重放:对 `2026-09-03-003948` 的 SQLite 副本执行修复后的 planner,输出前四条 lane 为 `accelerator_io_datapath` 的 `accelerator_initiated_io`、`accelerator_storage_controller`、`accelerator_storage_stack`、`direct_storage_path`(priority 80),与设计预测一致。
-- 完整测试套件:559 通过、4 失败。4 个失败均与本修复无关且在未含本修复的干净工作树上复现:
-  - `test_demo` / `test_approval`:间歇性 `unable to open database file`(共享生产 workspace 的既有环境脆弱点,干净树先 2 次通过后又 3 次失败,与代码版本无关);
-  - `test_knowledge_graph`:既有断言失败(干净树同样失败);
-  - `test_publication_manifest_roundtrip`:共享状态相关的偶发失败(单测隔离重跑通过)。
-- 定向验证全部通过:`tests/test_topic_coverage_policy.py` + `tests/test_discovery_stage.py` 26 个断言通过。
+- 后续评审发现 planner 回归测试直接调用 `install_coverage_policy()`，把进程级
+  `EmailService`/`Pipeline` monkey patch 泄漏给后续用例，稳定触发
+  `test_publication_manifest_roundtrip` 失败。测试现改用 pytest `monkeypatch`
+  临时替换实际覆盖函数并自动恢复；fixture row ID 同时改为确定性序号，归档设计引用也已修正。
+- 隔离组合验证通过：planner 回归测试后紧接 publication-manifest round-trip，2 个用例全部通过。
+- 定向验证全部通过：coverage、discovery、efficiency、accelerator-I/O 与 historical-backfill
+  共 37 个测试通过；Skill validator 通过。
+- 完整测试套件：562 通过、1 失败。唯一失败为既有知识图谱发布水位不一致：已提交
+  `knowledge/graph.json` 的 `archive_through_issue` 为 `2026-08-29`，当前归档重建结果为
+  `2026-09-03`；本修复未修改知识图谱或归档数据。
 - `SKILL.md` 规则 5 已同步为"只由同 Topic 的可用 A 级来源证明 Direction 覆盖,其他 Topic 的条目即使包含方向词也不能兜底"。
 
 ## Problem and evidence
