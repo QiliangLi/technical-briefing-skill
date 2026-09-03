@@ -426,7 +426,7 @@ def test_renderer_adapter_style_tables_and_vendored_cytoscape():
 
 LENS_REPRO = {
     "topic": "agent_acceleration",
-    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (21, 24)},
+    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (22, 25)},
 }
 
 
