@@ -143,7 +143,7 @@ python briefing.py send --confirm-send
 2. 规则匹配只负责“找得到”，不能直接代表“值得深读”；Agent在规则过滤前不读取全文。
 3. A级深度候选按专题批量做价值判断；`max_relevance_batch`默认最多24条，同时受`relevance_batch_max_input_chars`默认48k字符预算约束。topic信息只在批次级出现一次，direction配置必须去重后由候选通过`direction_id`引用；超长摘要默认最多暴露5k字符的完整句摘录。输出仍必须逐候选返回且不得缺失、重复或出现未知ID。只有明确版本arXiv、GitHub Release/Tag、DOI等强版本来源才允许跨期复用relevance；缓存键必须同时匹配来源指纹、topic、direction、Prompt/Schema/项目判断卡形成的evaluator版本和新鲜度区间。普通可变网页不得零评审复用；跨越配置的2/7/30/60天新鲜度边界必须重新评审。不得仅因关键词、topic hint或direction hint自动进入全文分析。
 4. 只有已解析、非`discovery_only`的A级原始来源才能竞争深度Top4；B/C级和聚合线索进入Radar并继续用于发现原始来源。
-5. 开放Web搜索只补充A级覆盖缺口，默认每期最多4次。TPN同一方向只有一个项目时仍视为覆盖不足，避免单一项目阻止多样化搜索。
+5. 开放Web搜索只补充A级覆盖缺口，默认每期最多4次。一个方向是否已有覆盖，只由同 Topic 的可用 A 级来源（topic_hint 属于该 Topic、非 discovery_only、原始 URL 已解析）证明，其他 Topic 的条目即使包含方向词也不能兜底；TPN同一方向只有一个项目时仍视为覆盖不足，避免单一项目阻止多样化搜索。
 6. 深度事实抽取按专题本地选择，单专题最多4条、同专题同项目最多1条、同方向优先最多2条；整期安全上限由`config/settings.yaml`配置。其余相关A级候选进入专题补充，不做全文写作和事实检查。
 7. 原始全文可以在本地保留到`max_fulltext_chars`用于审计，但正常`fact_extraction`默认只读取`evidence_pack_max_chars`控制的Evidence Pack。Evidence Pack必须优先覆盖架构/方法/实验/结果/边界和专题相关段落，并保留章节或页码定位。
 8. Evidence Pack信息不足时，宁可少写结论并在`limitations`记录缺失验证，也不得自行读取未引用全文或猜测数字。只有当缺失baseline、工作负载/硬件条件、部署边界或明确limitation会实质改变结论解释时，才允许在`evidence_gaps`中提出最多3个具体缺口，并给出可在原文中直接检索的source-native术语。

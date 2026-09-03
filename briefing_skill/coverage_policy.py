@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
 
+from . import quality_guard
 from .fact_cache_provenance import production_source_run_condition
 from .freshness import published_age_days
-from .utils import canonicalize_url, now_iso, read_json, source_url_is_resolved, stable_hash
+from .utils import canonicalize_url, now_iso, read_json, stable_hash
 
 
 APPENDIX_PREFIX = "TOPIC_APPENDIX:"
@@ -155,26 +156,20 @@ def primary_direction_is_diversely_covered(
     topic_id: str,
     direction: dict[str, Any],
 ) -> bool:
-    """TPN needs more than one project before a direction is considered covered."""
+    """TPN needs more than one project before a direction is considered covered.
 
-    direction_id = str(direction.get("id") or "")
-    terms = [str(term).strip().lower() for term in direction.get("include_terms") or [] if str(term).strip()]
+    Coverage evidence is topic-scoped: only rows whose ``topic_hint`` names this
+    topic can contribute (see quality_guard.primary_row_matches_direction).
+    """
+
     required_projects = 2 if topic_id == "tpn" else 1
     projects: set[str] = set()
     for row in raw_rows:
-        if str(row.get("source_level") or "").upper() != "A" or bool(row.get("discovery_only")):
+        if not quality_guard.primary_row_matches_direction(row, topic_id, direction):
             continue
-        if not source_url_is_resolved(row.get("original_url") or row.get("aihot_url")):
-            continue
-        matched = row.get("topic_hint") == topic_id and row.get("direction_hint") == direction_id
-        if not matched:
-            text = f"{row.get('title') or ''} {row.get('summary') or ''}".lower()
-            matches = sum(term in text for term in terms)
-            matched = bool(terms and matches >= (1 if len(terms) <= 2 else 2))
-        if matched:
-            projects.add(_project_key(row))
-            if len(projects) >= required_projects:
-                return True
+        projects.add(_project_key(row))
+        if len(projects) >= required_projects:
+            return True
     return False
 
 

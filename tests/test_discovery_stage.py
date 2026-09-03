@@ -126,3 +126,108 @@ def test_bootstrap_installs_discovery_after_coverage_policy() -> None:
     source = (ROOT / "briefing_skill" / "bootstrap.py").read_text(encoding="utf-8")
     assert "install_discovery_stage()" in source
     assert source.index("install_coverage_policy()") < source.index("install_discovery_stage()")
+
+
+def test_planner_topic_scopes_gap_lanes_against_cross_topic_generic_words(tmp_path) -> None:
+    """Regression for docs/designs/2026-09-03-topic-scoped-gap-coverage.md.
+
+    Cross-topic A-level records whose abstracts merely contain generic words
+    (accelerator + storage / fine-grained + queue) must not mark the
+    accelerator_io_datapath directions as covered, and the planner must spend
+    its lanes on the real gaps first.
+    """
+
+    import json
+    from types import SimpleNamespace
+
+    from briefing_skill.config import ConfigBundle
+    from briefing_skill.coverage_policy import install_coverage_policy
+    from briefing_skill.db import Database
+    from briefing_skill.discovery_stage import plan_coverage_gap_searches
+    from briefing_skill.paths import Paths
+
+    install_coverage_policy()
+    config = ConfigBundle.load(Paths(ROOT))
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    db.create_run("run")
+
+    def insert(row_id: str, *, level: str, hint_topic: str | None, hint_dir: str | None, title: str, summary: str):
+        columns = [
+            "id", "run_id", "source_id", "discovery_source", "source_level", "discovery_only",
+            "title", "summary", "original_url", "canonical_url", "identity_key",
+            "topic_hint", "direction_hint", "priority", "content_hash", "payload_json", "created_at",
+        ]
+        values = [
+            row_id, "run", "src", "arxiv", level, 0,
+            title, summary, f"https://arxiv.org/abs/{row_id}", f"https://arxiv.org/abs/{row_id}",
+            f"id:{row_id}", hint_topic, hint_dir, 0, f"hash:{row_id}", "{}", "2026-09-01T00:00:00Z",
+        ]
+        placeholders = ", ".join("?" for _ in columns)
+        db.execute(
+            f"INSERT INTO raw_items({', '.join(columns)}) VALUES ({placeholders})",
+            values,
+        )
+
+    # The run-2026-09-03-003948 false positive: A-level TPN abstract carrying
+    # accelerator + storage (+ fine-grained + queue) generic vocabulary.
+    insert(
+        "ainfer-pd",
+        level="A",
+        hint_topic="tpn",
+        hint_dir="kv_network_scheduling",
+        title="AInfer-PD: Communication-Safe In-Place Prefill-Decode Multiplexing",
+        summary="Distributed MoE rollouts keep accelerator storage and fine-grained queue state safe while prefill and decode share one device.",
+    )
+    insert(
+        "gpu-storage-noise",
+        level="A",
+        hint_topic="ai_infra_horizontal",
+        hint_dir=None,
+        title="GPU cluster storage refresh",
+        summary="A gpu and storage refresh note from another topic.",
+    )
+    # The new topic itself only ever produced B-level discovery leads.
+    insert(
+        "io-lead-b",
+        level="B",
+        hint_topic="accelerator_io_datapath",
+        hint_dir="direct_storage_path",
+        title="GDS storage lead from an aggregator",
+        summary="Aggregated lead about gpu direct storage.",
+    )
+
+    # Mirror the real run: every other configured direction is covered by its own
+    # topic's A-level sources, except the two genuine gaps observed that day
+    # (storage_media:magnetic_recording, optical_network:hybrid_network).
+    io_gap_directions = {
+        "accelerator_io_datapath:accelerator_initiated_io",
+        "accelerator_io_datapath:accelerator_storage_controller",
+        "accelerator_io_datapath:accelerator_storage_stack",
+        "accelerator_io_datapath:direct_storage_path",
+    }
+    real_gaps = {"storage_media:magnetic_recording", "optical_network:hybrid_network"}
+    for topic, direction in config.iter_directions():
+        key = f"{topic['id']}:{direction['id']}"
+        if key in io_gap_directions or key in real_gaps:
+            continue
+        insert(
+            f"cover-{len(key)}-{abs(hash(key)) % 10_000}",
+            level="A",
+            hint_topic=topic["id"],
+            hint_dir=direction["id"],
+            title=f"Primary source for {topic['id']} {direction['id']}",
+            summary=f"Resolved primary coverage for {key}.",
+        )
+
+    pipeline = SimpleNamespace(config=config, db=db, run_id="run")
+    searches = plan_coverage_gap_searches(pipeline, max_queries=4)
+
+    search_ids = [s["search_id"] for s in searches]
+    assert search_ids == [
+        "accelerator_io_datapath:accelerator_initiated_io",
+        "accelerator_io_datapath:accelerator_storage_controller",
+        "accelerator_io_datapath:accelerator_storage_stack",
+        "accelerator_io_datapath:direct_storage_path",
+    ]
+    assert len({s["search_id"] for s in searches}) == len(searches)

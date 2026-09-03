@@ -7,6 +7,42 @@ from .business_time import briefing_date
 from .utils import read_json, source_url_is_resolved, write_json
 
 
+def primary_row_matches_direction(
+    row: dict[str, Any],
+    topic_id: str,
+    direction: dict[str, Any],
+) -> bool:
+    """Return True only when a usable primary source row proves coverage for
+    one direction of the topic its ``topic_hint`` names.
+
+    Evidence boundary: a row whose ``topic_hint`` belongs to another topic can
+    never prove coverage here, even when its title or summary matches the
+    direction vocabulary. Keyword fallback applies only within the same topic.
+    """
+
+    if str(row.get("source_level") or "").upper() != "A":
+        return False
+    if bool(row.get("discovery_only")):
+        return False
+    if not source_url_is_resolved(row.get("original_url") or row.get("aihot_url")):
+        return False
+    if str(row.get("topic_hint") or "") != str(topic_id):
+        return False
+    direction_id = str(direction.get("id") or "")
+    if str(row.get("direction_hint") or "") == direction_id:
+        return True
+    terms = [
+        str(term).strip().lower()
+        for term in direction.get("include_terms") or []
+        if str(term).strip()
+    ]
+    if not terms:
+        return False
+    text = f"{row.get('title') or ''} {row.get('summary') or ''}".lower()
+    matches = sum(term in text for term in terms)
+    return matches >= (1 if len(terms) <= 2 else 2)
+
+
 def primary_direction_is_covered(
     raw_rows: Iterable[dict[str, Any]],
     topic_id: str,
@@ -14,24 +50,8 @@ def primary_direction_is_covered(
 ) -> bool:
     """Count a direction as covered only when a usable primary source exists."""
 
-    direction_id = str(direction.get("id") or "")
-    terms = [
-        str(term).strip().lower()
-        for term in direction.get("include_terms") or []
-        if str(term).strip()
-    ]
     for row in raw_rows:
-        if str(row.get("source_level") or "").upper() != "A":
-            continue
-        if bool(row.get("discovery_only")):
-            continue
-        if not source_url_is_resolved(row.get("original_url") or row.get("aihot_url")):
-            continue
-        if row.get("topic_hint") == topic_id and row.get("direction_hint") == direction_id:
-            return True
-        text = f"{row.get('title') or ''} {row.get('summary') or ''}".lower()
-        matches = sum(term in text for term in terms)
-        if terms and matches >= (1 if len(terms) <= 2 else 2):
+        if primary_row_matches_direction(row, topic_id, direction):
             return True
     return False
 

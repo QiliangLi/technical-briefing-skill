@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from briefing_skill.config import ConfigBundle
+from briefing_skill import quality_guard
 from briefing_skill.coverage_policy import (
     _project_key,
     collect_topic_appendix,
@@ -86,7 +87,81 @@ def test_tpn_search_requires_two_distinct_primary_projects():
         "payload_json": json.dumps({"repo": "vllm-project/vllm"}),
     }
     assert primary_direction_is_diversely_covered([lmcache, vllm], "tpn", direction)
-    assert primary_direction_is_diversely_covered([lmcache], "cross_region", direction)
+    # Topic evidence boundary: a TPN-hinted row cannot prove cross_region coverage.
+    assert not primary_direction_is_diversely_covered([lmcache], "cross_region", direction)
+
+
+IO_DIRECTION_TERMS = {
+    "direct_storage_path": ["gpu", "accelerator", "storage", "nvme", "direct data path", "gpudirect storage", "bounce buffer", "p2p"],
+    "accelerator_initiated_io": ["gpu-initiated", "accelerator", "storage", "nvme", "control path", "scada", "storage-next", "bam", "gids"],
+    "accelerator_storage_stack": ["gpu", "accelerator", "storage", "cufile", "storage stack", "fast path", "kernel bypass", "userspace"],
+    "accelerator_storage_controller": ["ssd controller", "nvme controller", "gpu", "accelerator", "fine-grained", "small-block", "ecc", "queue"],
+}
+
+
+def _ainfer_pd_like_row(*, topic_hint: str, direction_hint: str | None):
+    """Mirror the run-2026-09-03-003948 false positive: a TPN abstract whose
+    title/summary mention accelerator + storage (and fine-grained + queue)."""
+    return {
+        "title": "AInfer-PD: Communication-Safe In-Place Prefill-Decode Multiplexing",
+        "summary": "Distributed MoE rollouts keep accelerator storage and fine-grained queue state safe while prefill and decode share one device.",
+        "topic_hint": topic_hint,
+        "direction_hint": direction_hint,
+        "source_level": "A",
+        "discovery_only": False,
+        "original_url": "https://arxiv.org/abs/2609.00993",
+    }
+
+
+def test_cross_topic_generic_words_cannot_cover_accelerator_io_directions():
+    row = _ainfer_pd_like_row(topic_hint="tpn", direction_hint="kv_network_scheduling")
+    for direction_id, terms in IO_DIRECTION_TERMS.items():
+        direction = {"id": direction_id, "include_terms": terms}
+        assert not quality_guard.primary_direction_is_covered([row], "accelerator_io_datapath", direction)
+        assert not primary_direction_is_diversely_covered([row], "accelerator_io_datapath", direction)
+
+
+def test_same_topic_exact_hint_and_keyword_fallback_cover():
+    exact = _ainfer_pd_like_row(topic_hint="accelerator_io_datapath", direction_hint="direct_storage_path")
+    direction = {"id": "direct_storage_path", "include_terms": IO_DIRECTION_TERMS["direct_storage_path"]}
+    assert quality_guard.primary_direction_is_covered([exact], "accelerator_io_datapath", direction)
+    assert primary_direction_is_diversely_covered([exact], "accelerator_io_datapath", direction)
+
+    keyword_only = _ainfer_pd_like_row(topic_hint="accelerator_io_datapath", direction_hint=None)
+    controller = {"id": "accelerator_storage_controller", "include_terms": IO_DIRECTION_TERMS["accelerator_storage_controller"]}
+    assert quality_guard.primary_direction_is_covered([keyword_only], "accelerator_io_datapath", controller)
+    assert primary_direction_is_diversely_covered([keyword_only], "accelerator_io_datapath", controller)
+
+
+def test_same_topic_unusable_rows_still_cannot_cover():
+    direction = {"id": "direct_storage_path", "include_terms": IO_DIRECTION_TERMS["direct_storage_path"]}
+    base = _ainfer_pd_like_row(topic_hint="accelerator_io_datapath", direction_hint="direct_storage_path")
+    assert not quality_guard.primary_direction_is_covered([{**base, "source_level": "B"}], "accelerator_io_datapath", direction)
+    assert not quality_guard.primary_direction_is_covered([{**base, "discovery_only": True}], "accelerator_io_datapath", direction)
+    assert not quality_guard.primary_direction_is_covered([{**base, "original_url": "example.com/not-a-url"}], "accelerator_io_datapath", direction)
+
+
+def test_tpn_two_projects_must_both_belong_to_tpn():
+    direction = {"id": "kv_transfer", "include_terms": ["kv cache", "transfer", "network"]}
+    tpn_project = _ainfer_pd_like_row(topic_hint="tpn", direction_hint="kv_transfer")
+    other_topic_project = {
+        **_ainfer_pd_like_row(topic_hint="cross_region", direction_hint="kv_transfer"),
+        "original_url": "https://github.com/other/repo/releases/tag/v1",
+    }
+    assert not primary_direction_is_diversely_covered([tpn_project, other_topic_project], "tpn", direction)
+
+
+def test_bootstrap_replaced_path_is_topic_scoped():
+    replaced = quality_guard.primary_direction_is_covered
+    try:
+        quality_guard.primary_direction_is_covered = primary_direction_is_diversely_covered
+        row = _ainfer_pd_like_row(topic_hint="tpn", direction_hint="kv_network_scheduling")
+        direction = {"id": "direct_storage_path", "include_terms": IO_DIRECTION_TERMS["direct_storage_path"]}
+        assert not quality_guard.primary_direction_is_covered([row], "accelerator_io_datapath", direction)
+        same_topic = _ainfer_pd_like_row(topic_hint="accelerator_io_datapath", direction_hint="direct_storage_path")
+        assert quality_guard.primary_direction_is_covered([same_topic], "accelerator_io_datapath", direction)
+    finally:
+        quality_guard.primary_direction_is_covered = replaced
 
 
 def _insert_raw(db: Database, *, row_id: str, run_id: str, days_old: int, identity: str, url: str):
