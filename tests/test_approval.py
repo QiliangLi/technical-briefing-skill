@@ -5,16 +5,17 @@ import sys
 import uuid
 from pathlib import Path
 
-from tests.util_run_cleanup import purge_run
+from tests.util_run_cleanup import isolated_demo_root, purge_run
 
 
-def test_clean_issue_is_ready_to_send_without_human_approval():
-    root = Path(__file__).resolve().parents[1]
+def test_clean_issue_is_ready_to_send_without_human_approval(tmp_path):
+    source_root = Path(__file__).resolve().parents[1]
+    root = isolated_demo_root(tmp_path, source_root)
     run_id = f"pytest-release-{uuid.uuid4().hex[:8]}"
     env = {**os.environ, "BRIEFING_SKIP_DOTENV": "1"}
     try:
         demo = subprocess.run(
-            [sys.executable, "briefing.py", "demo", "--run", run_id],
+            [sys.executable, "briefing.py", "--root", str(root), "demo", "--run", run_id],
             cwd=root,
             text=True,
             capture_output=True,
@@ -38,7 +39,7 @@ def test_clean_issue_is_ready_to_send_without_human_approval():
 
         for removed_command in ("review", "approve"):
             removed = subprocess.run(
-                [sys.executable, "briefing.py", removed_command, "--run", run_id],
+                [sys.executable, "briefing.py", "--root", str(root), removed_command, "--run", run_id],
                 cwd=root,
                 text=True,
                 capture_output=True,
@@ -48,7 +49,7 @@ def test_clean_issue_is_ready_to_send_without_human_approval():
             assert "invalid choice" in removed.stderr
 
         unconfirmed_send = subprocess.run(
-            [sys.executable, "briefing.py", "send", "--run", run_id],
+            [sys.executable, "briefing.py", "--root", str(root), "send", "--run", run_id],
             cwd=root,
             text=True,
             capture_output=True,
