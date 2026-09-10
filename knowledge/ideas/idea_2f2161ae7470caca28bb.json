@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_2f2161ae7470caca28bb",
+  "identity": {
+    "problem_key": "kv_capacity_beyond_local_dram",
+    "mechanism_key": "cxl_hybrid_memory_service",
+    "target_key": "multi_turn_kv_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "用 CXL 混合内存构建可控的多轮 KV 容量层",
+  "problem": "多轮会话 KV 容量超过本地 HBM 和 DRAM 后，简单外溢会受到带宽争用、公平性和尾延迟限制。",
+  "hypothesis": "将 CXL 内存池、热度分层和公平传输联合成服务层，可在尾延迟边界内扩大 KV 复用容量。",
+  "mechanism": "按会话热度在本地与 CXL 池间放置 KV，并用公平传输调度限制租户争用和回迁突发。",
+  "expected_effect": "提高可复用 KV 容量和命中率，同时限制 p99 延迟与跨租户干扰。",
+  "topic_ids": [
+    "memory_dsa"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "aad3ac6d44c9280e0f9b3ae3",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.18141v3"
+      ],
+      "reason": "《HyMCache用CXL混合内存机架支撑多轮LLM的KV缓存服务》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "d05f67d474b98cf028645985",
+      "issue_date": "2026-08-17",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.18141v3"
+      ],
+      "reason": "《HyMCache用CXL内存机架承载多轮会话KV复用》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "ab820b3c0433c2eae0500436",
+      "issue_date": "2026-08-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.21731v1"
+      ],
+      "reason": "《MemChannel：CXL内存池化的公平传输层》为该候选的问题、机制或边界提供已发布依据。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "不同 CXL 拓扑下的带宽拐点",
+    "同源 HyMCache 复报不能视为独立确认",
+    "公平调度对总体吞吐的代价"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "回放多租户会话轨迹，模拟本地内存与 CXL 池容量、链路和公平调度。",
+    "inputs": [
+      "会话 KV 生命周期轨迹",
+      "CXL 延迟带宽参数",
+      "租户权重"
+    ],
+    "baselines": [
+      "本地容量内 LRU",
+      "无公平控制的 CXL 外溢"
+    ],
+    "metrics": [
+      "KV 命中率",
+      "p99 延迟",
+      "链路利用率",
+      "租户 slowdown"
+    ],
+    "support_criteria": [
+      "容量收益显著且 p99 与公平性满足预算"
+    ],
+    "reject_criteria": [
+      "链路争用使主要负载尾延迟劣于重算"
+    ],
+    "limitations": [
+      "仿真不能替代真实 CXL 设备验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-10",
+  "last_updated_issue": "2026-09-03",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_2a47cb125f0d0ad6f0cd",
+      "issue_date": "2026-09-03",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "Candidate candidate_2f2161ae7470caca28bb 通过身份、来源独立性和可验证性审阅后进入正式 Idea。",
+      "evidence_item_ids": [
+        "aad3ac6d44c9280e0f9b3ae3",
+        "d05f67d474b98cf028645985",
+        "ab820b3c0433c2eae0500436"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_f7841984fcce6a274881",
+  "identity": {
+    "problem_key": "kv_transfer_tail_latency",
+    "mechanism_key": "transfer_recompute_locality_selection",
+    "target_key": "pd_disaggregated_inference"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "KV 传输、重算与就地计算存在随带宽和命中率变化的交叉点",
+  "problem": "PD 解耦推理并非总该完整传输 KV；链路带宽、KV 重要性和请求放置会改变最优选择。",
+  "hypothesis": "在统一负载下，必要 KV 优先传输、带宽感知重算和解码节点就地 Prefill 会在不同网络条件下各自占优。",
+  "mechanism": "按请求估算 KV 传输、局部重算和就地计算代价，再选择执行位置与传输粒度。",
+  "expected_effect": "在不牺牲输出正确性的前提下降低尾部 TTFT，并减少无效 KV 搬移。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "081c683d89c0a8496e81e918",
+      "issue_date": "2026-08-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.28150v1"
+      ],
+      "reason": "SmartGen 展示了必要 KV 先行和后台补全在受限带宽下的收益。"
+    },
+    {
+      "item_id": "d68187e106469502469bd400",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.02043v1"
+      ],
+      "reason": "Kairos 通过 Decode 节点就地 Prefill 删除一类跨节点 KV 传输。"
+    },
+    {
+      "item_id": "ee715d6b89c2722b10eafa3e",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.10987v1"
+      ],
+      "reason": "AAFLOW+ 将传输或重算作为带宽感知选择。"
+    },
+    {
+      "item_id": "aea2c5f288fa3cb1f1c150fd",
+      "issue_date": "2026-08-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.03893v1"
+      ],
+      "reason": "同家族闭式线性映射显示 KV 复用可在 42%–98% 保真下替代重复 Prefill，支持复用与重算之间的代价权衡假设；但仅测同家族匹配配置，交叉点位置仍未验证。"
+    },
+    {
+      "item_id": "22d0d703f86160611799f358",
+      "issue_date": "2026-08-26",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.09153v1"
+      ],
+      "reason": "KV-PRM 直接复用生成期已有 KV 做过程奖励打分、较重编码省约千倍 FLOPs，再次支持复用优于重算的一侧权衡；收益绑定同轨迹部署形态，交叉点位置仍未被多负载验证。"
+    },
+    {
+      "item_id": "1b3e8fdd6e2e4f89ba13f40f",
+      "issue_date": "2026-08-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.23962v1"
+      ],
+      "reason": "统一成本轴比较给出第一条定量边界：匹配内存缓解下压缩始终便宜 1.20–2.00 倍、无成本等价交叉点；其比较轴是架构并行 vs 压缩而非传输 vs 重算，交叉点问题本身仍未闭合，故作为支持性边界而非完整验证。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "多租户 P95/P99 下的交叉点是否稳定。",
+    "代价预测错误与画像漂移会造成多大回退。"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "离散事件模型覆盖 Prefill、KV 传输、Decode 排队和可选重算。",
+    "inputs": [
+      "RTT 与带宽扫描",
+      "KV 大小与可选比例",
+      "缓存命中率",
+      "Prefill/Decode 到达率"
+    ],
+    "baselines": [
+      "完整 KV 传输",
+      "始终重算",
+      "固定请求放置"
+    ],
+    "metrics": [
+      "P50/P95/P99 TTFT",
+      "TPOT",
+      "传输字节",
+      "GPU 与网络利用率"
+    ],
+    "support_criteria": [
+      "联合选择策略在一段可解释参数区间内同时改善尾 TTFT 和传输量。"
+    ],
+    "reject_criteria": [
+      "策略只在极窄参数点获益，或预测开销使尾延迟不优于固定基线。"
+    ],
+    "limitations": [
+      "模拟不能覆盖真实通信栈抖动、GPU 内核干扰和调度实现开销。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-02",
+  "last_updated_issue": "2026-08-29",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_4f7da6ed9342bd9a8339",
+      "issue_date": "2026-08-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "已发布证据给出了明确问题和可检验机制，因此建立 Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "081c683d89c0a8496e81e918"
+      ]
+    },
+    {
+      "event_id": "idea_decision_978ab100396b02c699e9",
+      "issue_date": "2026-08-10",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "d68187e106469502469bd400",
+        "ee715d6b89c2722b10eafa3e"
+      ]
+    },
+    {
+      "event_id": "idea_decision_70281ec039876b2f0207",
+      "issue_date": "2026-08-23",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题与机制身份（复用替代重算的一侧权衡）；Idea 状态暂不改变，交叉点是否稳定仍待多负载验证。",
+      "evidence_item_ids": [
+        "aea2c5f288fa3cb1f1c150fd"
+      ]
+    },
+    {
+      "event_id": "idea_decision_e169c263624a009a1cd5",
+      "issue_date": "2026-08-26",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题与机制身份（复用替代重算的权衡）；Idea 状态暂不改变，等待跨形态复现。",
+      "evidence_item_ids": [
+        "22d0d703f86160611799f358"
+      ]
+    },
+    {
+      "event_id": "idea_decision_0a15c7c9b0b33914b3ff",
+      "issue_date": "2026-08-29",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据为权衡假设提供成本轴量化的第一块基线；Idea 状态保持 observing，等待传输/重算轴上的同口径数据。",
+      "evidence_item_ids": [
+        "1b3e8fdd6e2e4f89ba13f40f"
+      ]
+    }
+  ]
+}
