@@ -21,4 +21,4 @@ This file is an index. Load only the guidance needed for the current task. `SKIL
 - Treat implementation and `config/*.yaml` as the source of truth for current defaults. `docs/history/` is historical only.
 - Update affected current documentation as part of an implementation. A design-only request stops before code changes.
 - Do not send mail without explicit user confirmation and `--confirm-send`.
-- Do not stage or commit unless the user requests it.
+- A requested change that finishes with its validators and tests green is committed to `main` and pushed to `origin` automatically, then the commit hash is reported; see `docs/contracts/change-governance.md` for scope and exclusions. Mail sending, history rewrites, force pushes, and non-`main` pushes always require explicit confirmation.
