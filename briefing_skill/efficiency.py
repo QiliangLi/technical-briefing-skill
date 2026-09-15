@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 DEFAULT_DEEP_TOPICS = (
     "tpn", "memory_dsa", "dpu_inline", "agent_acceleration",
-    "cross_region", "optical_network", "ai_chip_accelerator",
+    "cross_region", "kv_management", "optical_network", "ai_chip_accelerator",
     "storage_media", "accelerator_io_datapath",
 )
 DEFAULT_FACT_CANDIDATES_PER_TOPIC = 4

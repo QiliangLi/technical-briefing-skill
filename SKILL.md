@@ -408,7 +408,7 @@ AI解释图的个人角色只由`assets/persona/ian-qiliang/overlay.md`和`asset
 发送前必须满足：
 
 - `expanded_v2`单专题深度解读不超过4条；同专题同项目默认不超过1条深读；
-- `expanded_v2`整期详细条目不超过`config/scoring.yaml`配置的36条安全上限；不足时不得用弱信息补齐；
+- `expanded_v2`整期详细条目不超过`config/scoring.yaml`配置的40条安全上限；不足时不得用弱信息补齐；
 - Top4之外的专题补充只包含已判定相关的A级内容，每条1～2句并链接原文；Release Family必须保留每个原始release链接；
 - 每条Machine Item五个事实正文域满足任务输入和当前配置的长度预算；Reader Projection按内容自然展开，不要求机械呈现五个槽位；
 - 每条深度解读至少一个A级来源；

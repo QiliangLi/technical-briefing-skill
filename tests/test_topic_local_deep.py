@@ -25,8 +25,8 @@ def _row(index: int, topic: str, score: float, *, technology_value: float | None
 def _settings():
     return {
         "efficiency": {
-            "max_fact_candidates_total": 36,
-            "max_fact_candidates_hard_cap": 36,
+            "max_fact_candidates_total": 40,
+            "max_fact_candidates_hard_cap": 40,
             "max_fact_candidates_per_topic": 4,
         }
     }
@@ -70,7 +70,7 @@ def test_topic_with_fewer_than_four_candidates_is_not_padded():
     assert deferred == []
 
 
-def test_nine_topics_can_each_keep_four_candidates_under_the_36_hard_cap():
+def test_ten_topics_can_each_keep_four_candidates_under_the_40_hard_cap():
     topics = _deep_topics()
     rows = [
         _row(index, topic, 100 - index)
@@ -80,7 +80,7 @@ def test_nine_topics_can_each_keep_four_candidates_under_the_36_hard_cap():
 
     selected, deferred = select_topic_local_deep_budget(rows, _settings())
 
-    assert len(selected) == 36
+    assert len(selected) == 40
     assert deferred == []
     assert all(
         len([row for row in selected if row["topic_id"] == topic]) == 4
@@ -88,7 +88,7 @@ def test_nine_topics_can_each_keep_four_candidates_under_the_36_hard_cap():
     )
 
 
-def test_nine_topic_fallback_derives_a_36_item_hard_cap():
+def test_ten_topic_fallback_derives_a_40_item_hard_cap():
     rows = [
         _row(index, topic, 100 - index)
         for topic in _deep_topics()
@@ -100,14 +100,14 @@ def test_nine_topic_fallback_derives_a_36_item_hard_cap():
         {"efficiency": {"deep_topics": _deep_topics()}},
     )
 
-    assert len(selected) == 36
+    assert len(selected) == 40
     assert deferred == []
 
 
-def test_tenth_topic_fails_closed_when_topic_local_top_four_exceeds_36():
+def test_eleventh_topic_fails_closed_when_topic_local_top_four_exceeds_40():
     rows = [
         _row(index, topic, 100 - index)
-        for topic in [*_deep_topics(), "unexpected_tenth_topic"]
+        for topic in [*_deep_topics(), "unexpected_eleventh_topic"]
         for index in range(1, 5)
     ]
 

@@ -27,13 +27,13 @@ def test_accelerator_io_topic_has_focused_directions_context_and_capacity() -> N
 
     efficiency = config.settings["efficiency"]
     assert topic["id"] in efficiency["deep_topics"]
-    assert efficiency["max_fact_candidates_total"] == 36
-    assert efficiency["max_fact_candidates_hard_cap"] == 36
+    assert efficiency["max_fact_candidates_total"] == 40
+    assert efficiency["max_fact_candidates_hard_cap"] == 40
     assert efficiency["max_fact_candidates_per_topic"] == 4
     expanded = config.scoring["expanded_v2"]
-    assert expanded["core_max"] == 36
-    assert expanded["observation_max"] == 36
-    assert expanded["total_max"] == 36
+    assert expanded["core_max"] == 40
+    assert expanded["observation_max"] == 40
+    assert expanded["total_max"] == 40
     assert expanded["max_per_topic"] == 4
     assert expanded["topic_target"] == 4
 

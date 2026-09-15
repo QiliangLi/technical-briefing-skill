@@ -64,9 +64,10 @@ def _load_topics(paths: Paths) -> dict[str, Any]:
         if topic.get("id") == "ai_infra_horizontal":
             description = str(topic.get("description") or "")
             topic["description"] = (
-                description.replace("前六个专题", "九个深度专题")
-                .replace("七个深度专题", "九个深度专题")
-                .replace("八个深度专题", "九个深度专题")
+                description.replace("前六个专题", "十个深度专题")
+                .replace("七个深度专题", "十个深度专题")
+                .replace("八个深度专题", "十个深度专题")
+                .replace("九个深度专题", "十个深度专题")
             )
             break
     return topics
@@ -115,6 +116,7 @@ class ConfigBundle:
             "dpu_inline": "dpu.md",
             "agent_acceleration": "agent-acceleration.md",
             "cross_region": "cross-region.md",
+            "kv_management": "kv-management.md",
             "optical_network": "optical-network.md",
             "ai_chip_accelerator": "ai-chip-accelerator.md",
             "storage_media": "storage-media.md",

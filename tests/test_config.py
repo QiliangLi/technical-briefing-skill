@@ -9,9 +9,11 @@ def test_topics_and_aihot_priority():
     root = Path(__file__).resolve().parents[1]
     config = ConfigBundle.load(Paths(root))
     topics = {topic["id"]: topic for topic in config.topic_list()}
-    assert len(topics) == 11
+    assert len(topics) == 12
     assert topics["agent_acceleration"]["aihot_priority"] == "highest"
     assert topics["tpn"]["aihot_priority"] == "high"
+    assert topics["kv_management"]["aihot_priority"] == "high"
+    assert "prefix_reuse" in {d["id"] for d in topics["kv_management"]["directions"]}
     assert topics["ai_chip_accelerator"]["aihot_priority"] == "high"
     assert topics["ai_chip_accelerator"]["max_items_per_issue"] == 4
     assert topics["storage_media"]["aihot_priority"] == "medium"
