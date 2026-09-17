@@ -29,6 +29,29 @@ FORBIDDEN_PUBLIC_TRACE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 
+def _is_upstream_trace_label(value: str) -> bool:
+    return any(pattern.search(value) for _, pattern in FORBIDDEN_PUBLIC_TRACE_PATTERNS)
+
+
+def scrub_discovered_via(payload: dict) -> None:
+    """Drop invisible-upstream discovery labels from a public item payload in place.
+
+    ``discovered_via`` may name public discovery channels (arXiv, GitHub Release) but
+    never the invisible upstream: machine items legitimately carry the internal
+    ``AI HOT`` label as provenance, and the public issue document must not relay it.
+    """
+
+    if "discovered_via" not in payload:
+        return
+    value = payload["discovered_via"]
+    if isinstance(value, list):
+        kept = [str(entry).strip() for entry in value if str(entry or "").strip()]
+        kept = [entry for entry in kept if not _is_upstream_trace_label(entry)]
+        payload["discovered_via"] = kept or None
+    elif isinstance(value, str):
+        payload["discovered_via"] = None if _is_upstream_trace_label(value.strip()) else value
+
+
 def public_text_trace_errors(texts: Mapping[str, str]) -> list[str]:
     """Scan raw artifact texts (e.g. serialized JSON or rendered HTML) directly."""
     errors: list[str] = []

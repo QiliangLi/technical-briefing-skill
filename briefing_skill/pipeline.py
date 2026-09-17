@@ -16,6 +16,7 @@ from .fulltext import FulltextService
 from .expanded import normalise_legacy_item, select_expanded_rows
 from .freshness import freshness_limits
 from .matching import RuleMatcher
+from .public_trace_scan import scrub_discovered_via
 from .scoring import Scorer
 from .tasks import TaskService, synthesis_item_payload
 from .utils import now_iso, parse_datetime, read_json, source_url_is_resolved, stable_hash, write_json
@@ -705,6 +706,7 @@ class Pipeline:
             item = read_json(self.root / row["json_path"])
             if self.config.settings.get("issue_mode", "compact") == "expanded_v2":
                 item = normalise_legacy_item(item, self.config)
+            scrub_discovered_via(item)
             plan = read_json(self.root / row["visual_plan_path"], {}) if row.get("visual_plan_path") else {"visual_mode": "text_only"}
             illustration = read_json(self.run_dir / "visuals" / "illustrations" / f"{row['id']}.json", {})
             item_role = row.get("item_role") or "core"

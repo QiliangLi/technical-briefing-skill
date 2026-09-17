@@ -363,3 +363,27 @@ def test_ledger_gate_rejects_bad_schema_counts_and_wrong_content(tmp_path: Path)
 
     db.execute("DELETE FROM radar_upstream_records WHERE record_id=?", (stable_hash(run_id, "aihot-upstream", "selected", "cmt-phantom"),))
     assert _upstream_ledger_errors(service, run_id) == []
+
+
+def test_scrub_discovered_via_drops_upstream_labels_only() -> None:
+    from briefing_skill.public_trace_scan import scrub_discovered_via
+
+    single = {"discovered_via": "AI HOT"}
+    scrub_discovered_via(single)
+    assert single["discovered_via"] is None
+
+    mixed = {"discovered_via": ["AI HOT", "arXiv"]}
+    scrub_discovered_via(mixed)
+    assert mixed["discovered_via"] == ["arXiv"]
+
+    kept = {"discovered_via": "GitHub Release"}
+    scrub_discovered_via(kept)
+    assert kept["discovered_via"] == "GitHub Release"
+
+    untouched = {"title": "x"}
+    scrub_discovered_via(untouched)
+    assert "discovered_via" not in untouched
+
+    only_upstream = {"discovered_via": ["aihot"]}
+    scrub_discovered_via(only_upstream)
+    assert only_upstream["discovered_via"] is None
