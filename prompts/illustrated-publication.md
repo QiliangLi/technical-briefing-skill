@@ -1,4 +1,4 @@
-# Task: Build the Issue-Level Illustrated Publication
+# Task: Build the Topic-Scoped Illustrated Publication
 
 This is the single visual-generation pass for one completed technical briefing issue.
 
@@ -40,15 +40,20 @@ All generated briefing illustrations use exactly one image-generation style/pers
 6. Guizang remains relevant only to the existing HTML/card presentation contract. It must not influence generated-image style or persona.
 7. If the Ian Skill or required Qiliang references are genuinely unavailable, return `fallback_to_text` instead of silently changing style/persona.
 
-## Selection
+## Selection: at most one image per topic
 
-1. Read the issue synthesis and all supplied final items.
-2. There is **no fixed numeric cap**. Select every distinct explanatory concept that materially improves understanding, but never create decorative or near-duplicate filler.
-3. Prefer cross-item mechanisms, architectural relationships, decision trade-offs, system paths, and strong project judgements.
-4. Each image must preserve the factual meaning of the final briefing.
-5. Choose one placement per image:
-   - `after_judgements` for an issue-level synthesis image;
-   - `before_topic` with a valid `topic_id` for an image introducing one topic.
+The purpose of an illustration is to make the topic's key information intuitively understandable, not to maximize image count.
+
+1. Each supplied `topic_id` may receive **zero or one** image. The total image count never exceeds the number of topics.
+2. Rank items inside a topic by the supplied `score` and prefer items with `in_issue_judgements=true`; observation items may inform the picture but must not crowd out key core items.
+3. When one key item dominates the topic, the image explains that item's central mechanism. When several key items matter, design **one** image that synthesizes their shared mechanism or the topic-level judgement; never build a collage of unrelated motifs.
+4. Skip the topic entirely when no honest visual synthesis exists. An empty manifest is valid; decorative or near-duplicate filler is not.
+5. Every generated image must record `bound_item_ids`: 1-4 `brief_item_id` values from the **same** topic that the image actually explains.
+6. Each image must preserve the factual meaning of the bound items. Never mix measurements or mechanisms from different items into one causal picture.
+
+## Placement
+
+There is exactly one placement: `before_topic` with a valid `topic_id`. Python inserts the image immediately before that topic's header in the email, so a reader can always attribute the image to the topic it explains.
 
 ## Personal IP
 
@@ -64,10 +69,11 @@ Every generated illustration must include the approved Qiliang Ian-style technic
 
 1. Generate a horizontal `1.9:1` explanatory image under `constraints.output_directory`.
 2. Preserve Ian's white-background hand-drawn visual DNA, sparse colored annotations, generous whitespace, restrained metaphor, and one-core-concept composition.
-3. Use at most 3-5 short Chinese labels per image. Never invent numbers; any displayed number must come directly from the final briefing.
+3. Use at most 3-5 short Chinese labels per image. Never invent numbers; any displayed number must come directly from the bound items.
 4. Keep safe margins and prevent overlap among arrows, labels, architecture nodes, and the persona.
 5. Inspect every image for identity consistency, visual-style consistency, Chinese text, cropping, factual structure, and clarity.
 6. Keep `generated_asset_path` as the exact repository-relative local path used for QA.
+7. The `caption` must name the covered items (their short titles) so the reader can map the image back to its cards.
 
 ## Mandatory asset publication
 
@@ -93,8 +99,8 @@ If the asset cannot be committed and pushed reliably, that illustration is not p
 
 ## Output rules
 
-- There is no fixed maximum number of illustration entries.
+- There is no minimum image count and no reward for volume: return one entry per topic you decided to illustrate, and nothing else.
 - Never pad the manifest to increase image count.
-- Every generated entry must have a real local `generated_asset_path`, an immutable published GitHub `published_asset_url` (release download URL or commit-SHA-pinned raw URL), `persona_used=true`, factual `alt`, and a concise reader-facing `caption`.
+- Every generated entry must have a real local `generated_asset_path`, an immutable published GitHub `published_asset_url` (release download URL or commit-SHA-pinned raw URL), `persona_used=true`, `topic_id`, non-empty `bound_item_ids` from that topic, factual `alt`, and a concise reader-facing `caption` that names the covered items.
 - `caption` should explain what the picture clarifies rather than repeat the title.
 - Return JSON only and preserve the task transport binding required by the host.

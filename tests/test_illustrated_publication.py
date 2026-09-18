@@ -39,16 +39,24 @@ def _published_url(index: int) -> str:
     )
 
 
-def _generated(index: int, path: Path, *, placement: str = "after_judgements", topic_id: str | None = None, persona_used: bool = True) -> dict:
+def _generated(
+    index: int,
+    path: Path,
+    *,
+    topic_id: str = "tpn",
+    bound_item_ids: list[str] | None = None,
+    persona_used: bool = True,
+) -> dict:
     return {
         "concept_name": f"解释图{index}",
         "status": "generated",
-        "placement": placement,
+        "placement": "before_topic",
         "topic_id": topic_id,
+        "bound_item_ids": bound_item_ids or [f"item-{index}"],
         "generated_asset_path": str(path),
         "published_asset_url": _published_url(index),
         "alt": f"解释图{index}",
-        "caption": f"解释第{index}个独立技术概念。",
+        "caption": f"综合本专题关键条目（条目{index}）的机制。",
         "persona_used": persona_used,
         "qa_notes": [],
     }
@@ -88,7 +96,7 @@ def _write_ian_persona_fixture(root: Path) -> dict[str, str]:
     return references
 
 
-def test_issue_level_illustrations_use_stable_publication_placements(tmp_path: Path) -> None:
+def test_topic_illustrations_render_directly_before_their_topic_headers(tmp_path: Path) -> None:
     first = tmp_path / "first.png"
     second = tmp_path / "second.png"
     first.write_text("fixture", encoding="utf-8")
@@ -97,26 +105,28 @@ def test_issue_level_illustrations_use_stable_publication_placements(tmp_path: P
         "status": "complete",
         "illustrations": [
             {
-                "concept_name": "全局取数决策",
-                "status": "generated",
-                "placement": "after_judgements",
-                "topic_id": None,
-                "generated_asset_path": str(first),
-                "published_asset_url": _published_url(1),
-                "alt": "全局取数决策图",
-                "caption": "比较传输、重算与就地计算。",
-                "persona_used": True,
-                "qa_notes": [],
-            },
-            {
                 "concept_name": "Agent检索路径",
                 "status": "generated",
                 "placement": "before_topic",
                 "topic_id": "agent_acceleration",
+                "bound_item_ids": ["item-agent-1"],
                 "generated_asset_path": str(second),
                 "published_asset_url": _published_url(2),
                 "alt": "Agent检索路径图",
-                "caption": "结构索引压缩重复探索。",
+                "caption": "综合条目Agent检索路径的机制。",
+                "persona_used": True,
+                "qa_notes": [],
+            },
+            {
+                "concept_name": "跨节点取数决策",
+                "status": "generated",
+                "placement": "before_topic",
+                "topic_id": "tpn",
+                "bound_item_ids": ["item-tpn-1", "item-tpn-2"],
+                "generated_asset_path": str(first),
+                "published_asset_url": _published_url(1),
+                "alt": "跨节点取数决策图",
+                "caption": "综合条目跨节点取数的机制。",
                 "persona_used": True,
                 "qa_notes": [],
             },
@@ -125,6 +135,7 @@ def test_issue_level_illustrations_use_stable_publication_placements(tmp_path: P
                 "status": "failed",
                 "placement": "before_topic",
                 "topic_id": "tpn",
+                "bound_item_ids": ["item-tpn-1"],
                 "generated_asset_path": None,
                 "published_asset_url": None,
                 "alt": "",
@@ -142,18 +153,27 @@ def test_issue_level_illustrations_use_stable_publication_placements(tmp_path: P
 
     assert len(illustrations) == 2
     assert all(node["data-persona-used"] == "1" for node in illustrations)
-    assert "比较传输、重算与就地计算" in illustrations[0].get_text(" ", strip=True)
-    assert str(first.resolve()) == illustrations[0].find("img")["src"]
-    assert rendered.index("全局取数决策") < rendered.index('id="topic-tpn"')
+    for node in illustrations:
+        topic_row = node.find_next_sibling("tr")
+        assert topic_row is not None
+        anchor = topic_row.find("a", id=lambda value: bool(value and value.startswith("topic-")))
+        assert anchor is not None
+        assert node["data-illustration-slot"] == f"before_topic:{anchor['id'].removeprefix('topic-')}"
     assert rendered.index("Agent检索路径") < rendered.index('id="topic-agent_acceleration"')
+    assert rendered.index("跨节点取数决策") < rendered.index('id="topic-tpn"')
 
 
-def test_renderer_accepts_more_than_three_generated_persona_images(tmp_path: Path) -> None:
-    entries = []
-    for index in range(1, 6):
-        path = tmp_path / f"image-{index}.png"
+def test_renderer_places_each_topic_image_once_and_skips_unknown_topics(tmp_path: Path) -> None:
+    tpn_first = tmp_path / "tpn.png"
+    tpn_second = tmp_path / "tpn-duplicate.png"
+    unknown = tmp_path / "unknown.png"
+    for path in (tpn_first, tpn_second, unknown):
         path.write_text("fixture", encoding="utf-8")
-        entries.append(_generated(index, path))
+    entries = [
+        _generated(1, tpn_first, topic_id="tpn"),
+        _generated(2, tpn_second, topic_id="tpn"),
+        _generated(3, unknown, topic_id="nonexistent_topic"),
+    ]
 
     rendered = render_illustrated_html(
         tmp_path,
@@ -163,60 +183,67 @@ def test_renderer_accepts_more_than_three_generated_persona_images(tmp_path: Pat
     soup = BeautifulSoup(rendered, "html.parser")
     illustrations = soup.select('tr[data-reader-role="explanatory-illustration"]')
 
-    assert len(illustrations) == 5
-    assert all(node["data-persona-used"] == "1" for node in illustrations)
-    assert all(node.get("data-illustration-slot") for node in illustrations)
-    for node in illustrations:
-        previous = node.find_previous_sibling("tr")
-        next_row = node.find_next_sibling("tr")
-        assert previous is None or previous.get("data-reader-role") != "explanatory-illustration"
-        assert next_row is None or next_row.get("data-reader-role") != "explanatory-illustration"
+    assert len(illustrations) == 1
+    assert illustrations[0]["data-illustration-slot"] == "before_topic:tpn"
+    assert str(tpn_first.resolve()) == illustrations[0].find("img")["src"]
 
 
-def test_schema_has_no_image_count_cap_and_requires_persona_for_generated_images() -> None:
+def test_schema_enforces_topic_scoped_policy_and_persona_for_generated_images() -> None:
     root = Path(__file__).resolve().parents[1]
     schema = json.loads((root / "schemas" / "illustrated-publication.schema.json").read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
 
-    five_generated = {
+    generated = {
         "status": "complete",
         "illustrations": [
             {
-                "concept_name": f"concept-{index}",
+                "concept_name": "concept-1",
                 "status": "generated",
-                "placement": "after_judgements",
-                "topic_id": None,
-                "generated_asset_path": f"published-assets/demo/{index}.png",
-                "published_asset_url": _published_url(index),
+                "placement": "before_topic",
+                "topic_id": "tpn",
+                "bound_item_ids": ["item-1"],
+                "generated_asset_path": "published-assets/demo/1.png",
+                "published_asset_url": _published_url(1),
                 "alt": "技术解释图",
                 "caption": "解释独立技术机制。",
                 "persona_used": True,
                 "qa_notes": [],
             }
-            for index in range(5)
         ],
         "notes": [],
     }
-    assert list(validator.iter_errors(five_generated)) == []
+    assert list(validator.iter_errors(generated)) == []
 
-    invalid = json.loads(json.dumps(five_generated, ensure_ascii=False))
+    legacy_slot = json.loads(json.dumps(generated, ensure_ascii=False))
+    legacy_slot["illustrations"][0]["placement"] = "after_judgements"
+    assert list(validator.iter_errors(legacy_slot))
+
+    missing_topic = json.loads(json.dumps(generated, ensure_ascii=False))
+    missing_topic["illustrations"][0]["topic_id"] = ""
+    assert list(validator.iter_errors(missing_topic))
+
+    missing_binding = json.loads(json.dumps(generated, ensure_ascii=False))
+    missing_binding["illustrations"][0]["bound_item_ids"] = []
+    assert list(validator.iter_errors(missing_binding))
+
+    invalid = json.loads(json.dumps(generated, ensure_ascii=False))
     invalid["illustrations"][0]["persona_used"] = False
     assert list(validator.iter_errors(invalid))
 
-    invalid_url = json.loads(json.dumps(five_generated, ensure_ascii=False))
+    invalid_url = json.loads(json.dumps(generated, ensure_ascii=False))
     invalid_url["illustrations"][0]["published_asset_url"] = (
         "https://raw.githubusercontent.com/QiliangLi/technical-briefing-skill/main/image.png"
     )
     assert list(validator.iter_errors(invalid_url))
 
-    release_url = json.loads(json.dumps(five_generated, ensure_ascii=False))
+    release_url = json.loads(json.dumps(generated, ensure_ascii=False))
     release_url["illustrations"][0]["published_asset_url"] = (
         "https://github.com/QiliangLi/technical-briefing-skill/releases/download/"
         "illustrations-demo/image-1.png"
     )
     assert list(validator.iter_errors(release_url)) == []
 
-    non_asset_release = json.loads(json.dumps(five_generated, ensure_ascii=False))
+    non_asset_release = json.loads(json.dumps(generated, ensure_ascii=False))
     non_asset_release["illustrations"][0]["published_asset_url"] = (
         "https://github.com/QiliangLi/technical-briefing-skill/releases/download/tag/readme.md"
     )
@@ -254,7 +281,10 @@ def test_illustration_input_reads_only_finalized_issue_document_and_ian_persona(
     expected_references = _write_ian_persona_fixture(tmp_path)
     issue_path = tmp_path / "workspace" / "runs" / "demo" / "issue" / "issue.json"
     issue_data = {
-        "synthesis": {"headline": "immutable synthesis"},
+        "synthesis": {
+            "headline": "immutable synthesis",
+            "judgements": [{"title": "判断", "body": "正文。", "evidence_item_ids": ["item-1"]}],
+        },
         "items": [
             {
                 "brief_item_id": "item-1",
@@ -262,6 +292,7 @@ def test_illustration_input_reads_only_finalized_issue_document_and_ian_persona(
                 "topic_id": "tpn",
                 "direction_id": "kv_transfer",
                 "title": "Final title",
+                "score": 88.5,
                 "core_conclusion": "Final conclusion.",
                 "mechanism": "Final mechanism.",
                 "result": "Final result.",
@@ -282,8 +313,10 @@ def test_illustration_input_reads_only_finalized_issue_document_and_ian_persona(
         {"id": "issue-1", "issue_json_path": str(issue_path.relative_to(tmp_path))},
     )
 
-    assert payload["synthesis"] == {"headline": "immutable synthesis"}
+    assert payload["synthesis"]["headline"] == "immutable synthesis"
     assert payload["items"][0]["title"] == "Final title"
+    assert payload["items"][0]["score"] == 88.5
+    assert payload["items"][0]["in_issue_judgements"] is True
     constraints = payload["constraints"]
     assert constraints["issue_document_is_immutable"] is True
     assert constraints["illustration_style_skill"] == IAN_STYLE_SKILL
@@ -349,3 +382,81 @@ def test_prompt_uses_ian_only_and_separates_guizang_layout_from_image_generation
     assert "Do **not** use Guizang Material Illustration" in prompt
     assert "Guizang remains relevant only to the existing HTML/card presentation contract" in prompt
     assert "assets/persona/reference.jpg" in prompt
+
+
+def _gate_input() -> dict:
+    return {
+        "items": [
+            {"brief_item_id": "tpn-1", "topic_id": "tpn"},
+            {"brief_item_id": "tpn-2", "topic_id": "tpn"},
+            {"brief_item_id": "agent-1", "topic_id": "agent_acceleration"},
+        ]
+    }
+
+
+def _gate_output(topic_id: str = "tpn", bound: list[str] | None = None) -> dict:
+    return {
+        "status": "complete",
+        "illustrations": [
+            {
+                "concept_name": "概念",
+                "status": "generated",
+                "placement": "before_topic",
+                "topic_id": topic_id,
+                "bound_item_ids": bound if bound is not None else ["tpn-1"],
+                "generated_asset_path": "published-assets/demo/1.png",
+                "published_asset_url": _published_url(1),
+                "alt": "技术解释图",
+                "caption": "综合条目的机制。",
+                "persona_used": True,
+                "qa_notes": [],
+            }
+        ],
+        "notes": [],
+    }
+
+
+def test_publication_gate_accepts_one_bound_image_per_topic() -> None:
+    from briefing_skill.tasks import illustrated_publication_validation_errors
+
+    assert illustrated_publication_validation_errors(_gate_output(), _gate_input()) == []
+
+
+def test_publication_gate_rejects_second_image_for_same_topic() -> None:
+    from briefing_skill.tasks import illustrated_publication_validation_errors
+
+    output = _gate_output()
+    output["illustrations"].append(_gate_output()["illustrations"][0])
+    errors = illustrated_publication_validation_errors(output, _gate_input())
+    assert any("at most one generated illustration per topic" in error for error in errors)
+
+
+def test_publication_gate_rejects_unknown_topic_and_cross_topic_binding() -> None:
+    from briefing_skill.tasks import illustrated_publication_validation_errors
+
+    unknown_topic = illustrated_publication_validation_errors(_gate_output(topic_id="media"), _gate_input())
+    assert any("does not exist in the issue items" in error for error in unknown_topic)
+
+    cross_topic = illustrated_publication_validation_errors(_gate_output(bound=["agent-1"]), _gate_input())
+    assert any("must belong to topic" in error for error in cross_topic)
+
+    unbound = _gate_output(bound=[])
+    errors = illustrated_publication_validation_errors(unbound, _gate_input())
+    assert any("bound_item_ids is required" in error for error in errors)
+
+
+def test_publication_gate_allows_zero_images() -> None:
+    from briefing_skill.tasks import illustrated_publication_validation_errors
+
+    empty = {"status": "fallback_to_text", "illustrations": [], "notes": []}
+    assert illustrated_publication_validation_errors(empty, _gate_input()) == []
+
+
+def test_prompt_states_the_topic_scoped_selection_policy() -> None:
+    root = Path(__file__).resolve().parents[1]
+    prompt = (root / "prompts" / "illustrated-publication.md").read_text(encoding="utf-8")
+
+    assert "at most one image per topic" in prompt
+    assert "zero or one" in prompt
+    assert "in_issue_judgements" in prompt
+    assert "after_judgements" not in prompt

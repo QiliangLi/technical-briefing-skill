@@ -112,6 +112,58 @@ def issue_synthesis_validation_errors(
     return errors
 
 
+def illustrated_publication_validation_errors(
+    output: dict[str, Any],
+    input_data: dict[str, Any],
+) -> list[str]:
+    """Enforce the topic-scoped illustration policy deterministically.
+
+    The topic image contract is at most one image per topic, placed before that
+    topic's header, and explicitly bound to 1-4 items of the same topic. The
+    prompt states the same rules; this gate keeps enforcement Python-owned.
+    """
+
+    errors: list[str] = []
+    topic_items: dict[str, set[str]] = {}
+    for item in input_data.get("items") or []:
+        topic_id = str(item.get("topic_id") or "").strip()
+        brief_item_id = str(item.get("brief_item_id") or "").strip()
+        if topic_id and brief_item_id:
+            topic_items.setdefault(topic_id, set()).add(brief_item_id)
+
+    used_topics: set[str] = set()
+    for index, illustration in enumerate(output.get("illustrations") or []):
+        if not isinstance(illustration, dict):
+            continue
+        label = f"illustration {index}"
+        topic_id = str(illustration.get("topic_id") or "").strip()
+        if not topic_id:
+            errors.append(f"{label}: topic_id is required for the per-topic placement policy")
+        elif topic_id not in topic_items:
+            errors.append(f"{label}: topic_id '{topic_id}' does not exist in the issue items")
+        if str(illustration.get("status") or "") != "generated":
+            continue
+        if topic_id in used_topics:
+            errors.append(
+                f"{label}: at most one generated illustration per topic, got a second for '{topic_id}'"
+            )
+        used_topics.add(topic_id)
+        bound = [str(value) for value in illustration.get("bound_item_ids") or []]
+        topic_bound = topic_items.get(topic_id, set())
+        if not bound:
+            errors.append(f"{label}: bound_item_ids is required and must reference items of the same topic")
+        else:
+            unknown = [value for value in bound if value not in topic_bound]
+            if unknown:
+                errors.append(
+                    f"{label}: bound_item_ids must belong to topic '{topic_id}'; "
+                    f"unknown or cross-topic ids: {', '.join(unknown[:3])}"
+                )
+    if len(used_topics) > len(topic_items):
+        errors.append("generated illustrations exceed the number of topics")
+    return errors
+
+
 class TaskService:
     def __init__(self, db: Database, root: Path, run_dir: Path):
         self.db = db
@@ -316,6 +368,9 @@ class TaskService:
             if set(map(str, data.get("topic_names", []))) != expected_topics:
                 errors.append("issue synthesis topic_names must exactly match the tasked core items")
             errors.extend(issue_synthesis_validation_errors(data, input_data))
+
+        if task["task_type"] == "illustrated_publication":
+            errors.extend(illustrated_publication_validation_errors(data, input_data))
         return errors
 
     def list(self, run_id: str, status: str | None = None) -> list[dict[str, Any]]:

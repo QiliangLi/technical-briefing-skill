@@ -28,8 +28,8 @@ fact-checked issue + issue synthesis
      -> read only the finalized IssueDocument
      -> load Ian style + Qiliang overlay/reference manifest
      -> verify all required persona anchor images exist
-     -> choose every distinct explanatory concept that materially improves understanding
-     -> no fixed numeric illustration cap
+     -> choose at most one synthesizing image per topic (zero is allowed)
+     -> bind every image to 1-4 items of the same topic
      -> every generated image includes the approved Qiliang Ian persona
      -> generate and QA images
      -> illustrations/manifest.json
@@ -39,7 +39,7 @@ fact-checked issue + issue synthesis
 
 The important dependency rule is that illustration generation may delay the final enhanced publication artifact, but it can never delay or rewrite `issue/issue.json` or the baseline `email.html`. The run is promoted to final validation/send only after the illustration task has either produced a valid manifest or explicitly degraded to text.
 
-The image count is content-driven rather than quota-driven. A dense issue may need more than three images; a sparse issue may need fewer or none. The Agent must avoid decorative, redundant, or near-duplicate images, but there is no fixed upper bound.
+Illustrations are topic-scoped. Each topic receives at most one image, and a topic may receive none; the total never exceeds the number of topics. The topic image must make the topic's key information intuitively understandable: it synthesizes the topic's high-score items (preferring items cited by the issue judgements) into one coherent mechanism picture rather than illustrating arbitrary concepts or collating unrelated motifs. Every generated image records `bound_item_ids` (1-4 items of the same topic), its caption names the covered items, and the renderer inserts it immediately before that topic's header so a reader can always attribute the image to its topic. Python task validation enforces the per-topic cap, the `before_topic` placement, topic existence, and same-topic binding; an Agent manifest that violates them is rejected. The Agent must still avoid decorative, redundant, or near-duplicate images.
 
 ## Sole AI illustration style
 

@@ -145,15 +145,16 @@ def test_no_two_explanatory_rows_are_adjacent_in_realistic_layout(tmp_path: Path
     <tr data-reader-row="deep-row"><td>deep4</td></tr>
     </table></body></html>"""
     illustrations = []
-    for index in range(5):
+    for index, topic_id in enumerate(("a", "b")):
         image = tmp_path / f"{index}.png"
         image.write_bytes(b"image")
         illustrations.append(
             {
                 "concept_name": f"c{index}",
                 "status": "generated",
-                "placement": "after_judgements",
-                "topic_id": None,
+                "placement": "before_topic",
+                "topic_id": topic_id,
+                "bound_item_ids": [f"item-{topic_id}-{index}"],
                 "generated_asset_path": str(image),
                 "alt": "x",
                 "caption": "x",
@@ -170,8 +171,11 @@ def test_no_two_explanatory_rows_are_adjacent_in_realistic_layout(tmp_path: Path
         "html.parser",
     )
     rows = soup.select('tr[data-reader-role="explanatory-illustration"]')
-    assert len(rows) == 5
+    assert len(rows) == 2
     for row in rows:
+        topic_row = row.find_next_sibling("tr")
+        assert topic_row is not None
+        assert topic_row.find("a", id=lambda value: bool(value and value.startswith("topic-"))) is not None
         previous = row.find_previous_sibling("tr")
         next_row = row.find_next_sibling("tr")
         assert previous is None or previous.get("data-reader-role") != "explanatory-illustration"

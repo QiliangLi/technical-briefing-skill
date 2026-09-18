@@ -81,12 +81,13 @@ def _insert_in_slot(fragment, mode: str, target, slot_name: str) -> bool:
 
 
 def render_illustrated_html(root: Path, base_html: str, manifest: dict[str, Any]) -> str:
-    """Place generated images in deterministic, non-adjacent publication slots.
+    """Place each topic's single generated image immediately before its topic header.
 
-    The Agent chooses what is worth illustrating and may express a preferred placement;
-    Python owns the final layout. There is at most one issue-summary slot and one slot
-    before each topic. Overflow uses content-separated after-item rows rather than
-    stacking images together.
+    The Agent decides which topics deserve one synthesizing image; Python owns the
+    layout. Task validation already caps the manifest at one image per topic with
+    placement=before_topic, so rendering reduces to honoring each topic slot. An
+    image whose topic anchor is missing is skipped, and final provenance validation
+    fails because the manifest and DOM no longer match.
     """
 
     prepared: list[tuple[int, dict[str, Any], str]] = []
@@ -104,77 +105,26 @@ def render_illustrated_html(root: Path, base_html: str, manifest: dict[str, Any]
     from bs4 import BeautifulSoup
 
     soup = BeautifulSoup(base_html, "html.parser")
-    judgements = soup.select('table[data-reader-role="judgement"]')
-    judgement_row = judgements[-1].find_parent("tr") if judgements else None
-
     topic_rows: dict[str, Any] = {}
-    topic_order: list[str] = []
     for anchor in soup.select('a[id^="topic-"]'):
         topic_id = str(anchor.get("id") or "").removeprefix("topic-")
         row = anchor.find_parent("tr")
         if topic_id and row is not None and topic_id not in topic_rows:
             topic_rows[topic_id] = row
-            topic_order.append(topic_id)
 
-    content_rows = list(
-        soup.select('tr[data-reader-row="deep-row"], tr[data-reader-row="observation-row"]')
-    )
     used_topic_slots: set[str] = set()
-    used_content_rows: set[int] = set()
-    judgement_used = False
-
     for index, item, src in prepared:
+        topic_id = str(item.get("topic_id") or "").strip()
+        if not topic_id or topic_id in used_topic_slots:
+            continue
+        target = topic_rows.get(topic_id)
+        if target is None:
+            continue
         fragment = BeautifulSoup(_illustration_row(item, src, index), "html.parser").find("tr")
         if fragment is None:
             continue
-        placement = str(item.get("placement") or "after_judgements")
-        topic_id = str(item.get("topic_id") or "").strip()
-        inserted = False
-
-        # Honor the requested topic slot when it is available.
-        if placement == "before_topic" and topic_id and topic_id not in used_topic_slots:
-            target = topic_rows.get(topic_id)
-            if _insert_in_slot(fragment, "before", target, f"before_topic:{topic_id}"):
-                used_topic_slots.add(topic_id)
-                inserted = True
-
-        # Only one illustration may occupy the issue-summary slot.
-        if not inserted and placement == "after_judgements" and not judgement_used:
-            if _insert_in_slot(fragment, "after", judgement_row, "after_judgements"):
-                judgement_used = True
-                inserted = True
-
-        # Deterministic topic fallback spreads additional issue-level images.
-        if not inserted:
-            for candidate_topic in topic_order:
-                if candidate_topic in used_topic_slots:
-                    continue
-                if _insert_in_slot(
-                    fragment,
-                    "before",
-                    topic_rows[candidate_topic],
-                    f"before_topic:{candidate_topic}",
-                ):
-                    used_topic_slots.add(candidate_topic)
-                    inserted = True
-                    break
-
-        # Dense issues may contain more useful illustrations than topics. Put the
-        # remainder after distinct content rows, checking live DOM neighbours so a
-        # topic-slot insertion and an after-item insertion can never become adjacent.
-        if not inserted:
-            for row_index, row in enumerate(content_rows):
-                if row_index in used_content_rows:
-                    continue
-                if _insert_in_slot(fragment, "after", row, f"after_item:{row_index + 1}"):
-                    used_content_rows.add(row_index)
-                    inserted = True
-                    break
-
-        # A missing slot means the manifest requested more generated images than the
-        # actual publication has content-separated placements. Do not append/stack;
-        # final provenance validation will fail because the generated manifest and DOM
-        # no longer match, forcing an explicit layout decision before send.
+        if _insert_in_slot(fragment, "before", target, f"before_topic:{topic_id}"):
+            used_topic_slots.add(topic_id)
     return str(soup)
 
 
@@ -283,6 +233,11 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
     if not issue_path:
         raise RuntimeError("Illustrated publication requires a finalized IssueDocument")
     issue_data = read_json(pipeline.root / issue_path, {})
+    judgement_item_ids = {
+        str(item_id)
+        for judgement in (issue_data.get("synthesis") or {}).get("judgements") or []
+        for item_id in judgement.get("evidence_item_ids") or []
+    }
     items = [
         {
             "brief_item_id": item.get("brief_item_id"),
@@ -290,6 +245,8 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
             "topic_id": item.get("topic_id"),
             "direction_id": item.get("direction_id"),
             "title": item.get("title"),
+            "score": item.get("score"),
+            "in_issue_judgements": str(item.get("brief_item_id")) in judgement_item_ids,
             "core_conclusion": item.get("core_conclusion"),
             "mechanism": item.get("mechanism"),
             "result": item.get("result") or item.get("evidence_summary"),
@@ -307,9 +264,9 @@ def _illustration_input(pipeline, issue: dict[str, Any]) -> dict[str, Any]:
         "items": items,
         "constraints": {
             "issue_document_is_immutable": True,
-            "illustration_count_policy": "no_fixed_cap; create every distinct explanatory image that materially improves understanding, without decorative or near-duplicate filler",
+            "illustration_count_policy": "at most one image per topic and zero is allowed; a topic image synthesizes its key items (score plus issue-judgement membership) rather than illustrating arbitrary concepts; total images never exceed the number of topics",
             "persona_required_for_generated_images": True,
-            "layout_policy": "placement is a preference; Python assigns non-adjacent final slots with at most one after judgements and one before each topic, then content-separated after-item slots",
+            "layout_policy": "the only placement is before_topic; Python inserts each topic's image immediately before that topic's header so the reader can always attribute the image to its topic",
             "aspect_ratio": "1.9:1",
             **persona_contract,
             # Publication assets must live outside workspace/runs so the final
