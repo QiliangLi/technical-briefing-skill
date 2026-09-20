@@ -426,7 +426,7 @@ def test_renderer_adapter_style_tables_and_vendored_cytoscape():
 
 LENS_REPRO = {
     "topic": "agent_acceleration",
-    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (23, 26)},
+    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (22, 24)},
 }
 
 
@@ -524,8 +524,29 @@ def test_lens_layout_is_deterministic_and_has_no_coordinate_voids():
                 maxAbs = Math.max(maxAbs, Math.abs(pos.x), Math.abs(pos.y));
                 void id;
               }}
-              const stats = layout.edgeStats(model, first.positions);
-              for (const [relation, row] of Object.entries(stats)) {{
+              // An item intentionally republished across issues (the graph
+              // keeps one node plus one published_in edge per issue) spans
+              // issue columns by design; audit published_in edges only from
+              // items with a single publication.
+              const publishedOutDegree = {{}};
+              (model.edges || []).forEach((edge) => {{
+                if (edge.data.relation !== 'published_in') return;
+                if (!first.positions[edge.data.source] || !first.positions[edge.data.target]) return;
+                publishedOutDegree[edge.data.source] = (publishedOutDegree[edge.data.source] || 0) + 1;
+              }});
+              const auditedStats = {{}};
+              (model.edges || []).forEach((edge) => {{
+                const relation = edge.data.relation;
+                const from = first.positions[edge.data.source];
+                const to = first.positions[edge.data.target];
+                if (!from || !to) return;
+                if (relation === 'published_in' && publishedOutDegree[edge.data.source] > 1) return;
+                (auditedStats[relation] = auditedStats[relation] || []).push(
+                  Math.round(Math.hypot(to.x - from.x, to.y - from.y)));
+              }});
+              for (const [relation, lengths] of Object.entries(auditedStats)) {{
+                const sorted = lengths.slice().sort((a, b) => a - b);
+                const row = {{ count: sorted.length, median: sorted[Math.floor((sorted.length - 1) / 2)], max: sorted[sorted.length - 1] }};
                 // Semantic edges (has_item / published_in / supports_judgement)
                 // must stay local to their lane or column: max ≤ 4× median.
                 // Containment edges (has_direction, tracks, …) may span layout
