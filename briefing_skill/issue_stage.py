@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .business_time import briefing_date
 from .expanded import normalise_legacy_item, select_expanded_rows
+from .public_trace_scan import scrub_discovered_via
 from .tasks import synthesis_item_payload
 from .utils import now_iso, read_json, stable_hash, write_json
 
@@ -257,6 +258,7 @@ def install_issue_stage() -> None:
             item = read_json(self.root / row["json_path"])
             if self.config.settings.get("issue_mode", "compact") == "expanded_v2":
                 item = normalise_legacy_item(item, self.config)
+            scrub_discovered_via(item)
             item_role = row.get("item_role") or "core"
             rebuilt = {
                 **item,

@@ -387,3 +387,11 @@ def test_scrub_discovered_via_drops_upstream_labels_only() -> None:
     only_upstream = {"discovered_via": ["aihot"]}
     scrub_discovered_via(only_upstream)
     assert only_upstream["discovered_via"] is None
+
+
+def test_both_issue_builders_scrub_discovered_via() -> None:
+    """The expanded_v2 builder must scrub like the compact one (regression for the 2026-09-20 leak)."""
+    root = Path(__file__).resolve().parents[1]
+    for module_name in ("pipeline.py", "issue_stage.py"):
+        source = (root / "briefing_skill" / module_name).read_text(encoding="utf-8")
+        assert "scrub_discovered_via(item)" in source, f"{module_name} does not scrub item payloads"
