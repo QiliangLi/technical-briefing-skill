@@ -71,6 +71,16 @@ DEEP_ENTRY_CONTRACTS: dict[str, dict[str, Any]] = {
         "min_technology_value_score": 12,
         "boundary": "Cross-region/WAN/cross-cluster transfer, migration, remote access, bandwidth reduction, or consistency must be a core evaluated problem; local KV compression or tokenization alone does not qualify.",
     },
+    "kv_management": {
+        "allowed_core_contributions": [
+            "prefix_cache_reuse",
+            "paged_block_management",
+            "kv_tiered_placement",
+        ],
+        "min_relevance_score": 65,
+        "min_technology_value_score": 12,
+        "boundary": "The core contribution must change single-node or single-cluster KVCache storage management (prefix/radix reuse, paging and block management, tiered GPU/CPU/SSD placement, or eviction); cross-node transfer belongs to the TPN and cross-region topics, and model-side attention or quantization kernels alone do not qualify.",
+    },
     "optical_network": {
         "allowed_core_contributions": [
             "optical_interconnect",

@@ -596,6 +596,48 @@ def test_two_all_query_lanes_hitting_same_item_do_not_crash_ledger(tmp_path: Pat
     ]
 
 
+def test_duplicate_observation_in_one_lane_counts_once_in_ledger_sidecar(tmp_path: Path) -> None:
+    # Reviewer repro: the hot lane delivered the same item twice in one
+    # payload; the sidecar counted both attempts while the release gate
+    # compares against the unique record ids the frozen input requires, and
+    # expects the LAST observation's payload to win for a repeated id.
+    dup_first = upstream_item("cmt-hotdup", "GPU-initiated storage 热点", "GPU 直接发起存储访问的热点讨论。", "https://example.com/hotdup")
+    dup_last = upstream_item("cmt-hotdup", "GPU-initiated storage 热点(更新)", "同一条目在本轮 hotter 的重复投递。", "https://example.com/hotdup")
+    other = upstream_item("cmt-hotother", "CXL 内存池化热点", "CXL 内存池化的热点讨论。", "https://example.com/hotother")
+
+    def topic_config():
+        return ConfigBundle(
+            topics={"topics": [{"id": "agent_x", "name": "Agent", "aihot_priority": "medium",
+                                "directions": [{"id": "harness", "aihot_queries": []}]}]},
+            sources={"sources": [{"id": "aihot", "type": "aihot", "enabled": True, "endpoint": ENDPOINT,
+                                   "api_base": API_BASE, "window": "7d", "base_selected_limit": 50,
+                                   "query_limits": {"medium": 15}, "hot_topics_enabled": True,
+                                   "daily_enabled": True}]},
+            scoring={}, settings={}, email={},
+        )
+
+    http = FakeHttp({SELECTED_URL: Response({"items": []}),
+                     HOT_URL: Response({"items": [dup_first, dup_last, other]}),
+                     DAILY_URL: Response({"report": {"date": "2026-08-21", "sections": []}})})
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    run_dir = tmp_path / "runs" / "run-hotdup"
+    run_dir.mkdir(parents=True)
+    db.create_run("run-hotdup", "COLLECTING")
+    collector = AIHotCollector(topic_config(), db, http, run_id="run-hotdup", run_dir=run_dir)
+
+    collector.collect()
+
+    status = json.loads((run_dir / "source-cache" / "aihot" / "ledger-status.json").read_text())
+    assert status["records_attempted"] == 2
+    rows = db.fetchall(
+        "SELECT title FROM radar_upstream_records WHERE run_id=? AND upstream_lane='hot' ORDER BY title",
+        ("run-hotdup",),
+    )
+    assert len(rows) == 2
+    assert "更新" in rows[-1]["title"]
+
+
 def test_legacy_ledger_unique_constraint_is_rebuilt(tmp_path: Path) -> None:
     import sqlite3
 

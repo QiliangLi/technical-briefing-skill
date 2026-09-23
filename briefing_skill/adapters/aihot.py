@@ -190,7 +190,7 @@ class AIHotCollector:
         self.freeze_path = run_dir / "source-cache" / "aihot" / "freeze.json" if run_dir else None
         self._frozen_lanes: dict[str, dict[str, Any]] | None = None
         self._lane_fetches: dict[str, dict[str, Any]] = {}
-        self._upstream_records: list[dict[str, Any]] = []
+        self._upstream_records: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------ plan
 
@@ -607,11 +607,17 @@ class AIHotCollector:
         summary = str(raw.get("summary") or raw.get("description") or "")
         if not (item_id or canonical or title):
             return
+        record_id = stable_hash(
+            self.run_id, "aihot-upstream", lane["key"], item_id or canonical or title
+        )
+        # The release gate compares the sidecar count with the unique records
+        # the frozen input requires (last observation wins there), and the DB
+        # upserts by record_id; a lane that delivers the same observation
+        # twice must not inflate the count nor keep the stale first payload.
         fetched = self._lane_fetches.get(lane["key"]) or {}
         retrieved_at = now_iso()
-        self._upstream_records.append(
-            {
-                "record_id": stable_hash(self.run_id, "aihot-upstream", lane["key"], item_id or canonical or title),
+        self._upstream_records[record_id] = {
+                "record_id": record_id,
                 "run_id": self.run_id,
                 "provider": AIHOT_PROVIDER,
                 "upstream_lane": lane["lane"],
@@ -640,7 +646,6 @@ class AIHotCollector:
                 "decision_reason": None,
                 "created_at": now_iso(),
             }
-        )
 
     def _write_ledger(self) -> None:
         """Persist the audit ledger and record the attempt in a status sidecar.
@@ -656,7 +661,7 @@ class AIHotCollector:
         error: str | None = None
         if self._upstream_records:
             try:
-                self.db.upsert_radar_upstream_records(self._upstream_records)
+                self.db.upsert_radar_upstream_records(list(self._upstream_records.values()))
             except Exception as exc:  # noqa: BLE001
                 # The audit ledger must never zero out successfully collected
                 # public candidates: record the failure for the sidecar and

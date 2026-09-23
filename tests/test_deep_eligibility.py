@@ -128,12 +128,40 @@ def test_all_configured_deep_topics_have_machine_readable_entry_contracts():
         "dpu_inline",
         "agent_acceleration",
         "cross_region",
+        "kv_management",
         "optical_network",
         "ai_chip_accelerator",
         "storage_media",
         "accelerator_io_datapath",
     }
     assert all(contract["allowed_core_contributions"] for contract in DEEP_ENTRY_CONTRACTS.values())
+
+
+def test_kv_management_tiered_placement_admits_but_cross_region_transfer_does_not():
+    candidate = _candidate("offload_hierarchy")
+    tiered = _result(
+        matched_direction_id="offload_hierarchy",
+        core_contribution="kv_tiered_placement",
+    )
+    cross_cluster = _result(
+        matched_direction_id="offload_hierarchy",
+        core_contribution="cross_cluster_migration",
+    )
+
+    admitted, _ = derive_deep_eligibility(
+        tiered,
+        candidate,
+        DEEP_ENTRY_CONTRACTS["kv_management"],
+    )
+    rejected, reason = derive_deep_eligibility(
+        cross_cluster,
+        candidate,
+        DEEP_ENTRY_CONTRACTS["kv_management"],
+    )
+
+    assert admitted is True
+    assert rejected is False
+    assert "core contribution is outside" in reason
 
 
 def test_accelerator_storage_path_requires_an_allowed_core_contribution():
