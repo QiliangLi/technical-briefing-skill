@@ -163,17 +163,92 @@ def published_identity_roles(root: Path, db, identity_keys: Iterable[str]) -> di
     return result
 
 
+def _item_source_identities(item: dict[str, Any]) -> set[str]:
+    identities = set()
+    for source in item.get("sources") or []:
+        identity = source_identity_key(str(source.get("url") or ""))
+        if identity:
+            identities.add(identity)
+    return identities
+
+
+def _row_source_identities(root: Path, row: dict[str, Any]) -> set[str]:
+    """Collect every stable source identity a selection row can publish under.
+
+    The event key comes from discovery clustering and can diverge from the
+    machine item's source list (a paper re-cited under a different arXiv id
+    keeps its original event). Publications are recorded under the URL
+    identities the recipient actually saw, so role lookups must span both
+    sides or a split identity looks forever-unpublished and replays across
+    issues.
+    """
+
+    identities = {str(row.get("event_key") or "").strip()}
+    json_path = str(row.get("json_path") or "").strip()
+    if json_path and (root / json_path).is_file():
+        identities.update(_item_source_identities(read_json(root / json_path, {})))
+    return {identity for identity in identities if identity}
+
+
+def _sibling_event_identities(root: Path, db, event_ids: Iterable[str]) -> dict[str, set[str]]:
+    """ identities of every surviving brief item bound to the same event.
+
+    The row's own machine-item JSON can be gone with its run directory while
+    a sibling run's copy of the item still carries the curated source list.
+    """
+
+    ids = sorted({str(value or "").strip() for value in event_ids if str(value or "").strip()})
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    try:
+        rows = db.fetchall(
+            f"SELECT event_id,json_path FROM brief_items WHERE event_id IN ({placeholders})",
+            tuple(ids),
+        )
+    except Exception:
+        return {}
+    mapping: dict[str, set[str]] = {}
+    for row in rows or []:
+        path = root / str(row.get("json_path") or "")
+        if not path.is_file():
+            continue
+        identities = _item_source_identities(read_json(path, {}))
+        if identities:
+            mapping.setdefault(str(row.get("event_id") or ""), set()).update(identities)
+    return mapping
+
+
 def annotate_rows_with_publication_roles(root: Path, db, rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Attach cross-period detailed/brief history used by expanded selection."""
+    """Attach cross-period detailed/brief history used by expanded selection.
+
+    A row's history is the union across its event key, its machine item's
+    source identities, and the surviving source lists of sibling items on
+    the same event; ``detailed`` under any of them blocks revisits.
+    """
 
     materialized = [dict(row) for row in rows]
-    roles = published_identity_roles(
-        root,
-        db,
-        (str(row.get("event_key") or "") for row in materialized),
-    )
+    ensure_schema(db)
+    row_identities = [_row_source_identities(root, row) for row in materialized]
+    unresolved_events = {
+        str(row.get("event_id") or "").strip()
+        for row, identities in zip(materialized, row_identities)
+        if row.get("event_key") and len(identities) <= 1 and str(row.get("event_id") or "").strip()
+    }
+    sibling_map = _sibling_event_identities(root, db, unresolved_events)
+    for row, identities in zip(materialized, row_identities):
+        event_id = str(row.get("event_id") or "").strip()
+        if len(identities) <= 1 and event_id in sibling_map:
+            identities = {identity for identity in [*identities, *sibling_map[event_id]] if identity}
+        row["__identities"] = identities
+    all_identities = {
+        identity for row in materialized for identity in row["__identities"]
+    }
+    roles = published_identity_roles(root, db, all_identities)
     for row in materialized:
-        history = roles.get(str(row.get("event_key") or ""), set())
+        history: set[str] = set()
+        for identity in row.pop("__identities"):
+            history.update(roles.get(identity, set()))
         row["publication_roles"] = sorted(history)
         row["previously_detailed"] = "detailed" in history
         row["previously_brief"] = "brief" in history
@@ -408,6 +483,22 @@ def record_delivery(service, issue: dict[str, Any], sent_at: str, recipients: st
                 f"Publication history invariant failed: expected {expected} sources, persisted {actual}"
             )
         _project_compatibility(conn, issue["id"], sources, sent_at)
+        # Stamp the issue's own item events directly, without key matching: a
+        # split identity (event keyed at discovery, sources re-cited under a
+        # different URL) otherwise never learns it was published and the
+        # selection gate replays the item in a later issue. Membership in a
+        # sent issue's item list is the publication truth; the legacy
+        # ``approved`` review flag stays 0 on most published rows.
+        conn.execute(
+            """
+            UPDATE events SET last_pushed_at=? WHERE id IN (
+              SELECT bi.event_id FROM issue_items ii
+              JOIN brief_items bi ON bi.id=ii.brief_item_id
+              WHERE ii.issue_id=?
+            )
+            """,
+            (sent_at, issue["id"]),
+        )
         conn.execute(
             "UPDATE runs SET updated_at=?,stage='SENT',status='COMPLETED' WHERE id=?",
             (sent_at, issue["run_id"]),

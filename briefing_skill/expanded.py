@@ -273,7 +273,7 @@ def collect_historical_brief_rows(
     rows = db.fetchall(
         f"""
         SELECT bi.id, bi.run_id AS source_run_id, bi.score, bi.json_path,
-               bi.fact_check_status, e.topic_id, e.direction_id, e.event_key,
+               bi.fact_check_status, bi.event_id, e.topic_id, e.direction_id, e.event_key,
                COALESCE(
                  e.last_pushed_at,
                  (SELECT MAX(e2.last_pushed_at) FROM events e2

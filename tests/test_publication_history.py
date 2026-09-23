@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ from briefing_skill.config import ConfigBundle
 from briefing_skill.db import Database
 from briefing_skill.emailer import EmailService
 from briefing_skill.publication_history import (
+    annotate_rows_with_publication_roles,
     publication_state,
     published_identity_roles,
     reconcile_local_history,
@@ -335,3 +337,110 @@ def test_deep_source_url_does_not_carry_radar_identity(tmp_path: Path) -> None:
     )
     assert row is not None  # generic URL dedup row may exist
     assert row["upstream_item_id"] is None and row["story_id"] is None
+
+
+def _brief_item(
+    db: Database,
+    tmp_path: Path,
+    *,
+    item_id: str,
+    run_id: str,
+    event_id: str,
+    urls: list[str],
+    score: float = 82.0,
+) -> Path:
+    item_dir = tmp_path / "workspace" / "runs" / run_id / "items"
+    item_dir.mkdir(parents=True, exist_ok=True)
+    item_path = item_dir / f"{event_id}.json"
+    item_path.write_text(
+        json.dumps({"title": f"item-{item_id}", "sources": [{"url": url} for url in urls]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    db.execute(
+        """
+        INSERT INTO brief_items(id,run_id,event_id,json_path,score,fact_check_status,approved,created_at)
+        VALUES (?,?,?,?,?,?,1,?)
+        """,
+        (item_id, run_id, event_id, str(item_path.relative_to(tmp_path)), score, "PASS", now_iso()),
+    )
+    return item_path
+
+
+def test_split_identity_publication_blocks_replay(tmp_path: Path) -> None:
+    """Regression (2026-09-16/18/20): a machine item bound to a discovery-time
+    event key that differs from its own source URL must still see the
+    publication recorded under that URL, or the historical brief-upgrade path
+    replays it in every following issue."""
+    db, service = _service(tmp_path)
+    discovery_url = "https://arxiv.org/abs/2608.01676v1"
+    cited_url = "https://arxiv.org/abs/2608.00358v1"
+    _event(db, "event-cross", discovery_url)
+
+    # Two runs' items share the crossed event; only the older copy survives
+    # a later run-directory cleanup, and it cites the paper's real URL.
+    surviving = _brief_item(
+        db, tmp_path, item_id="item-old", run_id="run-0", event_id="event-cross", urls=[cited_url]
+    )
+    gone = _brief_item(
+        db, tmp_path, item_id="item-new", run_id="run-1", event_id="event-cross", urls=[discovery_url]
+    )
+
+    # The item is published as an observation card in a sent issue.
+    issue = _issue(
+        db,
+        tmp_path,
+        run_id="run-2",
+        issue_id="issue-sent",
+        html=f"""
+        <html><body><table>
+        <tr><td data-reader-role="observation-card">
+        <a href="{cited_url}">专题补充里发布的交叉条目</a>
+        </td></tr>
+        </table></body></html>
+        """,
+    )
+    db.execute(
+        "INSERT INTO issue_items(issue_id,brief_item_id,position,item_role) VALUES (?,?,?,?)",
+        (issue["id"], "item-new", 1, "observation"),
+    )
+    record_delivery(service, issue, "2026-09-16T02:02:03+00:00", "reader@example.com", "msg-cross")
+
+    # The item's own event learns about the send even though its key never
+    # matches the published URL identity.
+    assert (
+        db.fetchone("SELECT last_pushed_at FROM events WHERE id='event-cross'")["last_pushed_at"]
+        == "2026-09-16T02:02:03+00:00"
+    )
+
+    # Role annotation through the crossed row sees the detailed publication
+    # via the machine item's source identity ...
+    rows = annotate_rows_with_publication_roles(
+        tmp_path,
+        db,
+        [
+            {
+                "event_key": source_identity_key(discovery_url),
+                "event_id": "event-cross",
+                "json_path": str(gone.relative_to(tmp_path)),
+            }
+        ],
+    )
+    assert rows[0]["previously_detailed"] is True
+    assert rows[0]["previously_brief"] is False
+
+    # ... and still sees it after the row's own item JSON is gone with its
+    # run directory, through the surviving sibling item of the same event.
+    gone.unlink()
+    rows = annotate_rows_with_publication_roles(
+        tmp_path,
+        db,
+        [
+            {
+                "event_key": source_identity_key(discovery_url),
+                "event_id": "event-cross",
+                "json_path": str(gone.relative_to(tmp_path)),
+            }
+        ],
+    )
+    assert rows[0]["previously_detailed"] is True
+    assert surviving.is_file()
