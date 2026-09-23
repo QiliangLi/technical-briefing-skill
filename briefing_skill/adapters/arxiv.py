@@ -32,6 +32,15 @@ class ArxivCollector:
         request_interval = float(self.source.get("request_interval_seconds", 3.0))
         if request_interval < 0:
             raise RuntimeError("arXiv request_interval_seconds must be non-negative")
+        # export.arxiv.org fronts a rolling IP throttle that answers 406 and
+        # only clears after a quiet window: retry a blocked direction with a
+        # growing backoff, and stop the whole lane for this run once several
+        # consecutive directions stay blocked, so one run cannot keep the
+        # blocklist hot for the next.
+        retry_attempts = max(0, int(self.source.get("rate_limit_retry_attempts", 2)))
+        backoff_seconds = float(self.source.get("rate_limit_backoff_seconds", 30.0))
+        breaker_limit = max(0, int(self.source.get("rate_limit_circuit_breaker", 3)))
+        consecutive_blocked = 0
         cutoff = datetime.now(timezone.utc) - timedelta(days=freshness_limits(self.config)["absolute"])
         request_started = False
         for topic, direction in self.config.iter_directions():
@@ -53,11 +62,34 @@ class ArxivCollector:
             if request_started and request_interval:
                 self.sleep_fn(request_interval)
             request_started = True
+            response = None
             try:
-                response = self.http.get(self.source["endpoint"], params=params)
+                for attempt in range(retry_attempts + 1):
+                    response = self.http.get(self.source["endpoint"], params=params)
+                    if response.status_code != 406:
+                        break
+                    if attempt < retry_attempts:
+                        self.sleep_fn(backoff_seconds * (2**attempt))
             except (HttpRetryError, httpx.HTTPError) as exc:
                 LOGGER.warning("arXiv direction failed %s/%s: %s", topic.get("id"), direction.get("id"), exc)
+                response = None
+            if response is not None and response.status_code == 406:
+                LOGGER.warning(
+                    "arXiv query still rate-limited after %d retries: %s",
+                    retry_attempts,
+                    query,
+                )
+            if response is None or response.status_code == 406:
+                consecutive_blocked += 1
+                if breaker_limit and consecutive_blocked >= breaker_limit:
+                    LOGGER.warning(
+                        "arXiv rate-limit circuit breaker opened after %d consecutive blocked directions; "
+                        "skipping the remaining arXiv directions this run",
+                        consecutive_blocked,
+                    )
+                    break
                 continue
+            consecutive_blocked = 0
             if response.status_code >= 400:
                 LOGGER.warning("arXiv query failed %s: %s", query, response.status_code)
                 continue
