@@ -179,6 +179,14 @@ def test_email_template_contains_no_item_images() -> None:
     assert 'href="https://qiliangli.github.io/technical-briefing-skill/"' in template
 
 
+def test_email_template_targets_survive_mail_client_id_stripping() -> None:
+    template = (Path(__file__).resolve().parents[1] / "templates" / "email.html").read_text(encoding="utf-8")
+    # Webmail sanitizers drop id attributes on table cells, so every anchor
+    # target must also expose the legacy name form on an <a> element.
+    assert '<a id="topic-{{ group.id }}" name="topic-{{ group.id }}"></a>' in template
+    assert '<td id="{{ item.anchor_id }}" style="padding:12px 13px 11px"><a name="{{ item.anchor_id }}"></a>' in template
+
+
 def test_expanded_email_validator_checks_the_deliverable_not_unused_cards(tmp_path: Path) -> None:
     email_path = tmp_path / "email.html"
     email_path.write_text(
