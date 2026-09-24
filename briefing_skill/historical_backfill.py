@@ -277,8 +277,15 @@ class HistoricalBackfillService:
             "sortBy": "submittedDate",
             "sortOrder": "descending",
         }
+        # Same descriptive-UA rule as the live collector: arXiv blocks generic
+        # bot-like User-Agents with 406 long before the lane cursor advances.
+        headers = (
+            {"User-Agent": str(source["user_agent"])}
+            if source.get("user_agent")
+            else None
+        )
         try:
-            response = self.http.get(source["endpoint"], params=params)
+            response = self.http.get(source["endpoint"], params=params, headers=headers)
             response.raise_for_status()
             entries = parse_feed(response.content)
         except (HttpRetryError, httpx.HTTPError, ValueError) as exc:

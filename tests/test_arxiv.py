@@ -29,6 +29,7 @@ def test_arxiv_direction_failure_preserves_prior_results_and_deduplicates():
                     "endpoint": "https://export.arxiv.org/api/query",
                     "max_results_per_direction": 5,
                     "request_interval_seconds": 0.25,
+                    "user_agent": "test-tool/1.0 (contact: ops@example.com)",
                     "categories": ["cs.AI"],
                 }
             ]
@@ -41,9 +42,11 @@ def test_arxiv_direction_failure_preserves_prior_results_and_deduplicates():
     class FakeHttp:
         def __init__(self):
             self.calls = 0
+            self.seen_headers = []
 
-        def get(self, url, *, params):
+        def get(self, url, *, params, headers=None):
             self.calls += 1
+            self.seen_headers.append(headers)
             if self.calls == 3:
                 raise httpx.ConnectError("offline", request=httpx.Request("GET", url))
             return httpx.Response(200, content=_feed(), request=httpx.Request("GET", url, params=params))
@@ -54,6 +57,9 @@ def test_arxiv_direction_failure_preserves_prior_results_and_deduplicates():
 
     assert http.calls == 3
     assert sleeps == [0.25, 0.25]
+    assert http.seen_headers == [
+        {"User-Agent": "test-tool/1.0 (contact: ops@example.com)"}
+    ] * 3
     assert len(items) == 1
     assert items[0].external_id == "arxiv:1234.5678"
 
@@ -88,7 +94,7 @@ def test_rate_limited_direction_recovers_with_growing_backoff():
         def __init__(self):
             self.calls = 0
 
-        def get(self, url, *, params):
+        def get(self, url, *, params, headers=None):
             self.calls += 1
             if self.calls == 1:
                 return httpx.Response(406, request=httpx.Request("GET", url, params=params))
@@ -112,7 +118,7 @@ def test_persistent_rate_limit_opens_circuit_breaker_and_stops_the_lane():
         def __init__(self):
             self.calls = 0
 
-        def get(self, url, *, params):
+        def get(self, url, *, params, headers=None):
             self.calls += 1
             return httpx.Response(406, request=httpx.Request("GET", url, params=params))
 
@@ -137,7 +143,7 @@ def test_transport_failure_counts_toward_the_circuit_breaker():
         def __init__(self):
             self.calls = 0
 
-        def get(self, url, *, params):
+        def get(self, url, *, params, headers=None):
             self.calls += 1
             raise httpx.ConnectError("offline", request=httpx.Request("GET", url, params=params))
 

@@ -41,6 +41,13 @@ class ArxivCollector:
         backoff_seconds = float(self.source.get("rate_limit_backoff_seconds", 30.0))
         breaker_limit = max(0, int(self.source.get("rate_limit_circuit_breaker", 3)))
         consecutive_blocked = 0
+        # arXiv asks for a descriptive UA with contact info; generic bot-like
+        # UAs are what their moderation blocks with 406 in the first place.
+        request_headers = (
+            {"User-Agent": str(self.source["user_agent"])}
+            if self.source.get("user_agent")
+            else None
+        )
         cutoff = datetime.now(timezone.utc) - timedelta(days=freshness_limits(self.config)["absolute"])
         request_started = False
         for topic, direction in self.config.iter_directions():
@@ -65,7 +72,9 @@ class ArxivCollector:
             response = None
             try:
                 for attempt in range(retry_attempts + 1):
-                    response = self.http.get(self.source["endpoint"], params=params)
+                    response = self.http.get(
+                        self.source["endpoint"], params=params, headers=request_headers
+                    )
                     if response.status_code != 406:
                         break
                     if attempt < retry_attempts:
