@@ -295,9 +295,7 @@ def test_channel_starved_searches_target_topics_without_arxiv_rows(tmp_path) -> 
     from briefing_skill.discovery_stage import plan_channel_starved_searches
 
     pipeline = _starved_pipeline(tmp_path, arxiv_rows={"kv_management"})
-    # Widen the allowance so the topic-set semantics are observable; the
-    # default cap is checked separately below.
-    pipeline.config.settings.setdefault("efficiency", {})["agent_web_search_outage_extra"] = 999
+    # Default is unlimited: every starved direction gets a lane (API parity).
     searches = plan_channel_starved_searches(pipeline)
 
     topics = {s["topic_id"] for s in searches}
@@ -329,10 +327,21 @@ def test_channel_starved_searches_target_topics_without_arxiv_rows(tmp_path) -> 
         for s in searches
     )
 
-    # With the default allowance the lanes are priority-ordered and capped.
-    capped = plan_channel_starved_searches(_starved_pipeline(tmp_path / "cap", arxiv_rows=set()))
-    assert len(capped) <= 4
-    assert {s["topic_id"] for s in capped} == {"agent_acceleration"}
+    # Priority ordering still decides the lane order, and every starved
+    # direction is covered — the batch matches the blocked API's reach.
+    all_lanes = plan_channel_starved_searches(_starved_pipeline(tmp_path / "cap", arxiv_rows=set()))
+    assert {s["topic_id"] for s in all_lanes[:2]} == {"agent_acceleration"}
+    starved_directions = {
+        f"{t['id']}:{d['id']}"
+        for t, d in pipeline.config.iter_directions()
+        if (d.get("arxiv_query") or d.get("include_terms")) and (d.get("queries") or d.get("arxiv_query") or d.get("include_terms"))
+    }
+    assert {s["search_id"] for s in all_lanes} == starved_directions
+
+    # An explicit positive allowance caps the batch; 0 disables it.
+    capped_pipe = _starved_pipeline(tmp_path / "two", arxiv_rows=set())
+    capped_pipe.config.settings.setdefault("efficiency", {})["agent_web_search_outage_extra"] = 2
+    assert len(plan_channel_starved_searches(capped_pipe)) == 2
 
 
 def test_channel_starved_searches_respect_zero_allowance(tmp_path) -> None:

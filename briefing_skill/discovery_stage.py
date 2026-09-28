@@ -142,12 +142,14 @@ def plan_channel_starved_searches(pipeline) -> list[dict[str, Any]]:
     from .freshness import freshness_limits
 
     coverage_policy.materialize_deep_backlog(pipeline.config, pipeline.db, pipeline.run_id)
-    limit = int(
-        (pipeline.config.settings.get("efficiency") or {}).get(
-            "agent_web_search_outage_extra", 4
-        )
+    # Result parity with the blocked API is the goal, so by default every
+    # starved direction gets a lane. agent_web_search_outage_extra is only an
+    # opt-down: an explicit positive number caps the lanes, 0 disables them.
+    allowance = (pipeline.config.settings.get("efficiency") or {}).get(
+        "agent_web_search_outage_extra"
     )
-    if not limit:
+    limit = None if allowance is None else int(allowance)
+    if limit == 0:
         return []
     arxiv_rows = pipeline.db.fetchall(
         """
@@ -185,7 +187,7 @@ def plan_channel_starved_searches(pipeline) -> list[dict[str, Any]]:
     date_from = date_to - timedelta(days=max_age_days)
     searches: list[dict[str, Any]] = []
     for priority, topic, direction, query in lanes:
-        if len(searches) >= limit:
+        if limit is not None and len(searches) >= limit:
             break
         searches.append(
             {

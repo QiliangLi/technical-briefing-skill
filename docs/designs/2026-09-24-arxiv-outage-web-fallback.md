@@ -35,8 +35,10 @@ Mechanics:
 2. New `plan_channel_starved_searches(pipeline)` in `discovery_stage.py`
    builds lanes for those directions (same search-dict shape as the gap
    planner, `search_reason: arXiv channel blocked this run`), ordered by
-   topic priority, capped by a new setting
-   `agent_web_search_outage_extra` (default 4). Because the blocked channel
+   topic priority. Result parity with the blocked API is the goal, so by
+   default every starved direction gets a lane (no numeric cap);
+   `agent_web_search_outage_extra` is only an opt-down (positive number
+   caps, 0 disables). Because the blocked channel
    IS arXiv, the lanes exist to recover what the API would have returned:
    each lane's query is derived from that direction's own `arxiv_query`
    (or `include_terms`) via `_arxiv_terms_web_query` — boolean scaffolding
