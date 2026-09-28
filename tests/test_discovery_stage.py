@@ -308,6 +308,19 @@ def test_channel_starved_searches_target_topics_without_arxiv_rows(tmp_path) -> 
         s["search_reason"].startswith("arXiv channel blocked")
         for s in searches
     )
+    # The lanes approximate the blocked API's own query per direction, not the
+    # generic web-lane query.
+    from briefing_skill.discovery_stage import _arxiv_terms_web_query
+    for s in searches:
+        direction = next(
+            d
+            for t, d in pipeline.config.iter_directions()
+            if t["id"] == s["topic_id"] and d["id"] == s["direction_id"]
+        )
+        expected = _arxiv_terms_web_query(direction)
+        if expected:
+            assert s["query"] == expected
+            assert " AND " not in s["query"] and " OR " not in s["query"]
     # The blocked channel is arXiv, so outage lanes scope the web search to
     # paper venues with arxiv.org first, not each topic's vendor domains.
     assert all(

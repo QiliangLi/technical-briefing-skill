@@ -37,9 +37,13 @@ Mechanics:
    planner, `search_reason: arXiv channel blocked this run`), ordered by
    topic priority, capped by a new setting
    `agent_web_search_outage_extra` (default 4). Because the blocked channel
-   IS arXiv, the lanes scope the web search to paper venues via
-   `ARXIV_OUTAGE_PREFERRED_DOMAINS` (arxiv.org first, then OpenReview,
-   ACM DL, USENIX) instead of each topic's vendor-domain preferences.
+   IS arXiv, the lanes exist to recover what the API would have returned:
+   each lane's query is derived from that direction's own `arxiv_query`
+   (or `include_terms`) via `_arxiv_terms_web_query` — boolean scaffolding
+   dropped, phrases kept — instead of the generic web-lane query; and the
+   search is scoped to paper venues via `ARXIV_OUTAGE_PREFERRED_DOMAINS`
+   (arxiv.org first, then OpenReview, ACM DL, USENIX) instead of each
+   topic's vendor-domain preferences.
 3. The installed `prepare_agent_search` keeps its one-batch-per-run guard for
    normal runs, but creates the supplement batch when: a search batch already
    exists AND `arxiv_blocked` AND no `supplement_batch` task exists yet. The

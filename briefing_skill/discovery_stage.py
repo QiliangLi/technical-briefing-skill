@@ -170,7 +170,14 @@ def plan_channel_starved_searches(pipeline) -> list[dict[str, Any]]:
         queries = direction.get("queries") or []
         if not queries:
             continue
-        lanes.append((priority_map.get(topic.get("aihot_priority", "low"), 30), topic, direction, str(queries[0])))
+        lanes.append(
+            (
+                priority_map.get(topic.get("aihot_priority", "low"), 30),
+                topic,
+                direction,
+                _arxiv_terms_web_query(direction) or str(queries[0]),
+            )
+        )
     lanes.sort(key=lambda item: (-item[0], item[1]["id"], item[2]["id"]))
     max_age_days = freshness_limits(pipeline.config)["absolute"]
 
@@ -198,6 +205,34 @@ def plan_channel_starved_searches(pipeline) -> list[dict[str, Any]]:
             }
         )
     return searches
+
+
+def _arxiv_terms_web_query(direction: dict[str, Any]) -> str:
+    """Approximate the direction's arXiv API query as a web-search query.
+
+    The outage lanes exist to recover what the blocked API would have
+    returned, so they reuse the arXiv query terms (or include_terms),
+    dropping only the boolean scaffolding a search engine cannot parse.
+    """
+
+    import re as _re
+
+    raw = str(direction.get("arxiv_query") or "").strip()
+    if not raw:
+        terms = [
+            str(term)
+            for term in direction.get("include_terms") or []
+            if len(str(term)) >= 3
+        ]
+        return " ".join(terms[:10])
+    tokens = _re.findall(r'"[^"]+"|[A-Za-z0-9][A-Za-z0-9\-]*', raw)
+    dropped = {"AND", "OR", "NOT"}
+    kept: list[str] = []
+    for token in tokens:
+        if token in dropped or token in kept:
+            continue
+        kept.append(token)
+    return " ".join(kept[:10])
 
 
 ARXIV_OUTAGE_PREFERRED_DOMAINS = [
