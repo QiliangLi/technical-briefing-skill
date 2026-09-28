@@ -54,3 +54,89 @@ def test_retry_after_supports_seconds_http_date_and_safe_fallback():
     assert retry_after_seconds(format_datetime(now + timedelta(seconds=17)), fallback=5, now=now) == 17
     assert retry_after_seconds("invalid", fallback=7, now=now) == 7
     assert retry_after_seconds("nan", fallback=9, now=now) == 9
+
+
+class _FakeRequestsResponse:
+    def __init__(self, status_code, headers=None, url="https://example.com/limited"):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self.url = url
+
+
+class _FakeRequestsSession:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+        self.headers = {}
+
+    def get(self, url, *, headers=None, params=None, timeout=None):
+        self.calls.append((url, headers, params))
+        item = self.responses.pop(0)
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+    def close(self):
+        pass
+
+
+def test_requests_transport_retries_429_and_reports_contextual_error(monkeypatch):
+    import requests as requests_lib
+
+    from briefing_skill.http import HttpClient
+
+    monkeypatch.setattr("briefing_skill.http.time.sleep", lambda _: None)
+    session = _FakeRequestsSession(
+        [
+            _FakeRequestsResponse(429, headers={"Retry-After": "2"}),
+            _FakeRequestsResponse(429, headers={"Retry-After": "2"}),
+            _FakeRequestsResponse(429, headers={"Retry-After": "2"}),
+        ]
+    )
+    client = HttpClient(transport="requests")
+    client.client = session
+    try:
+        with pytest.raises(HttpRetryError) as raised:
+            client.get("https://example.com/limited", retries=3)
+    finally:
+        client.close()
+
+    assert len(session.calls) == 3
+    assert raised.value.status_code == 429
+    assert raised.value.attempts == 3
+
+
+def test_requests_transport_returns_success_and_wraps_transport_errors(monkeypatch):
+    import requests as requests_lib
+
+    from briefing_skill.http import HttpClient
+
+    sleeps = []
+    monkeypatch.setattr("briefing_skill.http.time.sleep", sleeps.append)
+    session = _FakeRequestsSession(
+        [
+            requests_lib.ConnectionError("boom"),
+            _FakeRequestsResponse(200, headers={"Content-Type": "application/atom+xml"}),
+        ]
+    )
+    client = HttpClient(transport="requests")
+    client.client = session
+    try:
+        response = client.get(
+            "https://export.arxiv.org/api/query",
+            params={"search_query": "cat:cs.AI"},
+            headers={"Accept": "application/atom+xml"},
+            retries=3,
+        )
+    finally:
+        client.close()
+
+    assert response.status_code == 200
+    assert sleeps == [1.0]
+
+
+def test_unknown_transport_is_rejected():
+    from briefing_skill.http import HttpClient
+
+    with pytest.raises(ValueError, match="unknown http transport"):
+        HttpClient(transport="grpc")

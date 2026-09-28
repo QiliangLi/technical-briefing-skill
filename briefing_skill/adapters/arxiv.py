@@ -25,6 +25,12 @@ class ArxivCollector:
         # Set when the rate-limit circuit breaker stops the lane this run; the
         # discovery stage uses it to plan a supplemental web-search batch.
         self.circuit_open = False
+        # Optional per-source transport override: export.arxiv.org sits behind
+        # an edge that differentiates on client characteristics, and it has
+        # answered 406 to httpx requests (notably complex OR/quoted queries)
+        # that requests/curl complete with 200. Sources configured with
+        # http_transport: requests get a requests-backed HttpClient.
+        self.http_transport = str(self.source.get("http_transport", "httpx"))
 
     def collect(self) -> list[CollectedItem]:
         result: list[CollectedItem] = []
@@ -35,22 +41,25 @@ class ArxivCollector:
         request_interval = float(self.source.get("request_interval_seconds", 3.0))
         if request_interval < 0:
             raise RuntimeError("arXiv request_interval_seconds must be non-negative")
-        # export.arxiv.org fronts a rolling IP throttle that answers 406 and
-        # only clears after a quiet window: retry a blocked direction with a
-        # growing backoff, and stop the whole lane for this run once several
+        # export.arxiv.org sits behind an edge that answers 406 both when it
+        # scores request/client characteristics (generic UA, unspecified Accept
+        # on complex queries, client fingerprint) and from rolling throttles
+        # that only clear after a quiet window. Retry a blocked direction with
+        # a growing backoff, and stop the whole lane for this run once several
         # consecutive directions stay blocked, so one run cannot keep the
         # blocklist hot for the next.
         retry_attempts = max(0, int(self.source.get("rate_limit_retry_attempts", 2)))
         backoff_seconds = float(self.source.get("rate_limit_backoff_seconds", 30.0))
         breaker_limit = max(0, int(self.source.get("rate_limit_circuit_breaker", 3)))
         consecutive_blocked = 0
-        # arXiv asks for a descriptive UA with contact info; generic bot-like
-        # UAs are what their moderation blocks with 406 in the first place.
-        request_headers = (
-            {"User-Agent": str(self.source["user_agent"])}
-            if self.source.get("user_agent")
-            else None
-        )
+        # arXiv asks for a descriptive UA with contact info and serves Atom XML;
+        # the export.arxiv.org edge also scores request characteristics, so we
+        # declare the exact representation we consume. Generic bot-like UAs and
+        # an unspecified Accept on complex OR/quoted queries are what their
+        # moderation rejects with 406 in the first place.
+        request_headers = {"Accept": "application/atom+xml"}
+        if self.source.get("user_agent"):
+            request_headers["User-Agent"] = str(self.source["user_agent"])
         cutoff = datetime.now(timezone.utc) - timedelta(days=freshness_limits(self.config)["absolute"])
         request_started = False
         for topic, direction in self.config.iter_directions():
@@ -86,9 +95,15 @@ class ArxivCollector:
                 LOGGER.warning("arXiv direction failed %s/%s: %s", topic.get("id"), direction.get("id"), exc)
                 response = None
             if response is not None and response.status_code == 406:
+                edge_headers = {
+                    key: response.headers.get(key)
+                    for key in ("server", "via", "x-served-by", "x-cache", "x-cache-hits", "age")
+                    if response.headers.get(key)
+                }
                 LOGGER.warning(
-                    "arXiv query still rate-limited after %d retries: %s",
+                    "arXiv query still rejected with 406 after %d retries (edge headers: %s): %s",
                     retry_attempts,
+                    edge_headers or "none",
                     query,
                 )
             if response is None or response.status_code == 406:

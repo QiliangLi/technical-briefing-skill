@@ -14,7 +14,7 @@ import httpx
 from .adapters.base import CollectedItem
 from .collection import CollectionService
 from .feed import parse_feed
-from .http import HttpClient, HttpRetryError
+from .http import HttpClient, HttpRetryError, RequestsError
 from .utils import (
     canonicalize_url,
     now_iso,
@@ -288,7 +288,7 @@ class HistoricalBackfillService:
             response = self.http.get(source["endpoint"], params=params, headers=headers)
             response.raise_for_status()
             entries = parse_feed(response.content)
-        except (HttpRetryError, httpx.HTTPError, ValueError) as exc:
+        except (HttpRetryError, httpx.HTTPError, ValueError, *(() if RequestsError is None else (RequestsError,))) as exc:
             payload = {
                 **state,
                 "status": "ERROR",
@@ -401,7 +401,7 @@ class HistoricalBackfillService:
             releases = response.json()
             if not isinstance(releases, list):
                 raise ValueError("GitHub releases response is not a list")
-        except (HttpRetryError, httpx.HTTPError, ValueError) as exc:
+        except (HttpRetryError, httpx.HTTPError, ValueError, *(() if RequestsError is None else (RequestsError,))) as exc:
             payload = {
                 **state,
                 "status": "ERROR",
@@ -599,14 +599,18 @@ def execute_historical_backfill(
     backfill_dir = paths.workspace / "backfill"
     batch_dir = backfill_dir / batch_id
     collector = CollectionService(config, db, batch_dir)
+    # The backfill lanes share the live endpoints; honour the arXiv transport
+    # override so its edge sees the same client characteristics as live runs.
+    backfill_http = collector.http_for("arxiv")
     try:
-        result = HistoricalBackfillService(config, db, collector.http).run(
+        result = HistoricalBackfillService(config, db, backfill_http).run(
             days=days,
             max_requests=max_requests,
             reset=reset,
         )
         persisted = collector.persist(batch_id, result.items)
     finally:
+        backfill_http.close()
         collector.close()
 
     report = {

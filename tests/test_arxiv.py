@@ -58,7 +58,10 @@ def test_arxiv_direction_failure_preserves_prior_results_and_deduplicates():
     assert http.calls == 3
     assert sleeps == [0.25, 0.25]
     assert http.seen_headers == [
-        {"User-Agent": "test-tool/1.0 (contact: ops@example.com)"}
+        {
+            "User-Agent": "test-tool/1.0 (contact: ops@example.com)",
+            "Accept": "application/atom+xml",
+        }
     ] * 3
     assert len(items) == 1
     assert items[0].external_id == "arxiv:1234.5678"
@@ -154,3 +157,30 @@ def test_transport_failure_counts_toward_the_circuit_breaker():
 
     assert http.calls == 2  # two consecutive blocked directions stop the lane
     assert items == []
+
+
+def test_collection_resolves_arxiv_transport_override():
+    from briefing_skill.collection import CollectionService
+
+    config = ConfigBundle(
+        topics={"topics": []},
+        sources={
+            "sources": [
+                {"id": "arxiv", "endpoint": "https://export.arxiv.org/api/query"},
+                {"id": "other", "endpoint": "https://example.com"},
+            ]
+        },
+        scoring={},
+        settings={},
+        email={},
+    )
+    service = CollectionService(config, db=None, run_dir=None)
+    try:
+        # Without an override every lane stays on the default httpx transport.
+        assert service._source_transport("arxiv") == "httpx"
+        assert service._source_transport("missing") == "httpx"
+        config.sources["sources"][0]["http_transport"] = "requests"
+        assert service._source_transport("arxiv") == "requests"
+        assert service.http_for("arxiv").transport == "requests"
+    finally:
+        service.close()

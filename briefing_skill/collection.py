@@ -104,8 +104,25 @@ class CollectionService:
         # collection gives every other lane its own connection pool below.
         self.http = self._new_http()
 
-    def _new_http(self) -> HttpClient:
-        return HttpClient(timeout=self._http_timeout, user_agent=self._http_user_agent)
+    def _new_http(self, transport: str = "httpx") -> HttpClient:
+        return HttpClient(
+            timeout=self._http_timeout, user_agent=self._http_user_agent, transport=transport
+        )
+
+    def _source_transport(self, source_id: str) -> str:
+        """Per-source HTTP library override (e.g. arXiv's ``requests`` lane)."""
+        for source in self.config.source_list():
+            if source.get("id") == source_id:
+                return str(source.get("http_transport", "httpx"))
+        return "httpx"
+
+    def http_for(self, source_id: str) -> HttpClient:
+        """A fresh client honouring the given source's transport override.
+
+        Callers own closing the returned client; used by the historical
+        backfill, which shares the arXiv endpoint and its edge behaviour.
+        """
+        return self._new_http(self._source_transport(source_id))
 
     def close(self) -> None:
         self.http.close()
@@ -129,7 +146,10 @@ class CollectionService:
             # Use one HTTP client/connection pool per independent collector lane.
             # This keeps cross-source cookies/connection state isolated and avoids
             # making the outer concurrency policy depend on a shared-client contract.
-            extra_http = [self._new_http() for _ in range(5)]
+            # The arXiv lane honours its per-source transport override because the
+            # export.arxiv.org edge differentiates on client characteristics.
+            extra_http = [self._new_http(self._source_transport("arxiv"))]
+            extra_http += [self._new_http() for _ in range(4)]
             clients = [self.http, *extra_http]
             collectors = [
                 AIHotCollector(self.config, self.db, clients[0], run_id=run_id, run_dir=self.run_dir),

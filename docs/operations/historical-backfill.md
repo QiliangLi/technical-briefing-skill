@@ -13,6 +13,8 @@ These mechanisms are deliberately separated so a cold start cannot turn a large 
 
 Each configured deep-topic direction is a resumable lane. Results are sorted by submitted date and paged backward until the campaign cutoff is crossed or the query is exhausted. The cursor is stored in SQLite `source_state`, so the next invocation continues instead of rescanning page 1.
 
+The arXiv lanes (live collection and backfill alike) honor the source's `http_transport` setting and send `Accept: application/atom+xml`. The `export.arxiv.org` CDN edge differentiates on client characteristics: 2026-09-28 probes from this host reproduced the same complex `OR`/quoted query returning `406` through `httpx` while `curl`/`requests` received `200`, which is what starved whole runs into the 406 circuit breaker. `config/sources.yaml` therefore pins this lane to the `requests` transport; the retry/backoff/circuit-breaker knobs remain the safety net for genuine rolling throttles, and a persistent 406 now logs the edge response headers for diagnosis.
+
 ### GitHub Releases
 
 Each enabled configured repository is a resumable lane using the GitHub Releases API with page cursors. A 404 is recorded as `FAILED_PERMANENT` until the campaign is reset or configuration is fixed; transient failures remain retryable on a later invocation.
