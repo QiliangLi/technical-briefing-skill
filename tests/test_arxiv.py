@@ -124,11 +124,13 @@ def test_persistent_rate_limit_opens_circuit_breaker_and_stops_the_lane():
 
     sleeps = []
     http = FakeHttp()
-    items = ArxivCollector(_rate_limit_config(directions), http, sleep_fn=sleeps.append).collect()
+    collector = ArxivCollector(_rate_limit_config(directions), http, sleep_fn=sleeps.append)
+    items = collector.collect()
 
     # breaker_limit=2 directions, each retried rate_limit_retry_attempts=2 times
     assert http.calls == 6
     assert items == []
+    assert collector.circuit_open is True
     assert sleeps.count(30.0) == 2  # first backoff of each blocked direction
     assert sleeps.count(60.0) == 2  # second backoff of each blocked direction
     assert sleeps.count(0.25) == 1  # inter-direction interval before direction two

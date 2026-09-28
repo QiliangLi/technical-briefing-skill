@@ -22,6 +22,9 @@ class ArxivCollector:
         self.http = http
         self.sleep_fn = sleep_fn
         self.source = next(s for s in config.source_list() if s.get("id") == "arxiv")
+        # Set when the rate-limit circuit breaker stops the lane this run; the
+        # discovery stage uses it to plan a supplemental web-search batch.
+        self.circuit_open = False
 
     def collect(self) -> list[CollectedItem]:
         result: list[CollectedItem] = []
@@ -96,6 +99,7 @@ class ArxivCollector:
                         "skipping the remaining arXiv directions this run",
                         consecutive_blocked,
                     )
+                    self.circuit_open = True
                     break
                 continue
             consecutive_blocked = 0

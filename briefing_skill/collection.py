@@ -154,6 +154,10 @@ class CollectionService:
 
         persisted = self.persist(run_id, items)
         wall_seconds = perf_counter() - started
+        arxiv_blocked = any(
+            getattr(collector, "circuit_open", False)
+            for collector in collectors
+        ) if not offline_fixture else False
         write_json(
             self.run_dir / "collection.json",
             {
@@ -165,6 +169,9 @@ class CollectionService:
                     "max_workers": workers,
                     "wall_seconds": round(wall_seconds, 3),
                     "collectors": collector_telemetry,
+                    # The discovery stage reads this to plan a supplemental
+                    # web-search batch when the arXiv lane was blocked.
+                    "arxiv_blocked": arxiv_blocked,
                 },
             },
         )

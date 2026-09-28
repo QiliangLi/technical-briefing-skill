@@ -589,6 +589,7 @@ def test_lens_layout_reports_honest_empty_states():
           ['tpn', 'recent3', 'judgements'],
           ['agent_acceleration', 'recent3', 'evolution'],
           ['tpn', 'recent3', 'evolution'],
+          ['kv_management', 'recent3', 'evolution'],
         ];
         const rows = probes.map(([topic, range, lens]) => {{
           const params = data.normalizeKnowledgeParams({{ topic, range, lens }});
@@ -606,11 +607,15 @@ def test_lens_layout_reports_honest_empty_states():
         ("dpu_inline", "evolution"),
         ("dpu_inline", "judgements"),
         ("tpn", "judgements"),
+        # tpn's last items fell out of recent3 once the graph materialized the
+        # 2026-09-24 issue; an honestly-empty evolution lens replaces the old
+        # non-empty expectation, and kv_management carries the non-empty probe.
+        ("tpn", "evolution"),
     ]:
         assert rows[key]["empty"] is True, key
         assert rows[key]["viewport"] is False, key
         assert rows[key]["reason"], key
-    for key in [("agent_acceleration", "evolution"), ("tpn", "evolution")]:
+    for key in [("agent_acceleration", "evolution"), ("kv_management", "evolution")]:
         assert rows[key]["empty"] is False, key
         assert rows[key]["viewport"] is True, key
 

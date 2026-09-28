@@ -118,6 +118,86 @@ def plan_coverage_gap_searches(pipeline, *, max_queries: int = DEFAULT_MAX_GAP_L
     return searches
 
 
+def _arxiv_blocked_this_run(pipeline) -> bool:
+    """The arXiv lane ended its collect circuit-broken (multi-day IP block)."""
+
+    from .utils import read_json
+
+    report = read_json(pipeline.run_dir / "collection.json", {})
+    return bool(((report.get("execution") or {}).get("arxiv_blocked")))
+
+
+def plan_channel_starved_searches(pipeline) -> list[dict[str, Any]]:
+    """Lanes for arXiv-fed directions whose topic got zero arXiv A-level rows.
+
+    Coverage by other sources (GitHub releases, promoted discovery rows) can
+    mask a dead arXiv channel; when the circuit breaker opened this run, those
+    directions still need fresh-paper discovery, so the outage provision adds
+    one bounded supplemental search batch for them.
+    """
+
+    from . import coverage_policy
+    from .freshness import freshness_limits
+
+    coverage_policy.materialize_deep_backlog(pipeline.config, pipeline.db, pipeline.run_id)
+    limit = int(
+        (pipeline.config.settings.get("efficiency") or {}).get(
+            "agent_web_search_outage_extra", 4
+        )
+    )
+    if not limit:
+        return []
+    arxiv_rows = pipeline.db.fetchall(
+        """
+        SELECT topic_hint FROM raw_items
+        WHERE run_id=? AND source_id='arxiv' AND source_level='A'
+        """,
+        (pipeline.run_id,),
+    )
+    arxiv_topics = {str(row.get("topic_hint") or "") for row in arxiv_rows}
+    priority_map = {"highest": 100, "high": 80, "medium": 55, "low": 30}
+    lanes: list[dict[str, Any]] = []
+    for topic, direction in pipeline.config.iter_directions():
+        if topic["id"] in arxiv_topics:
+            continue
+        has_arxiv_terms = bool(direction.get("arxiv_query")) or bool(
+            direction.get("include_terms")
+        )
+        if not has_arxiv_terms:
+            continue
+        queries = direction.get("queries") or []
+        if not queries:
+            continue
+        lanes.append((priority_map.get(topic.get("aihot_priority", "low"), 30), topic, direction, str(queries[0])))
+    lanes.sort(key=lambda item: (-item[0], item[1]["id"], item[2]["id"]))
+    max_age_days = freshness_limits(pipeline.config)["absolute"]
+
+    date_to = briefing_date(pipeline.config)
+    date_from = date_to - timedelta(days=max_age_days)
+    searches: list[dict[str, Any]] = []
+    for priority, topic, direction, query in lanes:
+        if len(searches) >= limit:
+            break
+        searches.append(
+            {
+                "search_id": f"{topic['id']}:{direction['id']}",
+                "topic_id": topic["id"],
+                "topic_name": topic["name"],
+                "direction_id": direction["id"],
+                "direction_name": direction["name"],
+                "query": query,
+                "preferred_domains": _preferred_domains(str(topic["id"])),
+                "freshness_days": max_age_days,
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "max_results": 10,
+                "search_reason": "arXiv channel blocked this run (circuit breaker); direction starved of arXiv discovery",
+                "priority": priority,
+            }
+        )
+    return searches
+
+
 def discovery_batch_semantic_errors(
     input_data: dict[str, Any],
     output: dict[str, Any],
@@ -168,11 +248,53 @@ def install_discovery_stage() -> None:
     original_demo_output = demo_module._demo_output
 
     def prepare_agent_search(self, max_queries: int = DEFAULT_MAX_GAP_LANES) -> int:
-        if self.db.fetchone(
-            "SELECT 1 FROM tasks WHERE run_id=? AND task_type='agent_web_search' LIMIT 1",
+        existing = self.db.fetchall(
+            "SELECT id, metadata_json FROM tasks WHERE run_id=? AND task_type='agent_web_search'",
             (self.run_id,),
-        ):
-            return 0
+        )
+        if existing:
+            # Outage provision: with the primary batch already applied and the
+            # arXiv lane circuit-broken this run, add one bounded supplemental
+            # batch for channel-starved directions (see docs/designs).
+            if any(
+                (json.loads(row["metadata_json"] or "{}") or {}).get("supplement_batch")
+                for row in existing
+            ):
+                return 0
+            if not _arxiv_blocked_this_run(self):
+                return 0
+            searches = plan_channel_starved_searches(self)
+            if not searches:
+                return 0
+            search_ids = [str(row["search_id"]) for row in searches]
+            self.tasks.create(
+                self.run_id,
+                "agent_web_search",
+                stable_hash(self.run_id, "agent-web-search-batch", "supplement", *search_ids),
+                {
+                    "batch_id": "coverage-gap-search",
+                    "searches": [
+                        {key: value for key, value in row.items() if key != "priority"}
+                        for row in searches
+                    ],
+                    "constraints": {
+                        "independent_search_lanes": True,
+                        "no_cross_lane_result_transfer": True,
+                        "return_one_group_per_search_id": True,
+                    },
+                },
+                prompt="agent-web-search-batch.md",
+                schema="web-search-batch.schema.json",
+                priority=max(float(row["priority"]) for row in searches),
+                metadata={
+                    "discovery_batch": True,
+                    "supplement_batch": True,
+                    "supplement_reason": "arXiv circuit breaker opened this run; supplemental lanes for channel-starved directions",
+                    "lanes": search_ids,
+                },
+            )
+            self.db.update_run(self.run_id, stage="AWAITING_AGENT_SEARCH")
+            return len(searches)
         searches = plan_coverage_gap_searches(self, max_queries=max_queries)
         if not searches:
             return 0

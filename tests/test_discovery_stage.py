@@ -101,11 +101,16 @@ def test_discovery_stage_creates_one_task_for_multiple_lanes() -> None:
     source = (ROOT / "briefing_skill" / "discovery_stage.py").read_text(encoding="utf-8")
     prepare = source.split("def prepare_agent_search", 1)[1].split("Pipeline.prepare_agent_search", 1)[0]
 
-    assert prepare.count("self.tasks.create(") == 1
+    # Primary gap batch plus at most one arXiv-outage supplement batch; both
+    # are single issue-level invocations over multiple lanes.
+    assert prepare.count("self.tasks.create(") == 2
     assert '"searches"' in prepare
     assert 'prompt="agent-web-search-batch.md"' in prepare
     assert 'schema="web-search-batch.schema.json"' in prepare
     assert "return 1" in prepare
+    # The supplement branch is outage-gated and idempotent.
+    assert "_arxiv_blocked_this_run(self)" in prepare
+    assert '"supplement_batch": True' in prepare
 
 
 def test_accelerator_io_gap_search_prefers_vendor_and_primary_domains() -> None:
@@ -241,3 +246,92 @@ def test_planner_topic_scopes_gap_lanes_against_cross_topic_generic_words(
         "accelerator_io_datapath:direct_storage_path",
     ]
     assert len({s["search_id"] for s in searches}) == len(searches)
+
+
+def _starved_pipeline(tmp_path, *, arxiv_rows):
+    """Config + tmp DB where every topic is covered by non-arXiv A-level rows.
+
+    Topics listed in ``arxiv_rows`` additionally get an arXiv A-level row and
+    must therefore be excluded from the channel-starved outage lanes.
+    """
+
+    from types import SimpleNamespace
+
+    from briefing_skill.config import ConfigBundle
+    from briefing_skill.db import Database
+    from briefing_skill.paths import Paths
+
+    config = ConfigBundle.load(Paths(ROOT))
+    db = Database(tmp_path / "briefing.sqlite")
+    db.init()
+    db.create_run("run")
+
+    def insert(row_id: str, source: str, hint_topic: str, hint_dir: str, title: str):
+        db.execute(
+            """
+            INSERT INTO raw_items(id, run_id, source_id, discovery_source, source_level,
+                discovery_only, title, summary, original_url, canonical_url, identity_key,
+                topic_hint, direction_hint, priority, content_hash, payload_json, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                row_id, "run", source, "github" if source != "arxiv" else "arXiv", "A", 0,
+                title, "Coverage row", f"https://example.com/{row_id}",
+                f"https://example.com/{row_id}", f"id:{row_id}", hint_topic, hint_dir,
+                0, f"hash:{row_id}", "{}", "2026-09-01T00:00:00Z",
+            ),
+        )
+
+    for index, (topic, direction) in enumerate(config.iter_directions()):
+        source = "arxiv" if topic["id"] in arxiv_rows else "github"
+        insert(
+            f"row-{index}", source, topic["id"], direction["id"],
+            f"Coverage for {topic['id']} {direction['id']}",
+        )
+    return SimpleNamespace(config=config, db=db, run_id="run", run_dir=tmp_path)
+
+
+def test_channel_starved_searches_target_topics_without_arxiv_rows(tmp_path) -> None:
+    from briefing_skill.discovery_stage import plan_channel_starved_searches
+
+    pipeline = _starved_pipeline(tmp_path, arxiv_rows={"kv_management"})
+    # Widen the allowance so the topic-set semantics are observable; the
+    # default cap is checked separately below.
+    pipeline.config.settings.setdefault("efficiency", {})["agent_web_search_outage_extra"] = 999
+    searches = plan_channel_starved_searches(pipeline)
+
+    topics = {s["topic_id"] for s in searches}
+    assert "storage_media" in topics          # arXiv-fed topic with zero arXiv rows
+    assert "kv_management" not in topics      # got arXiv rows; not starved
+    assert all(s["query"] for s in searches)
+    assert all(
+        s["search_reason"].startswith("arXiv channel blocked")
+        for s in searches
+    )
+
+    # With the default allowance the lanes are priority-ordered and capped.
+    capped = plan_channel_starved_searches(_starved_pipeline(tmp_path / "cap", arxiv_rows=set()))
+    assert len(capped) <= 4
+    assert {s["topic_id"] for s in capped} == {"agent_acceleration"}
+
+
+def test_channel_starved_searches_respect_zero_allowance(tmp_path) -> None:
+    from briefing_skill.discovery_stage import plan_channel_starved_searches
+
+    pipeline = _starved_pipeline(tmp_path, arxiv_rows=set())
+    pipeline.config.settings.setdefault("efficiency", {})["agent_web_search_outage_extra"] = 0
+    assert plan_channel_starved_searches(pipeline) == []
+
+
+def test_arxiv_blocked_flag_reads_collection_report(tmp_path) -> None:
+    from briefing_skill.discovery_stage import _arxiv_blocked_this_run
+
+    (tmp_path / "collection.json").write_text(
+        '{"execution": {"arxiv_blocked": true}}', encoding="utf-8"
+    )
+    assert _arxiv_blocked_this_run(type("P", (), {"run_dir": tmp_path})()) is True
+
+    (tmp_path / "collection.json").write_text(
+        '{"execution": {"arxiv_blocked": false}}', encoding="utf-8"
+    )
+    assert _arxiv_blocked_this_run(type("P", (), {"run_dir": tmp_path})()) is False
