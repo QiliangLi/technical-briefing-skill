@@ -133,7 +133,9 @@ def plan_channel_starved_searches(pipeline) -> list[dict[str, Any]]:
     Coverage by other sources (GitHub releases, promoted discovery rows) can
     mask a dead arXiv channel; when the circuit breaker opened this run, those
     directions still need fresh-paper discovery, so the outage provision adds
-    one bounded supplemental search batch for them.
+    one bounded supplemental search batch for them. The blocked channel IS
+    arXiv, so these lanes scope the search to paper venues with arxiv.org
+    first instead of each topic's vendor-domain preferences.
     """
 
     from . import coverage_policy
@@ -186,7 +188,7 @@ def plan_channel_starved_searches(pipeline) -> list[dict[str, Any]]:
                 "direction_id": direction["id"],
                 "direction_name": direction["name"],
                 "query": query,
-                "preferred_domains": _preferred_domains(str(topic["id"])),
+                "preferred_domains": list(ARXIV_OUTAGE_PREFERRED_DOMAINS),
                 "freshness_days": max_age_days,
                 "date_from": date_from.isoformat(),
                 "date_to": date_to.isoformat(),
@@ -196,6 +198,14 @@ def plan_channel_starved_searches(pipeline) -> list[dict[str, Any]]:
             }
         )
     return searches
+
+
+ARXIV_OUTAGE_PREFERRED_DOMAINS = [
+    "arxiv.org",
+    "openreview.net",
+    "dl.acm.org",
+    "usenix.org",
+]
 
 
 def discovery_batch_semantic_errors(

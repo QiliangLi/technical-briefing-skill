@@ -308,6 +308,13 @@ def test_channel_starved_searches_target_topics_without_arxiv_rows(tmp_path) -> 
         s["search_reason"].startswith("arXiv channel blocked")
         for s in searches
     )
+    # The blocked channel is arXiv, so outage lanes scope the web search to
+    # paper venues with arxiv.org first, not each topic's vendor domains.
+    assert all(
+        s["preferred_domains"][0] == "arxiv.org"
+        and "nvidia.com" not in s["preferred_domains"]
+        for s in searches
+    )
 
     # With the default allowance the lanes are priority-ordered and capped.
     capped = plan_channel_starved_searches(_starved_pipeline(tmp_path / "cap", arxiv_rows=set()))

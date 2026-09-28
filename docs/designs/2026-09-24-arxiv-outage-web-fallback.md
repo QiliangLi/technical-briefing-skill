@@ -36,7 +36,10 @@ Mechanics:
    builds lanes for those directions (same search-dict shape as the gap
    planner, `search_reason: arXiv channel blocked this run`), ordered by
    topic priority, capped by a new setting
-   `agent_web_search_outage_extra` (default 4).
+   `agent_web_search_outage_extra` (default 4). Because the blocked channel
+   IS arXiv, the lanes scope the web search to paper venues via
+   `ARXIV_OUTAGE_PREFERRED_DOMAINS` (arxiv.org first, then OpenReview,
+   ACM DL, USENIX) instead of each topic's vendor-domain preferences.
 3. The installed `prepare_agent_search` keeps its one-batch-per-run guard for
    normal runs, but creates the supplement batch when: a search batch already
    exists AND `arxiv_blocked` AND no `supplement_batch` task exists yet. The
