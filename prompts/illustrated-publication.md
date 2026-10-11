@@ -26,6 +26,15 @@ Claude Code not having native image generation is **not** a reason to return `fa
 5. Claude Code verifies the output JSON and referenced assets, then resumes the normal pipeline.
 6. Only a real bridge/auth/image-task failure may degrade to `fallback_to_text`.
 
+### Running in a host without Codex image access (API-direct path)
+
+When the Codex host path and the plugin bridge are both genuinely unavailable (no Codex login, bridge missing, or model backend rejecting the account), the executor may generate each selected image by calling the configured OpenAI-compatible image API through `briefing_skill/image_api.py`:
+
+1. Build the prompt from the Ian Skill prompt structure plus the Qiliang persona overlay, exactly as the Codex paths require.
+2. Run `python -m briefing_skill.image_api --prompt-file <prompt.md> --out <published-assets/<run_id>/<name>.png> --ref <identity_anchor> --ref <action_anchor> --ref <wide_scene_anchor>` per image. The client handles endpoint order, retries, and `/images/edits` versus `/images/generations`.
+3. Perform the same persona, Chinese-label, fact-structure, and margin QA on each produced PNG, and record in `qa_notes` that the `api_direct` path was used.
+4. Selection policy, per-topic caps, `bound_item_ids`, captions, and asset publication requirements are unchanged. A real API failure (all endpoints and retries exhausted) degrades exactly like a Codex generation failure.
+
 The machine-readable version of this rule is supplied as `constraints.host_execution_policy`.
 
 ## Sole image style: Ian + Qiliang persona overlay

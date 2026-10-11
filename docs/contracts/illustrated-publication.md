@@ -89,6 +89,18 @@ The reason for using a single foreground delegated task is important: image coun
 
 Only a genuine bridge failure (plugin unavailable, Codex unauthenticated, delegated run failure, Ian/Qiliang reference failure, or image QA failure) may trigger `fallback_to_text` on Claude Code. The absence of native Claude image generation by itself is never a fallback condition.
 
+### API-direct host path
+
+Hosts without a native Codex image capability (for example ZCode or a degraded Codex login) may generate images by calling the configured OpenAI-compatible image-generation API directly through `briefing_skill/image_api.py`:
+
+1. `config/settings.yaml` `image_api` owns the endpoint list (tried in order), model, size, quality, timeout, and retries. Endpoints without a configured entry fall back to the built-in default list.
+2. The API key lives only in the git-ignored `workspace/secrets/image_api.json` (`{"api_key": "..."}`) or the `BRIEFING_IMAGE_API_KEY` environment variable. It is never committed, logged, or copied into task outputs.
+3. Prompts are still built from the Ian Skill style DNA plus the Qiliang persona overlay. When persona-consistency references are supplied the client calls `/images/edits` with the reference-manifest anchor images; without references it calls `/images/generations`.
+4. The executor (host Agent) runs `python -m briefing_skill.image_api --prompt-file <p> --out <png> [--ref <anchor.png> ...]` per image, then performs the same persona/label/fact QA as the Codex paths and records `qa_notes` stating the `api_direct` generation path.
+5. Selection policy, per-topic caps, `bound_item_ids`, captions, asset publication (commit-SHA raw URL plus release backup), and `fallback_to_text` semantics are identical to the Codex paths. The API path replaces only the image-generation transport, never the style/persona contract or the manifest schema.
+
+A real API failure (every endpoint and retry exhausted, missing key file) degrades exactly like a Codex generation failure: skip that topic's image or fall back to text; never fabricate a manifest entry.
+
 ## Personal IP
 
 The personal visual identity is the Qiliang project override defined by:
