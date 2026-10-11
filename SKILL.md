@@ -363,12 +363,13 @@ email-illustrated.html
 
 ### 宿主执行规则
 
-- **Codex中运行整个Skill**：直接使用当前Codex宿主的生图能力执行`illustrated_publication`，不增加额外委派。
+- **默认（API直连）**：自2026-10起，`illustrated_publication`默认用`python -m briefing_skill.image_api`按`config/settings.yaml`的`image_api`配置调用OpenAI兼容生图API（端点按序故障转移；密钥只存在被忽略的`workspace/secrets/image_api.json`或`BRIEFING_IMAGE_API_KEY`环境变量，绝不入库）。提示词仍按Ian Skill结构加Qiliang覆盖构造，人物锚定参考图经`/images/edits`传入；生成后执行与Codex路径相同的QA并在`qa_notes`记录`api_direct`路径。选择政策、每专题上限、绑定与资产发布要求不变；API全端点失败按生图失败同等降级。
+- **Codex中运行整个Skill**：直接使用当前Codex宿主的生图能力执行`illustrated_publication`，不增加额外委派；API不可用时这是备选路径。
 - **Claude Code中运行整个Skill**：Claude模型本身没有原生生图能力不算失败。必须通过已经安装的`openai/codex-plugin-cc`调用`codex:codex-rescue`子Agent，把整期`illustrated_publication`一次性委派给Codex；使用fresh、foreground执行（`--fresh --wait`），不要按图片拆成多个Codex任务。
 - `codex:codex-rescue`是Claude Code的subagent，不是Skill；通过`Agent`工具调用，不得使用`Skill(codex:codex-rescue)`，也不要在另一个Skill里递归调用`/codex:rescue`。
 - 委派时必须把当前任务输入、Prompt、Schema/结果绑定、个人IP参考路径、图片输出目录和预期结果路径一起交给Codex。Codex在同一checkout中生成和QA图片，并直接写入最终任务JSON；Claude Code只验证产物后继续`advance`，不得依据stdout重新编造一份manifest。
 - 只有插件不可用、Codex未认证、委派任务真实失败或图片QA失败时，Claude Code才允许降级；**“Claude自身不能生图”不是`fallback_to_text`的理由**。
-- **无Codex生图通道的宿主（API直连）**：当Codex直连与插件桥接都真实不可用时，宿主可用`python -m briefing_skill.image_api`按`config/settings.yaml`的`image_api`配置调用OpenAI兼容生图API（端点按序故障转移；密钥只存在被忽略的`workspace/secrets/image_api.json`或`BRIEFING_IMAGE_API_KEY`环境变量，绝不入库）。提示词仍按Ian Skill结构加Qiliang覆盖构造，人物一致性参考图经`/images/edits`传入；生成后执行与Codex路径相同的QA并在`qa_notes`记录`api_direct`路径。选择政策、每专题上限、绑定与资产发布要求不变；API全端点失败按生图失败同等降级。详见`docs/contracts/illustrated-publication.md`。
+
 
 ### 个人视觉IP
 

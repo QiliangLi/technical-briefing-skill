@@ -11,24 +11,9 @@ Do **not** rewrite, shorten, expand, re-rank, fact-check, or otherwise modify th
 
 ## Host execution is mandatory
 
-### Running inside Codex
+### Default: API-direct generation
 
-Use the current Codex host image-generation capability directly. Do not add an extra delegation layer.
-
-### Running inside Claude Code
-
-Claude Code not having native image generation is **not** a reason to return `fallback_to_text`. Use the installed `openai/codex-plugin-cc` bridge:
-
-1. Invoke the `codex:codex-rescue` subagent with the Agent tool.
-2. Delegate the **entire current `illustrated_publication` task once**, using a fresh foreground run (`--fresh --wait`).
-3. Forward the task input, prompt/schema/result binding, output directory, Ian style/persona paths, and expected output path.
-4. Codex generates and QA-checks all selected images in the same checkout and writes the final Schema-valid result.
-5. Claude Code verifies the output JSON and referenced assets, then resumes the normal pipeline.
-6. Only a real bridge/auth/image-task failure may degrade to `fallback_to_text`.
-
-### Running in a host without Codex image access (API-direct path)
-
-When the Codex host path and the plugin bridge are both genuinely unavailable (no Codex login, bridge missing, or model backend rejecting the account), the executor may generate each selected image by calling the configured OpenAI-compatible image API through `briefing_skill/image_api.py`:
+The executor generates each selected image by calling the configured OpenAI-compatible image API through `briefing_skill/image_api.py`:
 
 1. Build the prompt from the Ian Skill prompt structure plus the Qiliang persona overlay, exactly as the Codex paths require.
 2. Run `python -m briefing_skill.image_api --prompt-file <prompt.md> --out <published-assets/<run_id>/<name>.png> --ref <identity_anchor> --ref <action_anchor> --ref <wide_scene_anchor>` per image. The client handles endpoint order, retries, and `/images/edits` versus `/images/generations`.
@@ -113,3 +98,18 @@ If the asset cannot be committed and pushed reliably, that illustration is not p
 - Every generated entry must have a real local `generated_asset_path`, an immutable published GitHub `published_asset_url` (release download URL or commit-SHA-pinned raw URL), `persona_used=true`, `topic_id`, non-empty `bound_item_ids` from that topic, factual `alt`, and a concise reader-facing `caption` that names the covered items.
 - `caption` should explain what the picture clarifies rather than repeat the title.
 - Return JSON only and preserve the task transport binding required by the host.
+
+### Running inside Codex
+
+Use the current Codex host image-generation capability directly. Do not add an extra delegation layer.
+
+### Running inside Claude Code
+
+Claude Code not having native image generation is **not** a reason to return `fallback_to_text`. Use the installed `openai/codex-plugin-cc` bridge:
+
+1. Invoke the `codex:codex-rescue` subagent with the Agent tool.
+2. Delegate the **entire current `illustrated_publication` task once**, using a fresh foreground run (`--fresh --wait`).
+3. Forward the task input, prompt/schema/result binding, output directory, Ian style/persona paths, and expected output path.
+4. Codex generates and QA-checks all selected images in the same checkout and writes the final Schema-valid result.
+5. Claude Code verifies the output JSON and referenced assets, then resumes the normal pipeline.
+6. Only a real bridge/auth/image-task failure may degrade to `fallback_to_text`.

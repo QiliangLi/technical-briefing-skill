@@ -143,6 +143,13 @@ def build_illustrated_email(service, run_id: str, base_path: Path) -> Path:
 
 def _host_execution_policy() -> dict[str, Any]:
     return {
+        "default": "api_direct",
+        "api_direct": {
+            "mode": "api_direct",
+            "client": "python -m briefing_skill.image_api",
+            "config": "config/settings.yaml image_api",
+            "instruction": "Default host path since 2026-10: generate each selected image via the OpenAI-compatible image API with persona reference anchors; endpoint order, retries, and key handling are owned by briefing_skill/image_api.py.",
+        },
         "codex": {
             "mode": "direct",
             "instruction": "Use the current Codex host image-generation capability directly; do not add a delegation layer.",

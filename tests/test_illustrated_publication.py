@@ -350,6 +350,9 @@ def test_committed_ian_reference_manifest_points_to_existing_images() -> None:
 def test_host_execution_policy_routes_claude_code_through_codex_plugin() -> None:
     policy = _host_execution_policy()
 
+    assert policy["default"] == "api_direct"
+    assert policy["api_direct"]["mode"] == "api_direct"
+    assert policy["api_direct"]["client"] == "python -m briefing_skill.image_api"
     assert policy["codex"]["mode"] == "direct"
     assert policy["claude_code"] == {
         "mode": "delegate_via_codex_plugin_cc",

@@ -65,33 +65,11 @@ All three paths are validated by the runtime before the `illustrated_publication
 
 ## Host-specific image generation
 
-The publication contract is host-independent; only the way the `illustrated_publication` task reaches an image-capable Codex runtime differs.
+The publication contract is host-independent; only the image-generation transport differs. Since 2026-10 the default transport is the API-direct path below; the Codex paths remain supported alternatives when the API is unavailable.
 
-### Codex host
+### API-direct host path (default)
 
-When the whole Skill is running in Codex, the Agent uses the current Codex image-generation capability directly. There is no delegation hop and no special setup in the briefing workflow.
-
-### Claude Code host
-
-The Claude Code models used for this workflow currently do not provide native image generation. That must **not** be interpreted as `image generation unavailable`.
-
-The expected Claude Code setup already has [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) installed. For `illustrated_publication`, Claude Code must:
-
-1. invoke the plugin's `codex:codex-rescue` **subagent** through the Claude Code `Agent` tool;
-2. delegate the entire current issue-level illustration task in one fresh foreground run (`--fresh --wait`), not one Codex task per image;
-3. forward the same task input, Prompt, Schema/result binding, Ian/Qiliang persona references, output directory and expected result path;
-4. let Codex generate and QA all selected images in the same repository checkout and write the Schema-valid task result JSON itself;
-5. verify the produced task JSON/assets and then continue the ordinary `advance` flow.
-
-`codex:codex-rescue` is a subagent, not a Skill. Do not call `Skill(codex:codex-rescue)` and do not recursively wrap `/codex:rescue` inside another Skill. The plugin's rescue runtime is write-capable and uses the same local Codex installation/authentication and repository checkout.
-
-The reason for using a single foreground delegated task is important: image count remains content-driven, but delegation count does not scale with image count. The factual IssueDocument and baseline email are already complete before delegation starts; only the enhanced publication artifact waits for the image-capable task.
-
-Only a genuine bridge failure (plugin unavailable, Codex unauthenticated, delegated run failure, Ian/Qiliang reference failure, or image QA failure) may trigger `fallback_to_text` on Claude Code. The absence of native Claude image generation by itself is never a fallback condition.
-
-### API-direct host path
-
-Hosts without a native Codex image capability (for example ZCode or a degraded Codex login) may generate images by calling the configured OpenAI-compatible image-generation API directly through `briefing_skill/image_api.py`:
+The executor generates images by calling the configured OpenAI-compatible image-generation API directly through `briefing_skill/image_api.py`:
 
 1. `config/settings.yaml` `image_api` owns the endpoint list (tried in order), model, size, quality, timeout, and retries. Endpoints without a configured entry fall back to the built-in default list.
 2. The API key lives only in the git-ignored `workspace/secrets/image_api.json` (`{"api_key": "..."}`) or the `BRIEFING_IMAGE_API_KEY` environment variable. It is never committed, logged, or copied into task outputs.
@@ -141,3 +119,25 @@ Image failure is never a briefing-content failure:
 - exact factual text remains owned by the fact-checked briefing, not by the image model.
 
 The default send artifact is the illustrated HTML because it is the final publication variant. Local generated images are converted to CID parts by the existing email send path; remote image URLs remain remote.
+
+### Codex host
+
+When the whole Skill is running in Codex, the Agent uses the current Codex image-generation capability directly. There is no delegation hop and no special setup in the briefing workflow.
+
+### Claude Code host
+
+The Claude Code models used for this workflow currently do not provide native image generation. That must **not** be interpreted as `image generation unavailable`.
+
+The expected Claude Code setup already has [`openai/codex-plugin-cc`](https://github.com/openai/codex-plugin-cc) installed. For `illustrated_publication`, Claude Code must:
+
+1. invoke the plugin's `codex:codex-rescue` **subagent** through the Claude Code `Agent` tool;
+2. delegate the entire current issue-level illustration task in one fresh foreground run (`--fresh --wait`), not one Codex task per image;
+3. forward the same task input, Prompt, Schema/result binding, Ian/Qiliang persona references, output directory and expected result path;
+4. let Codex generate and QA all selected images in the same repository checkout and write the Schema-valid task result JSON itself;
+5. verify the produced task JSON/assets and then continue the ordinary `advance` flow.
+
+`codex:codex-rescue` is a subagent, not a Skill. Do not call `Skill(codex:codex-rescue)` and do not recursively wrap `/codex:rescue` inside another Skill. The plugin's rescue runtime is write-capable and uses the same local Codex installation/authentication and repository checkout.
+
+The reason for using a single foreground delegated task is important: image count remains content-driven, but delegation count does not scale with image count. The factual IssueDocument and baseline email are already complete before delegation starts; only the enhanced publication artifact waits for the image-capable task.
+
+Only a genuine bridge failure (plugin unavailable, Codex unauthenticated, delegated run failure, Ian/Qiliang reference failure, or image QA failure) may trigger `fallback_to_text` on Claude Code. The absence of native Claude image generation by itself is never a fallback condition.
