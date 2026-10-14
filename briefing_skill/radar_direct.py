@@ -517,6 +517,12 @@ def normalized_radar_candidates(service, run_id: str, issue_data: dict[str, Any]
 
     merged: dict[str, dict[str, Any]] = {}
     for row in rows:
+        # Backlog carryovers originate in another run's frozen AI Hot
+        # responses; the release gate must locate every published radar
+        # character inside this run's freeze, so they cannot enter the
+        # direct-copy pool even when still fresh and unpushed.
+        if _payload(row).get("carryover_from_run"):
+            continue
         candidate = _candidate_from_row(
             row,
             run_id=run_id,

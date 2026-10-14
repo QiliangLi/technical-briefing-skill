@@ -1298,3 +1298,30 @@ def test_same_day_unrelated_products_across_domains_do_not_merge() -> None:
     }
     out = _drop_same_event_duplicates([nvidia, amd])
     assert len(out) == 2
+
+
+def test_backlog_carryover_rows_are_excluded_from_direct_pool(tmp_path: Path) -> None:
+    service, db = make_service(tmp_path)
+    run_id = "run-carryover"
+    insert_raw(
+        db, run_id, url="https://example.com/carried-over",
+        title="来自上期回填搬运的 agent 条目",
+        summary="该条目由深度回填物化进入本期原始池，不属于本期冻结响应。",
+        external_id="cmt-carry",
+    )
+    # insert_raw cannot express payload-level carryover flags; patch the row payload directly.
+    db.execute(
+        "UPDATE raw_items SET payload_json=json_set(payload_json, '$.carryover_from_run', ?) WHERE run_id=? AND external_id=?",
+        ("2026-10-08-115202", run_id, "cmt-carry"),
+    )
+    insert_raw(
+        db, run_id, url="https://example.com/frozen-fresh",
+        title="本期冻结响应中的推理调度条目",
+        summary="该条目来自本期冻结的 AI Hot 响应，可以进入雷达直出池。",
+        external_id="cmt-fresh",
+    )
+    issue_data = {"run_id": run_id, "date_to": REFERENCE_DATE, "items": []}
+    candidates = normalized_radar_candidates(service, run_id, issue_data)
+    urls = {candidate.get("canonical_url") for candidate in candidates}
+    assert "https://example.com/frozen-fresh" in urls
+    assert "https://example.com/carried-over" not in urls
