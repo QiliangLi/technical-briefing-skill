@@ -130,8 +130,9 @@ Workflow 终止于 `READY_TO_SEND`，不执行 `send`。`WorkflowReport` 附 `em
 
 ### 进度可视
 
-- `phase()` 三阶段图（运行确认对话框按 phase 绘制，用户启动前即看到整体结构）。
-- 每任务完成 `report()`：轮次、task_type、task_ids、状态——实时进入运行结果流（上限 256 条/次运行，足够一期）。
+- `phase()` 三阶段图（运行确认对话框按 phase 绘制，用户启动前即看到整体结构）。注意：阶段线的节点是 phase 而非单个任务，任务循环整体是一个节点。
+- 每张执行卡派发与完成各一次 `report()`（打 `tasks` tag）——实时进入运行结果流，并驱动任务看板。
+- 任务看板：`artifact.board("tasks")`，每张执行卡一张卡片，在 执行中/修复中/完成/修复后完成 列间移动，resume 后原样重建（2026-10-15 增补）。
 - `log()` 人类可读叙事线（每轮开始/关键分支）。
 - 终态发布 `artifact.file`：`email.html`（primary）+ `validation.json`。
 
@@ -192,3 +193,4 @@ Workflow 终止于 `READY_TO_SEND`，不执行 `send`。`WorkflowReport` 附 `em
 - 2026-10-15：Python 零改动——已核实全部所需输出为现网格式（advance JSON、组感知卡、`tasks list --status INVALID`、render/validate JSON），解析用正则 + `JSON.parse`，不加 `--format json` 开关。
 - 2026-10-15：循环用 `tasks next` 驱动（而非仅靠 `advance.next_task`），保持 `_mark_group_started` 遥测语义与手动路径一致。
 - 2026-10-15：不引入任务级并行，保持 `tasks next` 串行调度语义；并行化留待后续设计。
+- 2026-10-15：增补任务看板（`artifact.board` + `report` 打 `tasks` tag）——阶段线的节点是 phase 而非单个任务，任务级"一个任务一个点"的可视由看板与结果流承担。

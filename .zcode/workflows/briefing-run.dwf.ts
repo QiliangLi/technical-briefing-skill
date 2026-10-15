@@ -1,6 +1,6 @@
 /* zcode-workflow
 description: 编排一期技术 briefing 的完整流水线：采集/续跑 → 逐个执行 Agent 任务卡（每任务全新子代理上下文）→
-  渲染与发布前校验，终止于 READY_TO_SEND 并发布邮件预览与校验报告。不发送、不归档；发送确认保留在主会话。
+  渲染与发布前校验，终止于 READY_TO_SEND 并发布邮件预览与校验报告。运行中提供任务看板。不发送、不归档；发送确认保留在主会话。
 whenToUse: 在 ZCode 宿主运行或续跑一期 briefing 时使用；替代 SKILL.md 手动任务循环，避免主会话上下文膨胀。
 args:
   mode:
@@ -166,6 +166,20 @@ const MAX_VALIDATE_RETRIES = 3;
 const RENDER_STAGES = ["READY_FOR_RENDER", "RENDERED", "READY_TO_SEND"];
 const mode: string = typeof args.mode === "string" && args.mode === "run" ? "run" : "resume";
 
+// 任务看板：每张执行卡一张卡片，随 report(item, "tasks") 在列间实时移动
+artifact.board("tasks", {
+  title: "Agent 任务看板",
+  key: "key",
+  status: "status",
+  columns: ["执行中", "修复中", "完成", "修复后完成"],
+  cardTitle: "title",
+  detail: [
+    { field: "task_type", label: "类型" },
+    { field: "ids_text", label: "任务" },
+    { field: "note", label: "备注" },
+  ],
+});
+
 phase("初始化 briefing 运行");
 log(mode === "run" ? "采集并开启新一期 briefing" : "续跑最近一期 briefing");
 const init = mode === "run"
@@ -211,15 +225,12 @@ while (rounds < MAX_ROUNDS) {
     break;
   }
   rounds += 1;
-  log(`第 ${rounds} 轮：${card.task_type}${card.task_ids.length > 0 ? " " + card.task_ids.join(", ") : ""}`);
+  const cardKey = card.task_ids.length > 0 ? card.task_ids.join("+").slice(0, 64) : `round-${rounds}`;
+  const cardTitle = `第 ${rounds} 轮 ${card.task_type}`;
+  const idsText = card.task_ids.join(", ");
+  log(`第 ${rounds} 轮：${card.task_type}${idsText ? " " + idsText : ""}`);
+  report({ key: cardKey, status: "执行中", title: cardTitle, task_type: card.task_type, ids_text: idsText }, "tasks");
   const outcome = await agent().ask<TaskOutcome>(taskAsk(card));
-  report({
-    round: rounds,
-    task_type: card.task_type,
-    task_ids: card.task_ids.length > 0 ? card.task_ids : outcome.task_ids,
-    ok: outcome.outputs_written,
-    note: outcome.notes,
-  });
   const advRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"]);
   const adv = parseTrailingJson(advRun.stdout);
   if (!adv) {
@@ -238,6 +249,9 @@ while (rounds < MAX_ROUNDS) {
     return failReport;
   }
   stage = adv.stage || stage;
+  if (adv.invalid === 0) {
+    report({ key: cardKey, status: "完成", title: cardTitle, task_type: card.task_type, ids_text: idsText, note: outcome.notes }, "tasks");
+  }
   if (adv.invalid > 0) {
     const listRun = await world.run(".venv/bin/python3", ["briefing.py", "tasks", "list", "--status", "INVALID", "--run", "latest"]);
     const rows = parseInvalidList(listRun.stdout);
@@ -268,6 +282,7 @@ while (rounds < MAX_ROUNDS) {
     const reRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"]);
     const re = parseTrailingJson(reRun.stdout);
     if (re) stage = re.stage || stage;
+    report({ key: cardKey, status: re && re.invalid === 0 ? "修复后完成" : "修复中", title: cardTitle, task_type: card.task_type, ids_text: idsText }, "tasks");
     notes.push({
       where: "INVALID 修复",
       what: `第 ${rounds} 轮后修复 ${rows.length} 个任务并重同步`,

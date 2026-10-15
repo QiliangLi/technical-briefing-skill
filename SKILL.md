@@ -153,7 +153,7 @@ CreateWorkflow saved: { name: "briefing-run", args: { mode: "resume" } }  # 续�
 1. 初始化：`briefing.py run`（或 `resume --run latest`）。
 2. 循环 `tasks next` → 为每张执行卡（含 fact 会话组卡）派发一个全新上下文的匿名子代理 → `advance`；INVALID 任务先由修复子代理做最小定向修复，再 `tasks reopen-invalid` 重同步，每任务至多修复2次，超限停止并汇报。
 3. `render --execute` 与 `validate`；校验 FAIL 时派发最小修复后重渲染重校验，至多3轮。
-4. 终止于 `READY_TO_SEND`，把 `email.html` 与 `validation.json` 发布为运行产物（artifact）。
+4. 终止于 `READY_TO_SEND`，把 `email.html` 与 `validation.json` 发布为运行产物（artifact）；运行中的任务看板实时显示每张执行卡的执行/完成状态。
 
 不变量：子代理只读执行卡引用的输入、只写自己的输出文件，禁止运行 briefing.py 子命令；`tasks next`/`advance`/`reopen-invalid`/`render`/`validate` 全部由编排脚本执行。所有质量门禁、证据边界硬规则、会话组隔离与 cache 语义与手动路径完全一致，Python 侧无任何差别。
 
