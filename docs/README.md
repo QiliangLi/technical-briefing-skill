@@ -14,6 +14,8 @@ This directory separates current documentation from dated project records. Start
 - [Technical intelligence workbench UI screen content brief](designs/2026-08-30-technical-intelligence-ui-screen-content-brief.md)
 - [Technical intelligence workbench UI style brief pack](designs/2026-08-30-technical-intelligence-ui-style-brief-pack.md)
 - [Evidence Graph UI generation brief](designs/2026-08-31-evidence-graph-ui-generation-brief.md)
+- [arXiv outage web fallback](designs/2026-09-24-arxiv-outage-web-fallback.md)
+- [ZCode workflow orchestration for briefing runs](designs/2026-10-15-zcode-workflow-orchestration.md)
 
 Create non-trivial designs under `designs/` before implementation. Once an implementation is complete, move durable behavior into the current architecture, operations, or contracts documentation. Historical design records belong under `history/designs/` only after that transfer is complete.
 
@@ -24,6 +26,7 @@ Create non-trivial designs under `designs/` before implementation. Once an imple
 - [Execution telemetry](operations/execution-telemetry.md)
 - [Historical backfill](operations/historical-backfill.md)
 - [Knowledge freshness and publication gates](operations/knowledge-freshness.md)
+- [ZCode workflow run](operations/zcode-workflow-run.md)
 
 These files describe how a current installation behaves and how to diagnose it.
 

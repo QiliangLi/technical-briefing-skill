@@ -66,6 +66,8 @@ Qiliang 手绘形象。不得修改用户级或插件目录中的 Ian Skill，�
 
 ## 正常运行
 
+以下为手动执行路径；ZCode 宿主默认按下一节「ZCode workflow 执行模式」编排第一～三步，两种模式共享同一任务队列与盘上状态，可随时互换。
+
 ### 第一步：启动或继续
 
 新一轮：
@@ -136,6 +138,26 @@ python briefing.py send --confirm-send
 没有`--confirm-send`时必须拒绝发送。使用默认`agently-cli`时，第一次带`--confirm-send`的调用只请求发送确认令牌并停止；将摘要展示给用户，等待用户确认后，再次运行同一命令完成发送。令牌保存在当前运行目录的被忽略文件中，不能提交到仓库。
 
 如果需要使用SMTP备用后端，先设置`EMAIL_BACKEND=smtp`，再按同一人工确认和`--confirm-send`门禁发送。
+
+## ZCode workflow 执行模式
+
+在 ZCode 宿主中，第一～三步默认由保存的动态 workflow `briefing-run` 编排执行，主会话不再逐任务内联处理，运行结束后只收到最终报告与邮件预览。workflow 只能由用户显式发起：
+
+```text
+CreateWorkflow saved: { name: "briefing-run", args: { mode: "run" } }     # 新一期
+CreateWorkflow saved: { name: "briefing-run", args: { mode: "resume" } }  # 续跑（默认）
+```
+
+编排脚本位于 `.zcode/workflows/briefing-run.dwf.ts`，职责边界：
+
+1. 初始化：`briefing.py run`（或 `resume --run latest`）。
+2. 循环 `tasks next` → 为每张执行卡（含 fact 会话组卡）派发一个全新上下文的匿名子代理 → `advance`；INVALID 任务先由修复子代理做最小定向修复，再 `tasks reopen-invalid` 重同步，每任务至多修复2次，超限停止并汇报。
+3. `render --execute` 与 `validate`；校验 FAIL 时派发最小修复后重渲染重校验，至多3轮。
+4. 终止于 `READY_TO_SEND`，把 `email.html` 与 `validation.json` 发布为运行产物（artifact）。
+
+不变量：子代理只读执行卡引用的输入、只写自己的输出文件，禁止运行 briefing.py 子命令；`tasks next`/`advance`/`reopen-invalid`/`render`/`validate` 全部由编排脚本执行。所有质量门禁、证据边界硬规则、会话组隔离与 cache 语义与手动路径完全一致，Python 侧无任何差别。
+
+第四步发送不在编排内：人工阅读 `email.html` 与 `validation.json` 后，仍在主会话执行 `send --confirm-send` 两步确认。回退与调试：停止或放弃 workflow，按上文手动循环接手（状态只在盘上，无需迁移）；单任务调试用 `tasks next-single`。运行、恢复与故障处置见 `docs/operations/zcode-workflow-run.md`。
 
 ## 上下文与成本硬规则
 
