@@ -546,14 +546,23 @@ def test_lens_layout_is_deterministic_and_has_no_coordinate_voids():
               }});
               for (const [relation, lengths] of Object.entries(auditedStats)) {{
                 const sorted = lengths.slice().sort((a, b) => a - b);
-                const row = {{ count: sorted.length, median: sorted[Math.floor((sorted.length - 1) / 2)], max: sorted[sorted.length - 1] }};
+                // Zero-length edges are co-located nodes (an item sitting
+                // exactly on its issue column), not locality evidence;
+                // letting them shrink the median turns normal stacking
+                // offsets into false void reports, so the ratio is judged
+                // over nonzero lengths only.
+                const nonzero = sorted.filter((d) => d > 0);
+                const median = nonzero.length
+                  ? nonzero[Math.floor((nonzero.length - 1) / 2)]
+                  : 0;
+                const row = {{ count: sorted.length, median, max: sorted[sorted.length - 1] }};
                 // Semantic edges (has_item / published_in / supports_judgement)
                 // must stay local to their lane or column: max ≤ 4× median.
                 // Containment edges (has_direction, tracks, …) may span layout
                 // context but are bounded outright.
                 const semantic = ['has_item', 'published_in', 'supports_judgement'].includes(relation);
                 const violated = semantic
-                  ? (row.count >= 3 && row.median > 0 && row.max > row.median * 4)
+                  ? (nonzero.length >= 3 && median > 0 && row.max > median * 4)
                   : row.max > 4200;
                 if (violated) violations.push({{ topic, range, lens, relation, ...row }});
               }}
@@ -604,18 +613,22 @@ def test_lens_layout_reports_honest_empty_states():
     for key in [
         ("ai_infra_horizontal", "evolution"),
         ("ai_infra_horizontal", "judgements"),
-        ("dpu_inline", "evolution"),
         ("dpu_inline", "judgements"),
         ("tpn", "judgements"),
-        # tpn's last items fell out of recent3 once the graph materialized the
-        # 2026-09-24 issue; an honestly-empty evolution lens replaces the old
-        # non-empty expectation, and kv_management carries the non-empty probe.
-        ("tpn", "evolution"),
     ]:
         assert rows[key]["empty"] is True, key
         assert rows[key]["viewport"] is False, key
         assert rows[key]["reason"], key
-    for key in [("agent_acceleration", "evolution"), ("kv_management", "evolution")]:
+    # dpu_inline (zram, 2026-09-30) and tpn (2026-09-28 through 2026-10-14
+    # items) re-entered the recent3 window when the 2026-09-24 → 2026-10-14
+    # issues were materialized, so their evolution lenses are honestly
+    # non-empty now; ai_infra_horizontal keeps the empty evolution probe.
+    for key in [
+        ("agent_acceleration", "evolution"),
+        ("kv_management", "evolution"),
+        ("dpu_inline", "evolution"),
+        ("tpn", "evolution"),
+    ]:
         assert rows[key]["empty"] is False, key
         assert rows[key]["viewport"] is True, key
 

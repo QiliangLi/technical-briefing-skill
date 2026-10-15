@@ -489,14 +489,15 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     assert index["schema_version"] == 1
     assert len(index["roadmaps"]) == 11
     assert len(index["ideas"]) == 11
-    assert len(index["idea_candidates"]) == 39
+    assert len(index["idea_candidates"]) == 54
     # The store has been re-materialized issue by issue through the bounded
     # task queue (2026-08-23/26/29 backfill, the 2026-09-03 issue that added
     # the optical_network roadmap, the 2026-09-04/06/10/14 backfill that
     # added the accelerator_io_datapath roadmap plus the hardware-media
-    # cluster, and the 2026-09-16 backfill that added the kv_management
-    # roadmap), so four more category clusters joined the five seed clusters;
-    # all of them remain temporary.
+    # cluster, the 2026-09-16 backfill that added the kv_management
+    # roadmap, and the 2026-09-24 through 2026-10-14 backfill that added
+    # fifteen more deferred candidates), so four more category clusters
+    # joined the five seed clusters; all of them remain temporary.
     assert len(index["frontier_clusters"]) == 9
     assert all(cluster["status"] == "temporary" for cluster in index["frontier_clusters"])
     assert all(cluster["promotion_target"] is None for cluster in index["frontier_clusters"])
@@ -519,7 +520,7 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     assert all(not str(node["data"]["id"]).startswith("candidate_") for node in graph["nodes"])
     manifest = read_json(REPO_ROOT / "knowledge" / "manifest.json")
     assert manifest["candidate_analysis_state"] == "complete"
-    assert manifest["candidate_counts"] == {"proposed": 0, "accepted": 5, "duplicate": 0, "deferred": 34, "dismissed": 0}
+    assert manifest["candidate_counts"] == {"proposed": 0, "accepted": 5, "duplicate": 0, "deferred": 49, "dismissed": 0}
     backfill = read_json(REPO_ROOT / "knowledge" / "candidate-backfill.json")
     audited = [row for issue in backfill["issues"] for row in issue["items"]]
     assert len(audited) == 264
