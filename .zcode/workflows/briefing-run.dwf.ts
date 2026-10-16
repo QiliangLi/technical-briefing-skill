@@ -76,17 +76,27 @@ function parseCard(stdout: string): TaskCard | null {
     return null;
   }
   const groupIds: string[] = [];
-  const firstLine: string[] = [];
+  let groupType = "";
   for (const line of text.split("\n")) {
+    // canonical 执行组信封（execution_envelope.py）：编号 "Process only envelope .../tasks/<type>/<id>.execution.json" 行
+    const e = /^\d+\. Process only envelope \S+\/tasks\/([A-Za-z_]+)\/([A-Za-z0-9]+)\.execution\.json; write /.exec(line);
+    if (e && e[1] && e[2]) {
+      groupIds.push(e[2]);
+      groupType = e[1];
+    }
+    // 旧版 session_grouping 组卡行
     const g = /^ {3}Task \d+: (\S+) \(/.exec(line);
-    if (g && g[1]) groupIds.push(g[1]);
-    if (firstLine.length === 0 && line.trim().length > 0) firstLine.push(line);
+    if (g && g[1]) {
+      groupIds.push(g[1]);
+      if (!groupType) groupType = "fact_extraction";
+    }
   }
   if (groupIds.length > 0) {
-    return { kind: "fact_session_group", task_ids: groupIds, task_type: "fact_extraction", instructions: text };
+    return { kind: "fact_session_group", task_ids: groupIds, task_type: groupType || "fact_extraction", instructions: text };
   }
-  const head = firstLine[0] ?? "";
-  const s = /^Task (\S+) \((\S+)\)$/.exec(head);
+  const head = (text.split("\n")[0] ?? "").trim();
+  // canonical 单卡首行带 "— canonical execution contract vN" 尾缀，兼容旧裸格式
+  const s = /^Task (\S+) \((\S+)\)(?:\s|$)/.exec(head);
   if (s && s[1] && s[2]) {
     return { kind: "single", task_ids: [s[1]], task_type: s[2], instructions: text };
   }
@@ -197,7 +207,7 @@ phase("初始化 briefing 运行");
 log(mode === "run" ? "采集并开启新一期 briefing" : "续跑最近一期 briefing");
 const init = mode === "run"
   ? await world.run(".venv/bin/python3", ["briefing.py", "run"], { timeoutMs: 900000 })
-  : await world.run(".venv/bin/python3", ["briefing.py", "resume", "--run", "latest"], { timeoutMs: 300000 });
+  : await world.run(".venv/bin/python3", ["briefing.py", "resume", "--run", "latest"], { timeoutMs: 900000 });
 const initAdv = parseTrailingJson(init.stdout);
 if (!initAdv) {
   const report: WorkflowReport = {
@@ -244,7 +254,13 @@ while (rounds < MAX_ROUNDS) {
   log(`第 ${rounds} 轮：${card.task_type}${idsText ? " " + idsText : ""}`);
   report({ key: cardKey, status: "执行中", title: cardTitle, task_type: card.task_type, ids_text: idsText }, "tasks");
   const outcome = await agent().ask<TaskOutcome>(taskAsk(card));
-  const advRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"]);
+  // 阶段切换（如 relevance 收尾触发 fact 重组）或 DB 锁竞争时 advance 可能超过默认 300s；放宽后重试一次
+  let advRun;
+  try {
+    advRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"]);
+  } catch {
+    advRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"], { timeoutMs: 900000 });
+  }
   const adv = parseTrailingJson(advRun.stdout);
   if (!adv) {
     const failReport: WorkflowReport = {
@@ -294,7 +310,7 @@ while (rounds < MAX_ROUNDS) {
     log(`修复 ${rows.length} 个 INVALID 任务后重同步`);
     await agent().ask<TaskOutcome>(repairAsk(rows));
     await world.run(".venv/bin/python3", ["briefing.py", "tasks", "reopen-invalid", "--run", "latest"]);
-    const reRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"]);
+    const reRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"], { timeoutMs: 900000 });
     const re = parseTrailingJson(reRun.stdout);
     if (re) stage = re.stage || stage;
     report({ key: cardKey, status: re && re.invalid === 0 ? "修复后完成" : "修复中", title: cardTitle, task_type: card.task_type, ids_text: idsText }, "tasks");
@@ -339,7 +355,7 @@ const emailPath = emailMatch && emailMatch[1] ? emailMatch[1] : "";
 let validated = false;
 let lastValidate = "";
 for (let attempt = 1; attempt <= MAX_VALIDATE_RETRIES; attempt++) {
-  const v = await world.run(".venv/bin/python3", ["briefing.py", "validate", "--run", "latest"], { timeoutMs: 300000 });
+  const v = await world.run(".venv/bin/python3", ["briefing.py", "validate", "--run", "latest"], { timeoutMs: 600000 });
   lastValidate = v.stdout;
   if (v.exitCode === 0) {
     validated = true;
