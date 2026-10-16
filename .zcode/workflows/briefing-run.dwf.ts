@@ -36,6 +36,19 @@ interface AdvanceResult {
   stage: string;
 }
 
+interface BoardItem {
+  /** 执行卡在看板上的稳定标识（task_ids 拼接） */
+  key: string;
+  /** 卡片所在列：执行中 / 修复中 / 完成 / 修复后完成 */
+  status: string;
+  /** 卡片标题，如“第 3 轮 fact_extraction” */
+  title: string;
+  task_type: string;
+  ids_text: string;
+  /** 一行补充说明；无则整个字段省略（undefined 只允许出现在可选属性上） */
+  note?: string;
+}
+
 interface InvalidRow {
   task_id: string;
   task_type: string;
@@ -250,7 +263,9 @@ while (rounds < MAX_ROUNDS) {
   }
   stage = adv.stage || stage;
   if (adv.invalid === 0) {
-    report({ key: cardKey, status: "完成", title: cardTitle, task_type: card.task_type, ids_text: idsText, note: outcome.notes }, "tasks");
+    const done: BoardItem = { key: cardKey, status: "完成", title: cardTitle, task_type: card.task_type, ids_text: idsText };
+    if (outcome.notes !== undefined) done.note = outcome.notes;
+    report(done, "tasks");
   }
   if (adv.invalid > 0) {
     const listRun = await world.run(".venv/bin/python3", ["briefing.py", "tasks", "list", "--status", "INVALID", "--run", "latest"]);
