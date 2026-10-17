@@ -350,8 +350,11 @@ if (renderRun.exitCode !== 0) {
   };
   return failReport;
 }
-const emailMatch = /"(workspace\/runs\/[^"]+\/email\.html)"/.exec(renderRun.stdout);
-const emailPath = emailMatch && emailMatch[1] ? emailMatch[1] : "";
+// render --execute 的 stdout 是 JSON，"email" 键为绝对路径且可能指向 email-illustrated.html；取 workspace/ 起的相对路径。兼容旧的带引号相对 email.html 输出。
+const emailJsonMatch = /"email":\s*"([^"]*workspace\/runs\/[^"]+\.html)"/.exec(renderRun.stdout);
+const emailLegacyMatch = /"(workspace\/runs\/[^"]+\/email\.html)"/.exec(renderRun.stdout);
+const emailRaw = emailJsonMatch && emailJsonMatch[1] ? emailJsonMatch[1] : (emailLegacyMatch && emailLegacyMatch[1] ? emailLegacyMatch[1] : "");
+const emailPath = emailRaw ? emailRaw.slice(emailRaw.indexOf("workspace/")) : "";
 let validated = false;
 let lastValidate = "";
 for (let attempt = 1; attempt <= MAX_VALIDATE_RETRIES; attempt++) {
@@ -390,7 +393,7 @@ if (emailPath) {
   } catch {
     log(`email.html 发布失败：${emailPath}`);
   }
-  const validationPath = emailPath.replace(/email\.html$/, "validation.json");
+  const validationPath = emailPath.slice(0, emailPath.lastIndexOf("/") + 1) + "validation.json";
   try {
     await artifact.file("validation", validationPath, {
       title: "最终校验报告",
