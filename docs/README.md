@@ -16,6 +16,7 @@ This directory separates current documentation from dated project records. Start
 - [Evidence Graph UI generation brief](designs/2026-08-31-evidence-graph-ui-generation-brief.md)
 - [arXiv outage web fallback](designs/2026-09-24-arxiv-outage-web-fallback.md)
 - [ZCode workflow orchestration for briefing runs](designs/2026-10-15-zcode-workflow-orchestration.md)
+- [briefing-run wave-parallel task execution](designs/2026-10-18-briefing-run-parallel-waves.md)
 
 Create non-trivial designs under `designs/` before implementation. Once an implementation is complete, move durable behavior into the current architecture, operations, or contracts documentation. Historical design records belong under `history/designs/` only after that transfer is complete.
 
