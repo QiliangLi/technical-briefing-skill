@@ -189,20 +189,21 @@ const MAX_VALIDATE_RETRIES = 3;
 const RENDER_STAGES = ["READY_FOR_RENDER", "RENDERED", "READY_TO_SEND"];
 const mode: string = typeof args.mode === "string" && args.mode === "run" ? "run" : "resume";
 
-// 编辑部角色：任务类型 → 用户可读的角色名。名字按"角色·对象·第N轮"组成，对象取自任务 input.json 的人读字段。
+// 功能直述命名：任务类型 → 用户一眼能懂的功能标签。名字按"功能·对象·第N轮"组成，
+// 对象取自任务 input.json 的人读字段；各功能读什么/产出什么的对照表见 docs/operations/zcode-workflow-run.md。
 const ROLE: Record<string, string> = {
-  agent_web_search: "情报记者",
-  relevance_batch: "选题编辑",
-  relevance_review: "选题编辑",
-  fact_extraction: "资料编辑",
-  fact_evidence_repair: "查证员",
-  item_writing_batch: "撰稿人",
-  item_writing: "撰稿人",
-  fact_check_batch: "核查员",
-  fact_check: "核查员",
-  issue_synthesis: "主编",
-  reader_projection: "润稿编辑",
-  illustrated_publication: "美术编辑",
+  agent_web_search: "开放搜索",
+  relevance_batch: "筛选候选",
+  relevance_review: "筛选候选",
+  fact_extraction: "提取事实",
+  fact_evidence_repair: "补齐证据",
+  item_writing_batch: "撰写条目",
+  item_writing: "撰写条目",
+  fact_check_batch: "核查事实",
+  fact_check: "核查事实",
+  issue_synthesis: "汇总判断",
+  reader_projection: "读者润稿",
+  illustrated_publication: "生成插画",
 };
 
 function rec(v: unknown): Record<string, unknown> {
@@ -389,7 +390,7 @@ while (rounds < MAX_ROUNDS) {
       return stopReport;
     }
     log(`修复 ${rows.length} 个 INVALID 任务后重同步`);
-    await agent(`校对员·第${rounds}轮`).ask<TaskOutcome>(repairAsk(rows));
+    await agent(`修复输出·第${rounds}轮`).ask<TaskOutcome>(repairAsk(rows));
     await world.run(".venv/bin/python3", ["briefing.py", "tasks", "reopen-invalid", "--run", "latest"]);
     const reRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"], { timeoutMs: 900000 });
     const re = parseTrailingJson(reRun.stdout);
@@ -446,7 +447,7 @@ for (let attempt = 1; attempt <= MAX_VALIDATE_RETRIES; attempt++) {
     break;
   }
   log(`发布校验未通过（第 ${attempt} 次），派发最小修复后重渲染`);
-  await agent(`终审校对·第${attempt}次`).ask<TaskOutcome>(validateFixAsk(v.stdout));
+  await agent(`终审修复·第${attempt}次`).ask<TaskOutcome>(validateFixAsk(v.stdout));
   await world.run(".venv/bin/python3", ["briefing.py", "render", "--execute", "--run", "latest"], { timeoutMs: 600000 });
 }
 if (!validated) {
