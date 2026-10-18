@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Created: 2026-10-15
-- Last updated: 2026-10-15
+- Last updated: 2026-10-18
 
 ## Problem and evidence
 
@@ -102,11 +102,11 @@ while 轮次 < 80:
 
 要点：
 
-- **每任务/组一个全新匿名子代理**：不命名、不跨任务复用上下文（匿名即天然无重名风险）；fact 会话组按执行卡原样整体交付给一个子代理，组内隔离规则已在卡内。
+- **每任务/组一个全新子代理，按轮次命名**（2026-10-18 修订）：`第N轮·<任务类型>·<首个任务ID前8位>`，修复子代理 `第N轮·INVALID修复`，校验修复 `校验修复·第N次`。轮次号保证同一运行内唯一；命名让运行流可读，并使 `AmendWorkflow` 能按名导入缓存（匿名子代理的已完成 ask 永不复用——首跑恢复时为此只能新起 resume）。不跨任务复用上下文；fact 会话组按执行卡原样整体交付给一个子代理，组内隔离规则已在卡内。
 - **指令 = 执行卡原文 + 固定硬边界段**：只读卡内引用文件、写指定输出路径、符合 Schema、**不运行 briefing.py 子命令**（执行卡末步"Run advance"由编排器代执行，ask 中显式覆盖）、无法合规时升级提问而非伪造。卡文本属于工作合约本身，直接插值。
 - **类型化结果只含标识与状态**，编排器永远不搬运正文。
 - 循环天然幂等：`tasks next` 只发下一个待办，`advance` 从盘上同步输出；中断后无论 resume 还是新起 workflow，都不重做已完成任务；relevance/facts cache fast path 语义不变。
-- **解析器**（正则，纯脚本逻辑）：单任务卡 `^Task (\S+) \((\S+)\)$` 取首行 id/type；会话组卡 `^ {3}Task \d+: (\S+) \(` 收集全部任务 id，`task_type` 取 `fact_extraction`；`advance` 输出直接 `JSON.parse`。
+- **解析器**（正则，纯脚本逻辑，2026-10-18 按现网格式修订）：执行卡实际由 `execution_envelope.py` 的 canonical 契约渲染——单卡首行 `^Task (\S+) \((\S+)\)(?:\s|$)`（尾随 `— canonical execution contract vN`），组卡收集编号行 `^\d+\. Process only envelope \S+/tasks/(<type>)/(<id>)\.execution\.json; write `；保留旧 `^ {3}Task \d+: (\S+) \(` 兼容；`advance` 输出直接 `JSON.parse`；`render --execute` 的 `"email"` 键为绝对路径，截取 `workspace/` 起的相对路径发布产物。
 
 特殊任务类型：
 
@@ -194,3 +194,6 @@ Workflow 终止于 `READY_TO_SEND`，不执行 `send`。`WorkflowReport` 附 `em
 - 2026-10-15：循环用 `tasks next` 驱动（而非仅靠 `advance.next_task`），保持 `_mark_group_started` 遥测语义与手动路径一致。
 - 2026-10-15：不引入任务级并行，保持 `tasks next` 串行调度语义；并行化留待后续设计。
 - 2026-10-15：增补任务看板（`artifact.board` + `report` 打 `tasks` tag）——阶段线的节点是 phase 而非单个任务，任务级"一个任务一个点"的可视由看板与结果流承担。
+- 2026-10-18：首次端到端运行（2026-10-16-115317 期，78 轮）后修订三处实现偏差：执行卡格式实为 `execution_envelope.py` canonical 契约（解析器重写，eee329d）；任务循环 `advance` 在阶段切换/锁竞争时可超默认 300s，改为捕获后 900s 重试（eee329d）；`render --execute` 的 `"email"` 为绝对路径且指向 `email-illustrated.html`，产物发布改为解析该键（efd8a6f）。
+- 2026-10-18：子代理由匿名改为**按轮次命名**（用户反馈运行流全是"未命名智能体"，可视化失去意义）；轮次号天然唯一，原"匿名避免重名"的顾虑不成立。附带收益：`AmendWorkflow` 缓存导入按名匹配，此后脚本缺陷可热缓存续跑。
+- 2026-10-18：任务级并行作为独立设计推进，见 `2026-10-18-briefing-run-parallel-waves.md`（用户指示：先出设计稿评审，再实现）。

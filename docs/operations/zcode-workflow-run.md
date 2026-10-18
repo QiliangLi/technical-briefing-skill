@@ -22,6 +22,7 @@ workflow 只能由用户显式请求启动；在会话中说"用 workflow 跑一
 ## 进度观察
 
 - 阶段图：`初始化 briefing 运行 → 逐个执行 Agent 任务 → 渲染并做发布前校验`。线上的节点是**阶段**（phase），整个任务循环是其中一个节点，几十张执行卡不在线上拆成独立的点。
+- 子代理命名：执行卡子代理为 `第N轮·<任务类型>·<首个任务ID前8位>`，INVALID 修复为 `第N轮·INVALID修复`，校验修复为 `校验修复·第N次`。运行流与子代理列表据此可读出"谁在做哪张卡"；轮次号保证同一运行内唯一。命名也是 `AmendWorkflow` 按名导入缓存的前提——匿名子代理的已完成 ask 永不复用。
 - 任务看板（artifact board）：每张执行卡一张卡片，实时在 执行中 → 完成（或 修复中 → 修复后完成）列间移动；这是任务级"一个任务一个点"的可视形态，resume 后看板原样重建。
 - 每张执行卡的状态变化同步进入实时结果流；INVALID 修复与校验修复在 `log` 叙事线中可见。
 - 成功结束时发布两个产物卡片：`email.html`（待人工确认发送）与 `validation.json`。
@@ -32,7 +33,8 @@ workflow 只能由用户显式请求启动；在会话中说"用 workflow 跑一
 | 情况 | 处置 |
 | --- | --- |
 | 进程退出/宿主重启/用户停止 | `ResumeWorkflowRun` journal 重放；或直接新起 `mode: "resume"` 的 workflow——盘上流水线状态幂等，已完成任务不会重做 |
-| 编排脚本缺陷 | 编辑 `.zcode/workflows/briefing-run.dwf.ts` 后 `AmendWorkflow` 热缓存续跑，已完成的 ask 与 `world.run` 零成本重放 |
+| 编排脚本缺陷 | 编辑 `.zcode/workflows/briefing-run.dwf.ts` 后 `AmendWorkflow` 热缓存续跑，已完成的 ask 与 `world.run` 零成本重放（ask 缓存按子代理名 + 逐字相同指令匹配；2026-10-18 前的运行子代理匿名，对那些运行只能新起 `mode: "resume"`） |
+| `world.run` 超时 errored | 任务循环里的 `advance` 已带 300s → 900s 的捕获重试；若仍超时，先在主会话手动 `advance` 解阻塞（通常是阶段切换重负载或 DB 锁竞争），再新起 `mode: "resume"` |
 | provider 限流/网络抖动 | 运行时自动重试，无需干预；持续 20 分钟无进展会有一次提示通知，运行仍在等待 |
 
 ## 故障处置
@@ -50,5 +52,5 @@ workflow 只能由用户显式请求启动；在会话中说"用 workflow 跑一
 
 ## 维护注意
 
-- 脚本中的解析函数与 `briefing_skill/tasks.py:instructions`、`session_grouping.py:fact_session_instructions`、`cli.py` 的 advance/tasks-list 输出格式耦合；改动这些输出时同步更新脚本与 `tests/test_session_grouping.py` 之外的正则样本。
+- 脚本中的解析函数与 `execution_envelope.py` 的 canonical 执行卡格式（单卡首行 `Task <id> (<type>) — canonical execution contract vN`；组卡为编号 `Process only envelope .../tasks/<type>/<id>.execution.json` 行）、`cli.py` 的 advance/tasks-list 输出、`render --execute` 的 JSON（`"email"` 键为绝对路径）耦合；改动这些输出时同步更新脚本，并用 `EvalWorkflowSnippet` 以真实样本重跑解析函数。
 - 有界上限（任务轮次 80、INVALID 修复 2 次/任务、校验修复 3 轮）是编排自身的保险丝，与流水线配置无关。
