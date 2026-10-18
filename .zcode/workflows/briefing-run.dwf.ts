@@ -189,6 +189,84 @@ const MAX_VALIDATE_RETRIES = 3;
 const RENDER_STAGES = ["READY_FOR_RENDER", "RENDERED", "READY_TO_SEND"];
 const mode: string = typeof args.mode === "string" && args.mode === "run" ? "run" : "resume";
 
+// 编辑部角色：任务类型 → 用户可读的角色名。名字按"角色·对象·第N轮"组成，对象取自任务 input.json 的人读字段。
+const ROLE: Record<string, string> = {
+  agent_web_search: "情报记者",
+  relevance_batch: "选题编辑",
+  relevance_review: "选题编辑",
+  fact_extraction: "资料编辑",
+  fact_evidence_repair: "查证员",
+  item_writing_batch: "撰稿人",
+  item_writing: "撰稿人",
+  fact_check_batch: "核查员",
+  fact_check: "核查员",
+  issue_synthesis: "主编",
+  reader_projection: "润稿编辑",
+  illustrated_publication: "美术编辑",
+};
+
+function rec(v: unknown): Record<string, unknown> {
+  return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+}
+
+function arr(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+
+function strField(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function cut(s: string): string {
+  return s.length > 24 ? s.slice(0, 24) + "…" : s;
+}
+
+async function cardLabel(card: TaskCard): Promise<{ role: string; subject: string }> {
+  const role = ROLE[card.task_type] || "执行编辑";
+  const single = /^1\. Read the canonical envelope first: (\S+)$/m.exec(card.instructions);
+  const groupM = /^\d+\. Process only envelope (\S+); write /m.exec(card.instructions);
+  const envelope = single && single[1] ? single[1] : groupM && groupM[1] ? groupM[1] : "";
+  if (!envelope) {
+    return { role, subject: "" };
+  }
+  try {
+    const env = rec(JSON.parse(await files.read(envelope)));
+    const input = rec(JSON.parse(await files.read(strField(env.input_path))));
+    const topicName = strField(rec(input.topic).name);
+    if (card.kind === "fact_session_group") {
+      return { role, subject: cut(`${topicName}·${card.task_ids.length}篇`) };
+    }
+    const docTitle = strField(rec(input.document).title);
+    if (docTitle) {
+      return { role, subject: cut(docTitle) };
+    }
+    const candidates = arr(input.candidates);
+    if (candidates.length > 0) {
+      return { role, subject: cut(`${topicName}·${candidates.length}篇候选`) };
+    }
+    const items = arr(input.items);
+    if (items.length > 0) {
+      const firstTopic = strField(rec(rec(items[0]).topic).name);
+      return { role, subject: cut(`${firstTopic || topicName}·${items.length}条`) };
+    }
+    const checks = arr(input.checks);
+    if (checks.length > 0) {
+      return { role, subject: `${checks.length}项核查` };
+    }
+    const searches = arr(input.searches);
+    if (searches.length > 0) {
+      return { role, subject: `${searches.length}路搜索` };
+    }
+    const directionName = strField(rec(input.direction).name);
+    if (directionName) {
+      return { role, subject: cut(`${topicName}·${directionName}`) };
+    }
+    return { role, subject: cut(topicName) };
+  } catch {
+    return { role, subject: "" };
+  }
+}
+
 // 任务看板：每张执行卡一张卡片，随 report(item, "tasks") 在列间实时移动
 artifact.board("tasks", {
   title: "Agent 任务看板",
@@ -230,7 +308,7 @@ const invalidBudget = new Map<string, number>();
 let rounds = 0;
 let queueEmpty = false;
 
-phase("逐个执行 Agent 任务");
+phase("编辑部逐个处理任务卡");
 while (rounds < MAX_ROUNDS) {
   const next = await world.run(".venv/bin/python3", ["briefing.py", "tasks", "next", "--run", "latest"]);
   const card = parseCard(next.stdout);
@@ -249,11 +327,12 @@ while (rounds < MAX_ROUNDS) {
   }
   rounds += 1;
   const cardKey = card.task_ids.length > 0 ? card.task_ids.join("+").slice(0, 64) : `round-${rounds}`;
-  const cardTitle = `第 ${rounds} 轮 ${card.task_type}`;
+  const label = await cardLabel(card);
+  const cardTitle = `第 ${rounds} 轮 ${label.role}${label.subject ? "·" + label.subject : ""}`;
   const idsText = card.task_ids.join(", ");
-  // 子代理按轮次命名：运行流/阶段图里可读出"谁在做哪张卡"，轮次号保证同一运行内唯一；命名后 AmendWorkflow 才能按名命中缓存
-  const workerName = `第${rounds}轮·${card.task_type}·${card.task_ids.length > 0 ? card.task_ids[0].slice(0, 8) : "无ID"}`;
-  log(`第 ${rounds} 轮：${card.task_type}${idsText ? " " + idsText : ""}`);
+  // 子代理按"角色·对象·第N轮"命名：运行流里直接可读出编辑部里谁在处理什么；轮次号保证同一运行内唯一，命名后 AmendWorkflow 才能按名命中缓存
+  const workerName = label.subject ? `${label.role}·${label.subject}·第${rounds}轮` : `${label.role}·第${rounds}轮`;
+  log(`第 ${rounds} 轮：${cardTitle}${idsText ? " " + idsText : ""}`);
   report({ key: cardKey, status: "执行中", title: cardTitle, task_type: card.task_type, ids_text: idsText }, "tasks");
   const outcome = await agent(workerName).ask<TaskOutcome>(taskAsk(card));
   // 阶段切换（如 relevance 收尾触发 fact 重组）或 DB 锁竞争时 advance 可能超过默认 300s；放宽后重试一次
@@ -310,7 +389,7 @@ while (rounds < MAX_ROUNDS) {
       return stopReport;
     }
     log(`修复 ${rows.length} 个 INVALID 任务后重同步`);
-    await agent(`第${rounds}轮·INVALID修复`).ask<TaskOutcome>(repairAsk(rows));
+    await agent(`校对员·第${rounds}轮`).ask<TaskOutcome>(repairAsk(rows));
     await world.run(".venv/bin/python3", ["briefing.py", "tasks", "reopen-invalid", "--run", "latest"]);
     const reRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"], { timeoutMs: 900000 });
     const re = parseTrailingJson(reRun.stdout);
@@ -335,7 +414,7 @@ if (!queueEmpty) {
   return capReport;
 }
 
-phase("渲染并做发布前校验");
+phase("排版与发布前校验");
 const renderRun = await world.run(".venv/bin/python3", ["briefing.py", "render", "--execute", "--run", "latest"], { timeoutMs: 600000 });
 if (renderRun.exitCode !== 0) {
   const failReport: WorkflowReport = {
@@ -367,7 +446,7 @@ for (let attempt = 1; attempt <= MAX_VALIDATE_RETRIES; attempt++) {
     break;
   }
   log(`发布校验未通过（第 ${attempt} 次），派发最小修复后重渲染`);
-  await agent(`校验修复·第${attempt}次`).ask<TaskOutcome>(validateFixAsk(v.stdout));
+  await agent(`终审校对·第${attempt}次`).ask<TaskOutcome>(validateFixAsk(v.stdout));
   await world.run(".venv/bin/python3", ["briefing.py", "render", "--execute", "--run", "latest"], { timeoutMs: 600000 });
 }
 if (!validated) {

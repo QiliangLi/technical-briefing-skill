@@ -70,13 +70,13 @@ while waves < MAX_WAVES:
     wave = rows.slice(0, K)                                    # 前缀，不跳优先级
     cards = await Promise.all(wave.map(t => world.run(tasks card --task t.id)))
     outcomes = await Promise.allSettled(
-        wave.map((t, i) => agent(`第${waves}波·${t.task_type}·${t.id.slice(0,8)}`)
+        wave.map((t, i) => agent(waveAgentName(waves, t))      // 角色制命名，如「第3波·资料编辑·KVCache管理与复用」
                             .ask<TaskOutcome>(taskAsk(cards[i])))
     )
     adv = advance（沿用 300s → 900s 捕获重试）
     若 adv.invalid > 0：
         rows = tasks list --status INVALID → 逐任务修复预算检查
-        await Promise.allSettled(rows.map(r => agent(`第${waves}波·修复·${r.task_id.slice(0,8)}`).ask(repairAsk([r]))))
+        await Promise.allSettled(rows.map(r => agent(`第${waves}波·校对员·${subjectOf(r)}`).ask(repairAsk([r]))))
         reopen-invalid → advance
 ```
 
@@ -86,7 +86,7 @@ while waves < MAX_WAVES:
 - **执行单位是单任务**，不再使用 `peek_group` 的 fact 会话组卡。代价是失去"一个会话顺序处理 4 个 fact 任务"的共享 Prompt/Schema/判断卡读取；收益是上下文不再跨任务累积（首跑 130 万–150 万 token 的单步正是组卡），且天然并行。预期总 token 不升反降，需用 `briefing.py stats` 实测确认。
 - **`Promise.allSettled` 而非 `Promise.all`**：一个任务升级提问或失败不拖垮同波兄弟；失败任务没有输出文件，`advance` 后仍为 PENDING，下一波自然重发；INVALID 修复预算仍按任务 ≤2 次。
 - **K 作为 workflow 参数 `concurrency`**（默认 6）：留在脚本控制流里、不插值进 ask 文本（避免调参导致 amend 缓存全失效）；`concurrency: 1` 即现行串行行为，也是回退路径。
-- **子代理命名**：`第N波·<task_type>·<ID 前 8 位>`；修复子代理 `第N波·修复·<ID 前 8 位>`；校验修复不变。
+- **子代理命名沿用编辑部角色制**（与现行脚本一致，2026-10-18 已落地）：`第N波·<角色>·<对象>`，角色由任务类型映射、对象从 input.json 人读字段提取；修复子代理 `第N波·校对员·<对象>`；校验修复 `终审校对·第N次` 不变。
 - **看板粒度按波**：每波一张卡（key = `wave-N`，detail 列出任务 ID 与类型），执行中 → 完成 / 修复后完成；每波两条上报，上限 80 波也只有 160 条，远低于 256 条上限。任务级"谁在做什么"由命名子代理在运行流中承担。
 - 其余阶段（初始化、渲染与校验、产物发布）不变。
 
