@@ -146,16 +146,17 @@ python briefing.py send --confirm-send
 ```text
 CreateWorkflow saved: { name: "briefing-run", args: { mode: "run" } }     # 新一期
 CreateWorkflow saved: { name: "briefing-run", args: { mode: "resume" } }  # 续跑（默认）
+CreateWorkflow saved: { name: "briefing-run", args: { mode: "resume", concurrency: 1 } }  # 串行回退
 ```
 
 编排脚本位于 `.zcode/workflows/briefing-run.dwf.ts`，职责边界：
 
 1. 初始化：`briefing.py run`（或 `resume --run latest`）。
-2. 循环 `tasks next` → 为每张执行卡（含 fact 会话组卡）派发一个全新上下文的匿名子代理 → `advance`；INVALID 任务先由修复子代理做最小定向修复，再 `tasks reopen-invalid` 重同步，每任务至多修复2次，超限停止并汇报。
+2. 按波次并行执行任务：每波取 PENDING 队列前 `concurrency`（默认 6，上限 6）个任务，用只读的 `tasks card --task <id>` 逐任务取 canonical 执行卡，派发并行命名子代理（功能直述命名，如「提取事实·KVCache管理与复用·第3波」），一波后统一 `advance`。INVALID 任务由修复子代理逐任务并行做最小定向修复，再 `tasks reopen-invalid` 重同步，每任务至多修复2次，超限停止并汇报。波内单个任务失败不拖垮兄弟任务，未写输出的任务下一波重发。
 3. `render --execute` 与 `validate`；校验 FAIL 时派发最小修复后重渲染重校验，至多3轮。
-4. 终止于 `READY_TO_SEND`，把 `email.html` 与 `validation.json` 发布为运行产物（artifact）；运行中的任务看板实时显示每张执行卡的执行/完成状态。
+4. 终止于 `READY_TO_SEND`，把 `email.html` 与 `validation.json` 发布为运行产物（artifact）；任务波次看板按波实时显示执行/完成状态，任务级"谁在做什么"由命名子代理在运行流中承担。
 
-不变量：子代理只读执行卡引用的输入、只写自己的输出文件，禁止运行 briefing.py 子命令；`tasks next`/`advance`/`reopen-invalid`/`render`/`validate` 全部由编排脚本执行。所有质量门禁、证据边界硬规则、会话组隔离与 cache 语义与手动路径完全一致，Python 侧无任何差别。
+不变量：子代理只读执行卡引用的输入、只写自己的输出文件，禁止运行 briefing.py 子命令；`tasks list`/`tasks card`/`advance`/`reopen-invalid`/`render`/`validate` 全部由编排脚本执行。所有质量门禁、证据边界硬规则与 cache 语义与手动路径完全一致：同时 PENDING 的任务由创建时机保证互相独立，任务输入在创建时冻结，阶段完整性门（如 facts 只在 relevance 清空后创建）全部在 Python 内部评估。
 
 第四步发送不在编排内：人工阅读 `email.html` 与 `validation.json` 后，仍在主会话执行 `send --confirm-send` 两步确认。回退与调试：停止或放弃 workflow，按上文手动循环接手（状态只在盘上，无需迁移）；单任务调试用 `tasks next-single`。运行、恢复与故障处置见 `docs/operations/zcode-workflow-run.md`。
 

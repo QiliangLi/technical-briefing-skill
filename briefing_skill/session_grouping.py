@@ -310,7 +310,7 @@ def install_session_grouping() -> None:
         return result
 
     def cmd_tasks(args) -> int:
-        if args.action not in {"next", "next-single"}:
+        if args.action not in {"next", "next-single", "card"}:
             return original_cmd_tasks(args)
         if args.action == "next-single":
             args.action = "next"
@@ -318,6 +318,19 @@ def install_session_grouping() -> None:
                 return original_cmd_tasks(args)
             finally:
                 args.action = "next-single"
+        if args.action == "card":
+            # 只读按 ID 取卡：渲染该任务的 canonical 执行卡并镜像 next 的尝试计数遥测，
+            # 不改任务状态。供编排器（如 briefing-run workflow 的波次并行）按 ID 派发。
+            root, paths, config, db = cli._context(args)
+            run_id = cli._resolve_run(db, args.run)
+            service = TaskService(db, root, paths.runs / run_id)
+            task = db.fetchone("SELECT * FROM tasks WHERE id=? AND run_id=?", (args.task, run_id))
+            if not task:
+                print(f"Task not found in run {run_id}: {args.task}")
+                return 1
+            _mark_group_started(service, [task])
+            print(service.instructions(task))
+            return 0
 
         root, paths, config, db = cli._context(args)
         run_id = cli._resolve_run(db, args.run)
@@ -341,7 +354,9 @@ def install_session_grouping() -> None:
         if tasks_parser is not None:
             action_arg = next((action for action in tasks_parser._actions if action.dest == "action"), None)
             if action_arg is not None and action_arg.choices is not None and "next-single" not in action_arg.choices:
-                action_arg.choices = list(action_arg.choices) + ["next-single"]
+                action_arg.choices = list(action_arg.choices) + ["next-single", "card"]
+            if next((action for action in tasks_parser._actions if action.dest == "task"), None) is None:
+                tasks_parser.add_argument("--task", help="task id for the card action")
         return parser
 
     def run_stats(db, root: Path, run_id: str, settings: dict[str, Any] | None = None):

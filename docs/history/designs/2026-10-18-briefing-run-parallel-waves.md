@@ -1,8 +1,8 @@
 # briefing-run 波次并行执行（同一待办队列内的任务级并行）
 
-- Status: draft
+- Status: implemented
 - Created: 2026-10-18
-- Last updated: 2026-10-18
+- Last updated: 2026-10-21
 
 ## Problem and evidence
 
@@ -98,6 +98,12 @@ while waves < MAX_WAVES:
 4. **默认并发 K**：6（手动实测安全值）；是否同时在脚本里设置 `agent_web_search` 四条 lane 可全并行。
 5. **看板粒度**：按波（推荐，受 256 条上限约束）vs 按任务只上报完成一条。
 
+## 内容影响分析（并行是否改变产出）
+
+设计目标是"只加速"；机制上任务内容不变的保证：任务输入在创建时冻结（信封/证据包在 prepare 阶段落盘）；兄弟任务在串行下同样互相看不见对方输出，并行只是把"先后"变"同时"；阶段完整性门在 Python 内部评估（`_maybe_prepare_facts` 在 relevance 未清空时直接返回），下一阶段输入基于完整前序输出集合计算；所有质量门（schema、`_task` 回显、Evidence Gate、fact_check、`validate`）逐任务串行执行，与执行方式无关；输出本就存在模型采样随机性。
+
+如实告知的三处生成条件差异：fact 任务从组卡变单卡使隔离**变强**（组内"证据不跨边界"原只靠指令约束，单卡为全新上下文，且不再累积组内上下文，token 预期下降）；fact 任务收到的指令文本标准化为单任务 canonical 卡（其他任务类型的既有标准路径）；反应式任务（如 evidence 修复）的出生时机从"下一轮"变为"下一波"，变开始时机不变内容。运营层差异：K 路并发打到提供方，12 路实测触发限流，重试不改变质量分布但增加时长抖动——K=6 为实测安全值，`concurrency: 1` 可回退。
+
 ## Compatibility and migration
 
 1. 任何进行中的 run 都可直接切换：波次脚本只读当前 PENDING 列表，已 APPLIED 的任务不会再出现；从串行脚本的运行中途改用波次脚本、或反之，都不需要迁移。
@@ -119,12 +125,17 @@ while waves < MAX_WAVES:
 
 ## Verification
 
-1. 单元测试：`tasks card --task <id>` 输出与 `TaskService.instructions(task)` 逐字一致；对队列首任务与 `tasks next` 单卡输出一致；调用后 `task_metrics.attempts` 增 1；不改变任务状态（放在 `tests/test_session_grouping.py` 或 `tests/test_cli.py`）。
-2. `EvalWorkflowSnippet`：用真实 `tasks list --status PENDING` 输出排练行解析（状态/类型/ID/输出路径）与波切分；对真实 `tasks card` 输出排练 `parseCard`。
-3. 干跑一期（`concurrency: 6`）：记录任务循环墙钟与 `briefing.py stats --run` 的 token 总量，与 2026-10-16-115317 期（串行、约 1,730 万 token）对比；`validation.json` 必须零 failures。
-4. 隔离核验：每个输出文件的 `_task` 绑定与其信封一致（`sync` 已强制），波内无交叉写入。
+实现时已完成（2026-10-21）：
+
+1. 单元测试 `tests/test_tasks_card_cli.py`（子进程隔离仓库根）：`tasks card` 输出 canonical 卡、与 `tasks next-single` 对唯一待办任务逐字一致、不改任务状态、`task_metrics.attempts` +1（next-single 走原始路径本就不计数）、未知任务退出码 1。
+2. `EvalWorkflowSnippet` 用 10-16 期真实样本排练 `parsePendingRows`（顺序、K 切分、非 PENDING 行忽略）与对象标签提取。
+3. 脚本正文过本地 strict `tsc`（配 facade 桩）；`tests/test_demo.py` 全栈回归通过。
+
+待下次例行窗口完成：
+
+4. 干跑一期（`concurrency: 6`）：记录任务循环墙钟与 `briefing.py stats --run` token 总量，与 2026-10-16-115317 期（串行、约 1,730 万 token）对比；`validation.json` 必须零 failures。
 5. 幂等：波中途停止 → `mode: "resume"`，确认已完成任务不重做、未完成任务重发。
-6. 回退演练：`concurrency: 1` 跑若干波，行为与现行串行脚本一致。
+6. 回退演练：`concurrency: 1` 跑若干波，行为与串行一致。
 
 ## Documentation impact
 
@@ -142,3 +153,4 @@ while waves < MAX_WAVES:
 - 2026-10-18：并行范围定为"同一 PENDING 队列前 K 个任务成波、一波一次 `advance`"，不改任务创建顺序与阶段门禁（依据：`list` 与 `next` 同序、同时 PENDING 的任务由创建时机保证独立、`advance` 对多输出幂等）。
 - 2026-10-18：取卡途径倾向新增只读 `tasks card --task <id>`，理由是执行卡文本应单源于 `execution_envelope.py`（首跑已因脚本侧格式耦合发生过漂移）。待用户确认。
 - 2026-10-18：看板粒度按波而非按任务，受 ZCode 单次运行 256 条 `report` 上限约束。
+- 2026-10-21：用户评审通过内容影响分析并批准实现；五个实质选择按推荐定案：`tasks card --task <id>` 只读取卡、波内前缀任意类型、单任务执行单位、K=6（`concurrency` 参数，1–6）、看板按波。实现随本设计落地，状态置 `implemented`；行为文档已吸收至 `SKILL.md` 与 `docs/operations/zcode-workflow-run.md`，本稿迁入 `docs/history/designs/`。

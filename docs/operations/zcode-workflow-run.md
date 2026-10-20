@@ -16,12 +16,14 @@ workflow 只能由用户显式请求启动；在会话中说"用 workflow 跑一
 | --- | --- |
 | 新一期（采集 + 全流程） | `mode: "run"` |
 | 续跑最近一期（默认） | `mode: "resume"` |
+| 每波并行任务数（1–6，默认 6；1 即串行回退） | `concurrency: <N>` |
 
 确认后在后台运行；主会话可继续其他工作，完成通知携带最终报告。
 
 ## 进度观察
 
-- 阶段图：`初始化 briefing 运行 → 编辑部逐个处理任务卡 → 排版与发布前校验`。线上的节点是**阶段**（phase），整个任务循环是其中一个节点，几十张执行卡不在线上拆成独立的点。
+- 阶段图：`初始化 briefing 运行 → 按波次并行执行任务 → 排版与发布前校验`。线上的节点是**阶段**（phase），整个波次循环是其中一个节点。
+- 执行模式为**波次并行**：每波取 PENDING 队列前 `concurrency`（默认 6）个任务（该列表排序与 `tasks next` 一致，前缀即串行队列接下来要派发的任务），用只读 `tasks card --task <id>` 逐任务取 canonical 执行卡，K 个命名子代理并行执行，一波后统一 `advance`。任务输入在创建时冻结、同时 PENDING 的任务由创建时机保证互相独立，因此并行不改变任何任务的读入与质量门（内容影响分析见 `docs/history/designs/2026-10-18-briefing-run-parallel-waves.md`）。
 - 子代理按**功能直述**命名：`功能·对象·第N轮`。功能标签即该任务在流水线里做的事（见下表）；对象从任务 input.json 的人读字段提取（专题名、方向名、候选数、条目数等，截断 24 字）；INVALID 修复为 `修复输出·第N轮`，发布校验修复为 `终审修复·第N次`。轮次号保证同一运行内唯一；命名也是 `AmendWorkflow` 按名导入缓存的前提——匿名子代理的已完成 ask 永不复用。
 
   | 功能标签 | 任务类型 | 读什么 → 产出什么 |
@@ -37,7 +39,7 @@ workflow 只能由用户显式请求启动；在会话中说"用 workflow 跑一
   | 生成插画 | illustrated_publication | 专题条目 → 插画资产 + manifest + 发布提交 |
   | 修复输出 | （INVALID 修复子代理） | 未过校验的任务输出 → 最小定向修复后写回 |
   | 终审修复 | （validate 修复子代理） | validation.json FAIL 项 → 最小修复后重渲染 |
-- 任务看板（artifact board）：每张执行卡一张卡片，实时在 执行中 → 完成（或 修复中 → 修复后完成）列间移动；这是任务级"一个任务一个点"的可视形态，resume 后看板原样重建。
+- 任务波次看板（artifact board）：**每波一张卡片**（受单次运行 256 条 report 上限约束，不按任务拆卡），实时在 执行中 → 完成（或 修复中 → 修复后完成）列间移动，卡面列出波内各任务的功能·对象标签；任务级"谁在做什么"由命名子代理在运行流中承担。
 - 每张执行卡的状态变化同步进入实时结果流；INVALID 修复与校验修复在 `log` 叙事线中可见。
 - 成功结束时发布两个产物卡片：`email.html`（待人工确认发送）与 `validation.json`。
 - 需要快照时用 `GetWorkflowRun`（其他会话的运行也可看）；本项目历史运行用 `ListWorkflowRuns`。不要轮询。
@@ -59,12 +61,14 @@ workflow 只能由用户显式请求启动；在会话中说"用 workflow 跑一
 | 报告结论为"校验未通过（3轮）" | `validation.json` 存在未消除的 FAIL | 按 `validation.json` 手动修复后重跑 `render --execute` + `validate` |
 | 报告结论为"队列已空但阶段为 …" | run 处于 `NO_EDITORIAL_ELIGIBLE` 等终态 | 按该阶段的人工流程处置 |
 | 子代理升级提问（`dwfq-…`） | 任务执行中被证据/指令矛盾卡住 | 主会话回答（必要时先用 `AskUserQuestion` 征询用户），不要让子代理自行猜测 |
+| 波内若干任务失败（日志"下一波将重发"） | 单任务 ask 失败/升级，未写输出，未拖垮兄弟任务 | 无需干预：任务仍为 PENDING，下一波自动重发；反复失败会在波次上限（40）处停止 |
+| 波内全部取卡失败 | `tasks card --task <id>` 全部非零退出 | 主会话手动运行同命令看报错；多为 DB 锁或任务数据异常 |
 
 ## 回退演练
 
-任意时刻停止 workflow，按 SKILL.md「正常运行」手动循环接手（`tasks next` → 执行 → `advance`）；单任务调试用 `tasks next-single`。状态只在 SQLite 与 `workspace/runs/` 中，无任何迁移。
+任意时刻停止 workflow，按 SKILL.md「正常运行」手动循环接手（`tasks next` → 执行 → `advance`）；单任务调试用 `tasks next-single`，按 ID 取卡用 `tasks card --task <id>`（只读，不改任务状态）。不并行也可用 `concurrency: 1` 以串行波次运行。状态只在 SQLite 与 `workspace/runs/` 中，无任何迁移。
 
 ## 维护注意
 
-- 脚本中的解析函数与 `execution_envelope.py` 的 canonical 执行卡格式（单卡首行 `Task <id> (<type>) — canonical execution contract vN`；组卡为编号 `Process only envelope .../tasks/<type>/<id>.execution.json` 行）、`cli.py` 的 advance/tasks-list 输出、`render --execute` 的 JSON（`"email"` 键为绝对路径）耦合；改动这些输出时同步更新脚本，并用 `EvalWorkflowSnippet` 以真实样本重跑解析函数。
+- 脚本中的解析函数与三处现网格式耦合：`execution_envelope.py` 的 canonical 执行卡（`tasks card` 输出；信封行正则须带 `m` 多行标志）、`tasks list` 的 `{status} {task_type} {id} -> {output_path}` 行、`cli.py` 的 advance JSON 与 `render --execute` 的 JSON（`"email"` 键为绝对路径）。改动这些输出时同步更新脚本，并用 `EvalWorkflowSnippet` 以真实样本重跑解析函数；`tasks card` 的行为有 `tests/test_tasks_card_cli.py` 守护。
 - 有界上限（任务轮次 80、INVALID 修复 2 次/任务、校验修复 3 轮）是编排自身的保险丝，与流水线配置无关。

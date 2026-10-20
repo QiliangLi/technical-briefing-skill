@@ -8,15 +8,19 @@ args:
     description: run = 采集并开启新一期；resume = 续跑最近一期（默认）
     required: false
     default: resume
+  concurrency:
+    type: number
+    description: 每波并行执行的任务数上限（1–6，默认 6；1 即串行回退）
+    required: false
+    default: 6
 */
 // briefing-run —— ZCode workflow 编排每日 briefing（止于 READY_TO_SEND）
 // 发送确认（send --confirm-send 两步令牌）保留在主会话人工环节，本 workflow 不发送、不归档。
 
-interface TaskCard {
-  kind: "single" | "fact_session_group" | "unparsed";
-  task_ids: string[];
+interface PendingRow {
+  task_id: string;
   task_type: string;
-  instructions: string;
+  output_path: string;
 }
 
 interface TaskOutcome {
@@ -37,14 +41,14 @@ interface AdvanceResult {
 }
 
 interface BoardItem {
-  /** 执行卡在看板上的稳定标识（task_ids 拼接） */
+  /** 波次在看板上的稳定标识（wave-N） */
   key: string;
   /** 卡片所在列：执行中 / 修复中 / 完成 / 修复后完成 */
   status: string;
-  /** 卡片标题，如“第 3 轮 fact_extraction” */
+  /** 卡片标题，如“第 3 波·4 个任务” */
   title: string;
-  task_type: string;
-  ids_text: string;
+  /** 波内各任务的功能·对象标签串 */
+  tasks_text: string;
   /** 一行补充说明；无则整个字段省略（undefined 只允许出现在可选属性上） */
   note?: string;
 }
@@ -70,37 +74,17 @@ interface WorkflowReport {
   notCovered: string[];
 }
 
-function parseCard(stdout: string): TaskCard | null {
-  const text = stdout.trim();
-  if (!text || text === "No pending tasks") {
-    return null;
-  }
-  const groupIds: string[] = [];
-  let groupType = "";
-  for (const line of text.split("\n")) {
-    // canonical 执行组信封（execution_envelope.py）：编号 "Process only envelope .../tasks/<type>/<id>.execution.json" 行
-    const e = /^\d+\. Process only envelope \S+\/tasks\/([A-Za-z_]+)\/([A-Za-z0-9]+)\.execution\.json; write /.exec(line);
-    if (e && e[1] && e[2]) {
-      groupIds.push(e[2]);
-      groupType = e[1];
-    }
-    // 旧版 session_grouping 组卡行
-    const g = /^ {3}Task \d+: (\S+) \(/.exec(line);
-    if (g && g[1]) {
-      groupIds.push(g[1]);
-      if (!groupType) groupType = "fact_extraction";
+// 解析 `tasks list --status PENDING` 行："{status:9} {task_type:20} {id} -> {output_path}"，
+// 该列表排序（priority DESC, created_at）与 tasks next 完全一致，前 K 行即串行队列接下来要派发的 K 个任务。
+function parsePendingRows(stdout: string): PendingRow[] {
+  const rows: PendingRow[] = [];
+  for (const line of stdout.split("\n")) {
+    const m = /^PENDING\s+(\S+)\s+(\S+)\s+->\s+(\S+)\s*$/.exec(line);
+    if (m && m[1] && m[2] && m[3]) {
+      rows.push({ task_type: m[1], task_id: m[2], output_path: m[3] });
     }
   }
-  if (groupIds.length > 0) {
-    return { kind: "fact_session_group", task_ids: groupIds, task_type: groupType || "fact_extraction", instructions: text };
-  }
-  const head = (text.split("\n")[0] ?? "").trim();
-  // canonical 单卡首行带 "— canonical execution contract vN" 尾缀，兼容旧裸格式
-  const s = /^Task (\S+) \((\S+)\)(?:\s|$)/.exec(head);
-  if (s && s[1] && s[2]) {
-    return { kind: "single", task_ids: [s[1]], task_type: s[2], instructions: text };
-  }
-  return { kind: "unparsed", task_ids: [], task_type: "unknown", instructions: text };
+  return rows;
 }
 
 function num(v: unknown): number {
@@ -145,11 +129,11 @@ function parseInvalidList(stdout: string): InvalidRow[] {
   return rows;
 }
 
-function taskAsk(card: TaskCard): string {
+function taskAsk(instructions: string): string {
   return [
     "你是 briefing 流水线的任务执行子代理，独立完成下面这张执行卡的全部工作。",
     "",
-    card.instructions,
+    instructions,
     "",
     "编排边界（覆盖执行卡末尾的 advance 步骤）：",
     "- 不要运行 briefing.py 的任何子命令；advance 由编排器在你完成后执行。",
@@ -162,13 +146,13 @@ function taskAsk(card: TaskCard): string {
   ].join("\n");
 }
 
-function repairAsk(rows: InvalidRow[]): string {
+function repairAsk(row: InvalidRow): string {
   return [
-    "以下 briefing 任务输出未通过校验（INVALID）。逐个读取其输入 JSON 与现有输出文件，按对应 schema_path 自检，做最小定向修复后覆盖写回原输出路径。",
+    "以下 briefing 任务输出未通过校验（INVALID）。读取其输入 JSON 与现有输出文件，按对应 schema_path 自检，做最小定向修复后覆盖写回原输出路径。",
     "常见原因：缺 _task 绑定、必填字段缺失（如 technology_value）、字段超限、数字超上限、evidence_gaps 未逐字回显。",
     "不得扩大证据读取范围，不得运行 briefing.py 子命令；确实无法修复的在 notes 说明并保留原文件。",
     "",
-    ...rows.map((r) => `- ${r.task_id} (${r.task_type}) -> ${r.output_path}`),
+    `- ${row.task_id} (${row.task_type}) -> ${row.output_path}`,
     "",
     "完成后返回 task_ids、outputs_written、notes。",
   ].join("\n");
@@ -183,11 +167,14 @@ function validateFixAsk(failures: string): string {
   ].join("\n");
 }
 
-const MAX_ROUNDS = 80;
+const MAX_WAVES = 40;
 const MAX_INVALID_RETRIES = 2;
 const MAX_VALIDATE_RETRIES = 3;
 const RENDER_STAGES = ["READY_FOR_RENDER", "RENDERED", "READY_TO_SEND"];
 const mode: string = typeof args.mode === "string" && args.mode === "run" ? "run" : "resume";
+// 每波并行上限：1–6（6 为账户速率限制实测安全值；1 即串行回退）。留在控制流里，不插值进 ask 文本。
+const rawK = typeof args.concurrency === "number" ? args.concurrency : 6;
+const K = Math.max(1, Math.min(6, Math.floor(rawK) || 6));
 
 // 功能直述命名：任务类型 → 用户一眼能懂的功能标签。名字按"功能·对象·第N轮"组成，
 // 对象取自任务 input.json 的人读字段；各功能读什么/产出什么的对照表见 docs/operations/zcode-workflow-run.md。
@@ -222,11 +209,10 @@ function cut(s: string): string {
   return s.length > 24 ? s.slice(0, 24) + "…" : s;
 }
 
-async function cardLabel(card: TaskCard): Promise<{ role: string; subject: string }> {
-  const role = ROLE[card.task_type] || "执行编辑";
-  const single = /^1\. Read the canonical envelope first: (\S+)$/m.exec(card.instructions);
-  const groupM = /^\d+\. Process only envelope (\S+); write /m.exec(card.instructions);
-  const envelope = single && single[1] ? single[1] : groupM && groupM[1] ? groupM[1] : "";
+async function cardLabel(instructions: string, taskType: string): Promise<{ role: string; subject: string }> {
+  const role = ROLE[taskType] || "执行编辑";
+  const single = /^1\. Read the canonical envelope first: (\S+)$/m.exec(instructions);
+  const envelope = single && single[1] ? single[1] : "";
   if (!envelope) {
     return { role, subject: "" };
   }
@@ -234,9 +220,6 @@ async function cardLabel(card: TaskCard): Promise<{ role: string; subject: strin
     const env = rec(JSON.parse(await files.read(envelope)));
     const input = rec(JSON.parse(await files.read(strField(env.input_path))));
     const topicName = strField(rec(input.topic).name);
-    if (card.kind === "fact_session_group") {
-      return { role, subject: cut(`${topicName}·${card.task_ids.length}篇`) };
-    }
     const docTitle = strField(rec(input.document).title);
     if (docTitle) {
       return { role, subject: cut(docTitle) };
@@ -268,16 +251,16 @@ async function cardLabel(card: TaskCard): Promise<{ role: string; subject: strin
   }
 }
 
-// 任务看板：每张执行卡一张卡片，随 report(item, "tasks") 在列间实时移动
+// 任务看板：每波一张卡片（受单次运行 256 条 report 上限约束，不按任务拆卡），
+// 任务级"谁在做什么"由命名子代理在运行流中承担
 artifact.board("tasks", {
-  title: "Agent 任务看板",
+  title: "任务波次看板",
   key: "key",
   status: "status",
   columns: ["执行中", "修复中", "完成", "修复后完成"],
   cardTitle: "title",
   detail: [
-    { field: "task_type", label: "类型" },
-    { field: "ids_text", label: "任务" },
+    { field: "tasks_text", label: "波内任务" },
     { field: "note", label: "备注" },
   ],
 });
@@ -306,14 +289,14 @@ if (!initAdv) {
 let stage = initAdv.stage;
 const notes: Finding[] = [];
 const invalidBudget = new Map<string, number>();
-let rounds = 0;
+let waves = 0;
 let queueEmpty = false;
 
-phase("编辑部逐个处理任务卡");
-while (rounds < MAX_ROUNDS) {
-  const next = await world.run(".venv/bin/python3", ["briefing.py", "tasks", "next", "--run", "latest"]);
-  const card = parseCard(next.stdout);
-  if (!card) {
+phase("按波次并行执行任务");
+while (waves < MAX_WAVES) {
+  const listRun = await world.run(".venv/bin/python3", ["briefing.py", "tasks", "list", "--status", "PENDING", "--run", "latest"]);
+  const rows = parsePendingRows(listRun.stdout);
+  if (rows.length === 0) {
     queueEmpty = true;
     if (!RENDER_STAGES.includes(stage)) {
       notes.push({
@@ -326,16 +309,55 @@ while (rounds < MAX_ROUNDS) {
     }
     break;
   }
-  rounds += 1;
-  const cardKey = card.task_ids.length > 0 ? card.task_ids.join("+").slice(0, 64) : `round-${rounds}`;
-  const label = await cardLabel(card);
-  const cardTitle = `第 ${rounds} 轮 ${label.role}${label.subject ? "·" + label.subject : ""}`;
-  const idsText = card.task_ids.join(", ");
-  // 子代理按"角色·对象·第N轮"命名：运行流里直接可读出编辑部里谁在处理什么；轮次号保证同一运行内唯一，命名后 AmendWorkflow 才能按名命中缓存
-  const workerName = label.subject ? `${label.role}·${label.subject}·第${rounds}轮` : `${label.role}·第${rounds}轮`;
-  log(`第 ${rounds} 轮：${cardTitle}${idsText ? " " + idsText : ""}`);
-  report({ key: cardKey, status: "执行中", title: cardTitle, task_type: card.task_type, ids_text: idsText }, "tasks");
-  const outcome = await agent(workerName).ask<TaskOutcome>(taskAsk(card));
+  waves += 1;
+  // 波 = PENDING 前缀（与串行队列同序，不跳优先级）；逐任务取 canonical 执行卡，取卡失败者本波跳过、仍为 PENDING
+  const waveRows = rows.slice(0, K);
+  const cardRuns = await Promise.all(
+    waveRows.map((row) =>
+      world.run(".venv/bin/python3", ["briefing.py", "tasks", "card", "--task", row.task_id, "--run", "latest"]),
+    ),
+  );
+  const wave: { row: PendingRow; instructions: string }[] = [];
+  for (let i = 0; i < cardRuns.length; i += 1) {
+    const cardRun = cardRuns[i];
+    const row = waveRows[i];
+    if (cardRun.exitCode === 0 && cardRun.stdout.trim().length > 0) {
+      wave.push({ row, instructions: cardRun.stdout.trim() });
+    } else {
+      log(`第 ${waves} 波：任务 ${row.task_id} 取卡失败，本波跳过（仍为 PENDING）`);
+    }
+  }
+  if (wave.length === 0) {
+    notes.push({
+      where: "tasks card",
+      what: `第 ${waves} 波全部取卡失败，停止等待人工介入`,
+      evidence: ((cardRuns[0] && cardRuns[0].stderr) || (cardRuns[0] && cardRuns[0].stdout) || "").slice(0, 400),
+      status: "unconfirmed",
+      severity: "high",
+    });
+    break;
+  }
+  const waveKey = `wave-${waves}`;
+  const labels = await Promise.all(wave.map((t) => cardLabel(t.instructions, t.row.task_type)));
+  const waveTitle = `第 ${waves} 波·${wave.length} 个任务`;
+  const tasksText = wave
+    .map((t, i) => `${labels[i].role}${labels[i].subject ? "·" + labels[i].subject : ""}`)
+    .join("；");
+  log(`第 ${waves} 波（并行 ${wave.length}/${rows.length} 待办）：${tasksText}`);
+  const started: BoardItem = { key: waveKey, status: "执行中", title: waveTitle, tasks_text: tasksText };
+  report(started, "tasks");
+  // 一波 K 个命名子代理并行；单个失败不拖垮兄弟（allSettled），未写输出的任务仍为 PENDING，下一波重发
+  const outcomes = await Promise.allSettled(
+    wave.map((t, i) => {
+      const label = labels[i];
+      const name = label.subject ? `${label.role}·${label.subject}·第${waves}波` : `${label.role}·第${waves}波`;
+      return agent(name).ask<TaskOutcome>(taskAsk(t.instructions));
+    }),
+  );
+  const rejected = outcomes.filter((o) => o.status === "rejected").length;
+  if (rejected > 0) {
+    log(`第 ${waves} 波 ${rejected} 个任务执行失败（未写输出），下一波将重发`);
+  }
   // 阶段切换（如 relevance 收尾触发 fact 重组）或 DB 锁竞争时 advance 可能超过默认 300s；放宽后重试一次
   let advRun;
   try {
@@ -354,22 +376,22 @@ while (rounds < MAX_ROUNDS) {
         status: "unconfirmed",
         severity: "high",
       }],
-      verified: [`前 ${rounds - 1} 轮任务已 advance`],
+      verified: [`前 ${Math.max(0, waves - 1)} 波已 advance，第 ${waves} 波 advance 状态未知`],
       notCovered: ["剩余任务", "渲染与校验"],
     };
     return failReport;
   }
   stage = adv.stage || stage;
   if (adv.invalid === 0) {
-    const done: BoardItem = { key: cardKey, status: "完成", title: cardTitle, task_type: card.task_type, ids_text: idsText };
-    if (outcome.notes !== undefined) done.note = outcome.notes;
+    const done: BoardItem = { key: waveKey, status: "完成", title: waveTitle, tasks_text: tasksText };
+    if (rejected > 0) done.note = `${rejected} 个任务失败待重发`;
     report(done, "tasks");
   }
   if (adv.invalid > 0) {
-    const listRun = await world.run(".venv/bin/python3", ["briefing.py", "tasks", "list", "--status", "INVALID", "--run", "latest"]);
-    const rows = parseInvalidList(listRun.stdout);
+    const listInvalid = await world.run(".venv/bin/python3", ["briefing.py", "tasks", "list", "--status", "INVALID", "--run", "latest"]);
+    const invalidRows = parseInvalidList(listInvalid.stdout);
     const over: string[] = [];
-    for (const row of rows) {
+    for (const row of invalidRows) {
       const used = invalidBudget.get(row.task_id) ?? 0;
       if (used + 1 > MAX_INVALID_RETRIES) over.push(row.task_id);
       else invalidBudget.set(row.task_id, used + 1);
@@ -384,22 +406,32 @@ while (rounds < MAX_ROUNDS) {
           status: "verified",
           severity: "high",
         }],
-        verified: [`前 ${rounds} 轮任务执行`],
+        verified: [`前 ${waves} 波任务执行`],
         notCovered: ["剩余任务", "渲染与校验"],
       };
       return stopReport;
     }
-    log(`修复 ${rows.length} 个 INVALID 任务后重同步`);
-    await agent(`修复输出·第${rounds}轮`).ask<TaskOutcome>(repairAsk(rows));
+    log(`第 ${waves} 波后修复 ${invalidRows.length} 个 INVALID 任务（逐任务并行）`);
+    await Promise.allSettled(
+      invalidRows.map((row) =>
+        agent(`第${waves}波·修复输出·${row.task_id.slice(0, 8)}`).ask<TaskOutcome>(repairAsk(row)),
+      ),
+    );
     await world.run(".venv/bin/python3", ["briefing.py", "tasks", "reopen-invalid", "--run", "latest"]);
     const reRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"], { timeoutMs: 900000 });
     const re = parseTrailingJson(reRun.stdout);
     if (re) stage = re.stage || stage;
-    report({ key: cardKey, status: re && re.invalid === 0 ? "修复后完成" : "修复中", title: cardTitle, task_type: card.task_type, ids_text: idsText }, "tasks");
+    const repaired: BoardItem = {
+      key: waveKey,
+      status: re && re.invalid === 0 ? "修复后完成" : "修复中",
+      title: waveTitle,
+      tasks_text: tasksText,
+    };
+    report(repaired, "tasks");
     notes.push({
       where: "INVALID 修复",
-      what: `第 ${rounds} 轮后修复 ${rows.length} 个任务并重同步`,
-      evidence: rows.map((r) => r.task_id).join(", "),
+      what: `第 ${waves} 波后修复 ${invalidRows.length} 个任务并重同步`,
+      evidence: invalidRows.map((r) => r.task_id).join(", "),
       status: "verified",
       severity: "low",
     });
@@ -407,9 +439,9 @@ while (rounds < MAX_ROUNDS) {
 }
 if (!queueEmpty) {
   const capReport: WorkflowReport = {
-    conclusion: `任务轮次达到上限 ${MAX_ROUNDS}，停止等待人工介入；已完成任务均已落盘，可续跑。`,
+    conclusion: `任务波次达到上限 ${MAX_WAVES}，停止等待人工介入；已完成任务均已落盘，可续跑。`,
     findings: notes,
-    verified: [`${rounds} 轮任务执行并 advance`],
+    verified: [`${waves} 波任务执行并 advance`],
     notCovered: ["剩余任务", "渲染与校验"],
   };
   return capReport;
@@ -427,7 +459,7 @@ if (renderRun.exitCode !== 0) {
       status: "unconfirmed",
       severity: "high",
     }],
-    verified: [`Agent 任务循环完成（${rounds} 轮）`],
+    verified: [`Agent 任务波次完成（${waves} 波）`],
     notCovered: ["校验"],
   };
   return failReport;
@@ -460,7 +492,7 @@ if (!validated) {
       status: "verified",
       severity: "high",
     }],
-    verified: [`Agent 任务循环完成（${rounds} 轮）`, "render --execute 已执行"],
+    verified: [`Agent 任务波次完成（${waves} 波）`, "render --execute 已执行"],
     notCovered: ["READY_TO_SEND"],
   };
   return failReport;
@@ -495,9 +527,9 @@ if (emailPath) {
 }
 
 const finalReport: WorkflowReport = {
-  conclusion: `briefing 已达 READY_TO_SEND（${rounds} 轮 Agent 任务，发布校验通过）。请人工阅读 email.html 与 validation.json，确认后在主会话执行 send --confirm-send 完成两步发送确认。`,
+  conclusion: `briefing 已达 READY_TO_SEND（${waves} 波 Agent 任务，发布校验通过）。请人工阅读 email.html 与 validation.json，确认后在主会话执行 send --confirm-send 完成两步发送确认。`,
   findings: notes,
-  verified: [`Agent 任务循环 ${rounds} 轮全部 advance`, "render --execute", "validate 退出码 0"],
+  verified: [`Agent 任务波次 ${waves} 波全部 advance`, "render --execute", "validate 退出码 0"],
   notCovered: ["send --confirm-send（主会话人工确认）", "发送后的归档与推送"],
 };
 return finalReport;
