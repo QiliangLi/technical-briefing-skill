@@ -251,6 +251,19 @@ async function cardLabel(instructions: string, taskType: string): Promise<{ role
   }
 }
 
+// 子代理名在同一运行内必须唯一（重名直接终止运行，且 AmendWorkflow 按名导入缓存）。同一波里同主题、
+// 同候选数的两个任务组会得到相同标签，所以按名去重：首个占用保留原名以保持缓存命中，后续重复者追加"·之N"。
+const usedNames = new Set<string>();
+
+function uniqueName(base: string): string {
+  let name = base;
+  for (let n = 2; usedNames.has(name); n += 1) {
+    name = `${base}·之${n}`;
+  }
+  usedNames.add(name);
+  return name;
+}
+
 // 任务看板：每波一张卡片（受单次运行 256 条 report 上限约束，不按任务拆卡），
 // 任务级"谁在做什么"由命名子代理在运行流中承担
 artifact.board("tasks", {
@@ -346,13 +359,12 @@ while (waves < MAX_WAVES) {
   log(`第 ${waves} 波（并行 ${wave.length}/${rows.length} 待办）：${tasksText}`);
   const started: BoardItem = { key: waveKey, status: "执行中", title: waveTitle, tasks_text: tasksText };
   report(started, "tasks");
+  const waveNames = labels.map((label) =>
+    uniqueName(label.subject ? `${label.role}·${label.subject}·第${waves}波` : `${label.role}·第${waves}波`),
+  );
   // 一波 K 个命名子代理并行；单个失败不拖垮兄弟（allSettled），未写输出的任务仍为 PENDING，下一波重发
   const outcomes = await Promise.allSettled(
-    wave.map((t, i) => {
-      const label = labels[i];
-      const name = label.subject ? `${label.role}·${label.subject}·第${waves}波` : `${label.role}·第${waves}波`;
-      return agent(name).ask<TaskOutcome>(taskAsk(t.instructions));
-    }),
+    wave.map((t, i) => agent(waveNames[i]).ask<TaskOutcome>(taskAsk(t.instructions))),
   );
   const rejected = outcomes.filter((o) => o.status === "rejected").length;
   if (rejected > 0) {
@@ -412,10 +424,9 @@ while (waves < MAX_WAVES) {
       return stopReport;
     }
     log(`第 ${waves} 波后修复 ${invalidRows.length} 个 INVALID 任务（逐任务并行）`);
+    const repairNames = invalidRows.map((row) => uniqueName(`第${waves}波·修复输出·${row.task_id.slice(0, 8)}`));
     await Promise.allSettled(
-      invalidRows.map((row) =>
-        agent(`第${waves}波·修复输出·${row.task_id.slice(0, 8)}`).ask<TaskOutcome>(repairAsk(row)),
-      ),
+      invalidRows.map((row, i) => agent(repairNames[i]).ask<TaskOutcome>(repairAsk(row))),
     );
     await world.run(".venv/bin/python3", ["briefing.py", "tasks", "reopen-invalid", "--run", "latest"]);
     const reRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"], { timeoutMs: 900000 });
