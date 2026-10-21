@@ -426,7 +426,7 @@ def test_renderer_adapter_style_tables_and_vendored_cytoscape():
 
 LENS_REPRO = {
     "topic": "agent_acceleration",
-    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (22, 24)},
+    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (21, 22)},
 }
 
 
@@ -611,23 +611,25 @@ def test_lens_layout_reports_honest_empty_states():
     )
     rows = {(row["topic"], row["lens"]): row for row in output}
     for key in [
-        ("ai_infra_horizontal", "evolution"),
         ("ai_infra_horizontal", "judgements"),
         ("dpu_inline", "judgements"),
-        ("tpn", "judgements"),
     ]:
         assert rows[key]["empty"] is True, key
         assert rows[key]["viewport"] is False, key
         assert rows[key]["reason"], key
     # dpu_inline (zram, 2026-09-30) and tpn (2026-09-28 through 2026-10-14
     # items) re-entered the recent3 window when the 2026-09-24 → 2026-10-14
-    # issues were materialized, so their evolution lenses are honestly
-    # non-empty now; ai_infra_horizontal keeps the empty evolution probe.
+    # issues were materialized, and the 2026-10-18/21 backfill pulled
+    # ai_infra_horizontal (INT8 item) and the tpn judgement (roadmap updated
+    # again on 2026-10-21) back in, so those probes are honestly non-empty
+    # now; their judgements lenses stay empty (evidence_timeline only).
     for key in [
         ("agent_acceleration", "evolution"),
         ("kv_management", "evolution"),
         ("dpu_inline", "evolution"),
         ("tpn", "evolution"),
+        ("ai_infra_horizontal", "evolution"),
+        ("tpn", "judgements"),
     ]:
         assert rows[key]["empty"] is False, key
         assert rows[key]["viewport"] is True, key

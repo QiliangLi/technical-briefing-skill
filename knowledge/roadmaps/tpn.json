@@ -3,8 +3,8 @@
   "topic_id": "tpn",
   "topic_name": "状态感知网络、TPN",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-14",
-  "summary": "TPN方向本期证据给出按需传输与投入判据:CacheBack让接收方把信息需求描述发给发送方、只传本地任务所需内容,FanOutQA上移除75%本应接收的状态准确率反升14.7个百分点、中位完成时延降3.2倍;EfficientAgent用复用工作集判定agent KV卸载回本点,SWE-bench Verified上按工作集定容把重算prompt token削93%(根因是主机层须装下整个agent池的复用工作集);PEARL把弹性资源与自适应PD执行并入agentic RL,达到固定资源ROLL吞吐的2.17-2.79倍;SoK推导闭式算术强度,给出低于交叉点时KV压缩收益可忽略、超过后以质量差换接近roofline带宽节省的解析地图。当前判断:传什么、装得下什么、何时值得优化三个问题都有可操作判据;各分支维持emerging。",
+  "updated_by_issue": "2026-10-21",
+  "summary": "TPN方向本期证据把状态感知调度从单集群扩展到跨区域与PD负载动态:KVCompass把缓存身份与放置解耦,边缘用空间高效哈希索引做多级变长前缀查找,按缓存复用、估计排队与网络距离联合评分转发请求,三大洲测试床上P99 TTFT较哈希放置与中心目录低约一个数量级(大规模结果仅为仿真,无TPOT、KV传输量或网络利用率指标);Prorsa聚合样本注入、沙箱启动与工具返回信号预测turn级PD需求并动态切换角色,两个agentic任务较合并部署加速1.11-4.05倍(math任务多数变慢,未报告网络指标);SwaT与CacheFuse证明跨模型传递KV缓存优于传文本(SwaT须逐对训练映射器,CacheFuse限同分词器同族模型且均无跨节点数据)。当前判断:缓存位置与排队负载联合评分、PD容量随负载构成动态调整是两条主线;若缓存通信跨主机化,网络要承载的流量将从文本变为KV张量;五分支维持emerging。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -327,6 +327,54 @@
             "https://arxiv.org/abs/2609.30854v1"
           ],
           "reason": "2026-10-14 已发布日报收录：SoK 推导长上下文推理的闭式算术强度并统一评测五域方法，给出何时 KV 优化值得投入的解析地图：低于交叉点时权重流量主导、KV 压缩端到端收益可忽略，超过后各域以可测质量差换接近 roofline 的带宽节省，分页与前缀共享无损但只解决容量（统一评测在 128k 单一上下文、质量差沿用各论文口径、解析绑定特定硬件代际）；按 KV 感知调度分支记录投入判据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "570220b6b85fafc361c5fde1",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.21500v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：远程KV层在生产部署中把16k提示的p99 TTFT从3.96秒升至17.3秒,成本模型证明每提示带宽与固定开销决定命中能否胜过重算:带宽阈值B*约2.53GB/s、固定开销T0约0.33秒,17k以内提示命中必慢于重算;修复为PCP秩分片、每秩一个Valkey、异步加载,重放命中密集流时p99从83.32秒降至0.67秒,98.5%的token仍由L2提供;每条件仅运行一次,10%以内差异未确立,仅评估预填充且单引擎,中位数仍比重算慢0.09秒；按KV感知调度分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "62a6332108ef8cd2abc46c28",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.18444v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：P/D解耦下KV传输叠加进TTFT,阿里生产迹中小时均值中位数为预填充的1.10倍,本文按单次传输预留全速率光电路:预填充期间提交电路,头部在预填充开始、尾部在最后2048 token块开始时预留,每GPU经WDM光纤接384端口OCS,解码选择倾向复用电路;128卡仿真中SLO达成率距1:1 EPS在0.4点内,P99 TTFT差1.8%内;结果均为流级仿真,解码仅建模为KV接收端而无TPOT,会话亲和下优势缩小；按KV感知调度分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "7664264106194fd8ced29298",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.14686v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：生产轨迹中80.6%请求复用九成以上提示词,缓存亲和放置让少数实例排起长队,Vesta把会话KV持有者与逐请求执行器分离:会话KV由按会话ID哈希的持有者保存,完成时间目标计入积压、前缀复用、KV传输与排队外部性,迁移时经RDMA取前缀、回写后缀;32实例PD同置下TPS较SMetric升13.9%,平均TTFT从3994毫秒降至1686毫秒,排队时延降95.6%;评测硬件与引擎未披露,低中负载下较SMetric仅优4.4-5.1%,P99 TTFT仍约20.5秒；按KV感知调度分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "c14361ce6ae1cc41b816f52e",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.24179v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：KV缓存复用局限于单集群、多区域部署对同一热门前缀重复预填充,KVCompass把缓存身份与放置解耦:空间高效哈希索引在边缘本地做多级变长前缀查找,按缓存复用、估计排队时间和网络距离的联合评分把请求转发到持有缓存且负载合适的worker;三大洲真实测试床上Mixed负载16 req/s时P99 TTFT比哈希放置与中心目录低8.6到12倍,去掉负载感知项后吞吐下降34%;大规模结果仅为仿真,真实测试床至多14 worker和单一8B模型,无TPOT、KV传输量或网络利用率指标；按KV感知调度分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "a9d3ff89cd7c1926de6d12d3",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.15095v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：多Agent以文本通信时接收方须从头预填充,SwaT用约3亿参数的逐对映射器把发送方KV缓存直接转成接收方可用缓存:发送方分组KV去RoPE后经跨注意力投影为接收方各层KV,按接收方统计重标定加回RoPE;三对跨族模型与五种预算下任务分几何均值从37.3升至55.5,发送方GPU时间缩短4.2倍,接收方TTFT从20.1毫秒降至4.7毫秒;每个收发对需单独训练映射器、n个模型族要n(n-1)个,仅验证单条消息交接,无跨节点与网络利用率数据,属模型层映射器旁证而非网络侧证据；按KV感知调度分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "ebf6b432d7bc1f46f801440c",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.16165v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：多智能体系统模型间交换文本需一方逐字解码、一方再预填充,成为下游首字时延的主要开销,CacheFuse利用同族模型注意力几何一致、各层KV形状相同,把共享方缓存送入接收方并用一个标量系数对两份缓存线性插值后解码,全程免训练;Qwen3-8B向4B传递时OBQA较接收方单独提升8.6个百分点,融合4B在四项基准全部超过8B共享方,ARC-C上TTFT较文本交换基线加速12.2倍;仅验证同分词器的Qwen3模型对,全部时延测于单张A5000,无跨节点与网络侧评估；按KV感知调度分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -369,7 +417,13 @@
         "75fa2a254dd5b44c93b3e47e",
         "f13398723cfc7f6ef62252b5",
         "b6c0fa8e151cf1e298456327",
-        "1ceb0cf410f4b2ad046fdf37"
+        "1ceb0cf410f4b2ad046fdf37",
+        "570220b6b85fafc361c5fde1",
+        "62a6332108ef8cd2abc46c28",
+        "7664264106194fd8ced29298",
+        "c14361ce6ae1cc41b816f52e",
+        "a9d3ff89cd7c1926de6d12d3",
+        "ebf6b432d7bc1f46f801440c"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.07207v1",
@@ -407,7 +461,13 @@
         "https://arxiv.org/abs/2609.33889v1",
         "https://arxiv.org/abs/2609.17193v1",
         "https://arxiv.org/abs/2609.33762v1",
-        "https://arxiv.org/abs/2609.30854v1"
+        "https://arxiv.org/abs/2609.30854v1",
+        "https://arxiv.org/abs/2610.21500v1",
+        "https://arxiv.org/abs/2610.18444v1",
+        "https://arxiv.org/abs/2610.14686v1",
+        "https://arxiv.org/abs/2610.24179v1",
+        "https://arxiv.org/abs/2610.15095v1",
+        "https://arxiv.org/abs/2610.16165v1"
       ]
     },
     {
@@ -679,6 +739,22 @@
             "https://arxiv.org/abs/2609.35158v1"
           ],
           "reason": "2026-10-14 已发布日报收录：PEARL 把弹性资源扩缩与自适应 PD 模式配比统一协同决策并入 agentic RL，解决多轮 rollout 主导成本、加副本收益递减而训练 GPU 更新间闲置的问题，不同 LLM 上达到固定资源 ROLL 吞吐的 2.17-2.79 倍、较 RLBoost+ 提升 Qwen3-30B-A3B 约 36.3%（重配置成本模型细节有限、收益依赖空闲训练 GPU 的可用窗口）；按 PD 解耦分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "0e9ca85cd1bb3307fb817e90",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.39138v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：训练推理混部集群中P-D解耦的KV传输与训练通信对稀疏拓扑的需求相反,MoSE在同一光路预算内按负载模式重配边:集群建模为1024组、度4的组级正则图,按负载模式把同一边预算在直连P-D与均匀扩展图间重配,由OCS切换;推理重负载下KV通信成本均值与P95较静态训练拓扑降低90.8%与91.9%,训练重负载下训练通信成本较滞留推理拓扑降低22.7%与27.6%;仅为流级仿真,成本是归一化模型量而非实测字节或时延,未建模OCS重构开销；按P/D解耦通信分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "569cec2dda1e60660b7d84ed",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.16592v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：agentic RL rollout中prefill与decode负载构成随任务变化、固定配比难以维持解耦收益,Prorsa聚合样本注入、沙箱启动与工具返回信号预测10秒内turn级PD需求,按GPU预算分配实例数,角色切换时将KVCache持久化到远端;16x8 GPU集群上两个agentic任务较合并部署加速1.11-4.05倍,较静态最优配比再快1.0-1.44倍,math任务多数变慢;论文未报告TTFT/TPOT、网络利用率或KVCache传输量,预测误差在工具耗时多变的任务上更高；按P/D解耦通信分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -694,7 +770,9 @@
         "2941c600f9df6f591f1ac90d",
         "4df87695da00367489a6230c",
         "6e6d62a411e37b906e7c6b3b",
-        "b1f5b508fa5a63afc625eb4c"
+        "b1f5b508fa5a63afc625eb4c",
+        "0e9ca85cd1bb3307fb817e90",
+        "569cec2dda1e60660b7d84ed"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.18002v2",
@@ -708,7 +786,9 @@
         "https://arxiv.org/abs/2609.31551v1",
         "https://arxiv.org/abs/2609.15359v1",
         "https://arxiv.org/abs/2609.24639v1",
-        "https://arxiv.org/abs/2609.35158v1"
+        "https://arxiv.org/abs/2609.35158v1",
+        "https://arxiv.org/abs/2609.39138v1",
+        "https://arxiv.org/abs/2610.16592v1"
       ]
     },
     {
@@ -998,6 +1078,32 @@
         "96d509d58f4e4506ea914036",
         "b1f5b508fa5a63afc625eb4c",
         "b6c0fa8e151cf1e298456327"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_97749e7bf9f4a7613f8f",
+      "issue_date": "2026-10-18",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "0e9ca85cd1bb3307fb817e90",
+        "570220b6b85fafc361c5fde1",
+        "62a6332108ef8cd2abc46c28",
+        "7664264106194fd8ced29298"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_3c60eb2793feef374393",
+      "issue_date": "2026-10-21",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "569cec2dda1e60660b7d84ed",
+        "a9d3ff89cd7c1926de6d12d3",
+        "c14361ce6ae1cc41b816f52e",
+        "ebf6b432d7bc1f46f801440c"
       ]
     }
   ]

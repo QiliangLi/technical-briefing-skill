@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_045df77192febe0ec701",
+  "identity": {
+    "problem_key": "ssd_kv_layer_object_overhead",
+    "mechanism_key": "range_directory_physical_batching",
+    "target_key": "kv_offload_recovery_latency"
+  },
+  "idea_type": "solution_concept",
+  "title": "用范围目录与物理批次把KV卸载的存储开销与复用粒度解耦",
+  "problem": "KV缓存落到SSD后各层按逻辑对象计开销，复用粒度越细对象数越多，恢复时延随对象数恶化而非受盘带宽限制。",
+  "hypothesis": "以范围目录与请求票据取代逐键索引、把KV存入固定大小物理包内的定长条带，可使恢复TTFT在复用粒度增数十倍时仍贴近HBM驻留水平。",
+  "mechanism": "范围目录加请求票据管理归属，KV存入1GiB物理包内定长条带；缓冲区在槽位绑定前预取，完成栅栏控制所有权，层就绪即供注意力使用。",
+  "target": "带SSD层的KV缓存卸载引擎",
+  "expected_effect": "对象数由192增至6144时中值TTFT保持约1.8秒而逐键基线从2.124秒升至3.012秒，与HBM驻留差距58-66毫秒。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-18",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "97e191af9de9ce6e8abdf313",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21241v1"
+      ],
+      "reason": "《Range将KV缓存存储开销与复用粒度解耦》给出机制与对照结果。",
+      "independence_group": "arxiv:2610.21241"
+    }
+  ],
+  "evidence_item_ids": [
+    "97e191af9de9ce6e8abdf313"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.21241v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.21241"
+  ],
+  "unknowns": [
+    "评估仅固定6GiB单请求、TP=1与两token输出",
+    "无吞吐与并发结果",
+    "测试硬件型号未披露"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部KV卸载引擎实现范围目录加物理批次布局，与逐键索引基线对比恢复TTFT。",
+    "inputs": [
+      "内部多请求并发负载",
+      "不同复用粒度扫描",
+      "SSD与HBM两层"
+    ],
+    "baselines": [
+      "逐键索引cuFile调优基线",
+      "HBM全驻留"
+    ],
+    "metrics": [
+      "恢复TTFT中值与p99",
+      "并发吞吐",
+      "每对象管理开销"
+    ],
+    "support_criteria": [
+      "粒度增数十倍时TTFT劣化在毫秒级",
+      "并发下保持优势"
+    ],
+    "reject_criteria": [
+      "并发或TP>1时优势消失"
+    ],
+    "limitations": [
+      "原始评估无并发与吞吐数据"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整，但评估仅单请求单卡形态，无并发吞吐与硬件条件，独立支持不足。",
+  "related_candidate_ids": [
+    "candidate_2a9418c21c31e0997a20"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-18",
+  "last_updated_issue": "2026-10-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_95757392aa387528bd4",
+      "issue_date": "2026-10-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整，但评估仅单请求单卡形态，无并发吞吐与硬件条件，独立支持不足。",
+      "evidence_item_ids": [
+        "97e191af9de9ce6e8abdf313"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

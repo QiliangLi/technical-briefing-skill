@@ -3,8 +3,8 @@
   "topic_id": "ai_chip_accelerator",
   "topic_name": "AI芯片与加速器",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-14",
-  "summary": "AI芯片本期证据覆盖跨节点kernel重叠、代数层替换、多出口导出与跨厂商编译评估:mKernel在tile粒度重叠计算、节点内NVLink与节点间RDMA,两个16-GPU H200集群上GEMM+AllReduce最高加速1.72倍、Ring Attention 1.88倍,最差SM划分比最优慢约25倍;结合代数层用更稀疏块交互替换普通矩阵乘,110M模型同预算训练生成吞吐提升6.2-7.8%但三项下游分数全部下降;单次训练监督每个中间深度导出单调多出口的MCU级静态模型族,等算力下PESQ最高高0.11;TinyTC在六类GPU上承载八阶25点声学stencil,B580上15.6 Gpts/s对PT/Triton的13.5。当前判断:通信-计算重叠的SM划分敏感性与编译抽象的跨厂商可移植性是本期两个可操作判断;各分支维持emerging。",
+  "updated_by_issue": "2026-10-21",
+  "summary": "AI芯片本期证据偏软件栈与设计自动化而非新架构:TorchTPU为PyTorch提供TPU原生混合执行后端,运行时不含JAX、eager为一等公民、编译基于Dynamo并以bounded dynamism避免形状重编译,近五千个HF模型验证、热门模型通过率98%、64 TPU v7吞吐与JAX栈相当(未见与NVIDIA GPU同负载对比,收益来自软硬件栈共同作用);PairSight把GPU共置干扰定位到共享L2/DRAM路径并按算子预测减速,高优先级时延预测误差4.3%(仅两任务共置与SM切分,预印本);LLM增强贝叶斯优化与DAIST神经算子热仿真均属设计自动化方法学信号,全部为架构级仿真,不能作为chiplet带宽或能效收益证据。当前判断:替代加速器评估继续以协同设计后端到端吞吐与软件栈成熟度为准;三分支维持emerging。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -423,6 +423,46 @@
             "https://arxiv.org/abs/2609.29867v1"
           ],
           "reason": "2026-10-14 已发布日报收录：单次训练监督每个中间深度、导出单调多出口的静态模型族，解决 MCU 级加速器只支持静态 int8 图、动态深度须拆多图外部编排的问题，等算力下 PESQ 最高高 0.11、以少 30% 算力匹配最佳 PESQ、路由每帧仅 26µs（结论限于 VoiceBank-DEMAND 一类负载与 MCU 级 int8 工具链）；按架构分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "447ef3be991ea1f087d87756",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.22230v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：NVIDIA专用优化阻碍生产负载向替代加速器移植,Meta与AMD按MI350X特性重配模型与软件:用288GB对180GB的HBM容量差上调batch并迁移embedding表到HBM做表列分片,协同设计1.26倍、叠加kernel优化共1.5倍;十个推荐模型端到端吞吐达B200的82%-130%,几何平均101.2%持平;GEMM类kernel时延仍高1.3-1.7倍且缺原生TF32,无定量能效对比,绑定推荐负载；按加速器架构分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "0f57e9c803a44b31a40aff39",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.01380v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：GPU线程直接向网卡提交RDMA是NVSHMEM、NCCL与DeepEP的底层机制但缺乏文档,该研究以极简传输层剥离库开销:实现mini-gda与mini-proxy最小传输层,在四类NVIDIA平台与各库同台微基准,分离队列管理、内存排序与完成语义的库级开销;8B写的机制底线为0.70微秒提交、库在其上最多加4.6微秒,共享队列使时延劣化至毫秒级,约三千活跃连接时NIC消息率损失59%;证据来自8B微基准与合成消息率,未见端到端MoE吞吐验证,结论绑定ConnectX-7平台；按加速器架构分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "aaca3afe6d1a2f48f150f0f1",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.17463v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：边缘设备需部署后在线适配但BPTT训练须展开整个时间序列且内存随长度线性增长,该工作用前向only的SOLSA算法在单片FPGA上完成多层SNN训练与推理:时间历史由资格踪迹增量携带、梯度只在当前时间步内传播,权重矩阵分块交织化解前向行主序与反向列主序的BRAM端口冲突;摘要声明较CPU与GPU实现吞吐高2.5至6倍、每样本能耗约十分之一;自身器件、网络规模与资源数据不在可见证据内,负载为MNIST量级边缘任务,能效声明未经核实；按加速器架构分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "407a2f30b502e4044f8f343e",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.24161v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：PyTorch此前依赖侵入式修改的PyTorch/XLA使用TPU,Google与Meta开源TorchTPU原生后端:运行时不含JAX,eager为一等公民,编译基于Dynamo并以bounded dynamism避免形状重编译,已被头部云客户用于生产;4917个HF模型验证,热门模型通过率98%、对GPU数值一致97%,64 TPU v7达1828 TPS与JAX的1937相当;未见与NVIDIA GPU同负载对比,峰值性能依赖Pallas内核与生产栈,收益来自软硬件栈共同作用不宜全归因于芯片；按加速器架构分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "eae28f296fe63da7df39476c",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.23086v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：多任务共置GPU提升利用率却引入干扰,算力-访存互补规则认不出干扰算子也给不出准确减速预测,PairSight将干扰主要定位到共享L2/DRAM路径:按TPC粒度切分SM实测7.7k个算子对,将慢化关联到共享L2/DRAM,两个XGBoost回归器以两侧逐算子时长与访存计数预测减速;A100上对含Llama-3.2的20对任务测试,高优先级时延预测误差4.3%而强度规则为19.0%,90.6%预测误差在10%内;仅评测两任务共置与SM切分,未见多租户、多卡或生产部署结果,且为arXiv v1预印本；按加速器架构分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -477,7 +517,12 @@
         "b89bd792dc635686dfb96596",
         "170e1c9f51558ed4bda34ba1",
         "ef279852aed5aa31d7a481d0",
-        "9b3634cf1830c6eb248990fe"
+        "9b3634cf1830c6eb248990fe",
+        "447ef3be991ea1f087d87756",
+        "0f57e9c803a44b31a40aff39",
+        "aaca3afe6d1a2f48f150f0f1",
+        "407a2f30b502e4044f8f343e",
+        "eae28f296fe63da7df39476c"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.09385v1",
@@ -529,7 +574,12 @@
         "https://arxiv.org/abs/2609.32922v1",
         "https://arxiv.org/abs/2609.34818v2",
         "https://arxiv.org/abs/2609.32814v1",
-        "https://arxiv.org/abs/2609.29867v1"
+        "https://arxiv.org/abs/2609.29867v1",
+        "https://arxiv.org/abs/2610.22230v1",
+        "https://arxiv.org/abs/2610.01380v1",
+        "https://arxiv.org/abs/2610.17463v1",
+        "https://arxiv.org/abs/2610.24161v1",
+        "https://arxiv.org/abs/2610.23086v1"
       ]
     },
     {
@@ -676,6 +726,14 @@
             "https://arxiv.org/abs/2609.10368v1"
           ],
           "reason": "2026-10-14 已发布日报收录：Intel 参与的工作用 TinyTC 与 PyTorch/Triton 实现八阶 25 点声学 stencil 并在六类 GPU 上对比，验证 AI 张量编译器抽象可承载 HPC stencil 开发，B580 上 TinyTC 达 15.6 Gpts/s 对 PT/Triton 13.5、性能以带宽受限为主（仅一类 stencil、零初始化因内存压缩虚高到 35.8 Gpts/s、TinyTC 优势以 Intel 硬件为主）；按内存接口与协同分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "cda619f1f98933dd41e737d0",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.14244v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：HBM占AI系统功耗重要份额而实测数据稀缺、现有模型误差20-42%,该工作对36颗真实HBM2芯片下发DRAM命令序列测出结构与数据模式相关的电流,Ayna显式建模bank group差异与总线翻转效应;读电流为刷新的3.1倍,自构模式比最高功耗JEDEC环平均高23.6%,Ayna跨负载误差7.6-8.1%、对H200实测HBM3E误差2.4-5.3%;实测仅覆盖1200 MT/s的HBM2,HBM4为模型投影,H200上248瓦的测量条件未验证；按内存接口与协同分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -696,7 +754,8 @@
         "553537e4cdf72815498f5933",
         "7f7f9d4541b1c8f7b4c8471f",
         "cde299eee2cdf91e887aa338",
-        "f031d6b143ff02ee1bba0fc8"
+        "f031d6b143ff02ee1bba0fc8",
+        "cda619f1f98933dd41e737d0"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2606.15535v1",
@@ -715,7 +774,8 @@
         "https://arxiv.org/abs/2609.21264v1",
         "https://arxiv.org/abs/2609.24089v1",
         "https://arxiv.org/abs/2609.13585v1",
-        "https://arxiv.org/abs/2609.10368v1"
+        "https://arxiv.org/abs/2609.10368v1",
+        "https://arxiv.org/abs/2610.14244v1"
       ]
     },
     {
@@ -753,17 +813,37 @@
             "https://arxiv.org/abs/2609.31092v1"
           ],
           "reason": "2026-09-28 已发布日报收录：Fastroute 针对芯粒化网络 ASIC 的根本约束 ASIC 间带宽，在 ASIC 前加电路交换间接层按流量模式重映射入口端口，包级仿真与硬件原型双重验证、在 LLM 训练负载上验证功能可行性（间接层硬件与重映射时延成本未量化、收益依赖可观测流量局部性）；按封装与互联分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "3cbdf3d575f751823af73f49",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.14612v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：2.5D/3D CPU-GPU异构chiplet缺少快速整体仿真、传统设计空间探索在有限预算下效率不足,论文把微调小模型的方向策略作为贝叶斯优化先验:框架把LegoSim扩展到3D并加入TSV功耗模型,经GRPO微调的Qwen2.5-7B每轮生成参数增减策略,由P-EHVI采集函数软性引导搜索;3D数据集上hypervolume 0.8356、ADRS 0.0983优于最强基线LLM-DSE的0.8210,2.5D免再训练迁移后HV 0.8051;全部结果为架构级仿真,无实测吞吐或能效数据,仿真预算与负载未披露,属芯片设计自动化方法学信号；按Chiplet与封装分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "c10598c3dc73a44425871c58",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.02461v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：异构2.5D/3D-IC封装热仿真单次数百秒拖慢迭代设计,Cadence与圣母大学提出DAIST按装配结构分块并用神经算子迭代耦合求解:封装划分为逻辑die、HBM与interposer等块,各块用U-NO神经算子求解,经界面温度与热流迭代交换收敛,同型块推理合并为单次GPU调用;多chiplet系统单次求解0.821秒对Celsius参考146秒,先进封装系统约2秒对197秒,跨拓扑免再训练下MAE为1.056K;精度基准是Celsius生成数据,算例为毫米级学术封装且推理硬件未说明,属EDA热分析工具证据而非新加速器架构；按Chiplet与封装分支记录，不据此改变阶段判断。"
         }
       ],
       "evidence_item_ids": [
         "09306d50f9ae20d406d906ab",
         "88812b7c4e16361e0573a0e6",
-        "27f16ef0f363c2194cb951cc"
+        "27f16ef0f363c2194cb951cc",
+        "3cbdf3d575f751823af73f49",
+        "c10598c3dc73a44425871c58"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.20141v1",
         "https://arxiv.org/abs/2608.19395v1",
-        "https://arxiv.org/abs/2609.31092v1"
+        "https://arxiv.org/abs/2609.31092v1",
+        "https://arxiv.org/abs/2610.14612v1",
+        "https://arxiv.org/abs/2610.02461v1"
       ]
     }
   ],
@@ -998,6 +1078,32 @@
         "cde299eee2cdf91e887aa338",
         "ef279852aed5aa31d7a481d0",
         "f031d6b143ff02ee1bba0fc8"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_94526ac6d96f40d3c02c",
+      "issue_date": "2026-10-18",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "0f57e9c803a44b31a40aff39",
+        "447ef3be991ea1f087d87756",
+        "aaca3afe6d1a2f48f150f0f1",
+        "cda619f1f98933dd41e737d0"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_a93eedfdb4ee580f806d",
+      "issue_date": "2026-10-21",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "3cbdf3d575f751823af73f49",
+        "407a2f30b502e4044f8f343e",
+        "c10598c3dc73a44425871c58",
+        "eae28f296fe63da7df39476c"
       ]
     }
   ]
