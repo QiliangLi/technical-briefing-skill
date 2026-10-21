@@ -226,12 +226,15 @@ async function cardLabel(instructions: string, taskType: string): Promise<{ role
     }
     const candidates = arr(input.candidates);
     if (candidates.length > 0) {
-      return { role, subject: cut(`${topicName}·${candidates.length}篇候选`) };
+      return { role, subject: cut(topicName ? `${topicName}·${candidates.length}篇候选` : `${candidates.length}篇候选`) };
     }
+    // 全期任务（读者润稿/汇总判断/生成插画）的 items 无嵌套 topic.name 或跨全部专题，取首条专题名反而误导；
+    // 无专题前缀时标签只用数量，避免「读者润稿··26条」这类空段双点
     const items = arr(input.items);
     if (items.length > 0) {
       const firstTopic = strField(rec(rec(items[0]).topic).name);
-      return { role, subject: cut(`${firstTopic || topicName}·${items.length}条`) };
+      const prefix = firstTopic || topicName;
+      return { role, subject: cut(prefix ? `${prefix}·${items.length}条` : `${items.length}条`) };
     }
     const checks = arr(input.checks);
     if (checks.length > 0) {
@@ -243,7 +246,7 @@ async function cardLabel(instructions: string, taskType: string): Promise<{ role
     }
     const directionName = strField(rec(input.direction).name);
     if (directionName) {
-      return { role, subject: cut(`${topicName}·${directionName}`) };
+      return { role, subject: cut(topicName ? `${topicName}·${directionName}` : directionName) };
     }
     return { role, subject: cut(topicName) };
   } catch {
