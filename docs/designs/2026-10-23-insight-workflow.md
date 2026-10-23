@@ -112,7 +112,7 @@ Schema (summary):
 
 ## Related work and borrowed patterns
 
-Surveyed 2026-10-23; the new repository should reference these during implementation:
+Surveyed 2026-10-23; the new repository should reference these during implementation. Selection is by architectural fit to this design's problems (immutable-input discipline, deterministic/AI split, publication gating), not by popularity: the low-star references solve the same reliability problems and are small enough to read in full, while the high-star general frameworks are borrowed for method-level patterns only, not as foundations.
 
 - **wordflowlab/article-writer** (github.com/wordflowlab/article-writer) — selection-first writing flow: AI proposes 3–4 directions (title, angle, outline, workload estimate), user picks, then an 11-step pipeline (research → write → authenticity/review passes → publish). Borrowed: proposal field shape and the hard user gate at topic selection. Not adopted: their lack of a topic history — our approval-record board fills exactly that gap. Their multi-pass review (`/review`: content, style, details) informs our repair-loop categories.
 - **elbruno/weekly-ai-news-digest** (github.com/elbruno/weekly-ai-news-digest) — scheduled agentic digest on GitHub Agentic Workflows. Borrowed: the frozen, checksummed, immutable input snapshot that all agent passes curate from (maps 1:1 to our snapshots/ + checksum gate); deterministic collector followed by AI stages; a deterministic publisher that merges validated output; a freshness check that fails when state is stale (maps to our waterline lag check). Not adopted: fully automatic publication — our preview checkpoint stays.
