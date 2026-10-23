@@ -127,11 +127,13 @@ python briefing.py validate
 
 ### 第四步：发送
 
-校验通过、并经人工确认邮件内容后：
+校验通过后，先发布预览页再求确认（用户既定流程，预览推送已获常设授权）：把 `workspace/runs/<run_id>/email-illustrated.html` 原样拷贝为 gh-pages 分支的 `preview/<run_id>/index.html`——用临时 worktree 挂 gh-pages 提交推送，不触碰主工作区——等 Pages 构建（约 1–2 分钟）后把 URL 交给用户。发送确认必须发生在用户看过预览页（或明确说明用本地文件查看）之后。用户确认发送后：
 
 ```bash
 python briefing.py send --confirm-send
 ```
+
+预览页发送后无需清理：归档推送触发 `.github/workflows/pages.yml` 以孤儿分支强制重建 gh-pages，`preview/` 路径随之自动消失。
 
 发送成功后，CLI会自动把该run归档到`archive/issues/<date>/`，只提交归档产物并推送`main`，由GitHub Pages workflow完成部署。若传输成功但发布因网络或工作树状态失败，可在修复后运行`python briefing.py publish-archive --run <run_id>`重试；自动流程不会把邮件发送结果伪装成已发布。
 
@@ -158,7 +160,7 @@ CreateWorkflow saved: { name: "briefing-run", args: { mode: "resume", concurrenc
 
 不变量：子代理只读执行卡引用的输入、只写自己的输出文件，禁止运行 briefing.py 子命令；`tasks list`/`tasks card`/`advance`/`reopen-invalid`/`render`/`validate` 全部由编排脚本执行。所有质量门禁、证据边界硬规则与 cache 语义与手动路径完全一致：同时 PENDING 的任务由创建时机保证互相独立，任务输入在创建时冻结，阶段完整性门（如 facts 只在 relevance 清空后创建）全部在 Python 内部评估。
 
-第四步发送不在编排内：人工阅读 `email.html` 与 `validation.json` 后，仍在主会话执行 `send --confirm-send` 两步确认。回退与调试：停止或放弃 workflow，按上文手动循环接手（状态只在盘上，无需迁移）；单任务调试用 `tasks next-single`。运行、恢复与故障处置见 `docs/operations/zcode-workflow-run.md`。
+第四步发送不在编排内：先按上文发布预览页，用户人工阅读预览与 `validation.json` 后，仍在主会话执行 `send --confirm-send` 两步确认。回退与调试：停止或放弃 workflow，按上文手动循环接手（状态只在盘上，无需迁移）；单任务调试用 `tasks next-single`。运行、恢复与故障处置见 `docs/operations/zcode-workflow-run.md`。
 
 ## 上下文与成本硬规则
 
