@@ -1,0 +1,474 @@
+{
+  "roadmap_id": "roadmap_kv_management",
+  "topic_id": "kv_management",
+  "topic_name": "KVCache管理与复用",
+  "evidence_scope": "published_archive_only",
+  "updated_by_issue": "2026-10-21",
+  "summary": "KVCache管理本期证据把复用边界推到近似与行为保持:VisMemo按跨图patch熵选低熵patch复用旧缓存、预热注意力分数排定重算优先级,生产负载命中率从27.78%提到61.45%,8K输入下未命中预填充延迟降30.5%-48.3%且多数近似命中由CPU或SSD层提供(GLM-4.6V-Flash在2K输入时近似命中反而更慢);SAFE-KV以全量预填充为基准揭示非前缀直接拼接复用仅保留约四至五成答案、因果后缀修复可升至99%上下但四个负载中三个慢于全量预填充,行为保持应作复用前置门槛;Hashrope用持久化哈希rope统一编辑、分支、前缀复用与重复段四机制,长共享前缀分支创建快近百倍但真实多轮流中位前缀下radix树反而快数百倍;组合式离散事件模拟器对SGLang端到端延迟误差1.34%-6.36%,可作分层放置与驱逐策略评估工具(仅GPU与主机两层)。当前判断:精确前缀复用在多模态与非前缀负载上有明确上限,近似复用须逐负载验证;三分支维持emerging。",
+  "view_mode": "evidence_timeline",
+  "branches": [
+    {
+      "branch_id": "prefix_reuse",
+      "name": "RadixTree与前缀缓存复用",
+      "direction_ids": [
+        "prefix_reuse"
+      ],
+      "status": "emerging",
+      "stages": [],
+      "evidence_timeline": [
+        {
+          "item_id": "a2e1b648c2398a3c35f977c2",
+          "issue_date": "2026-09-16",
+          "source_urls": [
+            "https://github.com/sgl-project/sglang/releases/tag/v0.5.16"
+          ],
+          "reason": "2026-09-16 已发布日报收录：SGLang v0.5.16 让 UnifiedRadixTree 成为 SWA/Mamba/DSA 默认缓存、命中只重置所用状态，DSA 缓存层切分使每 rank KV 降约 74%（发布说明自报数字、无端到端收益数据）；按前缀复用分支记录，不据此强行划分阶段。"
+        },
+        {
+          "item_id": "5eed420efde155b0ee118a32",
+          "issue_date": "2026-09-28",
+          "source_urls": [
+            "https://arxiv.org/abs/2607.28069v2"
+          ],
+          "reason": "2026-09-28 已发布日报收录：SemPIC 把文档 KV 编译成位置无关可复用形态，让顺序与指令不断变化的检索/agentic 负载复用同一缓存，三模型四任务对 KVPacket 平均 micro-F1 从 0.53 升到 0.60（与全量重算仍差 0.02、Writer 需按模型离线训练、TTFT 为命中口径未含编译成本）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "00c9adab04f9557705a56c8f",
+          "issue_date": "2026-09-28",
+          "source_urls": [
+            "https://arxiv.org/abs/2608.01655v1"
+          ],
+          "reason": "2026-09-28 已发布日报收录：PrefixPlace 把前缀 KV 放置形式化为带预算设施选址并给出可证近似，432 实例平均达最优 99.84%，RAG 重放物化成本节省比 vLLM-APC 高 40.3%、比最好离线基线高 6.3%，5 万节点 16worker 单处理器 12.3 秒求解（epoch 间负载漂移未显式建模）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "74cd8d5e1cee4dac7f846449",
+          "issue_date": "2026-09-28",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.19657v1"
+          ],
+          "reason": "2026-09-28 已发布日报收录：PrefixBench-H100 刻画前缀复用的实用工作包络，94GB 显存下工作集在容量内时两运行时都缓存约 92% 输入、TTFT 降 5-6.5 倍，工作集/容量比 13.2 倍超卖时命中率跌到 5.6% 对上限 66.7%（结论限于单卡 Hopper 与所选版本）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "01cc758fee82d15570fa42a8",
+          "issue_date": "2026-09-30",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.33477v1"
+          ],
+          "reason": "2026-09-30 已发布日报收录：SuffixReplay 改用后缀重放近似重建线性注意力状态，使混合架构 LLM 每个 64-token 页边界都成为可复用命中点、摆脱检查点对齐，三模型保持 91.4-100% 质量、存储为 SGLang 检查点的 0.36-0.51 倍，超 HBM 时吞吐达其 2.3-4.3 倍、中位 TTFT 降 15-70%（依赖线性注意力的衰减门控、重放预算需按模型离线标定）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "ac7501d2bfa5619147313eb4",
+          "issue_date": "2026-09-30",
+          "source_urls": [
+            "https://arxiv.org/abs/2608.25523v1"
+          ],
+          "reason": "2026-09-30 已发布日报收录：TOPAS 把多 agent 工作流的前缀驻留与请求准入纳入同一效用函数联合决策，SGLang 上三合成 DAG 的 mean/p99 JCT 较各负载最强基线最多降 39.8%/49.4%、MetaGPT-TL 降 22.0%/26.6%（评估以合成 DAG 与 MetaGPT 轨迹为主、缺真实生产轨迹与多机扩展）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "17174029f490e5ff99191f67",
+          "issue_date": "2026-10-12",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.04774v1"
+          ],
+          "reason": "2026-10-12 已发布日报收录：Vertumnus 在两个时间尺度协调上下文并行度并跨 worker 复制高频前缀，解决静态 CP 配置难适配请求变化、worker 重配又破坏前缀局部性的矛盾，Qwen3 Tool-Agent 最高请求率下 P90 TTFT 降 55.0%、SLO 达成率升 13.3pp（各点最强基线未逐一指名、生产负载为匿名采样重放、仅覆盖两类模型与单一测试床）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "9176b5875d8a232cfb7dd989",
+          "issue_date": "2026-10-14",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.33503v1"
+          ],
+          "reason": "2026-10-14 已发布日报收录：RelaxKV 把跨请求 KV 复用的修复目标与重算上下文做成联合分配问题、由用户 query 限定重算范围，四模型 15% 锚点比率下聚合 LongBench 全部超过 ProphetKV、5-30% 扫描提供更强质量-TTFT 权衡（锚点比率与实现上下文集比率差异显著、证据时点代码未开源）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "d58266858faeb6cef77fd7c3",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.13060v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：主流引擎KV复用仅限精确前缀而RAG请求文档组合多变,KV-Repurpose按文档段复用KV:保留分隔符切分输入逐段检查KV可用性,段键不预旋转位置编码、复用时按当前位置重对齐;Zipfian负载30GB下命中率从3.3%升至63.9%,单文档质量与重算持平但多跳推理明显退化,超1.6万token后TTFT低于前缀缓存;测试床只做简单位置校正,未与CacheBlend等方法比较,实验用单一逾千亿参数模型；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "f8c637164ffa4d998894ce4d",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.38706v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：共享KV缓存层仅按token内容派生键、忽略适配器与权重版本及租户身份会互相复用不兼容状态,论文提出来源契约与规范描述符把来源绑入键并配差分检测器;跨适配器冲突使精度从0.94降至0.64,省略权重版本时45页中42页冲突,恢复绑定后冲突归零;实验仅覆盖单主机与独立缓存服务器,固定预算下来源分离使吞吐从42降至15请求每秒；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "860372bcbab2b548b050d334",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.25136v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：VLM的视觉预填充延迟与KV缓存占用随输入增长而现有系统只能复用精确匹配缓存,VisMemo引入近似视觉KV复用:按跨图patch熵选出低熵patch复用旧缓存,用预热注意力分数排定其余patch的重算优先级,对精确与近似命中分别做三级缓存放置;生产负载命中率从27.78%提到61.45%,8K输入下近似命中把Qwen3-VL与GLM-4.6V的未命中预填充延迟降低30.5%至48.3%,79.4%的近似命中由CPU或SSD层提供;近似复用并非总有利,GLM-4.6V-Flash在2K输入时近似命中反而更慢,主实验硬件与ANLS基线未明；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "e5ad016e59da3e39390f4363",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.15186v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：RAG服务常把文档KV编码一次后在非前缀位置复用,但该状态依赖原始上下文、直接拼接会悄然改变输出,SAFE-KV以全量预填充为基准用因果后缀修复:选定起始文档后保留其前的拼接缓存,按原顺序重新编码该文档及其后所有文档和查询使下游因果状态一致,起点由检索分数做风险引导选择;直接拼接复用仅保留47.2%与37.8%的全量预填充答案,后缀修复升至99.8%与98.4%,但修复要重算多数上下文,五个负载中四个的延迟慢于全量预填充;仅在7B级模型的单请求L40S微基准上验证,未接入服务栈,未测并发吞吐与真实检索流量；按前缀复用分支记录，不据此改变阶段判断。"
+        }
+      ],
+      "open_questions": [],
+      "evidence_item_ids": [
+        "a2e1b648c2398a3c35f977c2",
+        "5eed420efde155b0ee118a32",
+        "00c9adab04f9557705a56c8f",
+        "74cd8d5e1cee4dac7f846449",
+        "01cc758fee82d15570fa42a8",
+        "ac7501d2bfa5619147313eb4",
+        "17174029f490e5ff99191f67",
+        "9176b5875d8a232cfb7dd989",
+        "d58266858faeb6cef77fd7c3",
+        "f8c637164ffa4d998894ce4d",
+        "860372bcbab2b548b050d334",
+        "e5ad016e59da3e39390f4363"
+      ],
+      "source_urls": [
+        "https://github.com/sgl-project/sglang/releases/tag/v0.5.16",
+        "https://arxiv.org/abs/2607.28069v2",
+        "https://arxiv.org/abs/2608.01655v1",
+        "https://arxiv.org/abs/2609.19657v1",
+        "https://arxiv.org/abs/2609.33477v1",
+        "https://arxiv.org/abs/2608.25523v1",
+        "https://arxiv.org/abs/2609.04774v1",
+        "https://arxiv.org/abs/2609.33503v1",
+        "https://arxiv.org/abs/2610.13060v1",
+        "https://arxiv.org/abs/2609.38706v1",
+        "https://arxiv.org/abs/2610.25136v1",
+        "https://arxiv.org/abs/2610.15186v1"
+      ]
+    },
+    {
+      "branch_id": "paged_management",
+      "name": "分页KVCache与块管理",
+      "direction_ids": [
+        "paged_management"
+      ],
+      "status": "emerging",
+      "stages": [],
+      "evidence_timeline": [
+        {
+          "item_id": "0323b177a35ce3e649adf16c",
+          "issue_date": "2026-09-16",
+          "source_urls": [
+            "https://github.com/vllm-project/vllm/releases/tag/v0.28.0"
+          ],
+          "reason": "2026-09-16 已发布日报收录：vLLM v0.28.0 把分层 KV 卸载补成闭环，磁盘层、外挂二级层管理器、tiering 指标与规范 CPU 布局同版落地并让 Mamba 前缀缓存默认开启（发布说明性来源、磁盘卸载性能未量化）；按分页与块管理分支记录，不据此强行划分阶段。"
+        },
+        {
+          "item_id": "7c7c9ee1f42e2759ca57776d",
+          "issue_date": "2026-09-30",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.34380v1"
+          ],
+          "reason": "2026-09-30 已发布日报收录：DPS 用半统一内存让权重区在 FP16 与 FP8 变体间切换、KV 压力时把空闲权重内存改用作 KV 块，vLLM 上三 MoE 模型加生产轨迹吞吐较 Static FP16 升 2.1-3.3 倍、有效 pass@1 最多 +41pp 且整条轨迹仅 2 次切换（分页碎片未处理、恢复时延受 PCIe 带宽约束）；按分页与块管理分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "ac5e43456730856b45a55c92",
+          "issue_date": "2026-10-14",
+          "source_urls": [
+            "https://github.com/vllm-project/vllm/releases/tag/v0.31.0"
+          ],
+          "reason": "2026-10-14 已发布日报收录：vLLM 0.31.0 对单机 KVCache 管理做一组实质改动，滑动窗口 KV 排除出前缀缓存、新增 KV 卸载背压检测、持有 KV 块的请求优先调度并加固 HiSparse 主机层分页，修复 KV 连接器与 MTP 死锁及 chunked-prefill 抢占活锁（release 说明未附这批 KV 管理变更的量化基准、SWA 有界重放在 ROCm 上被禁用）；按分页与块管理分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "c9dabd5a5896d7fa5c997bec",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.16144v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：LLM服务栈用四种专用结构分别处理编辑、分支、前缀复用与重复段,跨机制内容同一性查询退化为线性扫描,Hashrope用一个持久化哈希rope统一四种机制:字节串表示为不可变二叉树,节点分叶子、拼接与重复三类并各带子树多项式哈希,编辑和内容同一性查询均为对数级,分支共享不可变脊柱;对比复刻的PagedAttention写时复制块表,块大小16、百万token时分支创建快97.4倍,5个分支元数据压缩306倍,交叉点在16K token;优势仅限长共享前缀,真实多轮流中位前缀约642 token时radix树快数百倍,端到端延迟未测；按分页与块管理分支记录，不据此改变阶段判断。"
+        }
+      ],
+      "open_questions": [],
+      "evidence_item_ids": [
+        "0323b177a35ce3e649adf16c",
+        "7c7c9ee1f42e2759ca57776d",
+        "ac5e43456730856b45a55c92",
+        "c9dabd5a5896d7fa5c997bec"
+      ],
+      "source_urls": [
+        "https://github.com/vllm-project/vllm/releases/tag/v0.28.0",
+        "https://arxiv.org/abs/2609.34380v1",
+        "https://github.com/vllm-project/vllm/releases/tag/v0.31.0",
+        "https://arxiv.org/abs/2610.16144v1"
+      ]
+    },
+    {
+      "branch_id": "offload_hierarchy",
+      "name": "KVCache分层存储、驱逐与放置",
+      "direction_ids": [
+        "offload_hierarchy"
+      ],
+      "status": "emerging",
+      "stages": [],
+      "evidence_timeline": [
+        {
+          "item_id": "37d70c4e94dbbab119def6ba",
+          "issue_date": "2026-09-16",
+          "source_urls": [
+            "https://github.com/sgl-project/sglang/releases/tag/v0.5.17"
+          ],
+          "reason": "2026-09-16 已发布日报收录：SGLang v0.5.17 引入会话引用感知驱逐，活跃会话引用的前缀不被逐出并在 Kimi K3 day-0 落地 KDA 前缀缓存（无命中率或 TTFT 收益量化、DWDP 标注早期开发）；按分层存储与驱逐分支记录，不据此强行划分阶段。"
+        },
+        {
+          "item_id": "21914b7ee925e43025949605",
+          "issue_date": "2026-09-16",
+          "source_urls": [
+            "https://github.com/sgl-project/sglang/releases/tag/v0.5.19"
+          ],
+          "reason": "2026-09-16 已发布日报收录：SGLang v0.5.19 把统一 Radix 树扩展为全模型默认缓存，L3 存储支持运行时热挂载、PD decode worker 可复用 SWA 混合模型前缀（统一树默认化无量化对比、Beam search 与 HiCache 不兼容）；按分层存储与驱逐分支记录，不据此强行划分阶段。"
+        },
+        {
+          "item_id": "7fd1a0b43699e0580284b61d",
+          "issue_date": "2026-09-24",
+          "source_urls": [
+            "https://github.com/vllm-project/vllm/releases/tag/v0.30.0"
+          ],
+          "reason": "2026-09-24 已发布日报收录：vLLM v0.30.0 引入 HiSparse 主机驻留 KV 分层，稀疏 MLA 解码的 KV 页溢写到 pinned host 内存、每请求 GPU 热缓冲服务缺失并跨 TP 共享 host cache（Kimi K3 分组 FP8 MLA 缓存插入内核提速 4-6 倍、KDA 端到端吞吐 +5.2-7.7%，分层本身无命中率或时延收益数据）；按分层放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "78f34dd1a0ae33fecc597ac7",
+          "issue_date": "2026-09-24",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.21172"
+          ],
+          "reason": "2026-09-24 已发布日报收录：TierKV 用 PMCO 从 prefill 隐藏状态预测需求，在解码前闭式求解精确、低秩与闪存三层边界，八模型三移动 SoC 上 prefill 吞吐最高 17.6 倍、RAM 驻留 KV 省 12.5-34%（域为移动 SoC、SVD 低秩有有界精度损失）；按分层放置分支记录为预测式决策点信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "0b7cf8bd9892df8c78dc957e",
+          "issue_date": "2026-09-28",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.26828v1"
+          ],
+          "reason": "2026-09-28 已发布日报收录：LM-CXD 针对块 I/O 接口成本吃掉 NAND 容量收益的问题，用块感知管理为 LLM 前缀缓存专用化 CXL-SSD，TTFT 降到 DRAM 的 1.5 倍以内、相对原生 CXL-SSD 至多降 2.6 倍与 4.03 倍（依赖定制设备的语义接口、平均仍比 DRAM 慢 1.5 倍）；按分层放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "8580ae5c27679496d453025f",
+          "issue_date": "2026-09-30",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.34555v1"
+          ],
+          "reason": "2026-09-30 已发布日报收录：PulseInfer 把稀疏 KV 卸载的瓶颈 CPU-GPU 召回 I/O 变成调度对象，实测召回量层间中位差可达 5 倍、逐头选择把传输碎成 8KB 小包致 PCIe 有效带宽仅约 6GB/s、同步召回系统 GPU 利用率仅约 35%，调度后 SGLang 上解码吞吐较全 KV 基线升 1.5-4.7 倍、TPOT 最多降 76%（评估跳过 prefill、收益依赖普通批提供可重叠计算、MoE 下缩小）；按分层放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "c2ec0fd1614a859f00ed47d5",
+          "issue_date": "2026-10-12",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.27470v1"
+          ],
+          "reason": "2026-10-12 已发布日报收录：DeltaS 用混合骨干中线性注意力循环状态的归一化变化量作 query 无关驱逐信号，解决流式视频 KV 随流线性增长而驱逐发生在问题到来前的错位，Qwen3.5-9B 上 M=8192 平均 58.7、超最强基线 StreamMem 2.1 分、信号计算仅前向时间 1.9%（仅验证单一混合骨干、流式 QA 基准对记忆策略敏感）；按驱逐与放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "2ffb86c4a15e9de7f021327f",
+          "issue_date": "2026-10-12",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.30738v1"
+          ],
+          "reason": "2026-10-12 已发布日报收录：多样性感知打分在均值注意力驱逐的排名中加入注意力分歧度与对已保留集合的相似度惩罚、保留互补证据，Mistral-7B、64/层预算、16 个 LongBench 数据集宏平均从 33.31 升到 34.44、13/16 数据集改进（单次运行、宏平均增益小于开发集标准误、无 serving 级指标）；按驱逐与放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "2cbf1ec5d7d919b39205d5d4",
+          "issue_date": "2026-10-12",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.22157v2"
+          ],
+          "reason": "2026-10-12 已发布日报收录：PAGE 用 prefill 注意力头间一致性的跨层降幅作免训练信号、逐输入决定是否驱逐，把需精确检索输入被错删的风险压住，capacity-bound 任务上 harm rate 从 0.75 降到 0.026、与任务标签 oracle 差距仅 0.028（头条增益依赖单一任务族、实际压缩仅 1.8-3.4 倍且阈值不跨架构迁移）；按驱逐与放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "8ebfdd80885029eae2fed50a",
+          "issue_date": "2026-10-14",
+          "source_urls": [
+            "https://github.com/sgl-project/sglang/releases/tag/v0.5.21"
+          ],
+          "reason": "2026-10-14 已发布日报收录：SGLang 0.5.21 把 Rust TreeCore 设为 radix cache 默认并统一全部池形态，新增 Agentic 感知 LRU 驱逐、主机层自动定容与 TMA 主机-设备 KV 传输内核，Agentic LRU 把 p99 ITL 降 43.9%（并发 32、4x B300）、MLA 去重使 256K 前缀 TTFT 从 3.85s 到 2.23s（均为 opt-in 特性、默认行为收益与主机自动定容均无独立基准）；按分层放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "26814b16177df0f9e6c96cff",
+          "issue_date": "2026-10-14",
+          "source_urls": [
+            "https://github.com/LMCache/LMCache/releases/tag/0.5.6rc4"
+          ],
+          "reason": "2026-10-14 已发布日报收录：KV 分层存储项目 LMCache 发布 0.5.6rc4，release 页面除一个 Core 的 CB 重排序提交外无任何版本说明，0.5.6 系列 rc3 到 rc5 的多平台轮子（CUDA、ROCm、XPU 与 MUSA）同期发布（版本正文为空导致无法评估该版本的机制或性能变化）；按分层放置分支记录版本跟踪信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "97e191af9de9ce6e8abdf313",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.21241v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：KV缓存落到SSD后各层按逻辑对象计开销,6GiB按192对象要2.1秒、6144对象要3.0秒,Range用范围目录与请求票据取代逐键索引,KV存入1GiB物理包内定长条带,缓冲区在槽位绑定前预取、完成栅栏控制归属;对象数由192增至6144时调优cuFile中值TTFT从2.124秒升至3.012秒,Range保持1.790-1.803秒、距HBM驻留58-66毫秒;评估仅覆盖固定6GiB单请求、TP=1与两token输出,无吞吐与并发结果,硬件型号未披露；按分层放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "06aa17a3520ce25143ba457a",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.21249v1"
+          ],
+          "reason": "2026-10-18 已发布日报收录：KVCache卸载到SSD的收益缺少块设备级实测,该工作用bpftrace对比LMCache两个版本:旧版缓冲IO的读由内核页缓存吸收,新版前缀感知去重加O_DIRECT让每次读取显式落到SSD;精确重复负载写入量降约138倍,但每次热请求都重读同一约12MB分块,热请求TTFT由27毫秒升至93.1毫秒,提示变化的流量几乎零命中;两代快照的版本、SSD与IO模式互相混杂,全部为短上下文单用户设定；按分层放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "44882fac832bfa84819f3cb4",
+          "issue_date": "2026-10-21",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.15366v1"
+          ],
+          "reason": "2026-10-21 已发布日报收录：分层KVCache集群延迟无法由孤立算子画像推出,复用改变计算量、KV位置与容量争用决定执行顺序,论文用组合式离散事件模拟器把本地成本与共享状态分开建模:1P-1D上标定的计算与传输模型跨worker复用,排队由依赖与资源占用产生,KV搬运须先预留目的容量、保护在用源副本、完成后才可见;对SGLang端到端延迟的平均误差为问答1.34%、编码6.36%,模拟中LRU加60秒空闲TTL后KV占用降86.9%以上而TTFT升幅不超过7.4%;验证仅覆盖Qwen3-8B/32B在L20Z上的GPU与主机两层,L3未评估,TTL结果仅为模拟；按分层放置分支记录，不据此改变阶段判断。"
+        }
+      ],
+      "open_questions": [],
+      "evidence_item_ids": [
+        "37d70c4e94dbbab119def6ba",
+        "21914b7ee925e43025949605",
+        "7fd1a0b43699e0580284b61d",
+        "78f34dd1a0ae33fecc597ac7",
+        "0b7cf8bd9892df8c78dc957e",
+        "8580ae5c27679496d453025f",
+        "c2ec0fd1614a859f00ed47d5",
+        "2ffb86c4a15e9de7f021327f",
+        "2cbf1ec5d7d919b39205d5d4",
+        "8ebfdd80885029eae2fed50a",
+        "26814b16177df0f9e6c96cff",
+        "97e191af9de9ce6e8abdf313",
+        "06aa17a3520ce25143ba457a",
+        "44882fac832bfa84819f3cb4"
+      ],
+      "source_urls": [
+        "https://github.com/sgl-project/sglang/releases/tag/v0.5.17",
+        "https://github.com/sgl-project/sglang/releases/tag/v0.5.19",
+        "https://github.com/vllm-project/vllm/releases/tag/v0.30.0",
+        "https://arxiv.org/abs/2609.21172",
+        "https://arxiv.org/abs/2609.26828v1",
+        "https://arxiv.org/abs/2609.34555v1",
+        "https://arxiv.org/abs/2609.27470v1",
+        "https://arxiv.org/abs/2609.30738v1",
+        "https://arxiv.org/abs/2609.22157v2",
+        "https://github.com/sgl-project/sglang/releases/tag/v0.5.21",
+        "https://github.com/LMCache/LMCache/releases/tag/0.5.6rc4",
+        "https://arxiv.org/abs/2610.21241v1",
+        "https://arxiv.org/abs/2610.21249v1",
+        "https://arxiv.org/abs/2610.15366v1"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "version": 1,
+  "change_type": "no_material_change",
+  "history": [
+    {
+      "version": 1,
+      "issue_date": "2026-09-16",
+      "change_type": "material_change",
+      "path": "knowledge/history/roadmaps/kv_management/v1.json"
+    }
+  ],
+  "change_log": [
+    {
+      "event_id": "roadmap_change_654f5d140a49dd412741",
+      "issue_date": "2026-09-16",
+      "change_type": "material_change",
+      "version": 1,
+      "summary": "本期证据改变了分支、阶段、状态或开放问题。",
+      "evidence_item_ids": [
+        "0323b177a35ce3e649adf16c",
+        "21914b7ee925e43025949605",
+        "37d70c4e94dbbab119def6ba",
+        "a2e1b648c2398a3c35f977c2"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_7a34f4bc1d93489ccc5c",
+      "issue_date": "2026-09-24",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "78f34dd1a0ae33fecc597ac7",
+        "7fd1a0b43699e0580284b61d"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_edffef2f62ca7e853a7c",
+      "issue_date": "2026-09-28",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "00c9adab04f9557705a56c8f",
+        "0b7cf8bd9892df8c78dc957e",
+        "5eed420efde155b0ee118a32",
+        "74cd8d5e1cee4dac7f846449"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_c4210b06d2e6b6b35b7b",
+      "issue_date": "2026-09-30",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "01cc758fee82d15570fa42a8",
+        "7c7c9ee1f42e2759ca57776d",
+        "8580ae5c27679496d453025f",
+        "ac7501d2bfa5619147313eb4"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_6ec9951089bb98490a4e",
+      "issue_date": "2026-10-12",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "17174029f490e5ff99191f67",
+        "2cbf1ec5d7d919b39205d5d4",
+        "2ffb86c4a15e9de7f021327f",
+        "c2ec0fd1614a859f00ed47d5"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_caa9dda42a6a65a48f12",
+      "issue_date": "2026-10-14",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "26814b16177df0f9e6c96cff",
+        "8ebfdd80885029eae2fed50a",
+        "9176b5875d8a232cfb7dd989",
+        "ac5e43456730856b45a55c92"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_a32045941bf7590fbd06",
+      "issue_date": "2026-10-18",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "06aa17a3520ce25143ba457a",
+        "97e191af9de9ce6e8abdf313",
+        "d58266858faeb6cef77fd7c3",
+        "f8c637164ffa4d998894ce4d"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_2d13ee930c57ab818353",
+      "issue_date": "2026-10-21",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "44882fac832bfa84819f3cb4",
+        "860372bcbab2b548b050d334",
+        "c9dabd5a5896d7fa5c997bec",
+        "e5ad016e59da3e39390f4363"
+      ]
+    }
+  ]
+}

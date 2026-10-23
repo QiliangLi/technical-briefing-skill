@@ -1,0 +1,259 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_a90d71c35ea8a0f208da",
+  "identity": {
+    "problem_key": "unsafe_repeated_tool_calls",
+    "mechanism_key": "pre_call_state_resource_supervision",
+    "target_key": "agent_tool_execution"
+  },
+  "idea_type": "solution_concept",
+  "title": "在工具调用前加入状态与资源监督层",
+  "problem": "长链路 Agent 容易在状态漂移、容量不足或失败重试中重复调用工具并越过安全边界。",
+  "hypothesis": "在分派前检查意图、状态和资源契约，并提供明确中止原语，可减少重复失败与越界调用。",
+  "mechanism": "在工具路由前维护有界状态，执行意图一致性、容量和权限检查，对重复失败触发降级或中止。",
+  "expected_effect": "降低重复调用、资源超限和操作性幻觉，同时保持可解释的中止与恢复路径。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "4aacfff6b9b7808c286ad598",
+      "issue_date": "2026-08-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.18366v1"
+      ],
+      "reason": "《Action-Aware Supervision Layer：通过工具边界监督层防止Agent多轮安全漂移和操作性幻觉》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "f5a9fafbe8d1f875de954234",
+      "issue_date": "2026-08-26",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.17007v1"
+      ],
+      "reason": "《SkillEffect：工具分派前的检查式有界内存下沉》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "195bb579ab975dbccb4861b9",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.27141v3"
+      ],
+      "reason": "《LoopHarness 证明轨迹级安全监控必然失效》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "a0da2ffbb4dd57dae6a9af8d",
+      "issue_date": "2026-09-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.08371v1"
+      ],
+      "reason": "《CapScope:能力作用域授权压制编码agent间接注入》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "df382d148171b5f78ecf20d8",
+      "issue_date": "2026-09-14",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.10430v1"
+      ],
+      "reason": "《Latent Critic 在执行前拦截工具调用幻觉》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "dd775e7cefeb9f98fed2e592",
+      "issue_date": "2026-09-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.06835v1"
+      ],
+      "reason": "Skynet 用仅良性轨迹学习的工作流图流形做运行时异常检测，两基准召回 100% 且误报低于 1%，把监督层从单次调用扩展到整条工作流；与良性高度相似的间接注入召回 74% 是主要漏检面。"
+    },
+    {
+      "item_id": "0dcea77dbcd9caa81d71610c",
+      "issue_date": "2026-09-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.15888v1"
+      ],
+      "reason": "Bounded Agents 沿委托链收窄授权范围并在模型外做组合闭包检查，AgentDojo 外泄降到 0% 且授权 p99 仅 0.24ms；把监督层扩展到授权维度并证明进程内网关不构成吞吐瓶颈（合法任务完成率降 8.6 至 13.9pp 是其主要代价）。"
+    },
+    {
+      "item_id": "9046280e4c0618b742d7618f",
+      "issue_date": "2026-09-24",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.19741v1"
+      ],
+      "reason": "Thinkingbox 用终局后端状态哈希断言与副作用精确集合把验收从函数调用级信号升级为状态级监督，测出最强模型 pass^20 仅 25.25%、干净终止的失败大量存在；把监督层从调用前契约扩展到终局状态验收维度（模拟用户为受限合作型）。"
+    },
+    {
+      "item_id": "2f054875da3484a6851cc4bb",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.18849v1"
+      ],
+      "reason": "工具调用显式上报进度把执行中状态从服务系统的猜测变成契约信号，缓存决策比最佳预测器准数倍到一个数量级、p90 TTFT 降 20.7-20.8%；把监督层从调用前契约扩展到运行中进度上报维度（需工具侧配合、信号只有两档）。"
+    },
+    {
+      "item_id": "88371d86df6d811e269cabbd",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.11060v1"
+      ],
+      "reason": "微软在记忆写入前用最小权限只读世界工具验证教训正确且仍新鲜，CLBench 通过率从 39% 升到 73%；把监督层扩展到记忆写入前的世界状态核验维度（增益依赖剩余证据缺口、评测限于企业场景）。"
+    },
+    {
+      "item_id": "2279a92e3a56b5176235115a",
+      "issue_date": "2026-10-14",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.28585v1"
+      ],
+      "reason": "拒绝钱包攻击研究证明工具调用的持久计费状态需要宿主侧资源契约监督：四不变量防御把重进入前边界确立为宿主控制点，进度授权策略 24 任务成功 22 个对固定上限的 13 个；把监督层扩展到计费状态与重进入边界维度（防御数字来自受控评测、误触发率基于 provider 特定离群值）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "监督层误拒绝正常调用的比例",
+    "状态预算与任务成功率的关系",
+    "中止后恢复协议"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在带故障注入的工具任务上比较无监督、仅权限检查和状态资源联合监督。",
+    "inputs": [
+      "多轮工具任务",
+      "容量与权限约束",
+      "重复失败故障注入"
+    ],
+    "baselines": [
+      "无调用前监督",
+      "仅静态权限检查"
+    ],
+    "metrics": [
+      "重复失败调用数",
+      "越界调用数",
+      "任务成功率",
+      "误拒绝率"
+    ],
+    "support_criteria": [
+      "显著减少重复和越界且成功率下降在预算内"
+    ],
+    "reject_criteria": [
+      "误拒绝或监督延迟抵消安全收益"
+    ],
+    "limitations": [
+      "任务集无法覆盖所有真实工具副作用"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-23",
+  "last_updated_issue": "2026-10-14",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_b63c90d30244a51a3b18",
+      "issue_date": "2026-09-03",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "Candidate candidate_a90d71c35ea8a0f208da 通过身份、来源独立性和可验证性审阅后进入正式 Idea。",
+      "evidence_item_ids": [
+        "4aacfff6b9b7808c286ad598",
+        "f5a9fafbe8d1f875de954234"
+      ]
+    },
+    {
+      "event_id": "idea_decision_2785f2b90e7dd97da056",
+      "issue_date": "2026-09-04",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "195bb579ab975dbccb4861b9"
+      ]
+    },
+    {
+      "event_id": "idea_decision_8ef7f99c1289e620fc1c",
+      "issue_date": "2026-09-10",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "a0da2ffbb4dd57dae6a9af8d"
+      ]
+    },
+    {
+      "event_id": "idea_decision_2a24a433cbae24700c9a",
+      "issue_date": "2026-09-14",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "df382d148171b5f78ecf20d8"
+      ]
+    },
+    {
+      "event_id": "idea_decision_6b0566564fc0fd5fce7",
+      "issue_date": "2026-09-16",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据把监督层机制扩展到工作流级运行时监控；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "dd775e7cefeb9f98fed2e592"
+      ]
+    },
+    {
+      "event_id": "idea_decision_e370342b4bc819e9be8",
+      "issue_date": "2026-09-18",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据把监督层机制扩展到委托链授权维度；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "0dcea77dbcd9caa81d71610c"
+      ]
+    },
+    {
+      "event_id": "idea_decision_c391c3d0f66f03e836a",
+      "issue_date": "2026-09-24",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据把状态监督扩展到终局验收维度；Idea状态暂不改变。",
+      "evidence_item_ids": [
+        "9046280e4c0618b742d7618f"
+      ]
+    },
+    {
+      "event_id": "idea_decision_740f1cc7073dff2b100",
+      "issue_date": "2026-09-28",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据把状态监督扩展到运行中工具的进度显式契约；Idea状态暂不改变。",
+      "evidence_item_ids": [
+        "2f054875da3484a6851cc4bb"
+      ]
+    },
+    {
+      "event_id": "idea_decision_d85f048b01936f55493",
+      "issue_date": "2026-09-30",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据把状态监督扩展到记忆写入前核验；Idea状态暂不改变。",
+      "evidence_item_ids": [
+        "88371d86df6d811e269cabbd"
+      ]
+    },
+    {
+      "event_id": "idea_decision_1052d11e8d759d44a51",
+      "issue_date": "2026-10-14",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据把资源监督扩展到工具计费状态与重进入边界；Idea状态暂不改变。",
+      "evidence_item_ids": [
+        "2279a92e3a56b5176235115a"
+      ]
+    }
+  ]
+}
