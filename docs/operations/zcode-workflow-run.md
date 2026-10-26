@@ -6,6 +6,7 @@
 
 - 编排覆盖 SKILL.md 的第一～三步（初始化、Agent 任务循环、渲染与校验），**终止于 `READY_TO_SEND`**。
 - 发送（第四步）不在编排内：先按 SKILL.md 第四步把 `email-illustrated.html` 发布为 gh-pages 预览页（`preview/<run_id>/index.html`），用户人工阅读预览与 `validation.json` 后，在主会话执行 `send --confirm-send` 两步令牌确认；发送后的自动归档与推送流程不变，gh-pages 孤儿分支重建会自动移除预览页。
+- 知识阶段（第五步）同样不在编排内：发送归档后由主会话按 SKILL.md 第五步为该期执行 Roadmap/Idea 物化与 Candidate 发现，并提交推送 `knowledge/`。
 - Python 侧与手动路径零差别：任务图、调度、Schema/语义校验、Evidence Gate、`validate` 发布门、cache 语义全部不变。
 
 ## 发起

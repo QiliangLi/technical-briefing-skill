@@ -30,6 +30,7 @@ current collection + resumable historical backfill
 → validation
 → confirmed send
 → archive and publication
+→ per-issue knowledge materialization and Candidate discovery (knowledge/)
 ```
 
 Current limits and topic membership live in `config/settings.yaml` and `config/topics*.yaml`. Documents should describe the policy and link to configuration rather than duplicate every changing value.
@@ -52,7 +53,11 @@ These boundaries are part of correctness. Shared Agent sessions may reduce start
 
 Machine Items are the durable fact model used by Evidence Gate, Fact Check, Roadmap, Idea analysis, and later simulations. Reader Projection is created once per active run after the machine layer passes its checks. It can omit or reorder material for readability, but it cannot add facts or become a cross-run cache.
 
-After archive publication, Idea discovery is a separate bounded layer. A Direct task
+After archive publication, the same session immediately runs the issue's knowledge
+stage — Roadmap/Idea materialization plus Candidate discovery — as the close-out of
+the run (SKILL.md step five); the backlog flow in `docs/operations/knowledge-freshness.md`
+exists only to recover when that step was interrupted. Within that stage, Idea
+discovery is a separate bounded layer. A Direct task
 reviews each new formal Machine Item and must emit either an `IdeaCandidate` or a
 reasoned no-op; a Topic Synthesis task can combine current evidence with prior
 published evidence and a Roadmap gap. Candidate identity, source independence, and

@@ -141,6 +141,33 @@ python briefing.py send --confirm-send
 
 如果需要使用SMTP备用后端，先设置`EMAIL_BACKEND=smtp`，再按同一人工确认和`--confirm-send`门禁发送。
 
+### 第五步：知识物化与 Candidate 发现（发送归档后）
+
+发送归档不是一期的终点。发送成功后、同一会话内，立即为刚归档的期次执行知识阶段，让 `knowledge/manifest.json` 回到 `knowledge_complete`：
+
+```bash
+python briefing.py knowledge prepare --issue <date>
+python briefing.py knowledge next --issue <date>              # 逐任务：按提示读输入、写输出
+python briefing.py knowledge apply --task <task_id>
+python briefing.py knowledge candidates prepare --issue <date>
+python briefing.py knowledge candidates next --issue <date>   # 每个 Direct/Synthesis 任务
+python briefing.py knowledge candidates apply --task <task_id>
+python briefing.py knowledge validate
+python briefing.py knowledge graph build && python briefing.py knowledge graph validate
+python briefing.py knowledge diff build --issue <date>
+python briefing.py knowledge manifest build && python briefing.py knowledge manifest validate
+```
+
+执行规则：
+
+1. 知识任务只读任务输入 JSON 引用的已发布证据、旧 Roadmap/Idea/cluster，不读全文、候选池或 reader；
+2. 逐期顺序执行：上一期全部 apply 之后才 `prepare` 下一期；本期 diff 在本期全部 apply 后立即构建，旧期 diff 不重建；
+3. apply 校验失败时修复原任务输出重试，不跳期、不手改 manifest；
+4. 测试套件把已提交仓库钉在完全物化状态：完成后同步更新 `tests/test_knowledge_materialization.py` 的对象计数与 `tests/test_graph_surfaces.py` 的 `LENS_REPRO` 计数，`pytest -q` 全绿后按 AGENTS.md 自动提交规则提交 `knowledge/` 与测试并推送，Pages 随后一次部署把首页切到 `knowledge_complete`；
+5. 发送后若中断，按 `docs/operations/knowledge-freshness.md` 的积压回填流程补齐；多期积压时可用 `scripts/` 下的批量辅助脚本。
+
+Candidate 发现细节与升格门禁见「Idea Candidate 发现与升格」一节；字段与命令的权威定义见 `docs/contracts/knowledge-materialization.md`。
+
 ## ZCode workflow 执行模式
 
 在 ZCode 宿主中，第一～三步默认由保存的动态 workflow `briefing-run` 编排执行，主会话不再逐任务内联处理，运行结束后只收到最终报告与邮件预览。workflow 只能由用户显式发起：
@@ -160,7 +187,7 @@ CreateWorkflow saved: { name: "briefing-run", args: { mode: "resume", concurrenc
 
 不变量：子代理只读执行卡引用的输入、只写自己的输出文件，禁止运行 briefing.py 子命令；`tasks list`/`tasks card`/`advance`/`reopen-invalid`/`render`/`validate` 全部由编排脚本执行。所有质量门禁、证据边界硬规则与 cache 语义与手动路径完全一致：同时 PENDING 的任务由创建时机保证互相独立，任务输入在创建时冻结，阶段完整性门（如 facts 只在 relevance 清空后创建）全部在 Python 内部评估。
 
-第四步发送不在编排内：先按上文发布预览页，用户人工阅读预览与 `validation.json` 后，仍在主会话执行 `send --confirm-send` 两步确认。回退与调试：停止或放弃 workflow，按上文手动循环接手（状态只在盘上，无需迁移）；单任务调试用 `tasks next-single`。运行、恢复与故障处置见 `docs/operations/zcode-workflow-run.md`。
+第四步发送不在编排内：先按上文发布预览页，用户人工阅读预览与 `validation.json` 后，仍在主会话执行 `send --confirm-send` 两步确认；第五步知识阶段（发送归档后）同样在主会话执行。回退与调试：停止或放弃 workflow，按上文手动循环接手（状态只在盘上，无需迁移）；单任务调试用 `tasks next-single`。运行、恢复与故障处置见 `docs/operations/zcode-workflow-run.md`。
 
 ## 上下文与成本硬规则
 
@@ -450,3 +477,7 @@ AI解释图的个人角色只由`assets/persona/ian-qiliang/overlay.md`和`asset
 - HTML正文可复制、链接可点击；
 - 图片无法加载时正文仍完整；
 - 已经通过最终`validate`校验，并经人工确认过邮件内容。
+
+发送后必须满足：
+
+- 第五步知识阶段已对本期执行完毕：`knowledge manifest validate` 通过，manifest 的 `publication_state` 为 `knowledge_complete`、`candidate_analysis_state` 为 `complete`，`knowledge/` 变更已提交推送。

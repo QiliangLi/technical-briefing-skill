@@ -75,6 +75,8 @@ python briefing.py send --confirm-send --run latest
 python briefing.py publish-archive --run <run_id>
 ```
 
+归档发布后一期还有最后一步：为该期执行知识阶段（Roadmap/Idea 物化与 Candidate 发现），首页的新鲜度清单要等这一步完成才会显示 `knowledge_complete`。执行时机见 [SKILL.md](SKILL.md) 第五步，命令与恢复流程见 [docs/operations/knowledge-freshness.md](docs/operations/knowledge-freshness.md)。
+
 ## 运行模型
 
 ```text
@@ -87,6 +89,7 @@ python briefing.py publish-archive --run <run_id>
 → 当前 run 的 Reader Projection
 → 综合判断与整期插画
 → 两份 HTML、校验、发送和归档
+→ 本期知识物化与 Candidate 发现
 ```
 
 Python 负责采集、状态、预算、缓存、校验、渲染和发送。Agent 只处理命令明确创建的语义任务。任何 Agent 任务都不能自行扩大输入范围。

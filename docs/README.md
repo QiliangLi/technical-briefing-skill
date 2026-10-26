@@ -55,3 +55,4 @@ These files define durable interfaces and quality rules. Prompt and schema detai
 - [Implemented GitHub Pages presentation, freshness, and analysis hardening](history/designs/2026-09-02-github-pages-presentation-and-freshness-hardening.md)
 - [Implemented knowledge graph long-edge and lens differentiation diagnosis](history/designs/2026-09-02-knowledge-graph-lens-and-edge-diagnosis.md)
 - [Implemented Idea continuous discovery and historical backfill](history/designs/2026-09-03-idea-discovery-and-backfill.md)
+- [Implemented per-issue knowledge stage after send](history/designs/2026-10-26-knowledge-stage-after-send.md)

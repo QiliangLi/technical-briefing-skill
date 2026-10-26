@@ -5,6 +5,11 @@
 Pages 新鲜度门禁失败的排查。字段与命令的权威定义见
 `docs/contracts/knowledge-materialization.md`。
 
+知识阶段是每期发送归档后的收尾步骤(SKILL.md 第五步):发送成功后在同一
+会话内立即对刚归档的期次执行下文"积压回填"中的同一串命令,正常情况下
+`pending_issues` 只在发送与知识完成之间的短暂窗口内非空。"积压回填"因此
+是该步骤被中断或长期未执行后的恢复路径,不是常态执行方式。
+
 ## 状态与第一眼诊断
 
 ```bash
@@ -55,6 +60,12 @@ python3 briefing.py knowledge manifest build && python3 briefing.py knowledge ma
   journal 不应手工删除。
 - 全部待分析期次完成后,manifest 才会变为 `knowledge_complete`;
   Pages 门禁允许中间状态上线,但首页只显示 pending 进度。
+- 测试套件把已提交仓库钉在完全物化状态:`tests/test_knowledge_graph.py`
+  比对已提交 `graph.json` 的水位,`tests/test_knowledge_materialization.py`
+  钉住 Roadmap/Idea/Candidate/cluster 计数与 manifest 完成态,
+  `tests/test_graph_surfaces.py` 的 `LENS_REPRO` 钉住镜头节点/边计数。
+  归档后未做知识阶段会让 `pytest -q` 变红;每次物化后同步更新这两处
+  计数再提交。只重建 graph/manifest 而不做任务不能恢复全绿。
 
 ### 批量回填辅助脚本
 

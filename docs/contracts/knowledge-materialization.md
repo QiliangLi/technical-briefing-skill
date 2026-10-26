@@ -62,7 +62,9 @@ application 并重建 index。进程在提交标记前中断时，下次 Candida
 
 ## 新日报后的增量更新
 
-先为一期日报中实际出现的 Topic 准备有界任务：
+该流程在每期发送归档后立即执行（SKILL.md 第五步）；滞后多期时按
+`docs/operations/knowledge-freshness.md` 的积压回填逐期补齐。先为一期日报中
+实际出现的 Topic 准备有界任务：
 
 ```bash
 python3 briefing.py knowledge prepare --issue 2026-08-21
