@@ -56,6 +56,25 @@ python3 briefing.py knowledge manifest build && python3 briefing.py knowledge ma
 - 全部待分析期次完成后,manifest 才会变为 `knowledge_complete`;
   Pages 门禁允许中间状态上线,但首页只显示 pending 进度。
 
+### 批量回填辅助脚本
+
+积压超过一期时,逐任务手写几十份输出 JSON 既占用上下文又容易抄错 ID、URL
+和 decision log。`scripts/` 下保留了四个只在这种批量场景使用的辅助脚本;
+每期发送归档后立即执行的单期知识阶段(SKILL.md 第五步)不需要它们:
+
+| 脚本 | 作用 |
+| --- | --- |
+| `digest_knowledge_tasks.py <tasks/<issue>> [item_id ...]` | 把一期全部知识任务压缩成摘要:旧 Roadmap 分支、旧 Idea/cluster 状态、本期新增证据的结论与机制;附加 item_id 标出需重标日期的复现条目 |
+| `digest_candidate_tasks.py <candidate-tasks/<issue>>` | 列出每个 Candidate 任务的类型、触发证据和历史 Candidate 的身份三元组,先识别重复 |
+| `build_knowledge_outputs.py <spec.json>` | 按 spec 生成一个知识任务的 output JSON:复制或新建 Roadmap、追加时间线、重标复现条目、追加 Idea 证据与决策记录 |
+| `build_candidate_outputs.py <spec.json>` | 按 spec 生成 Candidate 任务的 output JSON:由身份三元组推导 candidate_id、独立来源组、日期与决策记录;支持 no-op 与历史 Candidate 重标 |
+
+顺序是 digest → Agent 写 spec → build → `apply`,都在仓库根目录运行。spec
+是本机草稿(`workspace/*_spec/`,已被忽略);脚本不做 Schema 或语义校验,
+`apply` 仍是唯一门禁。`build_candidate_outputs.py` 直接复用
+`briefing_skill.utils` 的哈希与来源身份函数,包内算法变化后先用一个任务
+试跑再批量使用。
+
 ## analysis_failed 恢复
 
 `analysis_failed` 由运维显式写入,用于保留现场(上一份 `knowledge_complete`
