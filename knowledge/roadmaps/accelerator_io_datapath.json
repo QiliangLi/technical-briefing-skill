@@ -3,8 +3,8 @@
   "topic_id": "accelerator_io_datapath",
   "topic_name": "加速器直连I/O与存储数据路径",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-18",
-  "summary": "加速器I/O数据路径本期为GDS工程成熟度信号:v1.19线新增分散聚集cuFile API、POSIX回退、稀疏文件读优化与NVMe RAID1/10支持,v1.19.1新增VDURA PanFS支持并修复缺陷(文档没有任何带基线的带宽、时延或CPU占用数字,收益均为定性声明,NVMe P2PDMA不支持RAID0和多路径、Stream API不支持CUDA graphs)。当前判断:GPU直接访问存储的软件栈在向工程可用性收敛,兼容模式与POSIX回退表明主机路径并未消失,该文档可作部署成熟度与约束依据而非性能依据;两分支维持emerging,第三方基准与产品化集成落地仍待观察。",
+  "updated_by_issue": "2026-10-23",
+  "summary": "加速器I/O数据路径本期只有两条工程成熟度与可观测性信号：SigmaTrace为CPU与GPU发起的RDMA通信提供库无关观测并公开源代码（SC26接收，可见证据无开销与IOPS数字，是否覆盖NVMe-oF类存储访问路径不可判断），KvikIO v26.10.00为远程I/O后端加入GPU侧device buffer、修复multi-poll死锁并新增诊断计数（无量化评测，不涉及cuFile/GDS本地快路径）。当前判断：GPU发起I/O仍处于工具链与软件栈补齐阶段而非性能突破阶段，两分支维持emerging；可把SigmaTrace列为GPU发起I/O实验的候选测量工具、引入前先确认其对RDMA存储访问路径的覆盖，第三方带基线的带宽、时延或CPU占用数据出现才会改变判断。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -71,6 +71,14 @@
             "https://developer.nvidia.com/blog/expanding-ai-storage-access-with-nvidia-cuobject-and-the-nvidia-scada-server-sdk"
           ],
           "reason": "2026-10-12 已发布日报收录：NVIDIA 宣布 cuObject 库 GA，GPU 经 RDMA 直连文件与对象存储、绕过服务器 CPU 内存转发，同时发布 SCADA Server SDK，xio-sig 纳入 cuObject 扩展，IBM 已演示 Storage Scale 原型 server（吞吐、时延与 CPU 利用率收益均为官方定性声明、无基准数字与基线）；按加速器发起 I/O 分支记录产品化信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "98cb17ffbcfd13c8f4e58ea4",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.24328"
+          ],
+          "reason": "SigmaTrace面向CPU与GPU发起的RDMA通信提供库无关观测能力并公开源代码，以SC26作者接受稿形式发布；可见证据不含任何开销、时延或IOPS数字，也无法判断是否覆盖NVMe-oF等RDMA存储访问路径，只能作为GPU发起I/O实验的候选测量工具跟踪。"
         }
       ],
       "open_questions": [],
@@ -81,7 +89,8 @@
         "3d79b03c1e8162d381969a4d",
         "9eaeb8c9af21d31b8c60dfdd",
         "ea689bb652526e0e8a1731e6",
-        "155916e55ef052afb120e3fe"
+        "155916e55ef052afb120e3fe",
+        "98cb17ffbcfd13c8f4e58ea4"
       ],
       "source_urls": [
         "https://blogs.nvidia.com/blog/ai-storage-fms",
@@ -90,7 +99,8 @@
         "https://www.ddn.com/press-releases/ddn-and-nvidia-collaborate-to-advance-gpu-initiated-data-access-for-next-generation-ai",
         "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-2.html",
         "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-1.html",
-        "https://developer.nvidia.com/blog/expanding-ai-storage-access-with-nvidia-cuobject-and-the-nvidia-scada-server-sdk"
+        "https://developer.nvidia.com/blog/expanding-ai-storage-access-with-nvidia-cuobject-and-the-nvidia-scada-server-sdk",
+        "https://arxiv.org/abs/2610.24328"
       ]
     },
     {
@@ -125,18 +135,28 @@
             "https://docs.nvidia.com/gpudirect-storage/release-notes/index.html"
           ],
           "reason": "2026-10-18 已发布日报收录：GDS为GPU显存与存储建立DMA直连路径,v1.19线侧重工程可用性:新增分散聚集cuFile API、POSIX回退、稀疏文件读优化(默认对16 KiB及以上的读启用)与NVMe RAID1/10支持,直连路径由cuFile库与nvidia-fs.ko驱动实现并保留兼容模式,v1.19.1新增VDURA PanFS支持并修复缺陷;文档没有任何带基线的带宽、时延或CPU占用数字,收益均为定性声明,NVMe P2PDMA不支持RAID0和多路径、Stream API不支持CUDA graphs；按加速器存储栈分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "6854df1a9e549ad596be6d59",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00"
+          ],
+          "reason": "KvikIO v26.10.00修复libcurl multi-poll远程I/O后端的重试缺陷与死锁，新增GPU侧device buffer支持、运行时可调的reactor数与请求上限以及读写统计与诊断计数器；发布说明不附任何量化评测，也不涉及cuFile/GDS本地快路径，属GPU生态远程I/O栈的成熟度信号。"
         }
       ],
       "open_questions": [],
       "evidence_item_ids": [
         "dda95f5f23dfe81db0904c32",
         "9492668fe785e6a4c535f9bb",
-        "6b1b36b87ef9d28a4e47b854"
+        "6b1b36b87ef9d28a4e47b854",
+        "6854df1a9e549ad596be6d59"
       ],
       "source_urls": [
         "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide",
         "https://github.com/NVIDIA/gds-nvidia-fs/releases/tag/v2.30.2",
-        "https://docs.nvidia.com/gpudirect-storage/release-notes/index.html"
+        "https://docs.nvidia.com/gpudirect-storage/release-notes/index.html",
+        "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00"
       ]
     }
   ],
@@ -223,6 +243,17 @@
       "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
       "evidence_item_ids": [
         "6b1b36b87ef9d28a4e47b854"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_dfaac1ee59572580c28f",
+      "issue_date": "2026-10-23",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "6854df1a9e549ad596be6d59",
+        "98cb17ffbcfd13c8f4e58ea4"
       ]
     }
   ]

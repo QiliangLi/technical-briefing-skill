@@ -3,8 +3,8 @@
   "topic_id": "tpn",
   "topic_name": "状态感知网络、TPN",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-21",
-  "summary": "TPN方向本期证据把状态感知调度从单集群扩展到跨区域与PD负载动态:KVCompass把缓存身份与放置解耦,边缘用空间高效哈希索引做多级变长前缀查找,按缓存复用、估计排队与网络距离联合评分转发请求,三大洲测试床上P99 TTFT较哈希放置与中心目录低约一个数量级(大规模结果仅为仿真,无TPOT、KV传输量或网络利用率指标);Prorsa聚合样本注入、沙箱启动与工具返回信号预测turn级PD需求并动态切换角色,两个agentic任务较合并部署加速1.11-4.05倍(math任务多数变慢,未报告网络指标);SwaT与CacheFuse证明跨模型传递KV缓存优于传文本(SwaT须逐对训练映射器,CacheFuse限同分词器同族模型且均无跨节点数据)。当前判断:缓存位置与排队负载联合评分、PD容量随负载构成动态调整是两条主线;若缓存通信跨主机化,网络要承载的流量将从文本变为KV张量;五分支维持emerging。",
+  "updated_by_issue": "2026-10-23",
+  "summary": "TPN方向本期证据把传输路径与KV体积两个上游杠杆推到前台：HAWK在GPU预填充到NPU解码的RDMA直传中完成布局变换，1280MB传输延迟仅为主机中转的14.7%、与同构GPU直连差不到1%，说明P/D解耦下决定TTFT上限的是传输路径而非解码调度；UlaCache用统一逻辑寻址解耦引擎与物理放置、只传稀疏选择缺失的条目，8×B300解码吞吐为HiSparse的1.73/2.51倍但全部限于节点内；PN-Mix与MLAfication分别以约2.26比特混合精度和MLA转换从源头把KV体积缩到几分之一。当前判断：跨节点KV放置与带宽调度仍是空位，UlaCache给出的节点内上限可作TPN对照基线，HAWK证明布局感知直传是P/D异构选型的可行路径；四条都不感知推理状态、未报告网络利用率与跨节点TTFT，带跨节点带宽与P95数据的实验出现才会升级判断。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -375,6 +375,30 @@
             "https://arxiv.org/abs/2610.16165v1"
           ],
           "reason": "2026-10-21 已发布日报收录：多智能体系统模型间交换文本需一方逐字解码、一方再预填充,成为下游首字时延的主要开销,CacheFuse利用同族模型注意力几何一致、各层KV形状相同,把共享方缓存送入接收方并用一个标量系数对两份缓存线性插值后解码,全程免训练;Qwen3-8B向4B传递时OBQA较接收方单独提升8.6个百分点,融合4B在四项基准全部超过8B共享方,ARC-C上TTFT较文本交换基线加速12.2倍;仅验证同分词器的Qwen3模型对,全部时延测于单张A5000,无跨节点与网络侧评估；按KV感知调度分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "4556110b217a4d31038037df",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.29820v1"
+          ],
+          "reason": "UlaCache以横跨GPU池与CPU内存的统一逻辑地址空间解耦引擎与物理放置，KV移动只更新映射；稀疏选择先查本地GPU缓冲、仅传缺失条目并由独立CUDA stream预取使传输与计算重叠，匹配内存预算下8×B300峰值解码吞吐为HiSparse的1.73/2.51倍（DP/TP）、PB-LRU较朴素LRU快1.5至2.3倍（全部传输限于节点内CPU-GPU与卡间IPC，无跨节点实验，未报告TTFT、P95与网络利用率）。"
+        },
+        {
+          "item_id": "85443a3362697092e4d35380",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.19605v1"
+          ],
+          "reason": "PN-Mix以查询侧与键侧平均对范数之积为通道对重要性，预填充期算一次并在解码中复用，显著通道对3比特、其余1比特、平均约2.26比特；四个模型基准平均与FP16差距在1分内且优于Kitty，Qwen3-8B在40GB内可跑8倍生成长度或5.5倍批量（全部为单GPU实验，无TTFT、TPOT或网络侧数据，显存充裕时FP16同批量吞吐反而更高）。"
+        },
+        {
+          "item_id": "17bc8acd678fb63dbfcf7ac9",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.17202v1"
+          ],
+          "reason": "MLAfication用校准KNorm近似化解QKNorm与MLA矩阵吸收的冲突，仅微调QKV投影与归一化（30B约1.6%参数）并配部分RoPE与KV初始化；Qwen3-30B-A3B在16K并发256下FP8 MLA-128吞吐为GQA的5.35倍，KV省68.75%时均分64.65对删KNorm的61.23（服务评估为单卡TP=1，无跨机通信与TTFT/TPOT数据，昇腾基准仅用假权重）。"
         }
       ],
       "open_questions": [],
@@ -423,7 +447,10 @@
         "7664264106194fd8ced29298",
         "c14361ce6ae1cc41b816f52e",
         "a9d3ff89cd7c1926de6d12d3",
-        "ebf6b432d7bc1f46f801440c"
+        "ebf6b432d7bc1f46f801440c",
+        "4556110b217a4d31038037df",
+        "85443a3362697092e4d35380",
+        "17bc8acd678fb63dbfcf7ac9"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.07207v1",
@@ -467,7 +494,10 @@
         "https://arxiv.org/abs/2610.14686v1",
         "https://arxiv.org/abs/2610.24179v1",
         "https://arxiv.org/abs/2610.15095v1",
-        "https://arxiv.org/abs/2610.16165v1"
+        "https://arxiv.org/abs/2610.16165v1",
+        "https://arxiv.org/abs/2610.29820v1",
+        "https://arxiv.org/abs/2610.19605v1",
+        "https://arxiv.org/abs/2610.17202v1"
       ]
     },
     {
@@ -755,6 +785,14 @@
             "https://arxiv.org/abs/2610.16592v1"
           ],
           "reason": "2026-10-21 已发布日报收录：agentic RL rollout中prefill与decode负载构成随任务变化、固定配比难以维持解耦收益,Prorsa聚合样本注入、沙箱启动与工具返回信号预测10秒内turn级PD需求,按GPU预算分配实例数,角色切换时将KVCache持久化到远端;16x8 GPU集群上两个agentic任务较合并部署加速1.11-4.05倍,较静态最优配比再快1.0-1.44倍,math任务多数变慢;论文未报告TTFT/TPOT、网络利用率或KVCache传输量,预测误差在工具耗时多变的任务上更高；按P/D解耦通信分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "14f554896a5602f09d452905",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.29873v1"
+          ],
+          "reason": "HAWK基于Mooncake打通GPU预填充到NPU解码的RDMA直传，在传输中完成布局变换以匹配NPU并在NPU端预留布局感知缓冲；1280MB传输时GN-HAWK延迟约为主机中转的14.7%、与GPU直连差不到1%，90% SLO达成时请求速率至多低7.69%、成本效率最高1.72倍（仅Tenstorrent p150a与Llama 3.1 70B单实例，不感知推理状态，网络利用率未报）。"
         }
       ],
       "open_questions": [],
@@ -772,7 +810,8 @@
         "6e6d62a411e37b906e7c6b3b",
         "b1f5b508fa5a63afc625eb4c",
         "0e9ca85cd1bb3307fb817e90",
-        "569cec2dda1e60660b7d84ed"
+        "569cec2dda1e60660b7d84ed",
+        "14f554896a5602f09d452905"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.18002v2",
@@ -788,7 +827,8 @@
         "https://arxiv.org/abs/2609.24639v1",
         "https://arxiv.org/abs/2609.35158v1",
         "https://arxiv.org/abs/2609.39138v1",
-        "https://arxiv.org/abs/2610.16592v1"
+        "https://arxiv.org/abs/2610.16592v1",
+        "https://arxiv.org/abs/2610.29873v1"
       ]
     },
     {
@@ -1104,6 +1144,19 @@
         "a9d3ff89cd7c1926de6d12d3",
         "c14361ce6ae1cc41b816f52e",
         "ebf6b432d7bc1f46f801440c"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_21ba91abb3f9a3da5c97",
+      "issue_date": "2026-10-23",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "14f554896a5602f09d452905",
+        "17bc8acd678fb63dbfcf7ac9",
+        "4556110b217a4d31038037df",
+        "85443a3362697092e4d35380"
       ]
     }
   ]

@@ -3,8 +3,8 @@
   "topic_id": "agent_acceleration",
   "topic_name": "Agent语义加速",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-21",
-  "summary": "Agent加速本期证据覆盖重复决策离线化、验收门控与预算受限搜索:Bellman语言模型把有界工作流中已收敛的重复决策离线解为MDP策略,已知状态由控制器直接执行、未见状态才回退LLM,电信基准每会话调用从20.9次降到1.5次且成功率上升(最强证据来自同一基准生成器,内容主导任务几乎无收益);证据门控编排器把生命周期推进改为验证谓词满足才放行、失败有界修复或可审计终止,门控指标在百任务规模均为1.00(自建基准未与外部系统对比,未报告调用与token成本);ExTS把节点扩展本身当作信息价值决策,固定配置四域平均相对增益5.5%(任务间差异大);ToolMinimize按参数必要性对工具调用做删除、泛化、替换、截断四级改写,隐私成本降81.2%-92.0%而参数级有效性100%(端到端场景有效性降至60%)。当前判断:状态可饱和流程的离线求解与谓词门控验收是两条可直接试的路径;四分支维持emerging。",
+  "updated_by_issue": "2026-10-23",
+  "summary": "Agent加速本期证据把瓶颈从模型能力移到Harness与工具执行边界：RiseHarness固定模型权重、用重复运行的成败证据迭代改进Harness并以完整复评超基线作验收门，两个模型各自Harness互换后损失约2.3至9.0个百分点；生产SQL客户端agent模式8199次实测显示多数损失发生在模型与服务器的传输边界，仅改服务器端就让六个模型成功率明显移动；APEXA用服务器侧确定性工具层把伪造执行结果从15/200降到0/200；VibeMemBench则显示现成记忆系统经检索在12组配对中11组低于无记忆基线，省步数不等于更高解决率。当前判断：Harness与工具层应优先引入与模型无关的确定性验收门（执行完整性守卫、完整重复评估超基线才采纳），记忆与经验复用在没有验收门前不应默认开启；上述结论多来自单harness或自建基准且未报告token与时延成本，能否在代码Agent上复现是升级判断的关键观察。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -267,6 +267,14 @@
             "https://arxiv.org/abs/2610.17616v1"
           ],
           "reason": "2026-10-18 已发布日报收录：长程编码需要不断演化的项目状态,其散落在交互历史中会使本地修改与后续影响脱节,StateHarness以免训练运行时把问题假设、关键发现、仓库关系与未竟工作维护为外部状态:运行时检索受影响的调用方、测试与文档并维护紧凑简报,异常时另开会话回看历史,失败尝试归档恢复快照;相对Claude Code,RefactorBench全链完成率29.4%升至35.3%,ChainSWE修复率35.1%升至39.5%;ChainSWE上pass-to-pass回归从16增至23,状态维护使token与耗时增加约三至四成；按检索与状态分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "0a6e722809c29f7f5a099e93",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.23570v1"
+          ],
+          "reason": "VibeMemBench用同任务记忆开关的配对协议评测代码Agent持久记忆，由可执行测试判定成败：检索路径12组配对中11组低于无记忆基线，直接注入冻结经验使五个求解器中四个Resolved点估计上升但区间均跨零；四个记忆系统都让glm-5少走5.4至10.6步却有三个同时降低Resolved（求解器不含Claude与GPT，未报告记忆构建与检索成本）。"
         }
       ],
       "open_questions": [],
@@ -292,7 +300,8 @@
         "22d7069f7e72a24b50054007",
         "97dadc17d07345f7dcd7447b",
         "d2b6370baee517bd97922cf0",
-        "3b6de45738a8546aa8c0d1fc"
+        "3b6de45738a8546aa8c0d1fc",
+        "0a6e722809c29f7f5a099e93"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.13285v1",
@@ -316,7 +325,8 @@
         "https://arxiv.org/abs/2607.26777v1",
         "https://arxiv.org/abs/2609.36807v1",
         "https://arxiv.org/abs/2609.27585v1",
-        "https://arxiv.org/abs/2610.17616v1"
+        "https://arxiv.org/abs/2610.17616v1",
+        "https://arxiv.org/abs/2609.23570v1"
       ]
     },
     {
@@ -623,6 +633,22 @@
             "https://arxiv.org/abs/2608.24957v1"
           ],
           "reason": "2026-10-21 已发布日报收录：Agent工具调用常携带超出所需的隐私数据越过信任边界,ToolMinimize中间件按参数必要性改写:拦截工具调用后以模式与语义分类识别敏感数据,把隐私成本量化为敏感性、工具信任与参数必要性,再按schema做删除、泛化、替换、截断四级渐进改写;307次真实工具调用上隐私成本较改写前降低81.2%-92.0%,参数级任务有效性100%,纯schema路径中位延迟1.77毫秒无需LLM调用;参数级有效不等于端到端成功,mock端点20场景中16个功能等价,外部场景参数级有效性降至60%；按工具执行链分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "97fde1681974bb57a0c40227",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.21341v1"
+          ],
+          "reason": "生产SQL客户端agent模式对39个本地模型与1个托管对照共8199次运行，把损失归入能力、传输、时钟、验证四类：75.7%的模型归因损失来自已调用过工具的运行，五处仅服务器端修改使六个模型在30个格中移动6至21格，全程未动模型、提示与采样（单机、单数据库、单harness，传输高于能力的排序仅在74.5%的重采样中成立）。"
+        },
+        {
+          "item_id": "bfaa2e873b5783c236c7c8c4",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.24165v1"
+          ],
+          "reason": "APEXA在服务器侧以确定性工具层拦截被LLM网关静默丢弃调用后伪造的执行结果：执行完整性守卫拒绝无已执行调用支撑的输出并强制重试，配合容忍格式漂移的解析器与预检；50场景×4模型的仿真电机控制对抗测试中工具层0/200违规、纯提示词基线15/200（单顺序推理循环，无任务成功率、时延与token数据）。"
         }
       ],
       "open_questions": [],
@@ -663,7 +689,9 @@
         "b0642c6add301c1d5fb6e3eb",
         "adc7e19f901fb57eb8db53be",
         "6cf909072f3730d3475ebdba",
-        "bddacda18f4e9138253ce786"
+        "bddacda18f4e9138253ce786",
+        "97fde1681974bb57a0c40227",
+        "bfaa2e873b5783c236c7c8c4"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.18366v1",
@@ -702,7 +730,9 @@
         "https://arxiv.org/abs/2610.21463v1",
         "https://arxiv.org/abs/2610.15246v1",
         "https://arxiv.org/abs/2610.24871v1",
-        "https://arxiv.org/abs/2608.24957v1"
+        "https://arxiv.org/abs/2608.24957v1",
+        "https://arxiv.org/abs/2609.21341v1",
+        "https://arxiv.org/abs/2609.24165v1"
       ]
     },
     {
@@ -924,6 +954,14 @@
             "https://arxiv.org/abs/2608.23848v1"
           ],
           "reason": "2026-10-21 已发布日报收录：几十到几百次评估的小预算下标准MCTS分配预算失当、产生宽而浅的树,ExTS把是否扩展节点本身当作信息价值决策:判别性奖励整形放大窄分布下的头部得分,从父节点奖励历史重采样的虚拟子节点与继续加深竞争扩展,分支宽度由整形分数门控;固定配置在四域平均相对增益5.5%,其中HotpotQA提升10.8%、LiveCodeBench困难档提升11.7%,超过GEPA与AB-MCTS等基线;增益随任务差异大,HoVeR仅升0.2%,BAVT未开源无法对比,虚拟子节点依赖父节点奖励历史的采样质量；按Harness工程分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "d8a6dfbb0135fb04f3d15ed5",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.27435v1"
+          ],
+          "reason": "RiseHarness固定模型权重，记录智能体轨迹与运行时监控轨迹定位同配置下成败并存的翻转任务，生成Harness改进提案并要求完整评估且通过率超基线才采纳；两个模型用各自Harness在两个基准的Pass@1与Pass^4上均优于换用对方Harness，互换损失约2.3至9.0个百分点（主结果表不可见，改进循环的token与时延成本未报告）。"
         }
       ],
       "evidence_item_ids": [
@@ -952,7 +990,8 @@
         "4954bfea6c564d790fed3cef",
         "f849dda8a030cc881321240a",
         "dc379fc8915c1ed18614168b",
-        "471ecd8e04c9286e4e812afa"
+        "471ecd8e04c9286e4e812afa",
+        "d8a6dfbb0135fb04f3d15ed5"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2608.17528",
@@ -980,7 +1019,8 @@
         "https://arxiv.org/abs/2609.37725",
         "https://arxiv.org/abs/2609.37834v1",
         "https://arxiv.org/abs/2608.29615v1",
-        "https://arxiv.org/abs/2608.23848v1"
+        "https://arxiv.org/abs/2608.23848v1",
+        "https://arxiv.org/abs/2610.27435v1"
       ]
     }
   ],
@@ -1262,6 +1302,19 @@
         "6cf909072f3730d3475ebdba",
         "bddacda18f4e9138253ce786",
         "dc379fc8915c1ed18614168b"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_5ee7efe9ff2f99eee505",
+      "issue_date": "2026-10-23",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "0a6e722809c29f7f5a099e93",
+        "97fde1681974bb57a0c40227",
+        "bfaa2e873b5783c236c7c8c4",
+        "d8a6dfbb0135fb04f3d15ed5"
       ]
     }
   ]

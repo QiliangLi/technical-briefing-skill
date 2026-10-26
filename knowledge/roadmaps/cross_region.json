@@ -3,8 +3,8 @@
   "topic_id": "cross_region",
   "topic_name": "跨域传输",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-21",
-  "summary": "跨域传输本期证据集中在压缩一次多次服务的放置与迁移字节缩减:Attic-KV用自生成问答加自适应锚句做未知查询的一次性KV压缩,3%保留率下RULER-4K得73.4分领先次优,32K页面按5%保留载入48毫秒对重新预填充5.75秒(48毫秒为本机读取,广域网RTT、增量更新与一致性仍无数据);E8格向量量化把KV键压到2比特约6倍、质量接近fp16且接收端可按索引加范数直接打分(困惑度仅测至4K上下文,仅单卡单序列);PeekKV以预填充后首个内容token重校准头组预算,修正预填充信号错配解码用量的问题;Delta Tokenizer只编码会话增量使10万token暖轮次TTFT中位数降61%(单节点CPU方案,分词非瓶颈时收益消失,作对照条目)。当前判断:源端压缩加只传低保留率KV是可试的跨域文档缓存放置路径,行为保持验证应为复用方案前置门槛;三分支维持emerging,传输实测仍缺。",
+  "updated_by_issue": "2026-10-23",
+  "summary": "跨域传输本期四条证据全部是传输侧的上游体积杠杆而非传输机制本身：RACE把KV头维度压缩折叠进模型权重免重建，50%保留下总FLOPs降47.75%、TTFT降43.22%；ReTrace用休眠缓存加回溯注入把单图视觉KV缩至约八分之一；CALM与ChampionKV分别用离线校准的逐层逐头配额和注意力集中度代理做预算分配，同预算下质量优于均匀分配且可插入现有压缩器。当前判断：若跨域搬运KV，可传输体积有一半到八分之一的缩减空间，休眠—恢复与校准配额图可借鉴为分层放置与预取时机的设计原型；但四条均为单卡实验、无WAN RTT、增量更新或一致性数据，校准映射还绑定模型与算子、跨站点复用要求同构集群，带广域网成本的实验出现才会改变判断。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -752,6 +752,38 @@
             "https://arxiv.org/abs/2610.23939v1"
           ],
           "reason": "2026-10-21 已发布日报收录：KV压缩常以预填充注意力信号定头重要性,但活跃头解码时迁移、预填充信号错配解码用量,PeekKV免训练免离线画像:预填充后解码到首个内容token,由该步得出头组分数与输出扰动分数,按比例分配头组预算并保留组内高分token;Llama-3.1-8B在RULER按10%保留得89.9分为满缓存的95.7%,3%预算领先次优约11个百分点,信号换回预填充则降至78.7分;优势随模型任务分化,Mistral上HumanEval等被画像方法领先,仅单机评测无广域网指标,按remote_prefill方向记入压缩与放置分支；按压缩与放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "25984365221418728b500261",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.28385v1"
+          ],
+          "reason": "RACE把Q/K降维限制为坐标选择并证明只有保留完整RoPE旋转对才兼容预训练旋转，再按联合query-key激活能量保留高能量对并折叠进权重、免推理时重建；Llama-3.2-3B在50%保留、256K上下文下总推理FLOPs降47.75%、吞吐升1.79倍、TTFT降43.22%（结果均含约1M token蒸馏恢复，仅单卡实测，无跨域或WAN实验）。"
+        },
+        {
+          "item_id": "56e3de83eb972fb59b1861bb",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.25005v1"
+          ],
+          "reason": "ReTrace发现多模态模型中层枢轴token会回溯检索早期低显著性视觉token，于是把非枢轴token缓存为休眠态、约第8层注入以近似中层检索流，任务驱动剪枝推迟到吸收完成后；保留11.1%视觉token时Qwen2.5-VL-7B的KV从211.4MB降至26.7MB、预填充加速2.83倍、8基准平均保留84.4%性能（注入与剪枝用固定层号，全部为单卡推理，无分布式、跨域或时延测量）。"
+        },
+        {
+          "item_id": "e6bfafc4de6f0742034d4684",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.28192v1"
+          ],
+          "reason": "CALM以注意力输出相对误差为代理，随一次稠密生成探测影子缓存得到全部360头的失真表，用动态规划在预算内求逐层逐头合并配额并冻结复用、推理时无在线搜索；Self-Forcing上R=8同预算整段LPIPS为0.117对均匀分配0.149，增益集中在中强压缩档（压缩只是逻辑账面、各方法常驻显存相同，CALM生成时间慢约15%，映射绑定模型与合并算子）。"
+        },
+        {
+          "item_id": "379f9edf5678a85cd23761fa",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.18026v1"
+          ],
+          "reason": "ChampionKV以最大聚合观测注意力分作集中度代理，用inverse-max加权把大预算分给分散头，预填充期一次计算、可插入SnapKV等压缩器且不改token选择；Llama3.1-70B LongBench上Champion-Snap四档预算均超SnapKV，2048时48.14胜未压缩47.92（单节点显存压缩，无跨域传输或P95证据，增益集中紧预算且7B/8B上不显著）。"
         }
       ],
       "open_questions": [],
@@ -792,7 +824,11 @@
         "ceb1caa889d484536ce1bbb2",
         "29d54a609e6b31b14c42f25b",
         "cce55f86f35492fc42d23442",
-        "7e756db5b6347650c4b50848"
+        "7e756db5b6347650c4b50848",
+        "25984365221418728b500261",
+        "56e3de83eb972fb59b1861bb",
+        "e6bfafc4de6f0742034d4684",
+        "379f9edf5678a85cd23761fa"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.06601v1",
@@ -830,7 +866,11 @@
         "https://arxiv.org/abs/2610.05685v2",
         "https://arxiv.org/abs/2610.12133v2",
         "https://arxiv.org/abs/2610.15384v1",
-        "https://arxiv.org/abs/2610.23939v1"
+        "https://arxiv.org/abs/2610.23939v1",
+        "https://arxiv.org/abs/2610.28385v1",
+        "https://arxiv.org/abs/2610.25005v1",
+        "https://arxiv.org/abs/2610.28192v1",
+        "https://arxiv.org/abs/2610.18026v1"
       ]
     }
   ],
@@ -1086,6 +1126,19 @@
         "7e756db5b6347650c4b50848",
         "8406b261bfbe6706d8e9f3dd",
         "cce55f86f35492fc42d23442"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_f95c9792c02063d6efdf",
+      "issue_date": "2026-10-23",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "25984365221418728b500261",
+        "379f9edf5678a85cd23761fa",
+        "56e3de83eb972fb59b1861bb",
+        "e6bfafc4de6f0742034d4684"
       ]
     }
   ]

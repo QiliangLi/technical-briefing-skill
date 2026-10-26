@@ -3,8 +3,8 @@
   "topic_id": "kv_management",
   "topic_name": "KVCache管理与复用",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-21",
-  "summary": "KVCache管理本期证据把复用边界推到近似与行为保持:VisMemo按跨图patch熵选低熵patch复用旧缓存、预热注意力分数排定重算优先级,生产负载命中率从27.78%提到61.45%,8K输入下未命中预填充延迟降30.5%-48.3%且多数近似命中由CPU或SSD层提供(GLM-4.6V-Flash在2K输入时近似命中反而更慢);SAFE-KV以全量预填充为基准揭示非前缀直接拼接复用仅保留约四至五成答案、因果后缀修复可升至99%上下但四个负载中三个慢于全量预填充,行为保持应作复用前置门槛;Hashrope用持久化哈希rope统一编辑、分支、前缀复用与重复段四机制,长共享前缀分支创建快近百倍但真实多轮流中位前缀下radix树反而快数百倍;组合式离散事件模拟器对SGLang端到端延迟误差1.34%-6.36%,可作分层放置与驱逐策略评估工具(仅GPU与主机两层)。当前判断:精确前缀复用在多模态与非前缀负载上有明确上限,近似复用须逐负载验证;三分支维持emerging。",
+  "updated_by_issue": "2026-10-23",
+  "summary": "KVCache管理本期证据集中在驱逐与预算分配的细粒度化：AKV让长程Agent以drop/repos直接管理活跃KVCache并用radix tree的drop节点按操作历史区分缓存版本，三模型×四Agent基准平均成本降27.7%且精度不降；MOSAIC离线搜索逐层预算在154个设置中146个胜过统一分配、同分数最多省75%缓存；LORE-KV用采样的未来查询估计删除代价，紧预算下领先但预算放宽到1024时优势几乎消失；MaskAhead用未来掩码探针为块扩散模型做不可逆驱逐换取平均9.5倍压缩。当前判断：前缀缓存引擎应把操作历史纳入缓存键，驱逐与分层策略应增加层维度和响应侧信号，紧预算下收益最大而宽预算下各方法趋同；四条证据均无命中率、TTFT或GPU/CPU/SSD分层实测，不能据此外推延迟收益，带分层存储与TTFT的实验出现才会改变判断。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -319,6 +319,38 @@
             "https://arxiv.org/abs/2610.15366v1"
           ],
           "reason": "2026-10-21 已发布日报收录：分层KVCache集群延迟无法由孤立算子画像推出,复用改变计算量、KV位置与容量争用决定执行顺序,论文用组合式离散事件模拟器把本地成本与共享状态分开建模:1P-1D上标定的计算与传输模型跨worker复用,排队由依赖与资源占用产生,KV搬运须先预留目的容量、保护在用源副本、完成后才可见;对SGLang端到端延迟的平均误差为问答1.34%、编码6.36%,模拟中LRU加60秒空闲TTL后KV占用降86.9%以上而TTFT升幅不超过7.4%;验证仅覆盖Qwen3-8B/32B在L20Z上的GPU与主机两层,L3未评估,TTL结果仅为模拟；按分层放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "51b028770810a93bcda12391",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.28577v1"
+          ],
+          "reason": "AKV让长程Agent不改轨迹文本、直接对活跃KVCache执行drop与repos，并在radix tree插入drop节点按操作历史区分缓存版本，免去摘要裁剪触发的重填充；三模型×四Agent基准平均成本较Standard基线降27.7%、平均分升1.7点，GPT-OSS-120B的96k+轨迹桶精度37%对24%（未报告缓存命中率与显存利用率，无GPU/CPU/SSD分层实验）。"
+        },
+        {
+          "item_id": "86c0149adfbdd159a26d13ec",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.25431v1"
+          ],
+          "reason": "MOSAIC对冻结模型按任务与驱逐方法组合离线运行贝叶斯加NSGA-II搜索学出逐层KVCache预算形状，经缩放解码迁移到全部目标预算；四种驱逐方法×两个模型共154个设置中146个胜过统一分配，任务分数持平时最多省75%缓存（仅两个dense模型，无延迟、吞吐与显存实测，一次性搜索需9至40GPU时）。"
+        },
+        {
+          "item_id": "757775758481577d00f2fdfb",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.07643v2"
+          ],
+          "reason": "LORE-KV免训练地从冻结模型以温度1采样多条短前瞻续写，用响应侧查询计算各token的投影删除代价并跨未来加权聚合后压缩缓存；B=128时Qwen2.5-14B的LongBench均值较AnDPro提升2.75分、Llama-3.1-8B在128K RULER领先11.65分（优势随预算增大收窄，B=1024时仅余0.15分，一次性压缩开销为AnDPro的1.46至2.77倍）。"
+        },
+        {
+          "item_id": "afa9bbe36d6238053583a937",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.06996v1"
+          ],
+          "reason": "MaskAhead用当前块掩码为去噪读取排序、用未来掩码块的探针查询为保留集排序，并在检查点物理删除条目，为块扩散语言模型实现免训练的不可逆KV驱逐；均值1.2分F1损失换取平均9.5倍KV压缩，固定输出实验中批32吞吐由55.6升至68.2 token/s、驻留KV由28.4降至4.2GiB（面向块扩散模型而非自回归服务，GPU与模型规模未披露）。"
         }
       ],
       "open_questions": [],
@@ -336,7 +368,11 @@
         "26814b16177df0f9e6c96cff",
         "97e191af9de9ce6e8abdf313",
         "06aa17a3520ce25143ba457a",
-        "44882fac832bfa84819f3cb4"
+        "44882fac832bfa84819f3cb4",
+        "51b028770810a93bcda12391",
+        "86c0149adfbdd159a26d13ec",
+        "757775758481577d00f2fdfb",
+        "afa9bbe36d6238053583a937"
       ],
       "source_urls": [
         "https://github.com/sgl-project/sglang/releases/tag/v0.5.17",
@@ -352,7 +388,11 @@
         "https://github.com/LMCache/LMCache/releases/tag/0.5.6rc4",
         "https://arxiv.org/abs/2610.21241v1",
         "https://arxiv.org/abs/2610.21249v1",
-        "https://arxiv.org/abs/2610.15366v1"
+        "https://arxiv.org/abs/2610.15366v1",
+        "https://arxiv.org/abs/2610.28577v1",
+        "https://arxiv.org/abs/2610.25431v1",
+        "https://arxiv.org/abs/2610.07643v2",
+        "https://arxiv.org/abs/2610.06996v1"
       ]
     }
   ],
@@ -468,6 +508,19 @@
         "860372bcbab2b548b050d334",
         "c9dabd5a5896d7fa5c997bec",
         "e5ad016e59da3e39390f4363"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_a80ab597daf4cf5a498e",
+      "issue_date": "2026-10-23",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "51b028770810a93bcda12391",
+        "757775758481577d00f2fdfb",
+        "86c0149adfbdd159a26d13ec",
+        "afa9bbe36d6238053583a937"
       ]
     }
   ]

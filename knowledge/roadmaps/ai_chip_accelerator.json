@@ -3,8 +3,8 @@
   "topic_id": "ai_chip_accelerator",
   "topic_name": "AI芯片与加速器",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-21",
-  "summary": "AI芯片本期证据偏软件栈与设计自动化而非新架构:TorchTPU为PyTorch提供TPU原生混合执行后端,运行时不含JAX、eager为一等公民、编译基于Dynamo并以bounded dynamism避免形状重编译,近五千个HF模型验证、热门模型通过率98%、64 TPU v7吞吐与JAX栈相当(未见与NVIDIA GPU同负载对比,收益来自软硬件栈共同作用);PairSight把GPU共置干扰定位到共享L2/DRAM路径并按算子预测减速,高优先级时延预测误差4.3%(仅两任务共置与SM切分,预印本);LLM增强贝叶斯优化与DAIST神经算子热仿真均属设计自动化方法学信号,全部为架构级仿真,不能作为chiplet带宽或能效收益证据。当前判断:替代加速器评估继续以协同设计后端到端吞吐与软件栈成熟度为准;三分支维持emerging。",
+  "updated_by_issue": "2026-10-23",
+  "summary": "AI芯片本期四条证据指向同一结论——加速器的可用算力由软件栈与格式选择而非标称峰值决定：三代GPU约22万个实测配置显示2:4稀疏只有叠加在FP8等量化地板格式上才兑现1.33至1.65倍核加速，地板之上全面落败且vLLM已移除支持；TrainBridge把GPU编译产物的优化意图迁移为昇腾NPU重写后NanoGPT平均提速1.95倍、NPU/GPU耗时比从4.0降到2.0，说明NPU低效相当程度源于编译栈；FlashNext-RL靠内存规划与sm100特化内核把单节点B200的智能体RL吞吐提升逾11倍但瓶颈仍在生成端；Ozaki方案II用INT8引擎模拟FP64达原生12至28倍。当前判断：评估GPU/NPU选型应以优化后端到端时长而非TOPS峰值为准，推理选型先量化到地板格式再考虑结构化稀疏；四条均为单节点或单板预印本结果，多节点与同行评审数据出现才会升级判断。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -463,6 +463,38 @@
             "https://arxiv.org/abs/2610.23086v1"
           ],
           "reason": "2026-10-21 已发布日报收录：多任务共置GPU提升利用率却引入干扰,算力-访存互补规则认不出干扰算子也给不出准确减速预测,PairSight将干扰主要定位到共享L2/DRAM路径:按TPC粒度切分SM实测7.7k个算子对,将慢化关联到共享L2/DRAM,两个XGBoost回归器以两侧逐算子时长与访存计数预测减速;A100上对含Llama-3.2的20对任务测试,高优先级时延预测误差4.3%而强度规则为19.0%,90.6%预测误差在10%内;仅评测两任务共置与SM切分,未见多租户、多卡或生产部署结果,且为arXiv v1预印本；按加速器架构分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "0bc0413579c8b51e6e000a2b",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.28947v1"
+          ],
+          "reason": "约22万个实测配置的三代GPU对比以等比特与等档两种口径评估2:4稀疏：量化地板之上2:4精度与速度全面落败，108个等档计算格仅胜6个；只有叠加在FP8地板格式上线性层核才加速1.33到1.65倍，H100 vLLM端到端prefill 74.6对58.9千token每秒且GSM8K持平（单作者预印本，增益限于计算受限的prefill，vLLM已移除2:4支持）。"
+        },
+        {
+          "item_id": "e2a6a174f52647117cbf7ea9",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.26945v1"
+          ],
+          "reason": "Ozaki方案II把FP64矩阵积分解为s个精确INT8乘积加中国剩余重构、SYCL实现暴露完整BLAS接口，Arc Pro B60上DGEMM最高21.1 TFLOP/s、达原生FP64的12至28倍，标度良好输入s≥16时100%正确舍入（共享指数最坏输入需s=20至24且吞吐大降，小矩阵下原生FP64更快，单板预印本）。"
+        },
+        {
+          "item_id": "7a0311b21563a7eb1bfeb908",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.28998v1"
+          ],
+          "reason": "Snowflake FlashNext-RL以prime-rl与vLLM为基座，用host offload、专家并行与上下文并行做内存规划并为QSA稀疏注意力与门控残差写sm100特化内核，125B混合专家模型在单节点B200上131K上下文的单GPU非padding吞吐从约395升至4,438 tokens/s，真实SWE运行每步平均等待331秒、瓶颈在生成端（单一硬件配置与短程训练，部分参数冻结，无功耗数据）。"
+        },
+        {
+          "item_id": "92b5f6640589c7fb2e6b086f",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.29171v1"
+          ],
+          "reason": "TrainBridge用两阶段智能体对比GPU eager与编译后IR差异抽取优化意图、定位昇腾NPU对应低效点生成语义保持重写，再迭代剖析NPU残余瓶颈；Ascend 910C上27条NanoGPT记录平均提速1.95倍、NPU/GPU耗时比从4.0降至2.0，另四个负载提速1.25至2.22倍（仅单节点，需成熟GPU编译栈，优化后NPU仍慢于GPU参考1.5至2.0倍）。"
         }
       ],
       "open_questions": [],
@@ -522,7 +554,11 @@
         "0f57e9c803a44b31a40aff39",
         "aaca3afe6d1a2f48f150f0f1",
         "407a2f30b502e4044f8f343e",
-        "eae28f296fe63da7df39476c"
+        "eae28f296fe63da7df39476c",
+        "0bc0413579c8b51e6e000a2b",
+        "e2a6a174f52647117cbf7ea9",
+        "7a0311b21563a7eb1bfeb908",
+        "92b5f6640589c7fb2e6b086f"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.09385v1",
@@ -579,7 +615,11 @@
         "https://arxiv.org/abs/2610.01380v1",
         "https://arxiv.org/abs/2610.17463v1",
         "https://arxiv.org/abs/2610.24161v1",
-        "https://arxiv.org/abs/2610.23086v1"
+        "https://arxiv.org/abs/2610.23086v1",
+        "https://arxiv.org/abs/2610.28947v1",
+        "https://arxiv.org/abs/2610.26945v1",
+        "https://arxiv.org/abs/2610.28998v1",
+        "https://arxiv.org/abs/2610.29171v1"
       ]
     },
     {
@@ -1104,6 +1144,19 @@
         "407a2f30b502e4044f8f343e",
         "c10598c3dc73a44425871c58",
         "eae28f296fe63da7df39476c"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_2c13bfd3d6db9546687b",
+      "issue_date": "2026-10-23",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "0bc0413579c8b51e6e000a2b",
+        "7a0311b21563a7eb1bfeb908",
+        "92b5f6640589c7fb2e6b086f",
+        "e2a6a174f52647117cbf7ea9"
       ]
     }
   ]
