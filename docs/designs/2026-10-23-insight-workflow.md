@@ -2,7 +2,7 @@
 
 - Status: draft
 - Created: 2026-10-23
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 
 > This document is drafted inside the briefing repository and will move to the new insight repository as its initial design when that repository is created (user direction, 2026-10-23).
 
@@ -90,17 +90,17 @@ Schema (summary):
 }
 ```
 
-- Proposal fields beyond title follow `wordflowlab/article-writer`'s selection-first pattern (title / angle / outline sketch / effort estimate, 3–4 candidates per batch), with our effort estimate replaced by evidence density: what the briefings already hold versus how much supplementing a report would need.
-- **Update pass.** After each sync that advances the waterline: deterministic aggregation produces raw signals from the new issue snapshot — cross-issue topic recurrence, emergence/acceleration classification over the time-stamped item corpus (weak-signal detection), frontier-cluster movement, roadmap gaps, and cross-issue contradictions (a new item's `result` or `boundary` conflicting with an earlier issue's claim); a bounded Agent task converts signals into 2–4 phrased proposals, deduplicated against the existing board and novelty-checked against already-published reports. Identity keys must be evidence-supported; a rejected topic that recurs gets a new proposal linked via `recurred_from`, never a silent re-date.
+- Each batch offers 3–4 proposals. The fields beyond the title (angle, outline sketch, evidence density) exist so the user can judge a direction before any writing happens; evidence density states what the briefings already hold versus how much supplementing a report would need.
+- **Update pass.** After each sync that advances the waterline: deterministic aggregation produces raw signals from the new issue snapshot — cross-issue topic recurrence, emergence/acceleration statistics computed directly from the existing `topic_id`, `direction_id`, and `keywords` fields over time, frontier-cluster movement, roadmap gaps, and cross-issue contradictions (a new item's `result` or `boundary` conflicting with an earlier issue's claim); a bounded Agent task converts signals into 2–4 phrased proposals, deduplicated against the existing board and novelty-checked against already-published reports. Identity keys must be evidence-supported; a rejected topic that recurs gets a new proposal linked via `recurred_from`, never a silent re-date.
 - **Asking.** The board tracks pending asks (`status=asked`). Asks surface at two touchpoints: the sync/update handoff in the session where the update ran, and the start of any later session in the insight workspace. There is no outbound push channel (no Feishu, no email); the board page is the always-available self-serve view.
 - **Approval record.** The `events` list is the audit trail. Approve-with-changes records the user's modification notes; rejections may record an optional reason. The board page renders the full history (approved / modified / rejected).
 
 ### Keyword pipeline
 
 1. **Collect** (deterministic). `insight collect --keyword` queries the issue snapshots and knowledge snapshot, and emits `dossier.json`: material grouped by theme and timeline, every item carrying provenance (issue date, item/paper ID, knowledge node).
-2. **Gap analysis** (bounded Agent). Following STORM's multi-perspective pattern: generate several perspectives/questions about the keyword, check dossier coverage per perspective, and write `gaps.json` — unanswered questions, each tied to the themes it belongs to.
+2. **Gap analysis** (bounded Agent). Enumerate the questions a reader of this report would need answered, check dossier coverage per question, and write `gaps.json` — unanswered questions, each tied to the themes it belongs to.
 3. **Supplement** (deterministic fetch + bounded relevance pass). External fetch for declared gaps, reusing the briefing stack's proven fetch patterns (arXiv via requests + Atom Accept transport; web fallback). Bounds (max sources per gap, per run) come from config. Every accepted item is tagged `source_layer=supplement` with stable identity. Automatic; no user gate.
-4. **Draft** (bounded Agent). Outline-first (STORM), then prose. Writes `report.md` from dossier + supplement, separating facts (cited) from interpretation (labeled), citing inline in machine-checkable form (`[issue:2026-09-14#item:...]`, `[supplement:src_id]`, `[knowledge:node_id]`). Cross-issue contradictions found during collection are surfaced explicitly with their resolution status, never smoothed over.
+4. **Draft** (bounded Agent). Outline first, then prose. Writes `report.md` from dossier + supplement, separating facts (cited) from interpretation (labeled), citing inline in machine-checkable form (`[issue:2026-09-14#item:...]`, `[supplement:src_id]`, `[knowledge:node_id]`). Cross-issue contradictions found during collection are surfaced explicitly with their resolution status, never smoothed over.
 5. **Validate** (deterministic). `insight validate` resolves every citation against the two source layers and the knowledge snapshot, flags uncited factual claims and layer violations, and writes `citation-report.json`. Failures loop back to drafting in bounded repair rounds.
 6. **Preview.** The draft renders to a preview page on the insight site; the user reviews there. This is the single user gate.
 7. **Revise & publish.** User feedback drives revision rounds (re-validated each round). On approval: commit `insights/<id>/`, build the report page and update the site index via a deterministic publisher, mark the proposal `published`.
@@ -110,30 +110,14 @@ Schema (summary):
 - The keyword pipeline is a saved ZCode workflow (`insight-report`) taking `keyword` (or `proposal_id`) as an argument, with waves mapping to the steps above.
 - The sync + proposal update pass is a second saved workflow or automation script, runnable on schedule and on demand.
 
-## Related work and borrowed patterns
+## Prior art
 
-Surveyed 2026-10-23 and re-centered after user review: the insight layer's problem is **deep synthesis over an accumulated, structured corpus**, so references were selected for that purpose. Daily aggregation digests were reviewed and excluded (see the end of this section) because they occupy the briefing pipeline's own category and contribute nothing to the insight layer.
+Reviewed 2026-10-23 and 2026-10-26. This section is corroboration, not a dependency: no external code is reused, and because the field moves fast, repository age was checked explicitly (last-push dates as of 2026-10-26).
 
-Corpus-grounded synthesis (closest to the keyword pipeline):
-
-- **IAAR-Shanghai/SurveyX** (github.com/IAAR-Shanghai/SurveyX, ~1.0k stars) and **AutoSurveys/AutoSurvey** (github.com/AutoSurveys/AutoSurvey, ~480 stars) — automatic academic survey generation: structured attribute extraction per paper (SurveyX's AttributeTree), corpus-informed outline, parallel section drafting grounded in retrieved material, then citation verification and rewriting. Borrowed: the outline-from-corpus → section drafting → citation-check loop. Validation: AttributeTree is the same idea as the briefing `issue.json` fields (`core_conclusion / mechanism / result / boundary`), confirming the substrate is already in the right shape for synthesis.
-- **Future-House/paper-qa** (github.com/Future-House/paper-qa, ~9.5k stars; PaperQA2) — agentic literature synthesis with citations: search → gather evidence with per-chunk relevance scoring → answer; plus ContradictionSearch across papers. Borrowed: the bounded, scored gather-evidence loop for dossier assembly, and **cross-issue contradiction detection** as a first-class insight signal — a later issue overturning an earlier claim is prime report material.
-- **stanford-oval/storm** (github.com/stanford-oval/storm, ~31.7k stars) — multi-perspective question asking, outline-first long-form writing with citations. Borrowed: perspectives drive gap analysis; outline precedes prose.
-
-Idea and topic generation from literature (closest to the proposal board):
-
-- **SakanaAI/AI-Scientist** (github.com/SakanaAI/AI-Scientist, ~14.8k stars; v2 ~7.4k) — generates research ideas from literature, checks novelty against published work, and scores ideas (interestingness, feasibility, novelty) through reflection rounds. Borrowed: proposal scoring fields and a **novelty check against already-published insight reports** before a proposal is asked.
-- **JinheonBaek/ResearchAgent** (github.com/JinheonBaek/ResearchAgent, NAACL 2025, ~70 stars) — iterative idea generation over an entity-centric knowledge store, refined by multiple reviewer agents. Borrowed: the knowledge graph (`knowledge/graph.json`) as the entity substrate for proposal signals, and a bounded reviewer pass before proposals reach the board.
-
-Temporal signal detection (deterministic layer under the proposal board):
-
-- **MaartenGr/BERTopic** (github.com/MaartenGr/BERTopic, ~7.9k stars) dynamic topic modeling (`topics_over_time`) and **rte-france/BERTrend** (github.com/rte-france/BERTrend, ~75 stars; arXiv 2411.05930) weak-signal detection — classify topics over time as noise, weak signal, or strong signal by popularity dynamics. Borrowed: an emergence/acceleration classifier over the time-stamped item corpus as a deterministic proposal signal beside recurrence and roadmap gaps.
-
-Interaction shape (self-media category):
-
-- **wordflowlab/article-writer** (github.com/wordflowlab/article-writer, ~290 stars) — selection-first writing: AI proposes 3–4 directions (title, angle, outline, effort), the user picks, then writing proceeds. Borrowed: proposal field shape and the hard user gate at selection; it keeps no topic history, which our approval-record board adds. **ZJU-REAL/Easel** (~4.0k) and **iniwap/AIWriteX** (~2.1k) show the same selection → publish → effect-feedback loop; only the feedback-signal idea is kept for later, and their distribution goals are out of scope.
-
-Reviewed and excluded: daily aggregation digests such as elbruno/weekly-ai-news-digest collect and summarize a day's feeds. That is the briefing pipeline's category, which already exceeds them, and they offer no synthesis pattern. The immutable-snapshot discipline in this design comes from the briefing repository's own evidence model, not from an external reference.
+- **Primary reference: the briefing repository itself.** Task envelopes with schemas and semantic validators, evidence boundaries, the deterministic Evidence Gate, INVALID/repair loops, and ZCode workflow waves are proven across 25 published issues against this exact data and the user's own quality bar. The insight repository copies this architecture; everything below is secondary.
+- **Current paradigm: deep-research agents.** bytedance/deer-flow (84k stars, pushed 2026-10-26), huggingface/smolagents (30k, 2026-10-22), and langchain-ai/open_deep_research (12.7k, 2026-08) share a planner → tool-using researcher → reporter shape with cited output. The insight pipeline has the same shape with the web tools swapped for corpus tools (snapshot queries) plus a bounded external fetch.
+- **Corpus-grounded cited synthesis.** Future-House/paper-qa (9.5k, pushed 2026-10-26) is actively maintained: scored, bounded evidence gathering over a private document set with citations, plus contradiction search across documents. It corroborates the dossier loop and the cross-issue contradiction signal.
+- **Reviewed and set aside as stale.** AutoSurvey (last push 2025-02), ResearchAgent (2025-08), STORM (2025-09), article-writer (2025-11), AI-Scientist (2025-12), SurveyX (2026-01): their multi-stage scaffolds (chunked parallel section writing, simulated multi-perspective dialogue) largely compensated for 2024-era context and coherence limits and are not adopted as design steps. The model-independent invariants they also embody — citation-per-claim verification, novelty bookkeeping against published work, a human selection gate — are stated in this design on its own terms. Topic-modeling tools (BERTopic, BERTrend) are unnecessary here because items already carry `topic_id`, `direction_id`, and `keywords`, so trend statistics are direct counts. Daily aggregation digests (for example elbruno/weekly-ai-news-digest) are the briefing pipeline's own category and were excluded.
 
 ## Compatibility and migration
 
@@ -168,3 +152,4 @@ In the insight repository (when created): its own README, operations doc, and ar
 - 2026-10-23 — User direction: implement as a separate repository because the systems intersect only at published artifacts. Artifact richness verified (`issue.json` structured fact layer; no SQLite dependency). Design updated to the separate-repo topology; this document will move to the new repository as its initial design.
 - 2026-10-23 — Related-work survey completed; borrow list recorded (article-writer, elbruno digest, STORM, gpt-researcher, Easel/AIWriteX) with explicit not-adopted items.
 - 2026-10-23 — Related-work list re-centered after user review: the aggregation digest (elbruno) was a category mismatch and is now listed as excluded; corpus-synthesis (SurveyX/AutoSurvey, PaperQA2), idea-generation (AI-Scientist, ResearchAgent), and temporal weak-signal (BERTopic/BERTrend) references added. Cross-issue contradiction detection, novelty check against published reports, and emergence classification were added to the proposal signals as a result.
+- 2026-10-26 — User challenged reference freshness. Last-push dates checked: six of ten surveyed repositories had not been pushed in 9–20 months, and their multi-stage scaffolds were judged compensations for 2024-era model limits. Prior-art section slimmed to dated corroboration; the briefing repository's own mechanics named as the primary reference; current deep-research agents (deer-flow, smolagents, open_deep_research) added as the paradigm reference; repository attributions removed from design steps; topic-modeling tools dropped in favor of direct statistics over existing fields.
