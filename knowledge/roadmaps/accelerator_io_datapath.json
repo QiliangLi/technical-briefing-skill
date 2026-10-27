@@ -3,8 +3,8 @@
   "topic_id": "accelerator_io_datapath",
   "topic_name": "加速器直连I/O与存储数据路径",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-23",
-  "summary": "加速器I/O数据路径本期只有两条工程成熟度与可观测性信号：SigmaTrace为CPU与GPU发起的RDMA通信提供库无关观测并公开源代码（SC26接收，可见证据无开销与IOPS数字，是否覆盖NVMe-oF类存储访问路径不可判断），KvikIO v26.10.00为远程I/O后端加入GPU侧device buffer、修复multi-poll死锁并新增诊断计数（无量化评测，不涉及cuFile/GDS本地快路径）。当前判断：GPU发起I/O仍处于工具链与软件栈补齐阶段而非性能突破阶段，两分支维持emerging；可把SigmaTrace列为GPU发起I/O实验的候选测量工具、引入前先确认其对RDMA存储访问路径的覆盖，第三方带基线的带宽、时延或CPU占用数据出现才会改变判断。",
+  "updated_by_issue": "2026-10-27",
+  "summary": "加速器I/O数据路径本期主线是控制路径出内核：uGDS把NVMe命令生命周期移入用户空间、数据经P2P DMA直传显存，内核驱动仅做一次性特权初始化，A100上4KiB同步写时延较GDS再低84.1%、LMCache命中时TTFT降62.7%、并发256下KV吞吐50.2对约19 kTokens/s（每句柄仅支持一块本地NVMe，错误恢复与隔离证据薄弱，12.12倍批量增益含GDS首批惩罚，尚属原型）；三星OCP 2026的AiSIO把GPU发起、P2P与CPU发起I/O收敛到统一API，100M IOPS与10倍冷启动为无基线的厂商声称；HotStorage 2026的一亿IOPS海报仅见于会议程序页、arXiv 2610.06622仅抓到题录，机制与结果均不可见。当前判断：GPU发起I/O正从数据面直达推进到控制面出内核，uGDS可试点用于KV缓存或向量检索外置、先评估错误恢复语义并补齐POSIX适配；厂商数字在给出可复现条件前不作为架构决策依据。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -79,6 +79,22 @@
             "https://arxiv.org/abs/2610.24328"
           ],
           "reason": "SigmaTrace面向CPU与GPU发起的RDMA通信提供库无关观测能力并公开源代码，以SC26作者接受稿形式发布；可见证据不含任何开销、时延或IOPS数字，也无法判断是否覆盖NVMe-oF等RDMA存储访问路径，只能作为GPU发起I/O实验的候选测量工具跟踪。"
+        },
+        {
+          "item_id": "fcc0c18d8d6e0695d8d52b2d",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://www.hotstorage.org/2026/program.html"
+          ],
+          "reason": "据发现摘要，HotStorage 2026有一张海报提出把GPU发起的存储I/O推向1亿IOPS；可见证据只有会议程序页且未见该海报条目，1亿IOPS是标题目标值而非实测，无基线与条件，列为观察项、取得原文后再核对（与BaM、GIDS同类跟踪清单）。"
+        },
+        {
+          "item_id": "7185271b4bf979dfc1fcc43c",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.06622"
+          ],
+          "reason": "arXiv预印本2610.06622提出以GPU发起方式处理离散模拟分岔中的低延迟请求与稠密耦合流式传输；证据包只抓到题录页，发现摘要提及的DOCA GPUNetIO与GPU工作队列设计均未经原文核实，可见信息不含存储、NVMe或持久化访问，暂不纳入存储路径观察清单，待摘要或全文出现再确认。"
         }
       ],
       "open_questions": [],
@@ -90,7 +106,9 @@
         "9eaeb8c9af21d31b8c60dfdd",
         "ea689bb652526e0e8a1731e6",
         "155916e55ef052afb120e3fe",
-        "98cb17ffbcfd13c8f4e58ea4"
+        "98cb17ffbcfd13c8f4e58ea4",
+        "fcc0c18d8d6e0695d8d52b2d",
+        "7185271b4bf979dfc1fcc43c"
       ],
       "source_urls": [
         "https://blogs.nvidia.com/blog/ai-storage-fms",
@@ -100,7 +118,9 @@
         "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-2.html",
         "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-1.html",
         "https://developer.nvidia.com/blog/expanding-ai-storage-access-with-nvidia-cuobject-and-the-nvidia-scada-server-sdk",
-        "https://arxiv.org/abs/2610.24328"
+        "https://arxiv.org/abs/2610.24328",
+        "https://www.hotstorage.org/2026/program.html",
+        "https://arxiv.org/abs/2610.06622"
       ]
     },
     {
@@ -143,6 +163,23 @@
             "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00"
           ],
           "reason": "KvikIO v26.10.00修复libcurl multi-poll远程I/O后端的重试缺陷与死锁，新增GPU侧device buffer支持、运行时可调的reactor数与请求上限以及读写统计与诊断计数器；发布说明不附任何量化评测，也不涉及cuFile/GDS本地快路径，属GPU生态远程I/O栈的成熟度信号。"
+        },
+        {
+          "item_id": "ada8f3547af65d6b8dfc29be",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.30868v2",
+            "https://arxiv.org/abs/2610.30868"
+          ],
+          "reason": "uGDS把NVMe命令构建、PRP、BAR0门铃直写与完成队列轮询全部移入用户空间库，内核驱动只做一次性特权初始化，代价是设备脱离内核栈、仅剩裸块设备语义；A100上4KiB同步写时延较GDS低84.1%，LMCache命中时TTFT降62.7%，并发256下KV吞吐50.2对约19 kTokens/s（每句柄仅一块本地NVMe，错误恢复与隔离证据薄弱，12.12倍批量增益含GDS首批惩罚，尚属原型）。"
+        },
+        {
+          "item_id": "f22e0fdf7a5a4d877a23ca9b",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://semiconductor.samsung.com/events/ocp-2026"
+          ],
+          "reason": "三星在OCP 2026演示开源AiSIO：一个公共API同时暴露GPU发起、P2P与CPU发起三类I/O，整合Linux内核上游工作与主流加速器框架；厂商页面宣称借OpenDS达到100M IOPS存储饱和、LLM冷启动加载最快10倍，两项数字均无基线、硬件与I/O大小条件，控制路径与数据复制次数不明，记为未验证声称（全部证据为一份展会演示页）。"
         }
       ],
       "open_questions": [],
@@ -150,13 +187,18 @@
         "dda95f5f23dfe81db0904c32",
         "9492668fe785e6a4c535f9bb",
         "6b1b36b87ef9d28a4e47b854",
-        "6854df1a9e549ad596be6d59"
+        "6854df1a9e549ad596be6d59",
+        "ada8f3547af65d6b8dfc29be",
+        "f22e0fdf7a5a4d877a23ca9b"
       ],
       "source_urls": [
         "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide",
         "https://github.com/NVIDIA/gds-nvidia-fs/releases/tag/v2.30.2",
         "https://docs.nvidia.com/gpudirect-storage/release-notes/index.html",
-        "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00"
+        "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00",
+        "https://arxiv.org/abs/2610.30868v2",
+        "https://arxiv.org/abs/2610.30868",
+        "https://semiconductor.samsung.com/events/ocp-2026"
       ]
     }
   ],
@@ -254,6 +296,19 @@
       "evidence_item_ids": [
         "6854df1a9e549ad596be6d59",
         "98cb17ffbcfd13c8f4e58ea4"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_405899fa50bf518ea2c1",
+      "issue_date": "2026-10-27",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "7185271b4bf979dfc1fcc43c",
+        "ada8f3547af65d6b8dfc29be",
+        "f22e0fdf7a5a4d877a23ca9b",
+        "fcc0c18d8d6e0695d8d52b2d"
       ]
     }
   ]

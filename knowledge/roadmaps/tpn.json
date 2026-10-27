@@ -3,8 +3,8 @@
   "topic_id": "tpn",
   "topic_name": "状态感知网络、TPN",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-23",
-  "summary": "TPN方向本期证据把传输路径与KV体积两个上游杠杆推到前台：HAWK在GPU预填充到NPU解码的RDMA直传中完成布局变换，1280MB传输延迟仅为主机中转的14.7%、与同构GPU直连差不到1%，说明P/D解耦下决定TTFT上限的是传输路径而非解码调度；UlaCache用统一逻辑寻址解耦引擎与物理放置、只传稀疏选择缺失的条目，8×B300解码吞吐为HiSparse的1.73/2.51倍但全部限于节点内；PN-Mix与MLAfication分别以约2.26比特混合精度和MLA转换从源头把KV体积缩到几分之一。当前判断：跨节点KV放置与带宽调度仍是空位，UlaCache给出的节点内上限可作TPN对照基线，HAWK证明布局感知直传是P/D异构选型的可行路径；四条都不感知推理状态、未报告网络利用率与跨节点TTFT，带跨节点带宽与P95数据的实验出现才会升级判断。",
+  "updated_by_issue": "2026-10-27",
+  "summary": "TPN方向本期证据把每次KV交接的固定开销推到中心：InferSlice在英国电信广域网实测单跳WAN的PD解耦，中位TTFT从0.11秒升至4.24秒、P99达19秒且惩罚不随RTT增大，作者归因每请求KV交接的固定开销——先批量化或流水线化交接再谈扩带宽；KVStream把两级存储读取改成完成驱动路由，32B在线平均TTFT从31.1秒降到13.0秒而静态分层对照恶化到122.1秒，证明完成事件而非带宽预测是多路径调度的正确信号（复用集可放进内存时收益消失，2倍写放大）；EdgeFlow按带宽逐层拆分直接传输与激活重算使迁移时间最多降约45%（100Mbps下优势消失）；SARIA在DRAM-SSD分层上叠加GPU入站带宽协调，尾部传输再降11.0%至17.8%（配额须匹配有效路径带宽）。当前判断：跨节点KV放置与带宽调度仍是空位，但节点内与广域证据一致指向调度与交接批量优先于堆带宽；网络侧需联合TTFT与TPOT判别饱和来源，单看利用率不够。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -399,6 +399,30 @@
             "https://arxiv.org/abs/2610.17202v1"
           ],
           "reason": "MLAfication用校准KNorm近似化解QKNorm与MLA矩阵吸收的冲突，仅微调QKV投影与归一化（30B约1.6%参数）并配部分RoPE与KV初始化；Qwen3-30B-A3B在16K并发256下FP8 MLA-128吞吐为GQA的5.35倍，KV省68.75%时均分64.65对删KNorm的61.23（服务评估为单卡TP=1，无跨机通信与TTFT/TPOT数据，昇腾基准仅用假权重）。"
+        },
+        {
+          "item_id": "5a66740e74019b21af6ba874",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.31827v1"
+          ],
+          "reason": "KVStream把跨NVMe与并行文件系统的KV读取改成完成驱动调度：每步读取成批发起、写回滞后于前向计算，每个数据块在两层各存一份、先空闲的层立即认领下一批未读块，路由只依据完成事件；70B离线吞吐47210 tok/s为LMCache的1.48倍，32B在线平均TTFT从31.1秒降到13.0秒而静态分层对照恶化到122.1秒（复用集可放进主机内存时收益消失，全量复制带来2倍写放大，未报告TPOT与尾部分位；调度的是节点存储I/O而非跨节点KV网络传输）。"
+        },
+        {
+          "item_id": "c184313e0ada70903e6ca530",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.22172v1"
+          ],
+          "reason": "EdgeFlow面向地理分布式边缘推理的KVCache迁移：KVCache可从各层更小的中间激活重算得到，据此逐层决定重算与直传比例并让计算与通信重叠，再用2近似算法联合选择迁移目标节点；500Mbps实测平台上迁移时间较直接传输最多降约45%，50个候选节点决策仅3.22秒对暴力搜索325分钟（缺TTFT/TPOT等端到端指标，100Mbps低带宽下优势基本消失）。"
+        },
+        {
+          "item_id": "4b5ef51f782ab2b0cd6102cd",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.31169v1"
+          ],
+          "reason": "SARIA面向代理长前缀重用的SSD扩展：按DRAM驱逐与复用历史决定哪些KV块写SSD（全量双写按推算每天每GPU约103.7TB），SSD命中后延迟部分晋升，协调器为GDS直读与DRAM读取分配GPU入站带宽；平均TTFT较串行基线降5.8%至6.4%，加协调器后尾部传输再降11.0%至17.8%，SSD写入较全量双写少57.1%至58.9%（仅单机DRAM-SSD路径，无TPOT与跨节点结果，双SSD配额失配时协调劣化15.8%）。"
         }
       ],
       "open_questions": [],
@@ -450,7 +474,10 @@
         "ebf6b432d7bc1f46f801440c",
         "4556110b217a4d31038037df",
         "85443a3362697092e4d35380",
-        "17bc8acd678fb63dbfcf7ac9"
+        "17bc8acd678fb63dbfcf7ac9",
+        "5a66740e74019b21af6ba874",
+        "c184313e0ada70903e6ca530",
+        "4b5ef51f782ab2b0cd6102cd"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.07207v1",
@@ -497,7 +524,10 @@
         "https://arxiv.org/abs/2610.16165v1",
         "https://arxiv.org/abs/2610.29820v1",
         "https://arxiv.org/abs/2610.19605v1",
-        "https://arxiv.org/abs/2610.17202v1"
+        "https://arxiv.org/abs/2610.17202v1",
+        "https://arxiv.org/abs/2610.31827v1",
+        "https://arxiv.org/abs/2610.22172v1",
+        "https://arxiv.org/abs/2610.31169v1"
       ]
     },
     {
@@ -793,6 +823,14 @@
             "https://arxiv.org/abs/2610.29873v1"
           ],
           "reason": "HAWK基于Mooncake打通GPU预填充到NPU解码的RDMA直传，在传输中完成布局变换以匹配NPU并在NPU端预留布局感知缓冲；1280MB传输时GN-HAWK延迟约为主机中转的14.7%、与GPU直连差不到1%，90% SLO达成时请求速率至多低7.69%、成本效率最高1.72倍（仅Tenstorrent p150a与Llama 3.1 70B单实例，不感知推理状态，网络利用率未报）。"
+        },
+        {
+          "item_id": "d113056eb7031993bac2c113",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.32638v1"
+          ],
+          "reason": "InferSlice整合电信网络切片、GPU分片与并行权重加载，在英国国家级电信广域网实测：9毫秒RTT下单跳WAN做PD解耦使中位TTFT从0.11秒升至4.24秒、P99达19秒、吞吐406降至297 token/s，惩罚不随RTT增大，作者归因每请求KV交接的固定开销；控制面联合解读TTFT、TPOT与链路吞吐区分排队饱和与网络饱和（仅覆盖短生命周期无状态ShareGPT请求与同构L40S池）。"
         }
       ],
       "open_questions": [],
@@ -811,7 +849,8 @@
         "b1f5b508fa5a63afc625eb4c",
         "0e9ca85cd1bb3307fb817e90",
         "569cec2dda1e60660b7d84ed",
-        "14f554896a5602f09d452905"
+        "14f554896a5602f09d452905",
+        "d113056eb7031993bac2c113"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.18002v2",
@@ -828,7 +867,8 @@
         "https://arxiv.org/abs/2609.35158v1",
         "https://arxiv.org/abs/2609.39138v1",
         "https://arxiv.org/abs/2610.16592v1",
-        "https://arxiv.org/abs/2610.29873v1"
+        "https://arxiv.org/abs/2610.29873v1",
+        "https://arxiv.org/abs/2610.32638v1"
       ]
     },
     {
@@ -1157,6 +1197,19 @@
         "17bc8acd678fb63dbfcf7ac9",
         "4556110b217a4d31038037df",
         "85443a3362697092e4d35380"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_0e7484d0a848762453f9",
+      "issue_date": "2026-10-27",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "4b5ef51f782ab2b0cd6102cd",
+        "5a66740e74019b21af6ba874",
+        "c184313e0ada70903e6ca530",
+        "d113056eb7031993bac2c113"
       ]
     }
   ]

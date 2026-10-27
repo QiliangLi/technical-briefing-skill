@@ -3,8 +3,8 @@
   "topic_id": "kv_management",
   "topic_name": "KVCache管理与复用",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-23",
-  "summary": "KVCache管理本期证据集中在驱逐与预算分配的细粒度化：AKV让长程Agent以drop/repos直接管理活跃KVCache并用radix tree的drop节点按操作历史区分缓存版本，三模型×四Agent基准平均成本降27.7%且精度不降；MOSAIC离线搜索逐层预算在154个设置中146个胜过统一分配、同分数最多省75%缓存；LORE-KV用采样的未来查询估计删除代价，紧预算下领先但预算放宽到1024时优势几乎消失；MaskAhead用未来掩码探针为块扩散模型做不可逆驱逐换取平均9.5倍压缩。当前判断：前缀缓存引擎应把操作历史纳入缓存键，驱逐与分层策略应增加层维度和响应侧信号，紧预算下收益最大而宽预算下各方法趋同；四条证据均无命中率、TTFT或GPU/CPU/SSD分层实测，不能据此外推延迟收益，带分层存储与TTFT的实验出现才会改变判断。",
+  "updated_by_issue": "2026-10-27",
+  "summary": "KVCache管理本期证据从细粒度化转向默认化与正确性：vLLM v0.32.0把FP8等低精度KVCache按架构设为默认，SM100上每rank KV显存减半、吞吐增2.3至5.5%但TTFT增7至11%（数字全部来自PR基准且无方法学，58%的HiSparse增益未说明基线）；Vosti用Verus形式化证明调度与分页前缀共享KVCache保持输出比特级一致，七个模型5488次logit比对全部一致、H200解码吞吐为vLLM不变模式的1.36至3.19倍（只证明确定性而非功能正确性，仅单GPU）；Universal Attention以可训练衰减门做逐token自剪枝，约7至21倍缓存缩减换不到1分损失但属架构级方案；S3R用KV感知调度把RL rollout中GPU与CPU间重复搬运页从5.362M降到0.144M。当前判断：低精度KV是升级即得的显存换时延杠杆、Vosti的页级不变式与精确前缀校验应作为改分页或驱逐逻辑的回归门，两者立即可用；架构级自剪枝不能用于存量服务，AIMD式KV感知调度可迁移到rollout引擎；实际收益需自测命中率与端到端指标。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -183,6 +183,22 @@
             "https://arxiv.org/abs/2610.16144v1"
           ],
           "reason": "2026-10-21 已发布日报收录：LLM服务栈用四种专用结构分别处理编辑、分支、前缀复用与重复段,跨机制内容同一性查询退化为线性扫描,Hashrope用一个持久化哈希rope统一四种机制:字节串表示为不可变二叉树,节点分叶子、拼接与重复三类并各带子树多项式哈希,编辑和内容同一性查询均为对数级,分支共享不可变脊柱;对比复刻的PagedAttention写时复制块表,块大小16、百万token时分支创建快97.4倍,5个分支元数据压缩306倍,交叉点在16K token;优势仅限长共享前缀,真实多轮流中位前缀约642 token时radix树快数百倍,端到端延迟未测；按分页与块管理分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "dfdc97891d87a34b6d9b4a17",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.38981v1"
+          ],
+          "reason": "Vosti把确定性推理形式化并用Verus证明调度与分页前缀共享KVCache输出比特级一致：内核特化绑定为不可变配置，页复用先经滚动哈希候选再加精确token、前缀深度与物理父页校验，驱逐只回收无引用叶子页；七个模型5488次logit比对全部一致，H200解码吞吐为vLLM不变模式的1.36至3.19倍（证明只覆盖确定性而非功能正确性，仅单GPU，预填充吞吐更低）。"
+        },
+        {
+          "item_id": "03ef64972818234359298513",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://github.com/vllm-project/vllm/releases/tag/v0.32.0"
+          ],
+          "reason": "vLLM v0.32.0将FP8等低精度KVCache按架构设为默认（SM100上GLM-5.x用FP8、NVFP4覆盖多代架构），并改进块释放队列与前缀缓存正确性、清除过期前缀块哈希；PR基准称SM100上每rank KV显存减半、吞吐增2.3至5.5%、TTFT增7至11%，B200上HiSparse长上下文吞吐至多增58%（全部为PR基准，58%未说明基线，无命中率或利用率实测）。"
         }
       ],
       "open_questions": [],
@@ -190,13 +206,17 @@
         "0323b177a35ce3e649adf16c",
         "7c7c9ee1f42e2759ca57776d",
         "ac5e43456730856b45a55c92",
-        "c9dabd5a5896d7fa5c997bec"
+        "c9dabd5a5896d7fa5c997bec",
+        "dfdc97891d87a34b6d9b4a17",
+        "03ef64972818234359298513"
       ],
       "source_urls": [
         "https://github.com/vllm-project/vllm/releases/tag/v0.28.0",
         "https://arxiv.org/abs/2609.34380v1",
         "https://github.com/vllm-project/vllm/releases/tag/v0.31.0",
-        "https://arxiv.org/abs/2610.16144v1"
+        "https://arxiv.org/abs/2610.16144v1",
+        "https://arxiv.org/abs/2609.38981v1",
+        "https://github.com/vllm-project/vllm/releases/tag/v0.32.0"
       ]
     },
     {
@@ -351,6 +371,22 @@
             "https://arxiv.org/abs/2610.06996v1"
           ],
           "reason": "MaskAhead用当前块掩码为去噪读取排序、用未来掩码块的探针查询为保留集排序，并在检查点物理删除条目，为块扩散语言模型实现免训练的不可逆KV驱逐；均值1.2分F1损失换取平均9.5倍KV压缩，固定输出实验中批32吞吐由55.6升至68.2 token/s、驻留KV由28.4降至4.2GiB（面向块扩散模型而非自回归服务，GPU与模型规模未披露）。"
+        },
+        {
+          "item_id": "6781d10382738565515010ba",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.09051v1"
+          ],
+          "reason": "Universal Attention用query感知、key感知、key相似度与门控注意力复合的可训练衰减门同时驱动注意力与逐token驱逐，保留RoPE与softmax；1B模型RULER 4k上p=0.05得50.3分/21.4MB对未剪枝40.8分/143.7MB，p=0.15在16k平均压缩21.4倍且降幅小于1分（聚合任务明显偏弱，最佳效果需从头训练，尚无推理优化的缓存管理器）。"
+        },
+        {
+          "item_id": "e4713bb91707e4da8632575b",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.13202v1"
+          ],
+          "reason": "S3R对长上下文RL rollout（注意力占解码kernel时间72至76%）用自稀疏投机解码起草、全注意力验证保持策略分布，调度器按KV占用与卸载积压调节offload；Qwen3-1.7B/8B较自回归吞吐1.39/1.35倍且pass@1持平，无调度时KV重建与搬运页达5.362M/2.024M、调度器降至0.144M（验证仍需完整历史KV，硬件与KV消融数值未公开，结论限于RL负载）。"
         }
       ],
       "open_questions": [],
@@ -372,7 +408,9 @@
         "51b028770810a93bcda12391",
         "86c0149adfbdd159a26d13ec",
         "757775758481577d00f2fdfb",
-        "afa9bbe36d6238053583a937"
+        "afa9bbe36d6238053583a937",
+        "6781d10382738565515010ba",
+        "e4713bb91707e4da8632575b"
       ],
       "source_urls": [
         "https://github.com/sgl-project/sglang/releases/tag/v0.5.17",
@@ -392,7 +430,9 @@
         "https://arxiv.org/abs/2610.28577v1",
         "https://arxiv.org/abs/2610.25431v1",
         "https://arxiv.org/abs/2610.07643v2",
-        "https://arxiv.org/abs/2610.06996v1"
+        "https://arxiv.org/abs/2610.06996v1",
+        "https://arxiv.org/abs/2610.09051v1",
+        "https://arxiv.org/abs/2610.13202v1"
       ]
     }
   ],
@@ -521,6 +561,19 @@
         "757775758481577d00f2fdfb",
         "86c0149adfbdd159a26d13ec",
         "afa9bbe36d6238053583a937"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_d5fcf05405bb56f546f2",
+      "issue_date": "2026-10-27",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "03ef64972818234359298513",
+        "6781d10382738565515010ba",
+        "dfdc97891d87a34b6d9b4a17",
+        "e4713bb91707e4da8632575b"
       ]
     }
   ]

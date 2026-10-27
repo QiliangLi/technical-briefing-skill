@@ -3,8 +3,8 @@
   "topic_id": "agent_acceleration",
   "topic_name": "Agent语义加速",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-23",
-  "summary": "Agent加速本期证据把瓶颈从模型能力移到Harness与工具执行边界：RiseHarness固定模型权重、用重复运行的成败证据迭代改进Harness并以完整复评超基线作验收门，两个模型各自Harness互换后损失约2.3至9.0个百分点；生产SQL客户端agent模式8199次实测显示多数损失发生在模型与服务器的传输边界，仅改服务器端就让六个模型成功率明显移动；APEXA用服务器侧确定性工具层把伪造执行结果从15/200降到0/200；VibeMemBench则显示现成记忆系统经检索在12组配对中11组低于无记忆基线，省步数不等于更高解决率。当前判断：Harness与工具层应优先引入与模型无关的确定性验收门（执行完整性守卫、完整重复评估超基线才采纳），记忆与经验复用在没有验收门前不应默认开启；上述结论多来自单harness或自建基准且未报告token与时延成本，能否在代码Agent上复现是升级判断的关键观察。",
+  "updated_by_issue": "2026-10-27",
+  "summary": "Agent加速本期四条核心证据同属确定性护栏下的复用与拦截：HarnessMM把已定工具决策存为可执行决策图、回执后直接激活执行而不再回调推理，HumanEval上DeepSeek成功率71.43%升至85.71%且token降87.93%、Codex成功率持平而token仅降29.54%——弱模型获益更大（消融中禁用决策图执行多解4题，仅覆盖短编码任务）；StateMirror在执行前从命令、工具参数和AST提取谓词做只读探测，拦截引用缺失模块或路径的幻觉调用，F1为0.817且干预比报告模式省15.8%时间、解决数不变（仅静态可检查错误）；TomasuLLM用写时复制沙箱乱序执行预测动作、按轨迹序提交验证，提速1.27至1.35倍且4010条提交零误收（换取单会话时延而非吞吐，亚秒级调用不划算）；SPECMEM以按用户在线更新的调用记忆做投机草稿，解码加速最高1.74倍、副作用门控把错误不可逆执行降为零，但预热覆盖全部任务时增益缩至约2%——静态缓存随任务漂移失效。当前判断：与上期一致且更强，省的是可预知的工作、成立靠不耗推理的确定性护栏，在线写回与回退路径是复用机制标配；结构化原语的收益按模型能力分层。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -649,6 +649,30 @@
             "https://arxiv.org/abs/2609.24165v1"
           ],
           "reason": "APEXA在服务器侧以确定性工具层拦截被LLM网关静默丢弃调用后伪造的执行结果：执行完整性守卫拒绝无已执行调用支撑的输出并强制重试，配合容忍格式漂移的解析器与预检；50场景×4模型的仿真电机控制对抗测试中工具层0/200违规、纯提示词基线15/200（单顺序推理循环，无任务成功率、时延与token数据）。"
+        },
+        {
+          "item_id": "b0a90c9277ec0898cbdeec8e",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.32648v1"
+          ],
+          "reason": "StateMirror在harness边界拦截动作，从命令、工具参数和Python AST提取谓词并用只读探测对照仓库核验，仅确认不成立者判为幻觉且不耗token；2508个失败轨迹动作上F1为0.817、相对F1超最强LLM裁判35.3%，79个受影响SWE-agent任务干预比报告模式省15.8%时间、解决数不变（仅覆盖静态可检查错误，验证基于Python缺陷修复任务）。"
+        },
+        {
+          "item_id": "351c7f6d00a6e5ce7d777960",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.38201v2"
+          ],
+          "reason": "TomasuLLM让小模型起草动作并预测观察、在写时复制沙箱中提前执行，结果按轨迹序对照已提交状态通过提交验证后才发布、失配仅废弃投机部分；三个基准较串行基线提速1.27至1.35倍，4010条提交验证记录零误收，SWE-bench Verified解决率41.7%与基线持平（换取单会话时延而非吞吐效率，亚秒级工具调用节省不足以覆盖准备开销，仅实测8个沙箱槽位）。"
+        },
+        {
+          "item_id": "0f8f0782f43e62451d8d7661",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.31840v1"
+          ],
+          "reason": "SPECMEM每用户维护容量48的LRU调用存储，检索取最近邻作投机草稿、验证通过后写回记忆，对声明不可逆副作用的调用在验证完成前推迟执行；多会话评测预热后平均接受token数较冻结存储基线在BFCL提升27%、Seal-Tools提升34%，解码加速最高1.74倍，副作用门控在模拟中把错误不可逆执行降为零（重复行为由基准模拟生成，预热覆盖全部任务时增益缩至约2%，未在代码Agent轨迹上验证）。"
         }
       ],
       "open_questions": [],
@@ -691,7 +715,10 @@
         "6cf909072f3730d3475ebdba",
         "bddacda18f4e9138253ce786",
         "97fde1681974bb57a0c40227",
-        "bfaa2e873b5783c236c7c8c4"
+        "bfaa2e873b5783c236c7c8c4",
+        "b0a90c9277ec0898cbdeec8e",
+        "351c7f6d00a6e5ce7d777960",
+        "0f8f0782f43e62451d8d7661"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.18366v1",
@@ -732,7 +759,10 @@
         "https://arxiv.org/abs/2610.24871v1",
         "https://arxiv.org/abs/2608.24957v1",
         "https://arxiv.org/abs/2609.21341v1",
-        "https://arxiv.org/abs/2609.24165v1"
+        "https://arxiv.org/abs/2609.24165v1",
+        "https://arxiv.org/abs/2610.32648v1",
+        "https://arxiv.org/abs/2609.38201v2",
+        "https://arxiv.org/abs/2610.31840v1"
       ]
     },
     {
@@ -962,6 +992,14 @@
             "https://arxiv.org/abs/2610.27435v1"
           ],
           "reason": "RiseHarness固定模型权重，记录智能体轨迹与运行时监控轨迹定位同配置下成败并存的翻转任务，生成Harness改进提案并要求完整评估且通过率超基线才采纳；两个模型用各自Harness在两个基准的Pass@1与Pass^4上均优于换用对方Harness，互换损失约2.3至9.0个百分点（主结果表不可见，改进循环的token与时延成本未报告）。"
+        },
+        {
+          "item_id": "169359f8c50fb8c845c18ce0",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.32813v1"
+          ],
+          "reason": "HarnessMM把精确动作、参数与因果依赖存为可执行决策图，依据工具回执激活持久决策、经原生接口执行并移除已注册慢回调，新语义或证据不足时回退原模型；HumanEval上DeepSeek成功率71.43%升至85.71%、token降87.93%，Codex成功率持平而token降29.54%（token节省不等于时延或能耗节省，消融中禁用决策图执行多解4题，主结果仅覆盖短编码任务）。"
         }
       ],
       "evidence_item_ids": [
@@ -991,7 +1029,8 @@
         "f849dda8a030cc881321240a",
         "dc379fc8915c1ed18614168b",
         "471ecd8e04c9286e4e812afa",
-        "d8a6dfbb0135fb04f3d15ed5"
+        "d8a6dfbb0135fb04f3d15ed5",
+        "169359f8c50fb8c845c18ce0"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2608.17528",
@@ -1020,7 +1059,8 @@
         "https://arxiv.org/abs/2609.37834v1",
         "https://arxiv.org/abs/2608.29615v1",
         "https://arxiv.org/abs/2608.23848v1",
-        "https://arxiv.org/abs/2610.27435v1"
+        "https://arxiv.org/abs/2610.27435v1",
+        "https://arxiv.org/abs/2610.32813v1"
       ]
     }
   ],
@@ -1315,6 +1355,19 @@
         "97fde1681974bb57a0c40227",
         "bfaa2e873b5783c236c7c8c4",
         "d8a6dfbb0135fb04f3d15ed5"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_0a889e08a642da6ea7b2",
+      "issue_date": "2026-10-27",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "0f8f0782f43e62451d8d7661",
+        "169359f8c50fb8c845c18ce0",
+        "351c7f6d00a6e5ce7d777960",
+        "b0a90c9277ec0898cbdeec8e"
       ]
     }
   ]

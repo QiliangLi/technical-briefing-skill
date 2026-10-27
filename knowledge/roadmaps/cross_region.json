@@ -3,8 +3,8 @@
   "topic_id": "cross_region",
   "topic_name": "跨域传输",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-23",
-  "summary": "跨域传输本期四条证据全部是传输侧的上游体积杠杆而非传输机制本身：RACE把KV头维度压缩折叠进模型权重免重建，50%保留下总FLOPs降47.75%、TTFT降43.22%；ReTrace用休眠缓存加回溯注入把单图视觉KV缩至约八分之一；CALM与ChampionKV分别用离线校准的逐层逐头配额和注意力集中度代理做预算分配，同预算下质量优于均匀分配且可插入现有压缩器。当前判断：若跨域搬运KV，可传输体积有一半到八分之一的缩减空间，休眠—恢复与校准配额图可借鉴为分层放置与预取时机的设计原型；但四条均为单卡实验、无WAN RTT、增量更新或一致性数据，校准映射还绑定模型与算子、跨站点复用要求同构集群，带广域网成本的实验出现才会改变判断。",
+  "updated_by_issue": "2026-10-27",
+  "summary": "跨域传输本期证据从KV体积杠杆转向Agent状态与潜层通信：J-Comm把发送方潜层推理编码为定长消息、接收方在自身词表与宽度下重建，KV缓存各留本地即实现异构模型复用中间计算，七项基准全部高于文本转述基线1.29至8.59个百分点、生成token减19.2%至74.8%（只报准确率与token数，无字节、带宽与时延数据）；CARE用轻量批评者按置信度在本地与云端间切换控制权，共享交接记忆只存已验证状态，去掉后恢复成功率从100%降至25%（全部仿真基准）；RIFT揭示草稿KV压缩的解码陈旧性——prefill式一次选择随生成推进失效，滑窗加周期重打分把接受长度从4.07提到6.19；记忆价值框架给出避免的任务损失口径，3.8KB账本加4KB有界检索F1为0.329胜97KB完整历史的0.123。当前判断：跨域复用最该优先传输已验证进展与潜层摘要而非原始轨迹或全量KV，有界状态常优于全量历史；但本期四条均无WAN成本数据，传输体积收益不能据此外推。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -327,6 +327,30 @@
             "https://arxiv.org/abs/2610.19801v1"
           ],
           "reason": "2026-10-21 已发布日报收录：代理每轮重发全文,模型侧KV缓存已复用前缀而CPU分词从头编码拉长TTFT,Delta Tokenizer只编码会话增量:保留上一轮token序列,只编码追加文本及受影响尾部,在分词器切分规则无法移动的拼接点连接新旧片段,校验保证结果与参考分词完全一致;SGLang中Qwen3-8B的10万token暖轮次TTFT中位数由136.8毫秒降至53.7毫秒,P99由158.5降至75.0毫秒;收益依赖会话状态,分词非瓶颈时消失,8K token时TTFT不变,且为单节点CPU方案不涉跨域,作agent_cache方向按增量而非全量重算的对照条目；按Agent Cache分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "d571ce30e203570a27a3df60",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.32871v1"
+          ],
+          "reason": "J-Comm以GEAR按几何一致性对候选嵌入加权并保留残差，H通道映射为接收方期望嵌入、J通道只传32个token与带符号读数，接收方在prefill注入残差，KV缓存各留本地；Qwen3-8B到4B上七项基准全部高于TextMAS，分数提升1.29至8.59个百分点、生成token减19.2%至74.8%，跨家族GPQA仍有效（只报准确率与token数，缺字节、带宽与时延，不能判断广域成本）。"
+        },
+        {
+          "item_id": "e1332ce77a7972a82983eea5",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.30587v1"
+          ],
+          "reason": "CARE用轻量批评者每k步评估本地动作置信度并触发持续的升降级，共享交接记忆由控制器持有、只存已验证状态且更新不加模型调用；三个基准成功率92.5/75.0/87.5%较最强协作基线高6.3至18.3个百分点，去掉共享交接记忆后恢复成功率从100%降至25%（全部来自仿真基准，未测网络波动与真实机器人，未报记忆传输字节数）。"
+        },
+        {
+          "item_id": "98dad7f3b86b8ffa68abb37d",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.31303v1"
+          ],
+          "reason": "该工作把记忆价值定义为避免的任务损失，区分原始价值、存储损失与实现遗憾，并以固定信息时机、接口与损失的对照合同约束跨实现比较；固定读取器诊断中3.8KB账本加4KB有界检索达F1 0.329，97KB完整历史仅0.123且10/12弃答，BM25检索从0.280升至0.329（单模型12个问题的单读取器设置，无跨域传输指标）。"
         }
       ],
       "open_questions": [],
@@ -369,7 +393,10 @@
         "32e008244e07d33d6e87c527",
         "83f93a7d55afe30d64878caa",
         "34cdffbf507f9b88369b2324",
-        "8406b261bfbe6706d8e9f3dd"
+        "8406b261bfbe6706d8e9f3dd",
+        "d571ce30e203570a27a3df60",
+        "e1332ce77a7972a82983eea5",
+        "98dad7f3b86b8ffa68abb37d"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.19214v2",
@@ -409,7 +436,10 @@
         "https://arxiv.org/abs/2609.09774v1",
         "https://arxiv.org/abs/2610.15991v1",
         "https://arxiv.org/abs/2610.19822v1",
-        "https://arxiv.org/abs/2610.19801v1"
+        "https://arxiv.org/abs/2610.19801v1",
+        "https://arxiv.org/abs/2610.32871v1",
+        "https://arxiv.org/abs/2610.30587v1",
+        "https://arxiv.org/abs/2610.31303v1"
       ]
     },
     {
@@ -784,6 +814,14 @@
             "https://arxiv.org/abs/2610.18026v1"
           ],
           "reason": "ChampionKV以最大聚合观测注意力分作集中度代理，用inverse-max加权把大预算分给分散头，预填充期一次计算、可插入SnapKV等压缩器且不改token选择；Llama3.1-70B LongBench上Champion-Snap四档预算均超SnapKV，2048时48.14胜未压缩47.92（单节点显存压缩，无跨域传输或P95证据，增益集中紧预算且7B/8B上不显著）。"
+        },
+        {
+          "item_id": "3c3e86051292597ca10a411b",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.31098v1"
+          ],
+          "reason": "RIFT指出草稿KV缓存若只按prefill重要性一次选择会随生成推进失效：给定预算内为最近token保留滑窗份额、其余按注意力重要性分配，动态变体按周期或自适应信号重打分刷新并配压缩感知蒸馏；Qwen3.5-4B到122B、32K输入、8K预算下接受长度SnapKV 4.07对RIFT-ada6.19，刷新投影开销约草稿解码时间的0.1%至6%（单机GPU测量，无WAN数据，开销为投影值）。"
         }
       ],
       "open_questions": [],
@@ -828,7 +866,8 @@
         "25984365221418728b500261",
         "56e3de83eb972fb59b1861bb",
         "e6bfafc4de6f0742034d4684",
-        "379f9edf5678a85cd23761fa"
+        "379f9edf5678a85cd23761fa",
+        "3c3e86051292597ca10a411b"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.06601v1",
@@ -870,7 +909,8 @@
         "https://arxiv.org/abs/2610.28385v1",
         "https://arxiv.org/abs/2610.25005v1",
         "https://arxiv.org/abs/2610.28192v1",
-        "https://arxiv.org/abs/2610.18026v1"
+        "https://arxiv.org/abs/2610.18026v1",
+        "https://arxiv.org/abs/2610.31098v1"
       ]
     }
   ],
@@ -1139,6 +1179,19 @@
         "379f9edf5678a85cd23761fa",
         "56e3de83eb972fb59b1861bb",
         "e6bfafc4de6f0742034d4684"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_2652bfceef7325b96f6d",
+      "issue_date": "2026-10-27",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "3c3e86051292597ca10a411b",
+        "98dad7f3b86b8ffa68abb37d",
+        "d571ce30e203570a27a3df60",
+        "e1332ce77a7972a82983eea5"
       ]
     }
   ]

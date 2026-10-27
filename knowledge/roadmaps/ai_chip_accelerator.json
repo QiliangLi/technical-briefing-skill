@@ -3,8 +3,8 @@
   "topic_id": "ai_chip_accelerator",
   "topic_name": "AI芯片与加速器",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-23",
-  "summary": "AI芯片本期四条证据指向同一结论——加速器的可用算力由软件栈与格式选择而非标称峰值决定：三代GPU约22万个实测配置显示2:4稀疏只有叠加在FP8等量化地板格式上才兑现1.33至1.65倍核加速，地板之上全面落败且vLLM已移除支持；TrainBridge把GPU编译产物的优化意图迁移为昇腾NPU重写后NanoGPT平均提速1.95倍、NPU/GPU耗时比从4.0降到2.0，说明NPU低效相当程度源于编译栈；FlashNext-RL靠内存规划与sm100特化内核把单节点B200的智能体RL吞吐提升逾11倍但瓶颈仍在生成端；Ozaki方案II用INT8引擎模拟FP64达原生12至28倍。当前判断：评估GPU/NPU选型应以优化后端到端时长而非TOPS峰值为准，推理选型先量化到地板格式再考虑结构化稀疏；四条均为单节点或单板预印本结果，多节点与同行评审数据出现才会升级判断。",
+  "updated_by_issue": "2026-10-27",
+  "summary": "AI芯片本期证据延续可用算力由软件栈与格式选择决定的判断并落到算子与接口层：MoESQ联合训练4:8稀疏支撑与NVFP4量化并配原生稀疏GEMM内核，单卡B200内核较稠密NVFP4提速1.11至1.76倍、Kimi-K2.5精度保留96.09%（4.03倍端到端对比的是较慢INT4基线，能耗与吞吐分属B300和B200）；CompactInst以屋顶线加DRAM计数器实测证明查询式分割解码器在边缘GPU受跨内核激活流量而非FLOPs限制，4×token池化削减64%解码器DRAM字节（DRAM字节仅A4000实测）；SyclKittens把Intel GPU架构经验编成tile接口，同一编码智能体的单卡GEMM从oneDNN的57.5%提到82.1%、工程师协作后27形状达约96%；华为CANNBot-CAKE把算子请求自动化为可部署CANN自定义算子，53个标准集算子100%通过、平均加速1.334倍（对比基线未见定义）。当前判断：接口与算子生态决定算力兑现，评估加速器引用内核峰值时必须核对基线、调优条件与实测带宽。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -495,6 +495,38 @@
             "https://arxiv.org/abs/2610.29171v1"
           ],
           "reason": "TrainBridge用两阶段智能体对比GPU eager与编译后IR差异抽取优化意图、定位昇腾NPU对应低效点生成语义保持重写，再迭代剖析NPU残余瓶颈；Ascend 910C上27条NanoGPT记录平均提速1.95倍、NPU/GPU耗时比从4.0降至2.0，另四个负载提速1.25至2.22倍（仅单节点，需成熟GPU编译栈，优化后NPU仍慢于GPU参考1.5至2.0倍）。"
+        },
+        {
+          "item_id": "7135a64400c9d38f2c5b28cb",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.02241v1"
+          ],
+          "reason": "MoESQ把4:8稀疏支撑选择经重参数化与NVFP4量化值在路由加权重构目标下联合可微优化，定制内核在第五代稀疏张量核上执行变长专家的分组稀疏GEMM；单卡B200内核较稠密NVFP4提速1.11至1.76倍，8卡B200预填充较同精度基线快1.18至1.25倍，Kimi-K2.5精度保留96.09%（预印本，4.03倍端到端对比较慢INT4基线，能耗与吞吐分属B300和B200）。"
+        },
+        {
+          "item_id": "cd7146987792b8c9659d058e",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.22377v1"
+          ],
+          "reason": "以FP16屋顶线加硬件DRAM计数器实测查询式分割解码器：瓶颈是跨内核激活流量而非算力，CompactInst把解码器前像素特征从1/8池化到1/16减少4×token、解码器后用精细化头恢复；解码器DRAM字节较FastInst从5.74GB降至2.09GB（A4000），Orin Nano上模型加速最高2.62倍、COCO精度负0.4 AP（DRAM字节仅A4000实测，无功耗数据，后处理瓶颈未处理）。"
+        },
+        {
+          "item_id": "205c28f116281ec06ffdb6ac",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.04277v1"
+          ],
+          "reason": "SyclKittens把Intel GPU已知良法编成tile接口：寄存器tile映射XMX原生宽度并融合硬件打包、线程组分区协同预取L1、跨package经XeLink取一次；裸SYCL下编码智能体单卡GEMM仅达oneDNN的57.5%，用tile接口后达82.1%，工程师协作后27个GEMM形状达约96%且27/27胜Triton-XPU，Llama-3.1-8B解码32K上下文最高2.91倍于oneCCL（无功耗数据，仅覆盖推理，256K点是容量结果且用了更多GPU）。"
+        },
+        {
+          "item_id": "c2446ffe35cd7c1110ea257f",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.31034v1"
+          ],
+          "reason": "华为开源CANNBot-CAKE：算子请求编译为单一契约、多DSL路由器选路，产出host侧tiling与device侧AscendC，打包安装后按真机计时与roofline修复；已发表评测显示通用模型写复杂AscendC核一次通过率不超过2.1%（CUDA为44.2%至52.6%），CAKE在Ascend 950PR上53个CANN-Bench标准集算子100%通过、隐藏集98.28%、平均加速1.334倍（聚合基线与评分公式未公开，案例计时在910B2/910C，无模型级与能效数据）。"
         }
       ],
       "open_questions": [],
@@ -558,7 +590,11 @@
         "0bc0413579c8b51e6e000a2b",
         "e2a6a174f52647117cbf7ea9",
         "7a0311b21563a7eb1bfeb908",
-        "92b5f6640589c7fb2e6b086f"
+        "92b5f6640589c7fb2e6b086f",
+        "7135a64400c9d38f2c5b28cb",
+        "cd7146987792b8c9659d058e",
+        "205c28f116281ec06ffdb6ac",
+        "c2446ffe35cd7c1110ea257f"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.09385v1",
@@ -619,7 +655,11 @@
         "https://arxiv.org/abs/2610.28947v1",
         "https://arxiv.org/abs/2610.26945v1",
         "https://arxiv.org/abs/2610.28998v1",
-        "https://arxiv.org/abs/2610.29171v1"
+        "https://arxiv.org/abs/2610.29171v1",
+        "https://arxiv.org/abs/2610.02241v1",
+        "https://arxiv.org/abs/2610.22377v1",
+        "https://arxiv.org/abs/2610.04277v1",
+        "https://arxiv.org/abs/2610.31034v1"
       ]
     },
     {
@@ -1157,6 +1197,19 @@
         "7a0311b21563a7eb1bfeb908",
         "92b5f6640589c7fb2e6b086f",
         "e2a6a174f52647117cbf7ea9"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_e6edebfd30ed0ab0d223",
+      "issue_date": "2026-10-27",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "205c28f116281ec06ffdb6ac",
+        "7135a64400c9d38f2c5b28cb",
+        "c2446ffe35cd7c1110ea257f",
+        "cd7146987792b8c9659d058e"
       ]
     }
   ]

@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-26T08:51:58Z",
-  "archive_through_issue": "2026-10-23",
-  "knowledge_through_issue": "2026-10-23",
-  "input_digest": "sha256:22a6fa30d82e76e3300db84441ad6a700e37a7bee064e6e4fe53b502e854e908",
+  "generated_at": "2026-10-27T05:10:10Z",
+  "archive_through_issue": "2026-10-27",
+  "knowledge_through_issue": "2026-10-27",
+  "input_digest": "sha256:f2332e024c88d48c8cf25e9ba7a04bc9ba7c79e35a203cd5b8c0de1192d0f61d",
   "stats": {
-    "node_count": 1038,
-    "edge_count": 2467,
+    "node_count": 1088,
+    "edge_count": 2603,
     "unresolved_count": 0
   },
   "nodes": [
@@ -17,8 +17,8 @@
         "label": "加速器直连I/O与存储数据路径",
         "topic_id": "accelerator_io_datapath",
         "status": "evidence_timeline",
-        "summary": "加速器I/O数据路径本期只有两条工程成熟度与可观测性信号：SigmaTrace为CPU与GPU发起的RDMA通信提供库无关观测并公开源代码（SC26接收，可见证据无开销与IOPS数字，是否覆盖NVMe-oF类存储访问路径不可判断），KvikIO v26.10.00为远程I/O后端加入GPU侧device buffer、修复multi-poll死锁并新增诊断计数（无量化评测，不涉及cuFile/GDS本地快路径）。当前判断：GPU发起I/O仍处于工具链与软件栈补齐阶段而非性能突破阶段，两分支维持emerging；可把SigmaTrace列为GPU发起I/O实验的候选测量工具、引入前先确认其对RDMA存储访问路径的覆盖，第三方带基线的带宽、时延或CPU占用数据出现才会改变判断。",
-        "issue_date": "2026-10-23",
+        "summary": "加速器I/O数据路径本期主线是控制路径出内核：uGDS把NVMe命令生命周期移入用户空间、数据经P2P DMA直传显存，内核驱动仅做一次性特权初始化，A100上4KiB同步写时延较GDS再低84.1%、LMCache命中时TTFT降62.7%、并发256下KV吞吐50.2对约19 kTokens/s（每句柄仅支持一块本地NVMe，错误恢复与隔离证据薄弱，12.12倍批量增益含GDS首批惩罚，尚属原型）；三星OCP 2026的AiSIO把GPU发起、P2P与CPU发起I/O收敛到统一API，100M IOPS与10倍冷启动为无基线的厂商声称；HotStorage 2026的一亿IOPS海报仅见于会议程序页、arXiv 2610.06622仅抓到题录，机制与结果均不可见。当前判断：GPU发起I/O正从数据面直达推进到控制面出内核，uGDS可试点用于KV缓存或向量检索外置、先评估错误恢复语义并补齐POSIX适配；厂商数字在给出可复现条件前不作为架构决策依据。",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=accelerator_io_datapath"
       },
       "position": {
@@ -40,8 +40,8 @@
         "label": "Agent语义加速",
         "topic_id": "agent_acceleration",
         "status": "evidence_timeline",
-        "summary": "Agent加速本期证据把瓶颈从模型能力移到Harness与工具执行边界：RiseHarness固定模型权重、用重复运行的成败证据迭代改进Harness并以完整复评超基线作验收门，两个模型各自Harness互换后损失约2.3至9.0个百分点；生产SQL客户端agent模式8199次实测显示多数损失发生在模型与服务器的传输边界，仅改服务器端就让六个模型成功率明显移动；APEXA用服务器侧确定性工具层把伪造执行结果从15/200降到0/200；VibeMemBench则显示现成记忆系统经检索在12组配对中11组低于无记忆基线，省步数不等于更高解决率。当前判断：Harness与工具层应优先引入与模型无关的确定性验收门（执行完整性守卫、完整重复评估超基线才采纳），记忆与经验复用在没有验收门前不应默认开启；上述结论多来自单harness或自建基准且未报告token与时延成本，能否在代码Agent上复现是升级判断的关键观察。",
-        "issue_date": "2026-10-23",
+        "summary": "Agent加速本期四条核心证据同属确定性护栏下的复用与拦截：HarnessMM把已定工具决策存为可执行决策图、回执后直接激活执行而不再回调推理，HumanEval上DeepSeek成功率71.43%升至85.71%且token降87.93%、Codex成功率持平而token仅降29.54%——弱模型获益更大（消融中禁用决策图执行多解4题，仅覆盖短编码任务）；StateMirror在执行前从命令、工具参数和AST提取谓词做只读探测，拦截引用缺失模块或路径的幻觉调用，F1为0.817且干预比报告模式省15.8%时间、解决数不变（仅静态可检查错误）；TomasuLLM用写时复制沙箱乱序执行预测动作、按轨迹序提交验证，提速1.27至1.35倍且4010条提交零误收（换取单会话时延而非吞吐，亚秒级调用不划算）；SPECMEM以按用户在线更新的调用记忆做投机草稿，解码加速最高1.74倍、副作用门控把错误不可逆执行降为零，但预热覆盖全部任务时增益缩至约2%——静态缓存随任务漂移失效。当前判断：与上期一致且更强，省的是可预知的工作、成立靠不耗推理的确定性护栏，在线写回与回退路径是复用机制标配；结构化原语的收益按模型能力分层。",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=agent_acceleration"
       },
       "position": {
@@ -63,8 +63,8 @@
         "label": "AI芯片与加速器",
         "topic_id": "ai_chip_accelerator",
         "status": "evidence_timeline",
-        "summary": "AI芯片本期四条证据指向同一结论——加速器的可用算力由软件栈与格式选择而非标称峰值决定：三代GPU约22万个实测配置显示2:4稀疏只有叠加在FP8等量化地板格式上才兑现1.33至1.65倍核加速，地板之上全面落败且vLLM已移除支持；TrainBridge把GPU编译产物的优化意图迁移为昇腾NPU重写后NanoGPT平均提速1.95倍、NPU/GPU耗时比从4.0降到2.0，说明NPU低效相当程度源于编译栈；FlashNext-RL靠内存规划与sm100特化内核把单节点B200的智能体RL吞吐提升逾11倍但瓶颈仍在生成端；Ozaki方案II用INT8引擎模拟FP64达原生12至28倍。当前判断：评估GPU/NPU选型应以优化后端到端时长而非TOPS峰值为准，推理选型先量化到地板格式再考虑结构化稀疏；四条均为单节点或单板预印本结果，多节点与同行评审数据出现才会升级判断。",
-        "issue_date": "2026-10-23",
+        "summary": "AI芯片本期证据延续可用算力由软件栈与格式选择决定的判断并落到算子与接口层：MoESQ联合训练4:8稀疏支撑与NVFP4量化并配原生稀疏GEMM内核，单卡B200内核较稠密NVFP4提速1.11至1.76倍、Kimi-K2.5精度保留96.09%（4.03倍端到端对比的是较慢INT4基线，能耗与吞吐分属B300和B200）；CompactInst以屋顶线加DRAM计数器实测证明查询式分割解码器在边缘GPU受跨内核激活流量而非FLOPs限制，4×token池化削减64%解码器DRAM字节（DRAM字节仅A4000实测）；SyclKittens把Intel GPU架构经验编成tile接口，同一编码智能体的单卡GEMM从oneDNN的57.5%提到82.1%、工程师协作后27形状达约96%；华为CANNBot-CAKE把算子请求自动化为可部署CANN自定义算子，53个标准集算子100%通过、平均加速1.334倍（对比基线未见定义）。当前判断：接口与算子生态决定算力兑现，评估加速器引用内核峰值时必须核对基线、调优条件与实测带宽。",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=ai_chip_accelerator"
       },
       "position": {
@@ -86,8 +86,8 @@
         "label": "AI Infra横向动态",
         "topic_id": "ai_infra_horizontal",
         "status": "evidence_timeline",
-        "summary": "AI Infra横向动态本期新增训练集群仿真的网络争用建模证据：MoSim用ASTRA-sim在CPU上免GPU刻画每迭代的计算与通信量，按需求比例动态切分NIC并取跨服务器最大争用因子延长通信时间，Philly轨迹平均JCT仿真误差从Tiresias的36.4%降至11.1%、输入构建成本降低44.6倍（真值仅来自双服务器V100集群，假设同步all-reduce且各NIC独立）。当前判断：这是评测基础设施而非生产系统，做调度器what-if或容量规划时可用它替代GPU剖析，但更大规模与异步或多NIC耦合场景的误差未验证；两分支维持信号视图，规模化真值对照出现才会改变判断。",
-        "issue_date": "2026-10-23",
+        "summary": "AI Infra横向动态本期两条核心证据都在推理服务与运行时：MacPaw用统一单请求解码负载在四台Apple机型配RTX 4090对照逐项复测四类服务器GPU上验证的优化，KV剪枝吞吐在Apple上最高1.75倍而RTX 4090至多1.02倍、六种投机解码方法主基准全部负收益、唯一解码提升1.1%的例外端到端反降13.8%，端侧选型不能照搬服务器结论（限于单请求本地解码，未评估多请求批处理）；TRE以跨模型可比的令牌服务份额统一驱动共享GPU池的副本调配、按10秒周期向缺口最大模型小步迁移并保持副本秒级睡眠唤醒，较KV缓存反应式扩缩器把P95端到端时延降11.9%至79.0%（仅2节点8卡测试台，未报告生产部署与吞吐影响）。当前判断：端侧选型应按目标机型实测并复用其HW-GAP类标签预判可移植性；多模型混部容量调度可跟踪其跨模型信号与热切换设计，引用时标注测试台预印本。",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=ai_infra_horizontal"
       },
       "position": {
@@ -109,8 +109,8 @@
         "label": "跨域传输",
         "topic_id": "cross_region",
         "status": "evidence_timeline",
-        "summary": "跨域传输本期四条证据全部是传输侧的上游体积杠杆而非传输机制本身：RACE把KV头维度压缩折叠进模型权重免重建，50%保留下总FLOPs降47.75%、TTFT降43.22%；ReTrace用休眠缓存加回溯注入把单图视觉KV缩至约八分之一；CALM与ChampionKV分别用离线校准的逐层逐头配额和注意力集中度代理做预算分配，同预算下质量优于均匀分配且可插入现有压缩器。当前判断：若跨域搬运KV，可传输体积有一半到八分之一的缩减空间，休眠—恢复与校准配额图可借鉴为分层放置与预取时机的设计原型；但四条均为单卡实验、无WAN RTT、增量更新或一致性数据，校准映射还绑定模型与算子、跨站点复用要求同构集群，带广域网成本的实验出现才会改变判断。",
-        "issue_date": "2026-10-23",
+        "summary": "跨域传输本期证据从KV体积杠杆转向Agent状态与潜层通信：J-Comm把发送方潜层推理编码为定长消息、接收方在自身词表与宽度下重建，KV缓存各留本地即实现异构模型复用中间计算，七项基准全部高于文本转述基线1.29至8.59个百分点、生成token减19.2%至74.8%（只报准确率与token数，无字节、带宽与时延数据）；CARE用轻量批评者按置信度在本地与云端间切换控制权，共享交接记忆只存已验证状态，去掉后恢复成功率从100%降至25%（全部仿真基准）；RIFT揭示草稿KV压缩的解码陈旧性——prefill式一次选择随生成推进失效，滑窗加周期重打分把接受长度从4.07提到6.19；记忆价值框架给出避免的任务损失口径，3.8KB账本加4KB有界检索F1为0.329胜97KB完整历史的0.123。当前判断：跨域复用最该优先传输已验证进展与潜层摘要而非原始轨迹或全量KV，有界状态常优于全量历史；但本期四条均无WAN成本数据，传输体积收益不能据此外推。",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=cross_region"
       },
       "position": {
@@ -155,8 +155,8 @@
         "label": "KVCache管理与复用",
         "topic_id": "kv_management",
         "status": "evidence_timeline",
-        "summary": "KVCache管理本期证据集中在驱逐与预算分配的细粒度化：AKV让长程Agent以drop/repos直接管理活跃KVCache并用radix tree的drop节点按操作历史区分缓存版本，三模型×四Agent基准平均成本降27.7%且精度不降；MOSAIC离线搜索逐层预算在154个设置中146个胜过统一分配、同分数最多省75%缓存；LORE-KV用采样的未来查询估计删除代价，紧预算下领先但预算放宽到1024时优势几乎消失；MaskAhead用未来掩码探针为块扩散模型做不可逆驱逐换取平均9.5倍压缩。当前判断：前缀缓存引擎应把操作历史纳入缓存键，驱逐与分层策略应增加层维度和响应侧信号，紧预算下收益最大而宽预算下各方法趋同；四条证据均无命中率、TTFT或GPU/CPU/SSD分层实测，不能据此外推延迟收益，带分层存储与TTFT的实验出现才会改变判断。",
-        "issue_date": "2026-10-23",
+        "summary": "KVCache管理本期证据从细粒度化转向默认化与正确性：vLLM v0.32.0把FP8等低精度KVCache按架构设为默认，SM100上每rank KV显存减半、吞吐增2.3至5.5%但TTFT增7至11%（数字全部来自PR基准且无方法学，58%的HiSparse增益未说明基线）；Vosti用Verus形式化证明调度与分页前缀共享KVCache保持输出比特级一致，七个模型5488次logit比对全部一致、H200解码吞吐为vLLM不变模式的1.36至3.19倍（只证明确定性而非功能正确性，仅单GPU）；Universal Attention以可训练衰减门做逐token自剪枝，约7至21倍缓存缩减换不到1分损失但属架构级方案；S3R用KV感知调度把RL rollout中GPU与CPU间重复搬运页从5.362M降到0.144M。当前判断：低精度KV是升级即得的显存换时延杠杆、Vosti的页级不变式与精确前缀校验应作为改分页或驱逐逻辑的回归门，两者立即可用；架构级自剪枝不能用于存量服务，AIMD式KV感知调度可迁移到rollout引擎；实际收益需自测命中率与端到端指标。",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=kv_management"
       },
       "position": {
@@ -247,8 +247,8 @@
         "label": "状态感知网络、TPN",
         "topic_id": "tpn",
         "status": "evidence_timeline",
-        "summary": "TPN方向本期证据把传输路径与KV体积两个上游杠杆推到前台：HAWK在GPU预填充到NPU解码的RDMA直传中完成布局变换，1280MB传输延迟仅为主机中转的14.7%、与同构GPU直连差不到1%，说明P/D解耦下决定TTFT上限的是传输路径而非解码调度；UlaCache用统一逻辑寻址解耦引擎与物理放置、只传稀疏选择缺失的条目，8×B300解码吞吐为HiSparse的1.73/2.51倍但全部限于节点内；PN-Mix与MLAfication分别以约2.26比特混合精度和MLA转换从源头把KV体积缩到几分之一。当前判断：跨节点KV放置与带宽调度仍是空位，UlaCache给出的节点内上限可作TPN对照基线，HAWK证明布局感知直传是P/D异构选型的可行路径；四条都不感知推理状态、未报告网络利用率与跨节点TTFT，带跨节点带宽与P95数据的实验出现才会升级判断。",
-        "issue_date": "2026-10-23",
+        "summary": "TPN方向本期证据把每次KV交接的固定开销推到中心：InferSlice在英国电信广域网实测单跳WAN的PD解耦，中位TTFT从0.11秒升至4.24秒、P99达19秒且惩罚不随RTT增大，作者归因每请求KV交接的固定开销——先批量化或流水线化交接再谈扩带宽；KVStream把两级存储读取改成完成驱动路由，32B在线平均TTFT从31.1秒降到13.0秒而静态分层对照恶化到122.1秒，证明完成事件而非带宽预测是多路径调度的正确信号（复用集可放进内存时收益消失，2倍写放大）；EdgeFlow按带宽逐层拆分直接传输与激活重算使迁移时间最多降约45%（100Mbps下优势消失）；SARIA在DRAM-SSD分层上叠加GPU入站带宽协调，尾部传输再降11.0%至17.8%（配额须匹配有效路径带宽）。当前判断：跨节点KV放置与带宽调度仍是空位，但节点内与广域证据一致指向调度与交接批量优先于堆带宽；网络侧需联合TTFT与TPOT判别饱和来源，单看利用率不够。",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=tpn"
       },
       "position": {
@@ -312,6 +312,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "accelerator_io_datapath",
+          "field": "topic_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "accelerator_io_datapath",
           "field": "topic_id"
         },
@@ -451,6 +456,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "agent_acceleration",
+          "field": "topic_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "agent_acceleration",
           "field": "topic_id"
         },
@@ -599,6 +609,11 @@
           "field": "topic_id"
         },
         {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "ai_chip_accelerator",
+          "field": "topic_id"
+        },
+        {
           "path": "knowledge/ideas/idea_0beeab7573d3f58b0330.json",
           "object_id": "ai_chip_accelerator",
           "field": "topic_ids"
@@ -644,6 +659,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "ai_infra_horizontal",
+          "field": "topic_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "ai_infra_horizontal",
           "field": "topic_id"
         },
@@ -783,6 +803,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "cross_region",
+          "field": "topic_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "cross_region",
           "field": "topic_id"
         },
@@ -973,6 +998,11 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "frontier_exploration",
           "field": "topic_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "frontier_exploration",
+          "field": "topic_id"
         }
       ]
     },
@@ -1030,6 +1060,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "kv_management",
+          "field": "topic_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "kv_management",
           "field": "topic_id"
         },
@@ -1355,6 +1390,11 @@
           "field": "topic_id"
         },
         {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "tpn",
+          "field": "topic_id"
+        },
+        {
           "path": "knowledge/ideas/idea_08f0269ef7fd181c9968.json",
           "object_id": "tpn",
           "field": "topic_ids"
@@ -1384,7 +1424,7 @@
         "topic_id": "accelerator_io_datapath",
         "branch_id": "accelerator_initiated_io",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=accelerator_io_datapath&branch=accelerator_initiated_io"
       },
       "position": {
@@ -1407,7 +1447,7 @@
         "topic_id": "accelerator_io_datapath",
         "branch_id": "accelerator_storage_stack",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=accelerator_io_datapath&branch=accelerator_storage_stack"
       },
       "position": {
@@ -1430,7 +1470,7 @@
         "topic_id": "agent_acceleration",
         "branch_id": "agent_harness",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=agent_acceleration&branch=agent_harness"
       },
       "position": {
@@ -1453,7 +1493,7 @@
         "topic_id": "agent_acceleration",
         "branch_id": "context_building",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=agent_acceleration&branch=context_building"
       },
       "position": {
@@ -1476,7 +1516,7 @@
         "topic_id": "agent_acceleration",
         "branch_id": "read_grep",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=agent_acceleration&branch=read_grep"
       },
       "position": {
@@ -1499,7 +1539,7 @@
         "topic_id": "agent_acceleration",
         "branch_id": "tool_chain",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=agent_acceleration&branch=tool_chain"
       },
       "position": {
@@ -1522,7 +1562,7 @@
         "topic_id": "ai_chip_accelerator",
         "branch_id": "accelerator_architecture",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=ai_chip_accelerator&branch=accelerator_architecture"
       },
       "position": {
@@ -1545,7 +1585,7 @@
         "topic_id": "ai_chip_accelerator",
         "branch_id": "chiplet_packaging",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=ai_chip_accelerator&branch=chiplet_packaging"
       },
       "position": {
@@ -1568,7 +1608,7 @@
         "topic_id": "ai_chip_accelerator",
         "branch_id": "memory_io_codesign",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=ai_chip_accelerator&branch=memory_io_codesign"
       },
       "position": {
@@ -1591,7 +1631,7 @@
         "topic_id": "ai_infra_horizontal",
         "branch_id": "cluster_training_operations",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=ai_infra_horizontal&branch=cluster_training_operations"
       },
       "position": {
@@ -1614,7 +1654,7 @@
         "topic_id": "ai_infra_horizontal",
         "branch_id": "serving_runtime_compiler",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=ai_infra_horizontal&branch=serving_runtime_compiler"
       },
       "position": {
@@ -1637,7 +1677,7 @@
         "topic_id": "cross_region",
         "branch_id": "agent_cache",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=cross_region&branch=agent_cache"
       },
       "position": {
@@ -1660,7 +1700,7 @@
         "topic_id": "cross_region",
         "branch_id": "kv_cross_region",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=cross_region&branch=kv_cross_region"
       },
       "position": {
@@ -1683,7 +1723,7 @@
         "topic_id": "cross_region",
         "branch_id": "transfer_placement",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=cross_region&branch=transfer_placement"
       },
       "position": {
@@ -1752,7 +1792,7 @@
         "topic_id": "kv_management",
         "branch_id": "offload_hierarchy",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=kv_management&branch=offload_hierarchy"
       },
       "position": {
@@ -1775,7 +1815,7 @@
         "topic_id": "kv_management",
         "branch_id": "paged_management",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=kv_management&branch=paged_management"
       },
       "position": {
@@ -1798,7 +1838,7 @@
         "topic_id": "kv_management",
         "branch_id": "prefix_reuse",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=kv_management&branch=prefix_reuse"
       },
       "position": {
@@ -1936,7 +1976,7 @@
         "topic_id": "tpn",
         "branch_id": "kv_network_scheduling",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=tpn&branch=kv_network_scheduling"
       },
       "position": {
@@ -1959,7 +1999,7 @@
         "topic_id": "tpn",
         "branch_id": "kv_transfer",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=tpn&branch=kv_transfer"
       },
       "position": {
@@ -1982,7 +2022,7 @@
         "topic_id": "tpn",
         "branch_id": "pd_disaggregation",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=tpn&branch=pd_disaggregation"
       },
       "position": {
@@ -2005,7 +2045,7 @@
         "topic_id": "tpn",
         "branch_id": "token_metric_network",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=tpn&branch=token_metric_network"
       },
       "position": {
@@ -2028,7 +2068,7 @@
         "topic_id": "tpn",
         "branch_id": "tpn_direct",
         "status": "emerging",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#roadmaps?topic=tpn&branch=tpn_direct"
       },
       "position": {
@@ -2161,6 +2201,11 @@
           "field": "direction_id"
         },
         {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "accelerator_architecture",
+          "field": "direction_id"
+        },
+        {
           "path": "knowledge/roadmaps/ai_chip_accelerator.json",
           "object_id": "accelerator_architecture",
           "field": "branches[].direction_ids"
@@ -2206,6 +2251,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "accelerator_initiated_io",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "accelerator_initiated_io",
           "field": "direction_id"
         },
@@ -2358,6 +2408,11 @@
           "field": "direction_id"
         },
         {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "agent_cache",
+          "field": "direction_id"
+        },
+        {
           "path": "knowledge/roadmaps/cross_region.json",
           "object_id": "agent_cache",
           "field": "branches[].direction_ids"
@@ -2485,6 +2540,11 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "agent_ecosystem",
           "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "agent_ecosystem",
+          "field": "direction_id"
         }
       ]
     },
@@ -2577,6 +2637,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "agent_harness",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "agent_harness",
           "field": "direction_id"
         },
@@ -2691,6 +2756,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "agent_tooling_frontier",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "agent_tooling_frontier",
           "field": "direction_id"
         }
@@ -2815,6 +2885,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "ai_infra",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "ai_infra",
           "field": "direction_id"
         }
@@ -2991,6 +3066,11 @@
           "path": "archive/issues/2026-09-30/issue.json",
           "object_id": "direct_storage_path",
           "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "direct_storage_path",
+          "field": "direction_id"
         }
       ]
     },
@@ -3111,6 +3191,11 @@
       "provenance": [
         {
           "path": "archive/issues/2026-09-04/issue.json",
+          "object_id": "hardware_media_frontier",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "hardware_media_frontier",
           "field": "direction_id"
         }
@@ -3243,6 +3328,11 @@
         },
         {
           "path": "archive/issues/2026-10-14/issue.json",
+          "object_id": "kv_cache_ecosystem",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "kv_cache_ecosystem",
           "field": "direction_id"
         }
@@ -3381,6 +3471,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "kv_network_scheduling",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "kv_network_scheduling",
           "field": "direction_id"
         },
@@ -3719,6 +3814,11 @@
           "field": "direction_id"
         },
         {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "offload_hierarchy",
+          "field": "direction_id"
+        },
+        {
           "path": "knowledge/roadmaps/kv_management.json",
           "object_id": "offload_hierarchy",
           "field": "branches[].direction_ids"
@@ -3841,6 +3941,11 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "other_frontier",
           "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "other_frontier",
+          "field": "direction_id"
         }
       ]
     },
@@ -3878,6 +3983,11 @@
         },
         {
           "path": "archive/issues/2026-10-21/issue.json",
+          "object_id": "paged_management",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "paged_management",
           "field": "direction_id"
         },
@@ -3962,6 +4072,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "pd_disaggregation",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "pd_disaggregation",
           "field": "direction_id"
         },
@@ -4131,6 +4246,11 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "radar_c5cf73c8cdc7",
           "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_c5cf73c8cdc7",
+          "field": "direction_id"
         }
       ]
     },
@@ -4285,6 +4405,11 @@
           "field": "direction_id"
         },
         {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "serving_runtime_compiler",
+          "field": "direction_id"
+        },
+        {
           "path": "knowledge/roadmaps/ai_infra_horizontal.json",
           "object_id": "serving_runtime_compiler",
           "field": "branches[].direction_ids"
@@ -4347,6 +4472,11 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "storage_media",
           "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "storage_media",
+          "field": "direction_id"
         }
       ]
     },
@@ -4399,6 +4529,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "systems_mechanism_transfer",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "systems_mechanism_transfer",
           "field": "direction_id"
         }
@@ -4537,6 +4672,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "tool_chain",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "tool_chain",
           "field": "direction_id"
         },
@@ -4700,6 +4840,11 @@
         },
         {
           "path": "archive/issues/2026-10-23/issue.json",
+          "object_id": "transfer_placement",
+          "field": "direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
           "object_id": "transfer_placement",
           "field": "direction_id"
         },
@@ -4901,6 +5046,60 @@
     },
     {
       "data": {
+        "id": "item:7185271b4bf979dfc1fcc43c",
+        "kind": "item",
+        "label": "面向低延迟请求与流式稠密耦合的GPU发起式模拟分岔",
+        "topic_id": "accelerator_io_datapath",
+        "direction_id": "accelerator_initiated_io",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-05",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=7185271b4bf979dfc1fcc43c"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76320.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "7185271b4bf979dfc1fcc43c",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:fcc0c18d8d6e0695d8d52b2d",
+        "kind": "item",
+        "label": "HotStorage 2026海报瞄准GPU发起I/O的1亿IOPS目标",
+        "topic_id": "accelerator_io_datapath",
+        "direction_id": "accelerator_initiated_io",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-09-28",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=fcc0c18d8d6e0695d8d52b2d"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77760.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "fcc0c18d8d6e0695d8d52b2d",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:dda95f5f23dfe81db0904c32",
         "kind": "item",
         "label": "MinIO 发布三层 GPU 存储栈参考架构",
@@ -5030,6 +5229,60 @@
         {
           "path": "archive/issues/2026-09-30/issue.json",
           "object_id": "9492668fe785e6a4c535f9bb",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:ada8f3547af65d6b8dfc29be",
+        "kind": "item",
+        "label": "uGDS把NVMe控制路径移入用户空间，数据经P2P DMA直达显存",
+        "topic_id": "accelerator_io_datapath",
+        "direction_id": "direct_storage_path",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-22T07:45:58Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=ada8f3547af65d6b8dfc29be"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76500.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "ada8f3547af65d6b8dfc29be",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:f22e0fdf7a5a4d877a23ca9b",
+        "kind": "item",
+        "label": "三星在OCP 2026演示AiSIO加速器直连存储",
+        "topic_id": "accelerator_io_datapath",
+        "direction_id": "direct_storage_path",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-12",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=f22e0fdf7a5a4d877a23ca9b"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77670.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "f22e0fdf7a5a4d877a23ca9b",
           "field": "brief_item_id"
         }
       ]
@@ -5759,6 +6012,33 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "d8a6dfbb0135fb04f3d15ed5",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:169359f8c50fb8c845c18ce0",
+        "kind": "item",
+        "label": "HarnessMM复用已确定的工具决策，HumanEval每任务token最高降87.93%",
+        "topic_id": "agent_acceleration",
+        "direction_id": "agent_harness",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-23T15:47:47Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=169359f8c50fb8c845c18ce0"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75420.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "169359f8c50fb8c845c18ce0",
           "field": "brief_item_id"
         }
       ]
@@ -7601,6 +7881,87 @@
     },
     {
       "data": {
+        "id": "item:0f8f0782f43e62451d8d7661",
+        "kind": "item",
+        "label": "SPECMEM：用持续更新的按用户工具调用记忆加速Agent解码",
+        "topic_id": "agent_acceleration",
+        "direction_id": "tool_chain",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-22T19:24:21Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=0f8f0782f43e62451d8d7661"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75240.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "0f8f0782f43e62451d8d7661",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:351c7f6d00a6e5ce7d777960",
+        "kind": "item",
+        "label": "TomasuLLM用乱序执行与按序提交加速Agent工具调用",
+        "topic_id": "agent_acceleration",
+        "direction_id": "tool_chain",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-09-22T03:41:35Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=351c7f6d00a6e5ce7d777960"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75600.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "351c7f6d00a6e5ce7d777960",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:b0a90c9277ec0898cbdeec8e",
+        "kind": "item",
+        "label": "StateMirror在执行前拦截代码Agent的幻觉工具调用",
+        "topic_id": "agent_acceleration",
+        "direction_id": "tool_chain",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-23T13:56:13Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=b0a90c9277ec0898cbdeec8e"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76680.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "b0a90c9277ec0898cbdeec8e",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:38414380003c609dfdd3b74d",
         "kind": "item",
         "label": "DiffusionGemma用并行解码提升单卡吞吐",
@@ -9248,6 +9609,114 @@
     },
     {
       "data": {
+        "id": "item:205c28f116281ec06ffdb6ac",
+        "kind": "item",
+        "label": "SyclKittens：把Intel GPU架构经验编成tile接口",
+        "topic_id": "ai_chip_accelerator",
+        "direction_id": "accelerator_architecture",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-03T04:06:24Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=205c28f116281ec06ffdb6ac"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75510.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "205c28f116281ec06ffdb6ac",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:7135a64400c9d38f2c5b28cb",
+        "kind": "item",
+        "label": "MoESQ以4:8 NVFP4稀疏量化运行万亿参数MoE",
+        "topic_id": "ai_chip_accelerator",
+        "direction_id": "accelerator_architecture",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-09-29T07:58:06Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=7135a64400c9d38f2c5b28cb"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76230.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "7135a64400c9d38f2c5b28cb",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:c2446ffe35cd7c1110ea257f",
+        "kind": "item",
+        "label": "华为开源CANNBot-CAKE自动化Ascend算子开发",
+        "topic_id": "ai_chip_accelerator",
+        "direction_id": "accelerator_architecture",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-22T10:12:45Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=c2446ffe35cd7c1110ea257f"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76860.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "c2446ffe35cd7c1110ea257f",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:cd7146987792b8c9659d058e",
+        "kind": "item",
+        "label": "实测边缘GPU分割解码器受内存带宽而非FLOPs限制",
+        "topic_id": "ai_chip_accelerator",
+        "direction_id": "accelerator_architecture",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-09-29T09:08:59Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=cd7146987792b8c9659d058e"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76950.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "cd7146987792b8c9659d058e",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:09306d50f9ae20d406d906ab",
         "kind": "item",
         "label": "芯粒系统可靠芯片筛选的贝叶斯概率框架",
@@ -10052,6 +10521,60 @@
         {
           "path": "archive/issues/2026-10-18/issue.json",
           "object_id": "263a374ba902253630bd8971",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:3b4ec69da9e2508829f66968",
+        "kind": "item",
+        "label": "TRE：以令牌服务份额驱动多模型共享GPU扩缩",
+        "topic_id": "ai_infra_horizontal",
+        "direction_id": "serving_runtime_compiler",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-09-24T07:34:35Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=3b4ec69da9e2508829f66968"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75690.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "3b4ec69da9e2508829f66968",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:d0a71d37f14bb457e1c88b46",
+        "kind": "item",
+        "label": "实测四类LLM推理优化在Apple Silicon上的迁移收益普遍下降或反转",
+        "topic_id": "ai_infra_horizontal",
+        "direction_id": "serving_runtime_compiler",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-22T16:04:40Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=d0a71d37f14bb457e1c88b46"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77040.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d0a71d37f14bb457e1c88b46",
           "field": "brief_item_id"
         }
       ]
@@ -11105,6 +11628,87 @@
         {
           "path": "archive/issues/2026-10-21/issue.json",
           "object_id": "8406b261bfbe6706d8e9f3dd",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:98dad7f3b86b8ffa68abb37d",
+        "kind": "item",
+        "label": "以避免的任务损失度量语言Agent记忆价值",
+        "topic_id": "cross_region",
+        "direction_id": "agent_cache",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-22T14:01:31Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=98dad7f3b86b8ffa68abb37d"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76410.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "98dad7f3b86b8ffa68abb37d",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:d571ce30e203570a27a3df60",
+        "kind": "item",
+        "label": "J-Comm：不共享KV缓存的智能体潜层通信",
+        "topic_id": "cross_region",
+        "direction_id": "agent_cache",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-23T16:42:38Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=d571ce30e203570a27a3df60"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77220.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d571ce30e203570a27a3df60",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:e1332ce77a7972a82983eea5",
+        "kind": "item",
+        "label": "CARE：云端-本地具身代理的自适应控制切换",
+        "topic_id": "cross_region",
+        "direction_id": "agent_cache",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-22T01:38:34Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=e1332ce77a7972a82983eea5"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77490.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "e1332ce77a7972a82983eea5",
           "field": "brief_item_id"
         }
       ]
@@ -12276,6 +12880,33 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "e6bfafc4de6f0742034d4684",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:3c3e86051292597ca10a411b",
+        "kind": "item",
+        "label": "RIFT：草稿模型KV压缩需应对解码陈旧性",
+        "topic_id": "cross_region",
+        "direction_id": "transfer_placement",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-22T11:12:23Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=3c3e86051292597ca10a411b"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75780.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "3c3e86051292597ca10a411b",
           "field": "brief_item_id"
         }
       ]
@@ -14942,6 +15573,131 @@
     },
     {
       "data": {
+        "id": "item:radar_268552d5d94b977c7c3c",
+        "kind": "item",
+        "label": "Nanbeige 发布 33B 开源智能体编程模型 Nanbeige4.3-33B",
+        "topic_id": "frontier_exploration",
+        "direction_id": "agent_ecosystem",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_268552d5d94b977c7c3c"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77850.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_268552d5d94b977c7c3c",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_b91d7b0bc5f8eb437d96",
+        "kind": "item",
+        "label": "让编程智能体使用已登录 Chrome 的六种方案实操指南",
+        "topic_id": "frontier_exploration",
+        "direction_id": "agent_ecosystem",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_b91d7b0bc5f8eb437d96"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78660.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_b91d7b0bc5f8eb437d96",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_c6c3890b85c281be68f7",
+        "kind": "item",
+        "label": "OpenAI 详解前沿模型训练环境的安全加固与红队测试",
+        "topic_id": "frontier_exploration",
+        "direction_id": "agent_ecosystem",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_c6c3890b85c281be68f7"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78840.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_c6c3890b85c281be68f7",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_df19101d95f2c0aba7b9",
+        "kind": "item",
+        "label": "Mastra 发布 Knowledge 自托管服务，为企业 Agent 提供公司级知识上下文",
+        "topic_id": "frontier_exploration",
+        "direction_id": "agent_ecosystem",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_df19101d95f2c0aba7b9"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78930.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_df19101d95f2c0aba7b9",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_f7009db52e411387b0f6",
+        "kind": "item",
+        "label": "METR 与 Redwood 红队测试 OpenAI 内部智能体监控系统并披露多项漏洞",
+        "topic_id": "frontier_exploration",
+        "direction_id": "agent_ecosystem",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_f7009db52e411387b0f6"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 79020.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_f7009db52e411387b0f6",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:5c600b1b112f6638a2229341",
         "kind": "item",
         "label": "Brain Researcher把方法学判断前置进科研Agent工作流",
@@ -16529,6 +17285,60 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "8a14994ead5fb1c57ade439b",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:1616f71415f898f2baee59be",
+        "kind": "item",
+        "label": "Cognizant工件级知识层用标识符约束检索替代相似度消歧",
+        "topic_id": "frontier_exploration",
+        "direction_id": "agent_tooling_frontier",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-23T16:21:56Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=1616f71415f898f2baee59be"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75330.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "1616f71415f898f2baee59be",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:d670894b45b0c3f5a180f8c2",
+        "kind": "item",
+        "label": "VERDICT：乐观假设与双向事件和解并行化C程序演绎验证",
+        "topic_id": "frontier_exploration",
+        "direction_id": "agent_tooling_frontier",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-21T03:33:10Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=d670894b45b0c3f5a180f8c2"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77310.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d670894b45b0c3f5a180f8c2",
           "field": "brief_item_id"
         }
       ]
@@ -18485,6 +19295,56 @@
     },
     {
       "data": {
+        "id": "item:radar_7651cd3801f2641f8a7e",
+        "kind": "item",
+        "label": "Sebastian Raschka 推出 11 小时「从零构建推理模型」视频课，用 PyTorch 实现评估、推理时扩展、RLVR 与蒸馏",
+        "topic_id": "frontier_exploration",
+        "direction_id": "ai_infra",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_7651cd3801f2641f8a7e"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78300.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_7651cd3801f2641f8a7e",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_82c83edfb2ccd67abd40",
+        "kind": "item",
+        "label": "Codex 0.164.0 发布：新增 /presets 预设槽与内联 /model 参数",
+        "topic_id": "frontier_exploration",
+        "direction_id": "ai_infra",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_82c83edfb2ccd67abd40"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78390.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_82c83edfb2ccd67abd40",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:ee85477f760cce5757ecfd45",
         "kind": "item",
         "label": "计算能量定律给保持与搬运比特定价",
@@ -18506,6 +19366,33 @@
         {
           "path": "archive/issues/2026-09-04/issue.json",
           "object_id": "ee85477f760cce5757ecfd45",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:528bca88372108a018f017e5",
+        "kind": "item",
+        "label": "FIGFLEX让低位整数权重随位宽降低而提速的GEMM加速器",
+        "topic_id": "frontier_exploration",
+        "direction_id": "hardware_media_frontier",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-21T21:59:47Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=528bca88372108a018f017e5"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75960.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "528bca88372108a018f017e5",
           "field": "brief_item_id"
         }
       ]
@@ -18981,6 +19868,56 @@
         {
           "path": "archive/issues/2026-10-14/issue.json",
           "object_id": "radar_8ce77f2502c9b91ed646",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_3c34f49c4ddb0483e394",
+        "kind": "item",
+        "label": "清华与港中文团队开源 AKV：面向 LLM 智能体的 KV cache 工程服务系统",
+        "topic_id": "frontier_exploration",
+        "direction_id": "kv_cache_ecosystem",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_3c34f49c4ddb0483e394"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77940.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_3c34f49c4ddb0483e394",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_fe8ad8fd72c0bf0ffa68",
+        "kind": "item",
+        "label": "vLLM 详解 GLM-5.3 在 16 张 H200 上的优化：PCP、DCP 与 Hybrid HiSparse",
+        "topic_id": "frontier_exploration",
+        "direction_id": "kv_cache_ecosystem",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_fe8ad8fd72c0bf0ffa68"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 79200.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_fe8ad8fd72c0bf0ffa68",
           "field": "brief_item_id"
         }
       ]
@@ -21337,6 +22274,106 @@
     },
     {
       "data": {
+        "id": "item:radar_566e0c4afbca8ff45ca6",
+        "kind": "item",
+        "label": "Hugging Face 联合合作机构发布 14.8B 开源 DNA 语言模型 Carbon-X",
+        "topic_id": "frontier_exploration",
+        "direction_id": "other_frontier",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_566e0c4afbca8ff45ca6"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78030.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_566e0c4afbca8ff45ca6",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_ac7b54cbe34108c6ff41",
+        "kind": "item",
+        "label": "OpenAI 提出 g-mean² 之外的互补可监控性指标",
+        "topic_id": "frontier_exploration",
+        "direction_id": "other_frontier",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_ac7b54cbe34108c6ff41"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78480.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_ac7b54cbe34108c6ff41",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_bf6ebc7463b2c9c27369",
+        "kind": "item",
+        "label": "Redwood Research 提出模拟控制评估方法 SCE 测试 AI 监控器",
+        "topic_id": "frontier_exploration",
+        "direction_id": "other_frontier",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_bf6ebc7463b2c9c27369"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78750.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_bf6ebc7463b2c9c27369",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_f75a6962a48cd708da6c",
+        "kind": "item",
+        "label": "Epoch Brief：AI 能否自动化 Epoch 自身工作，六款模型实测未过关",
+        "topic_id": "frontier_exploration",
+        "direction_id": "other_frontier",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_f75a6962a48cd708da6c"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 79110.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_f75a6962a48cd708da6c",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:radar_f4998433a881f222ad38",
         "kind": "item",
         "label": "Git 大规模托管为何如此困难",
@@ -21687,6 +22724,56 @@
     },
     {
       "data": {
+        "id": "item:radar_61261db1241f5456a24e",
+        "kind": "item",
+        "label": "Latent Space 梳理 PHP2Shell 漏洞事件：OpenAI Patch the Planet 与 Wiz 各自发现 PHP 核心漏洞",
+        "topic_id": "frontier_exploration",
+        "direction_id": "radar_c5cf73c8cdc7",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_61261db1241f5456a24e"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78120.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_61261db1241f5456a24e",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:radar_ae35a41c6b104d326279",
+        "kind": "item",
+        "label": "Microsoft AI 发布 SDBench 基准与 MAI-DxO 诊断系统，登 Science",
+        "topic_id": "frontier_exploration",
+        "direction_id": "radar_c5cf73c8cdc7",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_ae35a41c6b104d326279"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78570.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_ae35a41c6b104d326279",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:radar_b0ff289c3347932f45ca",
         "kind": "item",
         "label": "SK海力士展示375层4D NAND路线",
@@ -21987,6 +23074,31 @@
     },
     {
       "data": {
+        "id": "item:radar_61d72555126425c711d5",
+        "kind": "item",
+        "label": "Micron 在最新报告中公布至 2030 年的内存与存储芯片路线图",
+        "topic_id": "frontier_exploration",
+        "direction_id": "storage_media",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "role": "radar",
+        "href": "#archive?date=2026-10-27&item=radar_61d72555126425c711d5"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 78210.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_61d72555126425c711d5",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:4b34f9662b88580eda4cb1ba",
         "kind": "item",
         "label": "高覆盖神经网络加查找表兜底：可认证的航空AI部署",
@@ -22278,6 +23390,33 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "f8d1368f6bf9fedbc9cd77a1",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:af9599134f5d56d0f4cd5346",
+        "kind": "item",
+        "label": "RISC-V、Arm与x86的HPC统一横评：SG2044单核弱但扩展与能效有竞争力",
+        "topic_id": "frontier_exploration",
+        "direction_id": "systems_mechanism_transfer",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-23T13:43:38Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=af9599134f5d56d0f4cd5346"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76590.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "af9599134f5d56d0f4cd5346",
           "field": "brief_item_id"
         }
       ]
@@ -22743,6 +23882,60 @@
     },
     {
       "data": {
+        "id": "item:6781d10382738565515010ba",
+        "kind": "item",
+        "label": "Universal Attention以可训练衰减门实现KVCache自剪枝",
+        "topic_id": "kv_management",
+        "direction_id": "offload_hierarchy",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-06T20:00:04Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=6781d10382738565515010ba"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76140.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "6781d10382738565515010ba",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:e4713bb91707e4da8632575b",
+        "kind": "item",
+        "label": "S3R：自稀疏投机解码加速RL rollout并调度KV卸载",
+        "topic_id": "kv_management",
+        "direction_id": "offload_hierarchy",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-09T08:22:40Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=e4713bb91707e4da8632575b"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77580.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "e4713bb91707e4da8632575b",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:0323b177a35ce3e649adf16c",
         "kind": "item",
         "label": "vLLM v0.28.0:分层 KV 卸载闭环与 Mamba 前缀缓存默认化",
@@ -22872,6 +24065,60 @@
         {
           "path": "archive/issues/2026-10-21/issue.json",
           "object_id": "c9dabd5a5896d7fa5c997bec",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:03ef64972818234359298513",
+        "kind": "item",
+        "label": "vLLM v0.32.0将FP8等低精度KVCache设为默认",
+        "topic_id": "kv_management",
+        "direction_id": "paged_management",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-18T06:50:48Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=03ef64972818234359298513"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75150.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "03ef64972818234359298513",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:dfdc97891d87a34b6d9b4a17",
+        "kind": "item",
+        "label": "Vosti：经形式化验证的分页KVCache确定性推理引擎",
+        "topic_id": "kv_management",
+        "direction_id": "paged_management",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-09-30T04:58:09Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=dfdc97891d87a34b6d9b4a17"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77400.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "dfdc97891d87a34b6d9b4a17",
           "field": "brief_item_id"
         }
       ]
@@ -25767,6 +27014,87 @@
     },
     {
       "data": {
+        "id": "item:4b5ef51f782ab2b0cd6102cd",
+        "kind": "item",
+        "label": "SARIA：代理KVCache的SSD选择性写入与协调重载",
+        "topic_id": "tpn",
+        "direction_id": "kv_network_scheduling",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-22T12:25:27Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=4b5ef51f782ab2b0cd6102cd"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 75870.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "4b5ef51f782ab2b0cd6102cd",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:5a66740e74019b21af6ba874",
+        "kind": "item",
+        "label": "KVStream用完成驱动路由聚合两级存储读取带宽",
+        "topic_id": "tpn",
+        "direction_id": "kv_network_scheduling",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-22T19:05:39Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=5a66740e74019b21af6ba874"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76050.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "5a66740e74019b21af6ba874",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:c184313e0ada70903e6ca530",
+        "kind": "item",
+        "label": "EdgeFlow：面向地理分布式边缘推理的KVCache混合迁移",
+        "topic_id": "tpn",
+        "direction_id": "kv_network_scheduling",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-15T16:31:19Z",
+        "role": "supplement",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=c184313e0ada70903e6ca530"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 76770.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "c184313e0ada70903e6ca530",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "item:5591f65140d99f5af47ce869",
         "kind": "item",
         "label": "LMCache v0.5.2补齐跨节点KVCache数据层能力",
@@ -26517,6 +27845,33 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "14f554896a5602f09d452905",
+          "field": "brief_item_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "item:d113056eb7031993bac2c113",
+        "kind": "item",
+        "label": "InferSlice实测广域网上PD解耦的推理代价",
+        "topic_id": "tpn",
+        "direction_id": "pd_disaggregation",
+        "issue_date": "2026-10-27",
+        "first_issue_date": "2026-10-27",
+        "last_issue_date": "2026-10-27",
+        "published_at": "2026-10-23T13:51:02Z",
+        "role": "core",
+        "source_level": "A",
+        "href": "#archive?date=2026-10-27&item=d113056eb7031993bac2c113"
+      },
+      "position": {
+        "x": 1340.0,
+        "y": 77130.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d113056eb7031993bac2c113",
           "field": "brief_item_id"
         }
       ]
@@ -28946,23 +30301,99 @@
     },
     {
       "data": {
-        "id": "idea:idea_6e6886675f61e74dd472",
-        "kind": "idea",
-        "label": "工具接口要按 Agent 能力分层，而不是统一追求更复杂",
-        "status": "seed",
-        "summary": "弱 Agent 更可能从结构化原语获益，而强 Agent 可能因额外结构付出输入成本；接口收益应按 Agent 能力分层评估。",
-        "issue_date": "2026-09-20",
-        "href": "#ideas?idea=idea_6e6886675f61e74dd472&view=overview"
+        "id": "issue:2026-10-27",
+        "kind": "issue",
+        "label": "2026-10-27",
+        "issue_date": "2026-10-27",
+        "href": "#archive?date=2026-10-27"
       },
       "position": {
-        "x": 2000.0,
-        "y": 640.0
+        "x": 1780.0,
+        "y": 2750.0
       },
       "provenance": [
         {
-          "path": "knowledge/ideas/idea_6e6886675f61e74dd472.json",
-          "object_id": "idea_6e6886675f61e74dd472",
-          "field": "idea"
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "2026-10-27",
+          "field": "date"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "judgement:2026-10-27:4760516ce6b0deb5",
+        "kind": "judgement",
+        "label": "服务器GPU上的推理优化不能外推到端侧：投机解码在Apple Silicon上全线负收益",
+        "issue_date": "2026-10-27",
+        "body": "MacPaw在四台Apple机型上以统一单请求解码负载逐项复测四类在服务器GPU上验证的优化：KV剪枝吞吐在Apple上最高1.75倍、服务器GPU对照几乎无增益，六种投机解码方法主基准全部负收益，唯一解码提升1.1%的例外端到端反降13.8%。同一期的边缘GPU实测也把查询式分割解码器的高时延归因到跨内核激活流量而非FLOPs，token池化砍掉64%解码器DRAM字节。两条证据都指向端侧瓶颈画像不同：选型按目标机型实测，别引服务器基准或峰值算力。",
+        "evidence_item_ids": [
+          "d0a71d37f14bb457e1c88b46",
+          "cd7146987792b8c9659d058e"
+        ],
+        "href": "#archive?date=2026-10-27"
+      },
+      "position": {
+        "x": 4500.0,
+        "y": 260.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "4760516ce6b0deb5",
+          "field": "synthesis.judgements[]"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "judgement:2026-10-27:664f35157cf4c36d",
+        "kind": "judgement",
+        "label": "KV搬出内存后，TTFT先卡在每次交接的固定开销和路径调度，不在带宽",
+        "issue_date": "2026-10-27",
+        "body": "uGDS把NVMe控制路径也搬进用户空间，内核只做一次性特权初始化，A100上同步小写时延比GDS再低84.1%，LMCache命中时TTFT也大幅下降——小IO的时延大头原本在逐次穿内核的控制路径。InferSlice在英国电信广域网实测PD解耦：单跳WAN使中位TTFT升至4.24秒，且惩罚不随RTT增大，作者归因每请求KV交接的固定开销。KVStream的对照更直接：静态分层把在线TTFT恶化到122.1秒，按完成事件调度两层存储后降到13.0秒。做KV外置或跨节点解耦，先砍每次搬移的固定成本、把调度做对，再投资带宽。",
+        "evidence_item_ids": [
+          "ada8f3547af65d6b8dfc29be",
+          "d113056eb7031993bac2c113",
+          "5a66740e74019b21af6ba874"
+        ],
+        "href": "#archive?date=2026-10-27"
+      },
+      "position": {
+        "x": 4500.0,
+        "y": 390.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "664f35157cf4c36d",
+          "field": "synthesis.judgements[]"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "judgement:2026-10-27:ae2a97b467fc5a34",
+        "kind": "judgement",
+        "label": "复用、投机、拦截都能省Agent开销，但收益都靠确定性护栏成立",
+        "issue_date": "2026-10-27",
+        "body": "HarnessMM不再在每次工具回执后重推理：已定决策存成可执行决策图复用，新语义或证据不足才回退模型，HumanEval上token降87.93%、成功率大体保持或提升。同一期的SPECMEM用按用户在线写回的调用记忆做投机草稿，接受token多于冻结存储基线，但预热覆盖全部任务时增益缩到约2%——静态缓存会随任务漂移失效。TomasuLLM在写时复制沙箱提前执行预测动作、按轨迹序提交验证，4010条记录零误收；StateMirror用只读探测在执行前拦下幻觉调用，免去每条2.24万token的恢复。省的是可预知的工作，成立靠不耗推理的护栏，两者要成对设计。",
+        "evidence_item_ids": [
+          "169359f8c50fb8c845c18ce0",
+          "0f8f0782f43e62451d8d7661",
+          "351c7f6d00a6e5ce7d777960",
+          "b0a90c9277ec0898cbdeec8e"
+        ],
+        "href": "#archive?date=2026-10-27"
+      },
+      "position": {
+        "x": 4500.0,
+        "y": 520.0
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "ae2a97b467fc5a34",
+          "field": "synthesis.judgements[]"
         }
       ]
     },
@@ -28990,50 +30421,6 @@
     },
     {
       "data": {
-        "id": "idea:idea_caedb2a55c74292cb409",
-        "kind": "idea",
-        "label": "用版本化冲突保留实现可审计的分布式 Agent 记忆合并",
-        "status": "observing",
-        "summary": "无协调者合并、版本化冲突保留与查询条件化视图结合，可提高共享状态的可审计性和任务连续性。",
-        "issue_date": "2026-09-30",
-        "href": "#ideas?idea=idea_caedb2a55c74292cb409&view=overview"
-      },
-      "position": {
-        "x": 2000.0,
-        "y": 1280.0
-      },
-      "provenance": [
-        {
-          "path": "knowledge/ideas/idea_caedb2a55c74292cb409.json",
-          "object_id": "idea_caedb2a55c74292cb409",
-          "field": "idea"
-        }
-      ]
-    },
-    {
-      "data": {
-        "id": "idea:idea_7d4c5b213d117cba4697",
-        "kind": "idea",
-        "label": "跨模型 KV 迁移需要把映射误差与刷新频率一起调度",
-        "status": "observing",
-        "summary": "若把潜空间 KV 映射误差、迁移成本与周期性刷新联合建模，可找到优于重复 Prefill 的可用边界。",
-        "issue_date": "2026-10-14",
-        "href": "#ideas?idea=idea_7d4c5b213d117cba4697&view=overview"
-      },
-      "position": {
-        "x": 2000.0,
-        "y": 800.0
-      },
-      "provenance": [
-        {
-          "path": "knowledge/ideas/idea_7d4c5b213d117cba4697.json",
-          "object_id": "idea_7d4c5b213d117cba4697",
-          "field": "idea"
-        }
-      ]
-    },
-    {
-      "data": {
         "id": "idea:idea_08f0269ef7fd181c9968",
         "kind": "idea",
         "label": "把热前缀当作可复制对象，联合路由与跨节点 KV 放置",
@@ -29050,28 +30437,6 @@
         {
           "path": "knowledge/ideas/idea_08f0269ef7fd181c9968.json",
           "object_id": "idea_08f0269ef7fd181c9968",
-          "field": "idea"
-        }
-      ]
-    },
-    {
-      "data": {
-        "id": "idea:idea_0beeab7573d3f58b0330",
-        "kind": "idea",
-        "label": "把硬件知识与真实部署验收接成内核优化闭环",
-        "status": "observing",
-        "summary": "将设备约束检索、候选生成、编译运行和部署内验收闭环，可提高可用内核比例并减少纸面加速。",
-        "issue_date": "2026-10-23",
-        "href": "#ideas?idea=idea_0beeab7573d3f58b0330&view=overview"
-      },
-      "position": {
-        "x": 2000.0,
-        "y": 160.0
-      },
-      "provenance": [
-        {
-          "path": "knowledge/ideas/idea_0beeab7573d3f58b0330.json",
-          "object_id": "idea_0beeab7573d3f58b0330",
           "field": "idea"
         }
       ]
@@ -29122,28 +30487,6 @@
     },
     {
       "data": {
-        "id": "idea:idea_a90d71c35ea8a0f208da",
-        "kind": "idea",
-        "label": "在工具调用前加入状态与资源监督层",
-        "status": "observing",
-        "summary": "在分派前检查意图、状态和资源契约，并提供明确中止原语，可减少重复失败与越界调用。",
-        "issue_date": "2026-10-23",
-        "href": "#ideas?idea=idea_a90d71c35ea8a0f208da&view=overview"
-      },
-      "position": {
-        "x": 2000.0,
-        "y": 1120.0
-      },
-      "provenance": [
-        {
-          "path": "knowledge/ideas/idea_a90d71c35ea8a0f208da.json",
-          "object_id": "idea_a90d71c35ea8a0f208da",
-          "field": "idea"
-        }
-      ]
-    },
-    {
-      "data": {
         "id": "idea:idea_d994d97852383184acfe",
         "kind": "idea",
         "label": "增量与残差压缩能否把跨域状态同步从带宽瓶颈变成可调度开销",
@@ -29166,12 +30509,122 @@
     },
     {
       "data": {
+        "id": "idea:idea_0beeab7573d3f58b0330",
+        "kind": "idea",
+        "label": "把硬件知识与真实部署验收接成内核优化闭环",
+        "status": "observing",
+        "summary": "将设备约束检索、候选生成、编译运行和部署内验收闭环，可提高可用内核比例并减少纸面加速。",
+        "issue_date": "2026-10-27",
+        "href": "#ideas?idea=idea_0beeab7573d3f58b0330&view=overview"
+      },
+      "position": {
+        "x": 2000.0,
+        "y": 160.0
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_0beeab7573d3f58b0330.json",
+          "object_id": "idea_0beeab7573d3f58b0330",
+          "field": "idea"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "idea:idea_6e6886675f61e74dd472",
+        "kind": "idea",
+        "label": "工具接口要按 Agent 能力分层，而不是统一追求更复杂",
+        "status": "seed",
+        "summary": "弱 Agent 更可能从结构化原语获益，而强 Agent 可能因额外结构付出输入成本；接口收益应按 Agent 能力分层评估。",
+        "issue_date": "2026-10-27",
+        "href": "#ideas?idea=idea_6e6886675f61e74dd472&view=overview"
+      },
+      "position": {
+        "x": 2000.0,
+        "y": 640.0
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_6e6886675f61e74dd472.json",
+          "object_id": "idea_6e6886675f61e74dd472",
+          "field": "idea"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "idea:idea_7d4c5b213d117cba4697",
+        "kind": "idea",
+        "label": "跨模型 KV 迁移需要把映射误差与刷新频率一起调度",
+        "status": "observing",
+        "summary": "若把潜空间 KV 映射误差、迁移成本与周期性刷新联合建模，可找到优于重复 Prefill 的可用边界。",
+        "issue_date": "2026-10-27",
+        "href": "#ideas?idea=idea_7d4c5b213d117cba4697&view=overview"
+      },
+      "position": {
+        "x": 2000.0,
+        "y": 800.0
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_7d4c5b213d117cba4697.json",
+          "object_id": "idea_7d4c5b213d117cba4697",
+          "field": "idea"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "idea:idea_a90d71c35ea8a0f208da",
+        "kind": "idea",
+        "label": "在工具调用前加入状态与资源监督层",
+        "status": "observing",
+        "summary": "在分派前检查意图、状态和资源契约，并提供明确中止原语，可减少重复失败与越界调用。",
+        "issue_date": "2026-10-27",
+        "href": "#ideas?idea=idea_a90d71c35ea8a0f208da&view=overview"
+      },
+      "position": {
+        "x": 2000.0,
+        "y": 1120.0
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_a90d71c35ea8a0f208da.json",
+          "object_id": "idea_a90d71c35ea8a0f208da",
+          "field": "idea"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "idea:idea_caedb2a55c74292cb409",
+        "kind": "idea",
+        "label": "用版本化冲突保留实现可审计的分布式 Agent 记忆合并",
+        "status": "observing",
+        "summary": "无协调者合并、版本化冲突保留与查询条件化视图结合，可提高共享状态的可审计性和任务连续性。",
+        "issue_date": "2026-10-27",
+        "href": "#ideas?idea=idea_caedb2a55c74292cb409&view=overview"
+      },
+      "position": {
+        "x": 2000.0,
+        "y": 1280.0
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_caedb2a55c74292cb409.json",
+          "object_id": "idea_caedb2a55c74292cb409",
+          "field": "idea"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "idea:idea_f7841984fcce6a274881",
         "kind": "idea",
         "label": "KV 传输、重算与就地计算存在随带宽和命中率变化的交叉点",
         "status": "observing",
         "summary": "在统一负载下，必要 KV 优先传输、带宽感知重算和解码节点就地 Prefill 会在不同网络条件下各自占优。",
-        "issue_date": "2026-10-23",
+        "issue_date": "2026-10-27",
         "href": "#ideas?idea=idea_f7841984fcce6a274881&view=overview"
       },
       "position": {
@@ -29232,6 +30685,16 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "98cb17ffbcfd13c8f4e58ea4",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "7185271b4bf979dfc1fcc43c",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "fcc0c18d8d6e0695d8d52b2d",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -29280,6 +30743,16 @@
         {
           "path": "archive/issues/2026-09-30/issue.json",
           "object_id": "9492668fe785e6a4c535f9bb",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "ada8f3547af65d6b8dfc29be",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "f22e0fdf7a5a4d877a23ca9b",
           "field": "topic_id/direction_id"
         }
       ]
@@ -29427,6 +30900,11 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "d8a6dfbb0135fb04f3d15ed5",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "169359f8c50fb8c845c18ce0",
           "field": "topic_id/direction_id"
         }
       ]
@@ -29804,6 +31282,21 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "bfaa2e873b5783c236c7c8c4",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "0f8f0782f43e62451d8d7661",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "351c7f6d00a6e5ce7d777960",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "b0a90c9277ec0898cbdeec8e",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -30121,6 +31614,26 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "e2a6a174f52647117cbf7ea9",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "205c28f116281ec06ffdb6ac",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "7135a64400c9d38f2c5b28cb",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "c2446ffe35cd7c1110ea257f",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "cd7146987792b8c9659d058e",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -30318,6 +31831,16 @@
         {
           "path": "archive/issues/2026-10-18/issue.json",
           "object_id": "263a374ba902253630bd8971",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "3b4ec69da9e2508829f66968",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d0a71d37f14bb457e1c88b46",
           "field": "topic_id/direction_id"
         }
       ]
@@ -30525,6 +32048,21 @@
         {
           "path": "archive/issues/2026-10-21/issue.json",
           "object_id": "8406b261bfbe6706d8e9f3dd",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "98dad7f3b86b8ffa68abb37d",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d571ce30e203570a27a3df60",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "e1332ce77a7972a82983eea5",
           "field": "topic_id/direction_id"
         }
       ]
@@ -30786,6 +32324,11 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "e6bfafc4de6f0742034d4684",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "3c3e86051292597ca10a411b",
           "field": "topic_id/direction_id"
         }
       ]
@@ -31353,6 +32896,31 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "radar_ed4413076aae13310e55",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_268552d5d94b977c7c3c",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_b91d7b0bc5f8eb437d96",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_c6c3890b85c281be68f7",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_df19101d95f2c0aba7b9",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_f7009db52e411387b0f6",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -31659,6 +33227,16 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "8a14994ead5fb1c57ade439b",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "1616f71415f898f2baee59be",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d670894b45b0c3f5a180f8c2",
           "field": "topic_id/direction_id"
         }
       ]
@@ -32062,6 +33640,16 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "radar_bb37b8f60330270988d0",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_7651cd3801f2641f8a7e",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_82c83edfb2ccd67abd40",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -32078,6 +33666,11 @@
         {
           "path": "archive/issues/2026-09-04/issue.json",
           "object_id": "ee85477f760cce5757ecfd45",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "528bca88372108a018f017e5",
           "field": "topic_id/direction_id"
         }
       ]
@@ -32185,6 +33778,16 @@
         {
           "path": "archive/issues/2026-10-14/issue.json",
           "object_id": "radar_8ce77f2502c9b91ed646",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_3c34f49c4ddb0483e394",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_fe8ad8fd72c0bf0ffa68",
           "field": "topic_id/direction_id"
         }
       ]
@@ -32668,6 +34271,26 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "radar_f76913d6aafd652c5ecb",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_566e0c4afbca8ff45ca6",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_ac7b54cbe34108c6ff41",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_bf6ebc7463b2c9c27369",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_f75a6962a48cd708da6c",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -32750,6 +34373,16 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "radar_fd978bf32ed6a64c6952",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_61261db1241f5456a24e",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_ae35a41c6b104d326279",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -32822,6 +34455,11 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "radar_7ceebab3e81df056606c",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_61d72555126425c711d5",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -32888,6 +34526,11 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "f8d1368f6bf9fedbc9cd77a1",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "af9599134f5d56d0f4cd5346",
           "field": "topic_id/direction_id"
         }
       ]
@@ -32986,6 +34629,16 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "afa9bbe36d6238053583a937",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "6781d10382738565515010ba",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "e4713bb91707e4da8632575b",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -33022,6 +34675,16 @@
         {
           "path": "archive/issues/2026-10-21/issue.json",
           "object_id": "c9dabd5a5896d7fa5c997bec",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "03ef64972818234359298513",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "dfdc97891d87a34b6d9b4a17",
           "field": "topic_id/direction_id"
         }
       ]
@@ -33678,6 +35341,21 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "85443a3362697092e4d35380",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "4b5ef51f782ab2b0cd6102cd",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "5a66740e74019b21af6ba874",
+          "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "c184313e0ada70903e6ca530",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -33842,6 +35520,11 @@
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "14f554896a5602f09d452905",
           "field": "topic_id/direction_id"
+        },
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d113056eb7031993bac2c113",
+          "field": "topic_id/direction_id"
         }
       ]
     },
@@ -33970,6 +35653,23 @@
         {
           "path": "archive/issues/2026-09-04/issue.json",
           "object_id": "1cac84695d0ac656c9084a48",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:accelerator_architecture->item:205c28f116281ec06ffdb6ac",
+        "source": "direction:accelerator_architecture",
+        "target": "item:205c28f116281ec06ffdb6ac",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "205c28f116281ec06ffdb6ac",
           "field": "direction_id"
         }
       ]
@@ -34208,6 +35908,23 @@
         {
           "path": "archive/issues/2026-09-30/issue.json",
           "object_id": "6b4b2f2d2ff3541a2e876e21",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:accelerator_architecture->item:7135a64400c9d38f2c5b28cb",
+        "source": "direction:accelerator_architecture",
+        "target": "item:7135a64400c9d38f2c5b28cb",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "7135a64400c9d38f2c5b28cb",
           "field": "direction_id"
         }
       ]
@@ -34673,6 +36390,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:accelerator_architecture->item:c2446ffe35cd7c1110ea257f",
+        "source": "direction:accelerator_architecture",
+        "target": "item:c2446ffe35cd7c1110ea257f",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "c2446ffe35cd7c1110ea257f",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:accelerator_architecture->item:c415ed2aac858b4a6aa8a670",
         "source": "direction:accelerator_architecture",
         "target": "item:c415ed2aac858b4a6aa8a670",
@@ -34684,6 +36418,23 @@
         {
           "path": "archive/issues/2026-08-15/issue.json",
           "object_id": "c415ed2aac858b4a6aa8a670",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:accelerator_architecture->item:cd7146987792b8c9659d058e",
+        "source": "direction:accelerator_architecture",
+        "target": "item:cd7146987792b8c9659d058e",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "cd7146987792b8c9659d058e",
           "field": "direction_id"
         }
       ]
@@ -35013,6 +36764,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:accelerator_initiated_io->item:7185271b4bf979dfc1fcc43c",
+        "source": "direction:accelerator_initiated_io",
+        "target": "item:7185271b4bf979dfc1fcc43c",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "7185271b4bf979dfc1fcc43c",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:accelerator_initiated_io->item:98cb17ffbcfd13c8f4e58ea4",
         "source": "direction:accelerator_initiated_io",
         "target": "item:98cb17ffbcfd13c8f4e58ea4",
@@ -35041,6 +36809,23 @@
         {
           "path": "archive/issues/2026-09-28/issue.json",
           "object_id": "9eaeb8c9af21d31b8c60dfdd",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:accelerator_initiated_io->item:fcc0c18d8d6e0695d8d52b2d",
+        "source": "direction:accelerator_initiated_io",
+        "target": "item:fcc0c18d8d6e0695d8d52b2d",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "fcc0c18d8d6e0695d8d52b2d",
           "field": "direction_id"
         }
       ]
@@ -35557,6 +37342,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:agent_cache->item:98dad7f3b86b8ffa68abb37d",
+        "source": "direction:agent_cache",
+        "target": "item:98dad7f3b86b8ffa68abb37d",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "98dad7f3b86b8ffa68abb37d",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:agent_cache->item:9c3c1121c0f97dba985dc9cc",
         "source": "direction:agent_cache",
         "target": "item:9c3c1121c0f97dba985dc9cc",
@@ -35693,6 +37495,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:agent_cache->item:d571ce30e203570a27a3df60",
+        "source": "direction:agent_cache",
+        "target": "item:d571ce30e203570a27a3df60",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d571ce30e203570a27a3df60",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:agent_cache->item:d878a3a44186f2ef49b3ecd3",
         "source": "direction:agent_cache",
         "target": "item:d878a3a44186f2ef49b3ecd3",
@@ -35721,6 +37540,23 @@
         {
           "path": "archive/issues/2026-08-11/issue.json",
           "object_id": "d88d425cdec8fce0d0f46755",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:agent_cache->item:e1332ce77a7972a82983eea5",
+        "source": "direction:agent_cache",
+        "target": "item:e1332ce77a7972a82983eea5",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "e1332ce77a7972a82983eea5",
           "field": "direction_id"
         }
       ]
@@ -36027,6 +37863,23 @@
         {
           "path": "archive/issues/2026-09-03/issue.json",
           "object_id": "radar_262c7cda7629bec3875c",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:agent_ecosystem->item:radar_268552d5d94b977c7c3c",
+        "source": "direction:agent_ecosystem",
+        "target": "item:radar_268552d5d94b977c7c3c",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_268552d5d94b977c7c3c",
           "field": "direction_id"
         }
       ]
@@ -36883,6 +38736,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:agent_ecosystem->item:radar_b91d7b0bc5f8eb437d96",
+        "source": "direction:agent_ecosystem",
+        "target": "item:radar_b91d7b0bc5f8eb437d96",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_b91d7b0bc5f8eb437d96",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:agent_ecosystem->item:radar_b9424a25f3d98290546a",
         "source": "direction:agent_ecosystem",
         "target": "item:radar_b9424a25f3d98290546a",
@@ -36979,6 +38849,23 @@
         {
           "path": "archive/issues/2026-09-24/issue.json",
           "object_id": "radar_c2a3d3fa881116e27ccd",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:agent_ecosystem->item:radar_c6c3890b85c281be68f7",
+        "source": "direction:agent_ecosystem",
+        "target": "item:radar_c6c3890b85c281be68f7",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_c6c3890b85c281be68f7",
           "field": "direction_id"
         }
       ]
@@ -37240,6 +39127,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:agent_ecosystem->item:radar_df19101d95f2c0aba7b9",
+        "source": "direction:agent_ecosystem",
+        "target": "item:radar_df19101d95f2c0aba7b9",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_df19101d95f2c0aba7b9",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:agent_ecosystem->item:radar_df417d2cff7a95828039",
         "source": "direction:agent_ecosystem",
         "target": "item:radar_df417d2cff7a95828039",
@@ -37427,6 +39331,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:agent_ecosystem->item:radar_f7009db52e411387b0f6",
+        "source": "direction:agent_ecosystem",
+        "target": "item:radar_f7009db52e411387b0f6",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_f7009db52e411387b0f6",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:agent_ecosystem->item:radar_f98f178bc8250de86897",
         "source": "direction:agent_ecosystem",
         "target": "item:radar_f98f178bc8250de86897",
@@ -37540,6 +39461,23 @@
         {
           "path": "archive/issues/2026-09-20/issue.json",
           "object_id": "1679f9ad39381f8be28b5a78",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:agent_harness->item:169359f8c50fb8c845c18ce0",
+        "source": "direction:agent_harness",
+        "target": "item:169359f8c50fb8c845c18ce0",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "169359f8c50fb8c845c18ce0",
           "field": "direction_id"
         }
       ]
@@ -38016,6 +39954,23 @@
         {
           "path": "archive/issues/2026-09-14/issue.json",
           "object_id": "144061934feff0fa6eb2eaad",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:agent_tooling_frontier->item:1616f71415f898f2baee59be",
+        "source": "direction:agent_tooling_frontier",
+        "target": "item:1616f71415f898f2baee59be",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "1616f71415f898f2baee59be",
           "field": "direction_id"
         }
       ]
@@ -38730,6 +40685,23 @@
         {
           "path": "archive/issues/2026-09-20/issue.json",
           "object_id": "d5208bb4a481b6acc52a05d0",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:agent_tooling_frontier->item:d670894b45b0c3f5a180f8c2",
+        "source": "direction:agent_tooling_frontier",
+        "target": "item:d670894b45b0c3f5a180f8c2",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d670894b45b0c3f5a180f8c2",
           "field": "direction_id"
         }
       ]
@@ -39603,6 +41575,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:ai_infra->item:radar_7651cd3801f2641f8a7e",
+        "source": "direction:ai_infra",
+        "target": "item:radar_7651cd3801f2641f8a7e",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_7651cd3801f2641f8a7e",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:ai_infra->item:radar_7cde96b334549a495703",
         "source": "direction:ai_infra",
         "target": "item:radar_7cde96b334549a495703",
@@ -39665,6 +41654,23 @@
         {
           "path": "archive/issues/2026-09-28/issue.json",
           "object_id": "radar_82c4510373bd2133f31e",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:ai_infra->item:radar_82c83edfb2ccd67abd40",
+        "source": "direction:ai_infra",
+        "target": "item:radar_82c83edfb2ccd67abd40",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_82c83edfb2ccd67abd40",
           "field": "direction_id"
         }
       ]
@@ -40555,6 +42561,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:direct_storage_path->item:ada8f3547af65d6b8dfc29be",
+        "source": "direction:direct_storage_path",
+        "target": "item:ada8f3547af65d6b8dfc29be",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "ada8f3547af65d6b8dfc29be",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:direct_storage_path->item:ea689bb652526e0e8a1731e6",
         "source": "direction:direct_storage_path",
         "target": "item:ea689bb652526e0e8a1731e6",
@@ -40566,6 +42589,23 @@
         {
           "path": "archive/issues/2026-09-28/issue.json",
           "object_id": "ea689bb652526e0e8a1731e6",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:direct_storage_path->item:f22e0fdf7a5a4d877a23ca9b",
+        "source": "direction:direct_storage_path",
+        "target": "item:f22e0fdf7a5a4d877a23ca9b",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "f22e0fdf7a5a4d877a23ca9b",
           "field": "direction_id"
         }
       ]
@@ -40912,6 +42952,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:hardware_media_frontier->item:528bca88372108a018f017e5",
+        "source": "direction:hardware_media_frontier",
+        "target": "item:528bca88372108a018f017e5",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "528bca88372108a018f017e5",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:hardware_media_frontier->item:ee85477f760cce5757ecfd45",
         "source": "direction:hardware_media_frontier",
         "target": "item:ee85477f760cce5757ecfd45",
@@ -41059,6 +43116,23 @@
         {
           "path": "archive/issues/2026-09-06/issue.json",
           "object_id": "radar_3746ae7d0c0ee466f9a4",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:kv_cache_ecosystem->item:radar_3c34f49c4ddb0483e394",
+        "source": "direction:kv_cache_ecosystem",
+        "target": "item:radar_3c34f49c4ddb0483e394",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_3c34f49c4ddb0483e394",
           "field": "direction_id"
         }
       ]
@@ -41314,6 +43388,23 @@
         {
           "path": "archive/issues/2026-10-12/issue.json",
           "object_id": "radar_fb481e8cbbdaaa342fbb",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:kv_cache_ecosystem->item:radar_fe8ad8fd72c0bf0ffa68",
+        "source": "direction:kv_cache_ecosystem",
+        "target": "item:radar_fe8ad8fd72c0bf0ffa68",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_fe8ad8fd72c0bf0ffa68",
           "field": "direction_id"
         }
       ]
@@ -41660,6 +43751,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:kv_network_scheduling->item:4b5ef51f782ab2b0cd6102cd",
+        "source": "direction:kv_network_scheduling",
+        "target": "item:4b5ef51f782ab2b0cd6102cd",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "4b5ef51f782ab2b0cd6102cd",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:kv_network_scheduling->item:52fdf7648b182b4ce6608b64",
         "source": "direction:kv_network_scheduling",
         "target": "item:52fdf7648b182b4ce6608b64",
@@ -41722,6 +43830,23 @@
         {
           "path": "archive/issues/2026-10-18/issue.json",
           "object_id": "570220b6b85fafc361c5fde1",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:kv_network_scheduling->item:5a66740e74019b21af6ba874",
+        "source": "direction:kv_network_scheduling",
+        "target": "item:5a66740e74019b21af6ba874",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "5a66740e74019b21af6ba874",
           "field": "direction_id"
         }
       ]
@@ -42130,6 +44255,23 @@
         {
           "path": "archive/issues/2026-10-21/issue.json",
           "object_id": "c14361ce6ae1cc41b816f52e",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:kv_network_scheduling->item:c184313e0ada70903e6ca530",
+        "source": "direction:kv_network_scheduling",
+        "target": "item:c184313e0ada70903e6ca530",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "c184313e0ada70903e6ca530",
           "field": "direction_id"
         }
       ]
@@ -43207,6 +45349,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:offload_hierarchy->item:6781d10382738565515010ba",
+        "source": "direction:offload_hierarchy",
+        "target": "item:6781d10382738565515010ba",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "6781d10382738565515010ba",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:offload_hierarchy->item:757775758481577d00f2fdfb",
         "source": "direction:offload_hierarchy",
         "target": "item:757775758481577d00f2fdfb",
@@ -43337,6 +45496,23 @@
         {
           "path": "archive/issues/2026-10-12/issue.json",
           "object_id": "c2ec0fd1614a859f00ed47d5",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:offload_hierarchy->item:e4713bb91707e4da8632575b",
+        "source": "direction:offload_hierarchy",
+        "target": "item:e4713bb91707e4da8632575b",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "e4713bb91707e4da8632575b",
           "field": "direction_id"
         }
       ]
@@ -43796,6 +45972,23 @@
         {
           "path": "archive/issues/2026-10-18/issue.json",
           "object_id": "radar_55f2ae593bfea35f36c3",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:other_frontier->item:radar_566e0c4afbca8ff45ca6",
+        "source": "direction:other_frontier",
+        "target": "item:radar_566e0c4afbca8ff45ca6",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_566e0c4afbca8ff45ca6",
           "field": "direction_id"
         }
       ]
@@ -44431,6 +46624,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:other_frontier->item:radar_ac7b54cbe34108c6ff41",
+        "source": "direction:other_frontier",
+        "target": "item:radar_ac7b54cbe34108c6ff41",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_ac7b54cbe34108c6ff41",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:other_frontier->item:radar_aca52bcad0ee2f7a349e",
         "source": "direction:other_frontier",
         "target": "item:radar_aca52bcad0ee2f7a349e",
@@ -44561,6 +46771,23 @@
         {
           "path": "archive/issues/2026-09-03/issue.json",
           "object_id": "radar_bb6be22a6ff6582cfd6d",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:other_frontier->item:radar_bf6ebc7463b2c9c27369",
+        "source": "direction:other_frontier",
+        "target": "item:radar_bf6ebc7463b2c9c27369",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_bf6ebc7463b2c9c27369",
           "field": "direction_id"
         }
       ]
@@ -44856,6 +47083,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:other_frontier->item:radar_f75a6962a48cd708da6c",
+        "source": "direction:other_frontier",
+        "target": "item:radar_f75a6962a48cd708da6c",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_f75a6962a48cd708da6c",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:other_frontier->item:radar_f76913d6aafd652c5ecb",
         "source": "direction:other_frontier",
         "target": "item:radar_f76913d6aafd652c5ecb",
@@ -44958,6 +47202,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:paged_management->item:03ef64972818234359298513",
+        "source": "direction:paged_management",
+        "target": "item:03ef64972818234359298513",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "03ef64972818234359298513",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:paged_management->item:7c7c9ee1f42e2759ca57776d",
         "source": "direction:paged_management",
         "target": "item:7c7c9ee1f42e2759ca57776d",
@@ -45020,6 +47281,23 @@
         {
           "path": "archive/issues/2026-10-21/issue.json",
           "object_id": "c9dabd5a5896d7fa5c997bec",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:paged_management->item:dfdc97891d87a34b6d9b4a17",
+        "source": "direction:paged_management",
+        "target": "item:dfdc97891d87a34b6d9b4a17",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "dfdc97891d87a34b6d9b4a17",
           "field": "direction_id"
         }
       ]
@@ -45258,6 +47536,23 @@
         {
           "path": "archive/issues/2026-10-14/issue.json",
           "object_id": "b1f5b508fa5a63afc625eb4c",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:pd_disaggregation->item:d113056eb7031993bac2c113",
+        "source": "direction:pd_disaggregation",
+        "target": "item:d113056eb7031993bac2c113",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d113056eb7031993bac2c113",
           "field": "direction_id"
         }
       ]
@@ -45553,6 +47848,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:radar_c5cf73c8cdc7->item:radar_61261db1241f5456a24e",
+        "source": "direction:radar_c5cf73c8cdc7",
+        "target": "item:radar_61261db1241f5456a24e",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_61261db1241f5456a24e",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:radar_c5cf73c8cdc7->item:radar_7363e4d1c5020ed15f20",
         "source": "direction:radar_c5cf73c8cdc7",
         "target": "item:radar_7363e4d1c5020ed15f20",
@@ -45649,6 +47961,23 @@
         {
           "path": "archive/issues/2026-08-29/issue.json",
           "object_id": "radar_a42daf0f6dc17ee83047",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:radar_c5cf73c8cdc7->item:radar_ae35a41c6b104d326279",
+        "source": "direction:radar_c5cf73c8cdc7",
+        "target": "item:radar_ae35a41c6b104d326279",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_ae35a41c6b104d326279",
           "field": "direction_id"
         }
       ]
@@ -46216,6 +48545,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:serving_runtime_compiler->item:3b4ec69da9e2508829f66968",
+        "source": "direction:serving_runtime_compiler",
+        "target": "item:3b4ec69da9e2508829f66968",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "3b4ec69da9e2508829f66968",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:serving_runtime_compiler->item:810e7598d049ddf8b401fc54",
         "source": "direction:serving_runtime_compiler",
         "target": "item:810e7598d049ddf8b401fc54",
@@ -46261,6 +48607,23 @@
         {
           "path": "archive/issues/2026-08-11/issue.json",
           "object_id": "cec3c4b05a9a9ec0b568ed2a",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:serving_runtime_compiler->item:d0a71d37f14bb457e1c88b46",
+        "source": "direction:serving_runtime_compiler",
+        "target": "item:d0a71d37f14bb457e1c88b46",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d0a71d37f14bb457e1c88b46",
           "field": "direction_id"
         }
       ]
@@ -46329,6 +48692,23 @@
         {
           "path": "archive/issues/2026-08-11/issue.json",
           "object_id": "radar_60611f936a2f96c3abc3",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:storage_media->item:radar_61d72555126425c711d5",
+        "source": "direction:storage_media",
+        "target": "item:radar_61d72555126425c711d5",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_61d72555126425c711d5",
           "field": "direction_id"
         }
       ]
@@ -46607,6 +48987,23 @@
     },
     {
       "data": {
+        "id": "edge:has_item:direction:systems_mechanism_transfer->item:af9599134f5d56d0f4cd5346",
+        "source": "direction:systems_mechanism_transfer",
+        "target": "item:af9599134f5d56d0f4cd5346",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "af9599134f5d56d0f4cd5346",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:has_item:direction:systems_mechanism_transfer->item:d9674b70405b7604079b0e09",
         "source": "direction:systems_mechanism_transfer",
         "target": "item:d9674b70405b7604079b0e09",
@@ -46703,6 +49100,23 @@
         {
           "path": "archive/issues/2026-09-18/issue.json",
           "object_id": "0dcea77dbcd9caa81d71610c",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:tool_chain->item:0f8f0782f43e62451d8d7661",
+        "source": "direction:tool_chain",
+        "target": "item:0f8f0782f43e62451d8d7661",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "0f8f0782f43e62451d8d7661",
           "field": "direction_id"
         }
       ]
@@ -46822,6 +49236,23 @@
         {
           "path": "archive/issues/2026-08-06/issue.json",
           "object_id": "33a8189b5b967c08d218ad00",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:tool_chain->item:351c7f6d00a6e5ce7d777960",
+        "source": "direction:tool_chain",
+        "target": "item:351c7f6d00a6e5ce7d777960",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "351c7f6d00a6e5ce7d777960",
           "field": "direction_id"
         }
       ]
@@ -47128,6 +49559,23 @@
         {
           "path": "archive/issues/2026-10-18/issue.json",
           "object_id": "b0642c6add301c1d5fb6e3eb",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:tool_chain->item:b0a90c9277ec0898cbdeec8e",
+        "source": "direction:tool_chain",
+        "target": "item:b0a90c9277ec0898cbdeec8e",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "b0a90c9277ec0898cbdeec8e",
           "field": "direction_id"
         }
       ]
@@ -47553,6 +50001,23 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "379f9edf5678a85cd23761fa",
+          "field": "direction_id"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:has_item:direction:transfer_placement->item:3c3e86051292597ca10a411b",
+        "source": "direction:transfer_placement",
+        "target": "item:3c3e86051292597ca10a411b",
+        "relation": "has_item",
+        "label": "收录条目",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "3c3e86051292597ca10a411b",
           "field": "direction_id"
         }
       ]
@@ -48691,6 +51156,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:03ef64972818234359298513->issue:2026-10-27",
+        "source": "item:03ef64972818234359298513",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "03ef64972818234359298513",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:04ab0e5d560d5a59cec40f5e->issue:2026-09-10",
         "source": "item:04ab0e5d560d5a59cec40f5e",
         "target": "issue:2026-09-10",
@@ -49150,6 +51632,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:0f8f0782f43e62451d8d7661->issue:2026-10-27",
+        "source": "item:0f8f0782f43e62451d8d7661",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "0f8f0782f43e62451d8d7661",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:0f9c8f25a9d0b06aac50a2ed->issue:2026-10-21",
         "source": "item:0f9c8f25a9d0b06aac50a2ed",
         "target": "issue:2026-10-21",
@@ -49422,6 +51921,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:1616f71415f898f2baee59be->issue:2026-10-27",
+        "source": "item:1616f71415f898f2baee59be",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "1616f71415f898f2baee59be",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:16335b09dee744319ef1b512->issue:2026-10-18",
         "source": "item:16335b09dee744319ef1b512",
         "target": "issue:2026-10-18",
@@ -49450,6 +51966,23 @@
         {
           "path": "archive/issues/2026-09-20/issue.json",
           "object_id": "1679f9ad39381f8be28b5a78",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:169359f8c50fb8c845c18ce0->issue:2026-10-27",
+        "source": "item:169359f8c50fb8c845c18ce0",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "169359f8c50fb8c845c18ce0",
           "field": "items"
         }
       ]
@@ -49722,6 +52255,23 @@
         {
           "path": "archive/issues/2026-09-10/issue.json",
           "object_id": "201ec669faee72df369024ed",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:205c28f116281ec06ffdb6ac->issue:2026-10-27",
+        "source": "item:205c28f116281ec06ffdb6ac",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "205c28f116281ec06ffdb6ac",
           "field": "items"
         }
       ]
@@ -50442,6 +52992,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:351c7f6d00a6e5ce7d777960->issue:2026-10-27",
+        "source": "item:351c7f6d00a6e5ce7d777960",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "351c7f6d00a6e5ce7d777960",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:369ee9744aeb77d4efa8bd3b->issue:2026-09-28",
         "source": "item:369ee9744aeb77d4efa8bd3b",
         "target": "issue:2026-09-28",
@@ -50629,6 +53196,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:3b4ec69da9e2508829f66968->issue:2026-10-27",
+        "source": "item:3b4ec69da9e2508829f66968",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "3b4ec69da9e2508829f66968",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:3b6de45738a8546aa8c0d1fc->issue:2026-10-18",
         "source": "item:3b6de45738a8546aa8c0d1fc",
         "target": "issue:2026-10-18",
@@ -50657,6 +53241,23 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "3b94079f89c314ed2fd90145",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:3c3e86051292597ca10a411b->issue:2026-10-27",
+        "source": "item:3c3e86051292597ca10a411b",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "3c3e86051292597ca10a411b",
           "field": "items"
         }
       ]
@@ -51190,6 +53791,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:4b5ef51f782ab2b0cd6102cd->issue:2026-10-27",
+        "source": "item:4b5ef51f782ab2b0cd6102cd",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "4b5ef51f782ab2b0cd6102cd",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:4ba27c1c833f3f45057da309->issue:2026-09-10",
         "source": "item:4ba27c1c833f3f45057da309",
         "target": "issue:2026-09-10",
@@ -51337,6 +53955,23 @@
         {
           "path": "archive/issues/2026-10-18/issue.json",
           "object_id": "521fb45f2cbd6ea0aa1cf6c1",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:528bca88372108a018f017e5->issue:2026-10-27",
+        "source": "item:528bca88372108a018f017e5",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "528bca88372108a018f017e5",
           "field": "items"
         }
       ]
@@ -51660,6 +54295,23 @@
         {
           "path": "archive/issues/2026-09-30/issue.json",
           "object_id": "594000a872354aeaec82478b",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:5a66740e74019b21af6ba874->issue:2026-10-27",
+        "source": "item:5a66740e74019b21af6ba874",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "5a66740e74019b21af6ba874",
           "field": "items"
         }
       ]
@@ -52244,6 +54896,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:6781d10382738565515010ba->issue:2026-10-27",
+        "source": "item:6781d10382738565515010ba",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "6781d10382738565515010ba",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:6854df1a9e549ad596be6d59->issue:2026-10-23",
         "source": "item:6854df1a9e549ad596be6d59",
         "target": "issue:2026-10-23",
@@ -52544,6 +55213,40 @@
         {
           "path": "archive/issues/2026-08-23/issue.json",
           "object_id": "70bff2fea5073e37e20123fc",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:7135a64400c9d38f2c5b28cb->issue:2026-10-27",
+        "source": "item:7135a64400c9d38f2c5b28cb",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "7135a64400c9d38f2c5b28cb",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:7185271b4bf979dfc1fcc43c->issue:2026-10-27",
+        "source": "item:7185271b4bf979dfc1fcc43c",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "7185271b4bf979dfc1fcc43c",
           "field": "items"
         }
       ]
@@ -54029,6 +56732,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:98dad7f3b86b8ffa68abb37d->issue:2026-10-27",
+        "source": "item:98dad7f3b86b8ffa68abb37d",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "98dad7f3b86b8ffa68abb37d",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:99ac21ee358e723713abdc10->issue:2026-09-10",
         "source": "item:99ac21ee358e723713abdc10",
         "target": "issue:2026-09-10",
@@ -54777,6 +57497,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:ada8f3547af65d6b8dfc29be->issue:2026-10-27",
+        "source": "item:ada8f3547af65d6b8dfc29be",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "ada8f3547af65d6b8dfc29be",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:adc7e19f901fb57eb8db53be->issue:2026-10-18",
         "source": "item:adc7e19f901fb57eb8db53be",
         "target": "issue:2026-10-18",
@@ -54845,6 +57582,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:af9599134f5d56d0f4cd5346->issue:2026-10-27",
+        "source": "item:af9599134f5d56d0f4cd5346",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "af9599134f5d56d0f4cd5346",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:afa9bbe36d6238053583a937->issue:2026-10-23",
         "source": "item:afa9bbe36d6238053583a937",
         "target": "issue:2026-10-23",
@@ -54890,6 +57644,23 @@
         {
           "path": "archive/issues/2026-10-18/issue.json",
           "object_id": "b0642c6add301c1d5fb6e3eb",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:b0a90c9277ec0898cbdeec8e->issue:2026-10-27",
+        "source": "item:b0a90c9277ec0898cbdeec8e",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "b0a90c9277ec0898cbdeec8e",
           "field": "items"
         }
       ]
@@ -55389,6 +58160,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:c184313e0ada70903e6ca530->issue:2026-10-27",
+        "source": "item:c184313e0ada70903e6ca530",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "c184313e0ada70903e6ca530",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:c1e0db4f35fc3879a6cbe88a->issue:2026-09-18",
         "source": "item:c1e0db4f35fc3879a6cbe88a",
         "target": "issue:2026-09-18",
@@ -55434,6 +58222,23 @@
         {
           "path": "archive/issues/2026-08-17/issue.json",
           "object_id": "c21ff1271982b85ad6384c82",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:c2446ffe35cd7c1110ea257f->issue:2026-10-27",
+        "source": "item:c2446ffe35cd7c1110ea257f",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "c2446ffe35cd7c1110ea257f",
           "field": "items"
         }
       ]
@@ -55695,6 +58500,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:cd7146987792b8c9659d058e->issue:2026-10-27",
+        "source": "item:cd7146987792b8c9659d058e",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "cd7146987792b8c9659d058e",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:cda619f1f98933dd41e737d0->issue:2026-10-18",
         "source": "item:cda619f1f98933dd41e737d0",
         "target": "issue:2026-10-18",
@@ -55865,6 +58687,40 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:d0a71d37f14bb457e1c88b46->issue:2026-10-27",
+        "source": "item:d0a71d37f14bb457e1c88b46",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d0a71d37f14bb457e1c88b46",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:d113056eb7031993bac2c113->issue:2026-10-27",
+        "source": "item:d113056eb7031993bac2c113",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d113056eb7031993bac2c113",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:d1b6cc00373fc2412232e9d5->issue:2026-09-03",
         "source": "item:d1b6cc00373fc2412232e9d5",
         "target": "issue:2026-09-03",
@@ -55984,6 +58840,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:d571ce30e203570a27a3df60->issue:2026-10-27",
+        "source": "item:d571ce30e203570a27a3df60",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d571ce30e203570a27a3df60",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:d58266858faeb6cef77fd7c3->issue:2026-10-18",
         "source": "item:d58266858faeb6cef77fd7c3",
         "target": "issue:2026-10-18",
@@ -56046,6 +58919,23 @@
         {
           "path": "archive/issues/2026-09-14/issue.json",
           "object_id": "d669c6a8fcb514a36198cb66",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:d670894b45b0c3f5a180f8c2->issue:2026-10-27",
+        "source": "item:d670894b45b0c3f5a180f8c2",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "d670894b45b0c3f5a180f8c2",
           "field": "items"
         }
       ]
@@ -56477,6 +59367,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:dfdc97891d87a34b6d9b4a17->issue:2026-10-27",
+        "source": "item:dfdc97891d87a34b6d9b4a17",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "dfdc97891d87a34b6d9b4a17",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:e041762630a5be09f348c000->issue:2026-09-03",
         "source": "item:e041762630a5be09f348c000",
         "target": "issue:2026-09-03",
@@ -56522,6 +59429,23 @@
         {
           "path": "archive/issues/2026-08-11/issue.json",
           "object_id": "e0f15a586bf785daa7a863e2",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:e1332ce77a7972a82983eea5->issue:2026-10-27",
+        "source": "item:e1332ce77a7972a82983eea5",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "e1332ce77a7972a82983eea5",
           "field": "items"
         }
       ]
@@ -56590,6 +59514,23 @@
         {
           "path": "archive/issues/2026-08-26/issue.json",
           "object_id": "e335e049f37fc68f6d8ad08a",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:e4713bb91707e4da8632575b->issue:2026-10-27",
+        "source": "item:e4713bb91707e4da8632575b",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "e4713bb91707e4da8632575b",
           "field": "items"
         }
       ]
@@ -57055,6 +59996,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:f22e0fdf7a5a4d877a23ca9b->issue:2026-10-27",
+        "source": "item:f22e0fdf7a5a4d877a23ca9b",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "f22e0fdf7a5a4d877a23ca9b",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:f43d792a836e2304fbf3ddd4->issue:2026-09-04",
         "source": "item:f43d792a836e2304fbf3ddd4",
         "target": "issue:2026-09-04",
@@ -57338,6 +60296,23 @@
         {
           "path": "archive/issues/2026-08-02/issue.json",
           "object_id": "fc790b2ea52635d113cc9124",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:fcc0c18d8d6e0695d8d52b2d->issue:2026-10-27",
+        "source": "item:fcc0c18d8d6e0695d8d52b2d",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "fcc0c18d8d6e0695d8d52b2d",
           "field": "items"
         }
       ]
@@ -58126,6 +61101,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:radar_268552d5d94b977c7c3c->issue:2026-10-27",
+        "source": "item:radar_268552d5d94b977c7c3c",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_268552d5d94b977c7c3c",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:radar_28cfa98ec4eee437b248->issue:2026-08-26",
         "source": "item:radar_28cfa98ec4eee437b248",
         "target": "issue:2026-08-26",
@@ -58585,6 +61577,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:radar_3c34f49c4ddb0483e394->issue:2026-10-27",
+        "source": "item:radar_3c34f49c4ddb0483e394",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_3c34f49c4ddb0483e394",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:radar_3c6be82be1841cfa03f1->issue:2026-09-28",
         "source": "item:radar_3c6be82be1841cfa03f1",
         "target": "issue:2026-09-28",
@@ -59010,6 +62019,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:radar_566e0c4afbca8ff45ca6->issue:2026-10-27",
+        "source": "item:radar_566e0c4afbca8ff45ca6",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_566e0c4afbca8ff45ca6",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:radar_57f4d445dc3be4bab273->issue:2026-10-14",
         "source": "item:radar_57f4d445dc3be4bab273",
         "target": "issue:2026-10-14",
@@ -59225,6 +62251,40 @@
         {
           "path": "archive/issues/2026-08-11/issue.json",
           "object_id": "radar_60611f936a2f96c3abc3",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:radar_61261db1241f5456a24e->issue:2026-10-27",
+        "source": "item:radar_61261db1241f5456a24e",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_61261db1241f5456a24e",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:radar_61d72555126425c711d5->issue:2026-10-27",
+        "source": "item:radar_61d72555126425c711d5",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_61d72555126425c711d5",
           "field": "items"
         }
       ]
@@ -59843,6 +62903,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:radar_7651cd3801f2641f8a7e->issue:2026-10-27",
+        "source": "item:radar_7651cd3801f2641f8a7e",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_7651cd3801f2641f8a7e",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:radar_76d881fc5a800437c091->issue:2026-10-12",
         "source": "item:radar_76d881fc5a800437c091",
         "target": "issue:2026-10-12",
@@ -60126,6 +63203,23 @@
         {
           "path": "archive/issues/2026-09-28/issue.json",
           "object_id": "radar_82c4510373bd2133f31e",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:radar_82c83edfb2ccd67abd40->issue:2026-10-27",
+        "source": "item:radar_82c83edfb2ccd67abd40",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_82c83edfb2ccd67abd40",
           "field": "items"
         }
       ]
@@ -60982,6 +64076,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:radar_ac7b54cbe34108c6ff41->issue:2026-10-27",
+        "source": "item:radar_ac7b54cbe34108c6ff41",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_ac7b54cbe34108c6ff41",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:radar_aca52bcad0ee2f7a349e->issue:2026-09-30",
         "source": "item:radar_aca52bcad0ee2f7a349e",
         "target": "issue:2026-09-30",
@@ -61027,6 +64138,23 @@
         {
           "path": "archive/issues/2026-09-04/issue.json",
           "object_id": "radar_ad59645759031412eb9f",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:radar_ae35a41c6b104d326279->issue:2026-10-27",
+        "source": "item:radar_ae35a41c6b104d326279",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_ae35a41c6b104d326279",
           "field": "items"
         }
       ]
@@ -61305,6 +64433,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:radar_b91d7b0bc5f8eb437d96->issue:2026-10-27",
+        "source": "item:radar_b91d7b0bc5f8eb437d96",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_b91d7b0bc5f8eb437d96",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:radar_b9324e821f5836f6189d->issue:2026-08-23",
         "source": "item:radar_b9324e821f5836f6189d",
         "target": "issue:2026-08-23",
@@ -61458,6 +64603,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:radar_bf6ebc7463b2c9c27369->issue:2026-10-27",
+        "source": "item:radar_bf6ebc7463b2c9c27369",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_bf6ebc7463b2c9c27369",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:radar_bfcc2adaa4c5522dc8ac->issue:2026-09-04",
         "source": "item:radar_bfcc2adaa4c5522dc8ac",
         "target": "issue:2026-09-04",
@@ -61588,6 +64750,23 @@
         {
           "path": "archive/issues/2026-09-03/issue.json",
           "object_id": "radar_c5edd1b9a81274c9c57b",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:radar_c6c3890b85c281be68f7->issue:2026-10-27",
+        "source": "item:radar_c6c3890b85c281be68f7",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_c6c3890b85c281be68f7",
           "field": "items"
         }
       ]
@@ -62206,6 +65385,23 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:radar_df19101d95f2c0aba7b9->issue:2026-10-27",
+        "source": "item:radar_df19101d95f2c0aba7b9",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_df19101d95f2c0aba7b9",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:radar_df21aafd27628814f23f->issue:2026-10-21",
         "source": "item:radar_df21aafd27628814f23f",
         "target": "issue:2026-10-21",
@@ -62631,6 +65827,40 @@
     },
     {
       "data": {
+        "id": "edge:published_in:item:radar_f7009db52e411387b0f6->issue:2026-10-27",
+        "source": "item:radar_f7009db52e411387b0f6",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_f7009db52e411387b0f6",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:radar_f75a6962a48cd708da6c->issue:2026-10-27",
+        "source": "item:radar_f75a6962a48cd708da6c",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_f75a6962a48cd708da6c",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:published_in:item:radar_f76913d6aafd652c5ecb->issue:2026-10-23",
         "source": "item:radar_f76913d6aafd652c5ecb",
         "target": "issue:2026-10-23",
@@ -62778,6 +66008,23 @@
         {
           "path": "archive/issues/2026-10-23/issue.json",
           "object_id": "radar_fd978bf32ed6a64c6952",
+          "field": "items"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:published_in:item:radar_fe8ad8fd72c0bf0ffa68->issue:2026-10-27",
+        "source": "item:radar_fe8ad8fd72c0bf0ffa68",
+        "target": "issue:2026-10-27",
+        "relation": "published_in",
+        "label": "发布于",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "object_id": "radar_fe8ad8fd72c0bf0ffa68",
           "field": "items"
         }
       ]
@@ -63073,6 +66320,23 @@
     },
     {
       "data": {
+        "id": "edge:supports_idea:item:0f8f0782f43e62451d8d7661->idea:idea_a90d71c35ea8a0f208da",
+        "source": "item:0f8f0782f43e62451d8d7661",
+        "target": "idea:idea_a90d71c35ea8a0f208da",
+        "relation": "supports_idea",
+        "label": "支持",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_a90d71c35ea8a0f208da.json",
+          "object_id": "idea_a90d71c35ea8a0f208da",
+          "field": "evidence_for"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:supports_idea:item:118ded5a1be93f4bec3b8337->idea:idea_08f0269ef7fd181c9968",
         "source": "item:118ded5a1be93f4bec3b8337",
         "target": "idea:idea_08f0269ef7fd181c9968",
@@ -63175,6 +66439,23 @@
     },
     {
       "data": {
+        "id": "edge:supports_idea:item:169359f8c50fb8c845c18ce0->idea:idea_6e6886675f61e74dd472",
+        "source": "item:169359f8c50fb8c845c18ce0",
+        "target": "idea:idea_6e6886675f61e74dd472",
+        "relation": "supports_idea",
+        "label": "支持",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_6e6886675f61e74dd472.json",
+          "object_id": "idea_6e6886675f61e74dd472",
+          "field": "evidence_for"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:supports_idea:item:195bb579ab975dbccb4861b9->idea:idea_a90d71c35ea8a0f208da",
         "source": "item:195bb579ab975dbccb4861b9",
         "target": "idea:idea_a90d71c35ea8a0f208da",
@@ -63237,6 +66518,23 @@
         {
           "path": "knowledge/ideas/idea_876c619ed473b24b78bc.json",
           "object_id": "idea_876c619ed473b24b78bc",
+          "field": "evidence_for"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_idea:item:205c28f116281ec06ffdb6ac->idea:idea_0beeab7573d3f58b0330",
+        "source": "item:205c28f116281ec06ffdb6ac",
+        "target": "idea:idea_0beeab7573d3f58b0330",
+        "relation": "supports_idea",
+        "label": "支持",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_0beeab7573d3f58b0330.json",
+          "object_id": "idea_0beeab7573d3f58b0330",
           "field": "evidence_for"
         }
       ]
@@ -64246,6 +67544,23 @@
     },
     {
       "data": {
+        "id": "edge:supports_idea:item:b0a90c9277ec0898cbdeec8e->idea:idea_a90d71c35ea8a0f208da",
+        "source": "item:b0a90c9277ec0898cbdeec8e",
+        "target": "idea:idea_a90d71c35ea8a0f208da",
+        "relation": "supports_idea",
+        "label": "支持",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_a90d71c35ea8a0f208da.json",
+          "object_id": "idea_a90d71c35ea8a0f208da",
+          "field": "evidence_for"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:supports_idea:item:bb6e1c355b3d0d653a033692->idea:idea_6e6886675f61e74dd472",
         "source": "item:bb6e1c355b3d0d653a033692",
         "target": "idea:idea_6e6886675f61e74dd472",
@@ -64274,6 +67589,40 @@
         {
           "path": "knowledge/ideas/idea_a90d71c35ea8a0f208da.json",
           "object_id": "idea_a90d71c35ea8a0f208da",
+          "field": "evidence_for"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_idea:item:c184313e0ada70903e6ca530->idea:idea_f7841984fcce6a274881",
+        "source": "item:c184313e0ada70903e6ca530",
+        "target": "idea:idea_f7841984fcce6a274881",
+        "relation": "supports_idea",
+        "label": "支持",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_f7841984fcce6a274881.json",
+          "object_id": "idea_f7841984fcce6a274881",
+          "field": "evidence_for"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_idea:item:c2446ffe35cd7c1110ea257f->idea:idea_0beeab7573d3f58b0330",
+        "source": "item:c2446ffe35cd7c1110ea257f",
+        "target": "idea:idea_0beeab7573d3f58b0330",
+        "relation": "supports_idea",
+        "label": "支持",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_0beeab7573d3f58b0330.json",
+          "object_id": "idea_0beeab7573d3f58b0330",
           "field": "evidence_for"
         }
       ]
@@ -64342,6 +67691,40 @@
         {
           "path": "knowledge/ideas/idea_2f2161ae7470caca28bb.json",
           "object_id": "idea_2f2161ae7470caca28bb",
+          "field": "evidence_for"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_idea:item:d113056eb7031993bac2c113->idea:idea_f7841984fcce6a274881",
+        "source": "item:d113056eb7031993bac2c113",
+        "target": "idea:idea_f7841984fcce6a274881",
+        "relation": "supports_idea",
+        "label": "支持",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_f7841984fcce6a274881.json",
+          "object_id": "idea_f7841984fcce6a274881",
+          "field": "evidence_for"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_idea:item:d571ce30e203570a27a3df60->idea:idea_7d4c5b213d117cba4697",
+        "source": "item:d571ce30e203570a27a3df60",
+        "target": "idea:idea_7d4c5b213d117cba4697",
+        "relation": "supports_idea",
+        "label": "支持",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_7d4c5b213d117cba4697.json",
+          "object_id": "idea_7d4c5b213d117cba4697",
           "field": "evidence_for"
         }
       ]
@@ -64495,6 +67878,23 @@
         {
           "path": "knowledge/ideas/idea_a90d71c35ea8a0f208da.json",
           "object_id": "idea_a90d71c35ea8a0f208da",
+          "field": "evidence_for"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_idea:item:e1332ce77a7972a82983eea5->idea:idea_caedb2a55c74292cb409",
+        "source": "item:e1332ce77a7972a82983eea5",
+        "target": "idea:idea_caedb2a55c74292cb409",
+        "relation": "supports_idea",
+        "label": "支持",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/ideas/idea_caedb2a55c74292cb409.json",
+          "object_id": "idea_caedb2a55c74292cb409",
           "field": "evidence_for"
         }
       ]
@@ -64773,6 +68173,23 @@
     },
     {
       "data": {
+        "id": "edge:supports_judgement:item:0f8f0782f43e62451d8d7661->judgement:2026-10-27:ae2a97b467fc5a34",
+        "source": "item:0f8f0782f43e62451d8d7661",
+        "target": "judgement:2026-10-27:ae2a97b467fc5a34",
+        "relation": "supports_judgement",
+        "label": "支持判断",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "field": "synthesis.judgements[].evidence_item_ids",
+          "object_id": "0f8f0782f43e62451d8d7661"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:supports_judgement:item:0f9c8f25a9d0b06aac50a2ed->judgement:2026-10-21:972be4377cb0ec2f",
         "source": "item:0f9c8f25a9d0b06aac50a2ed",
         "target": "judgement:2026-10-21:972be4377cb0ec2f",
@@ -64904,6 +68321,23 @@
           "path": "archive/issues/2026-09-20/issue.json",
           "field": "synthesis.judgements[].evidence_item_ids",
           "object_id": "1679f9ad39381f8be28b5a78"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_judgement:item:169359f8c50fb8c845c18ce0->judgement:2026-10-27:ae2a97b467fc5a34",
+        "source": "item:169359f8c50fb8c845c18ce0",
+        "target": "judgement:2026-10-27:ae2a97b467fc5a34",
+        "relation": "supports_judgement",
+        "label": "支持判断",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "field": "synthesis.judgements[].evidence_item_ids",
+          "object_id": "169359f8c50fb8c845c18ce0"
         }
       ]
     },
@@ -65147,6 +68581,23 @@
     },
     {
       "data": {
+        "id": "edge:supports_judgement:item:351c7f6d00a6e5ce7d777960->judgement:2026-10-27:ae2a97b467fc5a34",
+        "source": "item:351c7f6d00a6e5ce7d777960",
+        "target": "judgement:2026-10-27:ae2a97b467fc5a34",
+        "relation": "supports_judgement",
+        "label": "支持判断",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "field": "synthesis.judgements[].evidence_item_ids",
+          "object_id": "351c7f6d00a6e5ce7d777960"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:supports_judgement:item:37208000efbbc67d74c2a28b->judgement:2026-09-10:e93180027c11e6a4",
         "source": "item:37208000efbbc67d74c2a28b",
         "target": "judgement:2026-09-10:e93180027c11e6a4",
@@ -65363,6 +68814,23 @@
           "path": "archive/issues/2026-10-18/issue.json",
           "field": "synthesis.judgements[].evidence_item_ids",
           "object_id": "570220b6b85fafc361c5fde1"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_judgement:item:5a66740e74019b21af6ba874->judgement:2026-10-27:664f35157cf4c36d",
+        "source": "item:5a66740e74019b21af6ba874",
+        "target": "judgement:2026-10-27:664f35157cf4c36d",
+        "relation": "supports_judgement",
+        "label": "支持判断",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "field": "synthesis.judgements[].evidence_item_ids",
+          "object_id": "5a66740e74019b21af6ba874"
         }
       ]
     },
@@ -66405,6 +69873,23 @@
     },
     {
       "data": {
+        "id": "edge:supports_judgement:item:ada8f3547af65d6b8dfc29be->judgement:2026-10-27:664f35157cf4c36d",
+        "source": "item:ada8f3547af65d6b8dfc29be",
+        "target": "judgement:2026-10-27:664f35157cf4c36d",
+        "relation": "supports_judgement",
+        "label": "支持判断",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "field": "synthesis.judgements[].evidence_item_ids",
+          "object_id": "ada8f3547af65d6b8dfc29be"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:supports_judgement:item:adc7e19f901fb57eb8db53be->judgement:2026-10-18:24e9d2e052e16f41",
         "source": "item:adc7e19f901fb57eb8db53be",
         "target": "judgement:2026-10-18:24e9d2e052e16f41",
@@ -66451,6 +69936,23 @@
           "path": "archive/issues/2026-10-18/issue.json",
           "field": "synthesis.judgements[].evidence_item_ids",
           "object_id": "b0642c6add301c1d5fb6e3eb"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_judgement:item:b0a90c9277ec0898cbdeec8e->judgement:2026-10-27:ae2a97b467fc5a34",
+        "source": "item:b0a90c9277ec0898cbdeec8e",
+        "target": "judgement:2026-10-27:ae2a97b467fc5a34",
+        "relation": "supports_judgement",
+        "label": "支持判断",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "field": "synthesis.judgements[].evidence_item_ids",
+          "object_id": "b0a90c9277ec0898cbdeec8e"
         }
       ]
     },
@@ -66762,6 +70264,23 @@
     },
     {
       "data": {
+        "id": "edge:supports_judgement:item:cd7146987792b8c9659d058e->judgement:2026-10-27:4760516ce6b0deb5",
+        "source": "item:cd7146987792b8c9659d058e",
+        "target": "judgement:2026-10-27:4760516ce6b0deb5",
+        "relation": "supports_judgement",
+        "label": "支持判断",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "field": "synthesis.judgements[].evidence_item_ids",
+          "object_id": "cd7146987792b8c9659d058e"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:supports_judgement:item:cef265dbce23d67210db09ff->judgement:2026-09-03:91f3765b95e63837",
         "source": "item:cef265dbce23d67210db09ff",
         "target": "judgement:2026-09-03:91f3765b95e63837",
@@ -66791,6 +70310,40 @@
           "path": "archive/issues/2026-09-03/issue.json",
           "field": "synthesis.judgements[].evidence_item_ids",
           "object_id": "d0982f9d55d7f8770b19c636"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_judgement:item:d0a71d37f14bb457e1c88b46->judgement:2026-10-27:4760516ce6b0deb5",
+        "source": "item:d0a71d37f14bb457e1c88b46",
+        "target": "judgement:2026-10-27:4760516ce6b0deb5",
+        "relation": "supports_judgement",
+        "label": "支持判断",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "field": "synthesis.judgements[].evidence_item_ids",
+          "object_id": "d0a71d37f14bb457e1c88b46"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:supports_judgement:item:d113056eb7031993bac2c113->judgement:2026-10-27:664f35157cf4c36d",
+        "source": "item:d113056eb7031993bac2c113",
+        "target": "judgement:2026-10-27:664f35157cf4c36d",
+        "relation": "supports_judgement",
+        "label": "支持判断",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "archive/issues/2026-10-27/issue.json",
+          "field": "synthesis.judgements[].evidence_item_ids",
+          "object_id": "d113056eb7031993bac2c113"
         }
       ]
     },
@@ -67612,6 +71165,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:accelerator_io_datapath:accelerator_initiated_io->item:7185271b4bf979dfc1fcc43c",
+        "source": "branch:accelerator_io_datapath:accelerator_initiated_io",
+        "target": "item:7185271b4bf979dfc1fcc43c",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/accelerator_io_datapath.json",
+          "object_id": "accelerator_initiated_io:7185271b4bf979dfc1fcc43c",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:accelerator_io_datapath:accelerator_initiated_io->item:98cb17ffbcfd13c8f4e58ea4",
         "source": "branch:accelerator_io_datapath:accelerator_initiated_io",
         "target": "item:98cb17ffbcfd13c8f4e58ea4",
@@ -67657,6 +71227,23 @@
         {
           "path": "knowledge/roadmaps/accelerator_io_datapath.json",
           "object_id": "accelerator_initiated_io:ea689bb652526e0e8a1731e6",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:accelerator_io_datapath:accelerator_initiated_io->item:fcc0c18d8d6e0695d8d52b2d",
+        "source": "branch:accelerator_io_datapath:accelerator_initiated_io",
+        "target": "item:fcc0c18d8d6e0695d8d52b2d",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/accelerator_io_datapath.json",
+          "object_id": "accelerator_initiated_io:fcc0c18d8d6e0695d8d52b2d",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -67714,6 +71301,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:accelerator_io_datapath:accelerator_storage_stack->item:ada8f3547af65d6b8dfc29be",
+        "source": "branch:accelerator_io_datapath:accelerator_storage_stack",
+        "target": "item:ada8f3547af65d6b8dfc29be",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/accelerator_io_datapath.json",
+          "object_id": "accelerator_storage_stack:ada8f3547af65d6b8dfc29be",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:accelerator_io_datapath:accelerator_storage_stack->item:dda95f5f23dfe81db0904c32",
         "source": "branch:accelerator_io_datapath:accelerator_storage_stack",
         "target": "item:dda95f5f23dfe81db0904c32",
@@ -67725,6 +71329,23 @@
         {
           "path": "knowledge/roadmaps/accelerator_io_datapath.json",
           "object_id": "accelerator_storage_stack:dda95f5f23dfe81db0904c32",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:accelerator_io_datapath:accelerator_storage_stack->item:f22e0fdf7a5a4d877a23ca9b",
+        "source": "branch:accelerator_io_datapath:accelerator_storage_stack",
+        "target": "item:f22e0fdf7a5a4d877a23ca9b",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/accelerator_io_datapath.json",
+          "object_id": "accelerator_storage_stack:f22e0fdf7a5a4d877a23ca9b",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -67793,6 +71414,23 @@
         {
           "path": "knowledge/roadmaps/agent_acceleration.json",
           "object_id": "agent_harness:1679f9ad39381f8be28b5a78",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:agent_acceleration:agent_harness->item:169359f8c50fb8c845c18ce0",
+        "source": "branch:agent_acceleration:agent_harness",
+        "target": "item:169359f8c50fb8c845c18ce0",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/agent_acceleration.json",
+          "object_id": "agent_harness:169359f8c50fb8c845c18ce0",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -68700,6 +72338,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:agent_acceleration:tool_chain->item:0f8f0782f43e62451d8d7661",
+        "source": "branch:agent_acceleration:tool_chain",
+        "target": "item:0f8f0782f43e62451d8d7661",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/agent_acceleration.json",
+          "object_id": "tool_chain:0f8f0782f43e62451d8d7661",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:agent_acceleration:tool_chain->item:0fdb8a8563f92ed8ed8eacd0",
         "source": "branch:agent_acceleration:tool_chain",
         "target": "item:0fdb8a8563f92ed8ed8eacd0",
@@ -68813,6 +72468,23 @@
         {
           "path": "knowledge/roadmaps/agent_acceleration.json",
           "object_id": "tool_chain:33a8189b5b967c08d218ad00",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:agent_acceleration:tool_chain->item:351c7f6d00a6e5ce7d777960",
+        "source": "branch:agent_acceleration:tool_chain",
+        "target": "item:351c7f6d00a6e5ce7d777960",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/agent_acceleration.json",
+          "object_id": "tool_chain:351c7f6d00a6e5ce7d777960",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -69125,6 +72797,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:agent_acceleration:tool_chain->item:b0a90c9277ec0898cbdeec8e",
+        "source": "branch:agent_acceleration:tool_chain",
+        "target": "item:b0a90c9277ec0898cbdeec8e",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/agent_acceleration.json",
+          "object_id": "tool_chain:b0a90c9277ec0898cbdeec8e",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:agent_acceleration:tool_chain->item:b1522c7cd6e576ad2631345f",
         "source": "branch:agent_acceleration:tool_chain",
         "target": "item:b1522c7cd6e576ad2631345f",
@@ -69431,6 +73120,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:ai_chip_accelerator:accelerator_architecture->item:205c28f116281ec06ffdb6ac",
+        "source": "branch:ai_chip_accelerator:accelerator_architecture",
+        "target": "item:205c28f116281ec06ffdb6ac",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/ai_chip_accelerator.json",
+          "object_id": "accelerator_architecture:205c28f116281ec06ffdb6ac",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:ai_chip_accelerator:accelerator_architecture->item:26e4aabd0615d9226ba832b1",
         "source": "branch:ai_chip_accelerator:accelerator_architecture",
         "target": "item:26e4aabd0615d9226ba832b1",
@@ -69646,6 +73352,23 @@
         {
           "path": "knowledge/roadmaps/ai_chip_accelerator.json",
           "object_id": "accelerator_architecture:6b4b2f2d2ff3541a2e876e21",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:ai_chip_accelerator:accelerator_architecture->item:7135a64400c9d38f2c5b28cb",
+        "source": "branch:ai_chip_accelerator:accelerator_architecture",
+        "target": "item:7135a64400c9d38f2c5b28cb",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/ai_chip_accelerator.json",
+          "object_id": "accelerator_architecture:7135a64400c9d38f2c5b28cb",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -70111,6 +73834,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:ai_chip_accelerator:accelerator_architecture->item:c2446ffe35cd7c1110ea257f",
+        "source": "branch:ai_chip_accelerator:accelerator_architecture",
+        "target": "item:c2446ffe35cd7c1110ea257f",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/ai_chip_accelerator.json",
+          "object_id": "accelerator_architecture:c2446ffe35cd7c1110ea257f",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:ai_chip_accelerator:accelerator_architecture->item:c415ed2aac858b4a6aa8a670",
         "source": "branch:ai_chip_accelerator:accelerator_architecture",
         "target": "item:c415ed2aac858b4a6aa8a670",
@@ -70122,6 +73862,23 @@
         {
           "path": "knowledge/roadmaps/ai_chip_accelerator.json",
           "object_id": "accelerator_architecture:c415ed2aac858b4a6aa8a670",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:ai_chip_accelerator:accelerator_architecture->item:cd7146987792b8c9659d058e",
+        "source": "branch:ai_chip_accelerator:accelerator_architecture",
+        "target": "item:cd7146987792b8c9659d058e",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/ai_chip_accelerator.json",
+          "object_id": "accelerator_architecture:cd7146987792b8c9659d058e",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -70825,6 +74582,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:ai_infra_horizontal:serving_runtime_compiler->item:3b4ec69da9e2508829f66968",
+        "source": "branch:ai_infra_horizontal:serving_runtime_compiler",
+        "target": "item:3b4ec69da9e2508829f66968",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/ai_infra_horizontal.json",
+          "object_id": "serving_runtime_compiler:3b4ec69da9e2508829f66968",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:ai_infra_horizontal:serving_runtime_compiler->item:810e7598d049ddf8b401fc54",
         "source": "branch:ai_infra_horizontal:serving_runtime_compiler",
         "target": "item:810e7598d049ddf8b401fc54",
@@ -70870,6 +74644,23 @@
         {
           "path": "knowledge/roadmaps/ai_infra_horizontal.json",
           "object_id": "serving_runtime_compiler:cec3c4b05a9a9ec0b568ed2a",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:ai_infra_horizontal:serving_runtime_compiler->item:d0a71d37f14bb457e1c88b46",
+        "source": "branch:ai_infra_horizontal:serving_runtime_compiler",
+        "target": "item:d0a71d37f14bb457e1c88b46",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/ai_infra_horizontal.json",
+          "object_id": "serving_runtime_compiler:d0a71d37f14bb457e1c88b46",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -71352,6 +75143,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:cross_region:agent_cache->item:98dad7f3b86b8ffa68abb37d",
+        "source": "branch:cross_region:agent_cache",
+        "target": "item:98dad7f3b86b8ffa68abb37d",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/cross_region.json",
+          "object_id": "agent_cache:98dad7f3b86b8ffa68abb37d",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:cross_region:agent_cache->item:9c3c1121c0f97dba985dc9cc",
         "source": "branch:cross_region:agent_cache",
         "target": "item:9c3c1121c0f97dba985dc9cc",
@@ -71488,6 +75296,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:cross_region:agent_cache->item:d571ce30e203570a27a3df60",
+        "source": "branch:cross_region:agent_cache",
+        "target": "item:d571ce30e203570a27a3df60",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/cross_region.json",
+          "object_id": "agent_cache:d571ce30e203570a27a3df60",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:cross_region:agent_cache->item:d878a3a44186f2ef49b3ecd3",
         "source": "branch:cross_region:agent_cache",
         "target": "item:d878a3a44186f2ef49b3ecd3",
@@ -71516,6 +75341,23 @@
         {
           "path": "knowledge/roadmaps/cross_region.json",
           "object_id": "agent_cache:d88d425cdec8fce0d0f46755",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:cross_region:agent_cache->item:e1332ce77a7972a82983eea5",
+        "source": "branch:cross_region:agent_cache",
+        "target": "item:e1332ce77a7972a82983eea5",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/cross_region.json",
+          "object_id": "agent_cache:e1332ce77a7972a82983eea5",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -71737,6 +75579,23 @@
         {
           "path": "knowledge/roadmaps/cross_region.json",
           "object_id": "transfer_placement:379f9edf5678a85cd23761fa",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:cross_region:transfer_placement->item:3c3e86051292597ca10a411b",
+        "source": "branch:cross_region:transfer_placement",
+        "target": "item:3c3e86051292597ca10a411b",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/cross_region.json",
+          "object_id": "transfer_placement:3c3e86051292597ca10a411b",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -72525,6 +76384,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:kv_management:offload_hierarchy->item:6781d10382738565515010ba",
+        "source": "branch:kv_management:offload_hierarchy",
+        "target": "item:6781d10382738565515010ba",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/kv_management.json",
+          "object_id": "offload_hierarchy:6781d10382738565515010ba",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:kv_management:offload_hierarchy->item:757775758481577d00f2fdfb",
         "source": "branch:kv_management:offload_hierarchy",
         "target": "item:757775758481577d00f2fdfb",
@@ -72678,6 +76554,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:kv_management:offload_hierarchy->item:e4713bb91707e4da8632575b",
+        "source": "branch:kv_management:offload_hierarchy",
+        "target": "item:e4713bb91707e4da8632575b",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/kv_management.json",
+          "object_id": "offload_hierarchy:e4713bb91707e4da8632575b",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:kv_management:paged_management->item:0323b177a35ce3e649adf16c",
         "source": "branch:kv_management:paged_management",
         "target": "item:0323b177a35ce3e649adf16c",
@@ -72689,6 +76582,23 @@
         {
           "path": "knowledge/roadmaps/kv_management.json",
           "object_id": "paged_management:0323b177a35ce3e649adf16c",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:kv_management:paged_management->item:03ef64972818234359298513",
+        "source": "branch:kv_management:paged_management",
+        "target": "item:03ef64972818234359298513",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/kv_management.json",
+          "object_id": "paged_management:03ef64972818234359298513",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -72740,6 +76650,23 @@
         {
           "path": "knowledge/roadmaps/kv_management.json",
           "object_id": "paged_management:c9dabd5a5896d7fa5c997bec",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:kv_management:paged_management->item:dfdc97891d87a34b6d9b4a17",
+        "source": "branch:kv_management:paged_management",
+        "target": "item:dfdc97891d87a34b6d9b4a17",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/kv_management.json",
+          "object_id": "paged_management:dfdc97891d87a34b6d9b4a17",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -74004,6 +77931,23 @@
     },
     {
       "data": {
+        "id": "edge:uses_evidence:branch:tpn:kv_network_scheduling->item:4b5ef51f782ab2b0cd6102cd",
+        "source": "branch:tpn:kv_network_scheduling",
+        "target": "item:4b5ef51f782ab2b0cd6102cd",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/tpn.json",
+          "object_id": "kv_network_scheduling:4b5ef51f782ab2b0cd6102cd",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
         "id": "edge:uses_evidence:branch:tpn:kv_network_scheduling->item:52fdf7648b182b4ce6608b64",
         "source": "branch:tpn:kv_network_scheduling",
         "target": "item:52fdf7648b182b4ce6608b64",
@@ -74066,6 +78010,23 @@
         {
           "path": "knowledge/roadmaps/tpn.json",
           "object_id": "kv_network_scheduling:570220b6b85fafc361c5fde1",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:tpn:kv_network_scheduling->item:5a66740e74019b21af6ba874",
+        "source": "branch:tpn:kv_network_scheduling",
+        "target": "item:5a66740e74019b21af6ba874",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/tpn.json",
+          "object_id": "kv_network_scheduling:5a66740e74019b21af6ba874",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -74457,6 +78418,23 @@
         {
           "path": "knowledge/roadmaps/tpn.json",
           "object_id": "kv_network_scheduling:c14361ce6ae1cc41b816f52e",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:tpn:kv_network_scheduling->item:c184313e0ada70903e6ca530",
+        "source": "branch:tpn:kv_network_scheduling",
+        "target": "item:c184313e0ada70903e6ca530",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/tpn.json",
+          "object_id": "kv_network_scheduling:c184313e0ada70903e6ca530",
           "field": "branches[].evidence_item_ids"
         }
       ]
@@ -75018,6 +78996,23 @@
         {
           "path": "knowledge/roadmaps/tpn.json",
           "object_id": "pd_disaggregation:b1f5b508fa5a63afc625eb4c",
+          "field": "branches[].evidence_item_ids"
+        }
+      ]
+    },
+    {
+      "data": {
+        "id": "edge:uses_evidence:branch:tpn:pd_disaggregation->item:d113056eb7031993bac2c113",
+        "source": "branch:tpn:pd_disaggregation",
+        "target": "item:d113056eb7031993bac2c113",
+        "relation": "uses_evidence",
+        "label": "引用证据",
+        "confirmation": "explicit"
+      },
+      "provenance": [
+        {
+          "path": "knowledge/roadmaps/tpn.json",
+          "object_id": "pd_disaggregation:d113056eb7031993bac2c113",
           "field": "branches[].evidence_item_ids"
         }
       ]
