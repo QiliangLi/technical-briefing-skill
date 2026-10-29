@@ -3,8 +3,8 @@
   "topic_id": "kv_management",
   "topic_name": "KVCache管理与复用",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-27",
-  "summary": "KVCache管理本期证据从细粒度化转向默认化与正确性：vLLM v0.32.0把FP8等低精度KVCache按架构设为默认，SM100上每rank KV显存减半、吞吐增2.3至5.5%但TTFT增7至11%（数字全部来自PR基准且无方法学，58%的HiSparse增益未说明基线）；Vosti用Verus形式化证明调度与分页前缀共享KVCache保持输出比特级一致，七个模型5488次logit比对全部一致、H200解码吞吐为vLLM不变模式的1.36至3.19倍（只证明确定性而非功能正确性，仅单GPU）；Universal Attention以可训练衰减门做逐token自剪枝，约7至21倍缓存缩减换不到1分损失但属架构级方案；S3R用KV感知调度把RL rollout中GPU与CPU间重复搬运页从5.362M降到0.144M。当前判断：低精度KV是升级即得的显存换时延杠杆、Vosti的页级不变式与精确前缀校验应作为改分页或驱逐逻辑的回归门，两者立即可用；架构级自剪枝不能用于存量服务，AIMD式KV感知调度可迁移到rollout引擎；实际收益需自测命中率与端到端指标。",
+  "updated_by_issue": "2026-10-29",
+  "summary": "KVCache管理最新证据把复用边界从精确前缀推向更一般形态：Tail-Replay 与 9 月末的 SuffixReplay 两条独立工作线显示混合架构 LLM 可用近期尾部重放重建线性注意力状态、摆脱检查点对齐（Tail-Replay 5%至10%重放保留92.8%至99.9%质量、32K下TTFT最高加速14.32倍，重放预算需按模型标定且服务级评估不完整）；SparseEngine 以生命周期契约把15种KV稀疏方法统一进引擎并跨轮保留压缩KV（Agent回放加速1.57至2.24倍，激进预算下AIME正确率降至18.3%）；Lafa 的前缀复用只是模型内机制旁证（无命中率与TTFT数据、仅单卡batch为1），LMCache MUSA wheel 仅是非CUDA可安装性信号。结合已确立约束——非前缀/分段复用必须带修复与来源绑定（KV-Repurpose 命中率3.3%升至63.9%但多跳明显退化、SAFE-KV 修复后五个负载仍有四个慢于全量预填充、跨适配器冲突使精度从0.94降至0.64）、SSD分层收益取决于持久化分块与GPU前缀块对齐（LMCache 实测热请求TTFT由27毫秒升至93.1毫秒的反例，Range 按字节引擎距HBM驻留仅58-66毫秒）、vLLM v0.32.0 的FP8 KV与 Vosti 页级校验是升级即得项——当前判断：自研KV栈应把『页粒度尾部重放复用＋来源绑定缓存键＋分块对齐的分层卸载』作为下一轮改造优先组合，任何非精确前缀复用上线前必须先过行为一致性与来源冲突两道门，低精度KV与页级不变式回归则可随版本升级直接落地。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -111,6 +111,30 @@
             "https://arxiv.org/abs/2610.15186v1"
           ],
           "reason": "2026-10-21 已发布日报收录：RAG服务常把文档KV编码一次后在非前缀位置复用,但该状态依赖原始上下文、直接拼接会悄然改变输出,SAFE-KV以全量预填充为基准用因果后缀修复:选定起始文档后保留其前的拼接缓存,按原顺序重新编码该文档及其后所有文档和查询使下游因果状态一致,起点由检索分数做风险引导选择;直接拼接复用仅保留47.2%与37.8%的全量预填充答案,后缀修复升至99.8%与98.4%,但修复要重算多数上下文,五个负载中四个的延迟慢于全量预填充;仅在7B级模型的单请求L40S微基准上验证,未接入服务栈,未测并发吞吐与真实检索流量；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "a356fb1d228c266c8744ca41",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2608.30310v2"
+          ],
+          "reason": "2026-10-29 已发布日报收录：Tail-Replay 针对混合 LLM 线性注意力状态无法回退到任意前缀边界、既有系统只能按检查点对齐复用的问题，把门控线性注意力视为有损压缩，缓存全注意力 KV 而不存循环状态检查点，命中时重放匹配前缀的近期尾部重建状态，配合 FFN 跳过与传输重叠降低开销；较全量预填充 5%至10%重放保留 92.8%至99.9% 质量、32K 下 TTFT 最高加速 14.32 倍，重叠传输与 FFN 跳过较串行再降 18%至42%（未与 Marconi 等检查点方案直接对比、存储节省未量化、服务评估限于单前缀 TTFT）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "5f259cb3ff24288516bac4f7",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.39068v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：SparseEngine 以生命周期契约为边界统一接入 15 种 KV 稀疏方法并支持跨轮复用，引擎共享调度与容量接口、方法自持 KV 表示与注意力路径，Chain Cache 跨轮保留压缩 KV 并以定向剪枝删除旧工具结果；128K 输入下 SnapKV 最大可用批解码吞吐约为 vLLM 的 10 倍、匹配批下 Quest 与 OmniKV 约 1.5 至 2.6 倍，Agent 回放加速 1.57 至 2.24 倍（10 倍为显存决定的最大批而非同并发、回放模拟工具等待、激进预算下 AIME 正确率降至 18.3%）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "5026f6918e135833d004f591",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.28559v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：Lafa 把自回归模型改造成块内并行去噪的流式模型，前缀用因果注意力、块内用双向异步流，干净前缀的 KV 跨块复用、自投机解码把草稿与验证合并进一次前向；单张 H100、batch 为 1 时 7B 块大小 16 平均精度 74.5% 对 73.9%、吞吐 100.2 对 39.5TPS 即 2.54 倍（前缀缓存收益未量化：无命中率与 TTFT 数据，仅在单卡 batch 为 1 下测量、无多请求服务负载）；其前缀复用属模型内机制而非服务层跨请求复用，只作机制性旁证；按前缀复用分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -126,7 +150,10 @@
         "d58266858faeb6cef77fd7c3",
         "f8c637164ffa4d998894ce4d",
         "860372bcbab2b548b050d334",
-        "e5ad016e59da3e39390f4363"
+        "e5ad016e59da3e39390f4363",
+        "a356fb1d228c266c8744ca41",
+        "5f259cb3ff24288516bac4f7",
+        "5026f6918e135833d004f591"
       ],
       "source_urls": [
         "https://github.com/sgl-project/sglang/releases/tag/v0.5.16",
@@ -140,7 +167,10 @@
         "https://arxiv.org/abs/2610.13060v1",
         "https://arxiv.org/abs/2609.38706v1",
         "https://arxiv.org/abs/2610.25136v1",
-        "https://arxiv.org/abs/2610.15186v1"
+        "https://arxiv.org/abs/2610.15186v1",
+        "https://arxiv.org/abs/2608.30310v2",
+        "https://arxiv.org/abs/2609.39068v1",
+        "https://arxiv.org/abs/2610.28559v1"
       ]
     },
     {
@@ -387,6 +417,14 @@
             "https://arxiv.org/abs/2610.13202v1"
           ],
           "reason": "S3R对长上下文RL rollout（注意力占解码kernel时间72至76%）用自稀疏投机解码起草、全注意力验证保持策略分布，调度器按KV占用与卸载积压调节offload；Qwen3-1.7B/8B较自回归吞吐1.39/1.35倍且pass@1持平，无调度时KV重建与搬运页达5.362M/2.024M、调度器降至0.144M（验证仍需完整历史KV，硬件与KV消融数值未公开，结论限于RL负载）。"
+        },
+        {
+          "item_id": "bea84b61ada9249d4d36dabc",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://github.com/LMCache/LMCache/releases/tag/v0.5.5rc7-musa"
+          ],
+          "reason": "2026-10-29 已发布日报收录：LMCache 以本地版本号 wheel（0.5.5rc7+musa）分发摩尔线程 MUSA 兼容构建，安装用 --no-deps 跳过依赖解析、TorchMUSA 等 MUSA 依赖保留在宿主镜像，在匹配的 MUSA 运行时镜像内完成构建与冒烟测试（无 KVCache 机制描述、无性能数据、验证仅到冒烟测试级别）；仅作 KV 分层组件向非 CUDA 硬件移植的可安装性信号与部署背景，对命中率与分层收益问题无证据价值；按分层存储分支记录版本跟踪信号，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -410,7 +448,8 @@
         "757775758481577d00f2fdfb",
         "afa9bbe36d6238053583a937",
         "6781d10382738565515010ba",
-        "e4713bb91707e4da8632575b"
+        "e4713bb91707e4da8632575b",
+        "bea84b61ada9249d4d36dabc"
       ],
       "source_urls": [
         "https://github.com/sgl-project/sglang/releases/tag/v0.5.17",
@@ -432,7 +471,8 @@
         "https://arxiv.org/abs/2610.07643v2",
         "https://arxiv.org/abs/2610.06996v1",
         "https://arxiv.org/abs/2610.09051v1",
-        "https://arxiv.org/abs/2610.13202v1"
+        "https://arxiv.org/abs/2610.13202v1",
+        "https://github.com/LMCache/LMCache/releases/tag/v0.5.5rc7-musa"
       ]
     }
   ],
@@ -574,6 +614,19 @@
         "6781d10382738565515010ba",
         "dfdc97891d87a34b6d9b4a17",
         "e4713bb91707e4da8632575b"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_ae7b3d9a5eea1961f32b",
+      "issue_date": "2026-10-29",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "5026f6918e135833d004f591",
+        "5f259cb3ff24288516bac4f7",
+        "a356fb1d228c266c8744ca41",
+        "bea84b61ada9249d4d36dabc"
       ]
     }
   ]

@@ -3,8 +3,8 @@
   "topic_id": "ai_chip_accelerator",
   "topic_name": "AI芯片与加速器",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-27",
-  "summary": "AI芯片本期证据延续可用算力由软件栈与格式选择决定的判断并落到算子与接口层：MoESQ联合训练4:8稀疏支撑与NVFP4量化并配原生稀疏GEMM内核，单卡B200内核较稠密NVFP4提速1.11至1.76倍、Kimi-K2.5精度保留96.09%（4.03倍端到端对比的是较慢INT4基线，能耗与吞吐分属B300和B200）；CompactInst以屋顶线加DRAM计数器实测证明查询式分割解码器在边缘GPU受跨内核激活流量而非FLOPs限制，4×token池化削减64%解码器DRAM字节（DRAM字节仅A4000实测）；SyclKittens把Intel GPU架构经验编成tile接口，同一编码智能体的单卡GEMM从oneDNN的57.5%提到82.1%、工程师协作后27形状达约96%；华为CANNBot-CAKE把算子请求自动化为可部署CANN自定义算子，53个标准集算子100%通过、平均加速1.334倍（对比基线未见定义）。当前判断：接口与算子生态决定算力兑现，评估加速器引用内核峰值时必须核对基线、调优条件与实测带宽。",
+  "updated_by_issue": "2026-10-29",
+  "summary": "AI芯片本期证据延续可用算力由软件栈与格式选择决定的判断并扩展到显存与资源调度侧：Proteus把解压融合进查询引擎单内核省46%至60%显存但运行开销8%至45%、专用内核仍快2.7至4.7倍；LIRQuant把W4A4KV4校准降到H20上25分钟与20.3GB、A100 prefill较FP16加速2.18至2.32倍，但batch=1的decode只有0.73至0.77倍；GeoTrain在异构GPU池上联合选择子集与流水线放置把迭代时间最多缩短61.4%（最优计划只用4卡中的3卡）；ATEST按实时GPU负载调节采样预算、同查询高负载能耗可达空闲4.1倍时在线模式仍全部作答保持60.0%精度。当前判断：决定算力兑现的是格式、内核与调度这些软件层选择而非峰值硬件，引用任何加速比前必须核对batch口径、负载与能耗状态以及显存-开销权衡。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -527,6 +527,30 @@
             "https://arxiv.org/abs/2610.31034v1"
           ],
           "reason": "华为开源CANNBot-CAKE：算子请求编译为单一契约、多DSL路由器选路，产出host侧tiling与device侧AscendC，打包安装后按真机计时与roofline修复；已发表评测显示通用模型写复杂AscendC核一次通过率不超过2.1%（CUDA为44.2%至52.6%），CAKE在Ascend 950PR上53个CANN-Bench标准集算子100%通过、隐藏集98.28%、平均加速1.334倍（聚合基线与评分公式未公开，案例计时在910B2/910C，无模型级与能效数据）。"
+        },
+        {
+          "item_id": "8002ea8ad3dc19e8bb7f6e87",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.25675v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：LIRQuant按敏感度把通道分成两半、仅在高敏感子空间学习稠密旋转而其余用固定Hadamard，并把变换与INT4量化融合进单个Triton内核，LLaMA-3-8B在H20上W4A4KV4校准仅需25分钟与20.3GB显存，A100 prefill较FP16加速2.18至2.32倍、峰值显存省3.3至3.55倍（batch=1时decode仅0.73至0.77倍慢于FP16，无功耗与生产部署数据）；按架构分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "5d1f7b57bbf937c8ebf47e0f",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.26178v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：GeoTrain用整数染色体模因算法在1F1B流水线成本模型上联合选择GPU子集、非均匀分层与阶段放置并把能耗计入适应度，2、4、6卡真实硬件池迭代时间较默认Metis分别缩短36.3%、61.4%与50.1%、最优计划仅用4卡中的3卡、能耗较改进Metis低11.7%（仅流水线并行，大规模结果来自成本模型仿真，实测硬件与能耗测量方法未披露）；按架构分支记录为异构资源调度信号而非芯片进展，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "c8d2675444d20d8a452e7b61",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.25519v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：ATEST以单样本起步逐步加采、用NVML实时GPU状态与每步在线更新的能耗模型决定测试时扩展是否继续采样，同一查询高负载下能耗可达空闲时的4.1倍，Phi-3-mini在A100高负载时在线模式全部作答且保持60.0%精度（逐步小批执行使短任务p95时延升至两倍以上、吞吐下降，GPU竞争为单卡负载注入模拟未经真实集群验证）；按架构分支记录为推理资源管理信号，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -594,7 +618,10 @@
         "7135a64400c9d38f2c5b28cb",
         "cd7146987792b8c9659d058e",
         "205c28f116281ec06ffdb6ac",
-        "c2446ffe35cd7c1110ea257f"
+        "c2446ffe35cd7c1110ea257f",
+        "8002ea8ad3dc19e8bb7f6e87",
+        "5d1f7b57bbf937c8ebf47e0f",
+        "c8d2675444d20d8a452e7b61"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.09385v1",
@@ -614,8 +641,10 @@
         "https://arxiv.org/abs/2608.16940v1",
         "https://arxiv.org/abs/2608.17310v1",
         "https://arxiv.org/abs/2608.21614v1",
+        "https://arxiv.org/abs/2608.21719v1",
         "https://arxiv.org/abs/2608.21836v1",
         "https://arxiv.org/abs/2608.24664v1",
+        "https://arxiv.org/abs/2608.25096v1",
         "https://arxiv.org/abs/2608.26418v1",
         "https://arxiv.org/abs/2608.28044v1",
         "https://arxiv.org/abs/2608.28511v1",
@@ -623,6 +652,8 @@
         "https://arxiv.org/abs/2608.30376v1",
         "https://arxiv.org/abs/2609.00407v1",
         "https://arxiv.org/abs/2609.00450v1",
+        "https://arxiv.org/abs/2609.00791v1",
+        "https://arxiv.org/abs/2609.00817v2",
         "https://arxiv.org/abs/2609.02109v1",
         "https://arxiv.org/abs/2609.03079v1",
         "https://arxiv.org/abs/2609.03151v1",
@@ -632,33 +663,32 @@
         "https://arxiv.org/abs/2609.06157v1",
         "https://arxiv.org/abs/2609.06551v1",
         "https://arxiv.org/abs/2609.07536v1",
-        "https://arxiv.org/abs/2609.00817v2",
-        "https://arxiv.org/abs/2609.00791v1",
         "https://arxiv.org/abs/2609.09095v1",
-        "https://arxiv.org/abs/2608.21719v1",
-        "https://arxiv.org/abs/2608.25096v1",
         "https://arxiv.org/abs/2609.24270v1",
-        "https://arxiv.org/abs/2609.36070v1",
-        "https://arxiv.org/abs/2609.34334v1",
-        "https://arxiv.org/abs/2609.32114v1",
-        "https://arxiv.org/abs/2609.34340v1",
-        "https://arxiv.org/abs/2609.35568v1",
-        "https://arxiv.org/abs/2609.32922v1",
-        "https://arxiv.org/abs/2609.34818v2",
-        "https://arxiv.org/abs/2609.32814v1",
         "https://arxiv.org/abs/2609.29867v1",
-        "https://arxiv.org/abs/2610.22230v1",
+        "https://arxiv.org/abs/2609.32114v1",
+        "https://arxiv.org/abs/2609.32814v1",
+        "https://arxiv.org/abs/2609.32922v1",
+        "https://arxiv.org/abs/2609.34334v1",
+        "https://arxiv.org/abs/2609.34340v1",
+        "https://arxiv.org/abs/2609.34818v2",
+        "https://arxiv.org/abs/2609.35568v1",
+        "https://arxiv.org/abs/2609.36070v1",
         "https://arxiv.org/abs/2610.01380v1",
+        "https://arxiv.org/abs/2610.02241v1",
+        "https://arxiv.org/abs/2610.04277v1",
         "https://arxiv.org/abs/2610.17463v1",
-        "https://arxiv.org/abs/2610.24161v1",
+        "https://arxiv.org/abs/2610.22230v1",
+        "https://arxiv.org/abs/2610.22377v1",
         "https://arxiv.org/abs/2610.23086v1",
-        "https://arxiv.org/abs/2610.28947v1",
+        "https://arxiv.org/abs/2610.24161v1",
+        "https://arxiv.org/abs/2610.25519v1",
+        "https://arxiv.org/abs/2610.25675v1",
+        "https://arxiv.org/abs/2610.26178v1",
         "https://arxiv.org/abs/2610.26945v1",
+        "https://arxiv.org/abs/2610.28947v1",
         "https://arxiv.org/abs/2610.28998v1",
         "https://arxiv.org/abs/2610.29171v1",
-        "https://arxiv.org/abs/2610.02241v1",
-        "https://arxiv.org/abs/2610.22377v1",
-        "https://arxiv.org/abs/2610.04277v1",
         "https://arxiv.org/abs/2610.31034v1"
       ]
     },
@@ -814,6 +844,14 @@
             "https://arxiv.org/abs/2610.14244v1"
           ],
           "reason": "2026-10-18 已发布日报收录：HBM占AI系统功耗重要份额而实测数据稀缺、现有模型误差20-42%,该工作对36颗真实HBM2芯片下发DRAM命令序列测出结构与数据模式相关的电流,Ayna显式建模bank group差异与总线翻转效应;读电流为刷新的3.1倍,自构模式比最高功耗JEDEC环平均高23.6%,Ayna跨负载误差7.6-8.1%、对H200实测HBM3E误差2.4-5.3%;实测仅覆盖1200 MT/s的HBM2,HBM4为模型投影,H200上248瓦的测量条件未验证；按内存接口与协同分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "5c8313fdb9163c2a11ea5240",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.32695v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：Proteus把瓦片解压做成查询编译引擎的一等算子、解码值留在片上不写回HBM并把占用率当作可调权衡，相对未压缩省54%至60%显存但开销8%至45%、对HeavyDB省46%到53%（专用内核仍快2.7至4.7倍，共享内存暂存量随投影列数增长，摘要的4倍与6倍缺少可见出处）；按内存接口与协同分支记录为显存墙的软件侧证据，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -835,27 +873,29 @@
         "7f7f9d4541b1c8f7b4c8471f",
         "cde299eee2cdf91e887aa338",
         "f031d6b143ff02ee1bba0fc8",
-        "cda619f1f98933dd41e737d0"
+        "cda619f1f98933dd41e737d0",
+        "5c8313fdb9163c2a11ea5240"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2606.15535v1",
         "https://arxiv.org/abs/2606.26441v1",
         "https://arxiv.org/abs/2607.01590v2",
         "https://arxiv.org/abs/2607.08786v1",
+        "https://arxiv.org/abs/2607.20120v1",
         "https://arxiv.org/abs/2607.26491v1",
         "https://arxiv.org/abs/2607.29575v1",
-        "https://arxiv.org/abs/2608.17641v2",
-        "https://arxiv.org/abs/2609.06172v1",
-        "https://arxiv.org/abs/2607.20120v1",
         "https://arxiv.org/abs/2608.10103v1",
+        "https://arxiv.org/abs/2608.17641v2",
         "https://arxiv.org/abs/2608.26575v1",
+        "https://arxiv.org/abs/2609.06172v1",
         "https://arxiv.org/abs/2609.08739v1",
+        "https://arxiv.org/abs/2609.10368v1",
+        "https://arxiv.org/abs/2609.13585v1",
         "https://arxiv.org/abs/2609.15311v1",
         "https://arxiv.org/abs/2609.21264v1",
         "https://arxiv.org/abs/2609.24089v1",
-        "https://arxiv.org/abs/2609.13585v1",
-        "https://arxiv.org/abs/2609.10368v1",
-        "https://arxiv.org/abs/2610.14244v1"
+        "https://arxiv.org/abs/2610.14244v1",
+        "https://arxiv.org/abs/2610.32695v1"
       ]
     },
     {
@@ -922,8 +962,8 @@
         "https://arxiv.org/abs/2607.20141v1",
         "https://arxiv.org/abs/2608.19395v1",
         "https://arxiv.org/abs/2609.31092v1",
-        "https://arxiv.org/abs/2610.14612v1",
-        "https://arxiv.org/abs/2610.02461v1"
+        "https://arxiv.org/abs/2610.02461v1",
+        "https://arxiv.org/abs/2610.14612v1"
       ]
     }
   ],
@@ -1210,6 +1250,19 @@
         "7135a64400c9d38f2c5b28cb",
         "c2446ffe35cd7c1110ea257f",
         "cd7146987792b8c9659d058e"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_6836732d228282f44595",
+      "issue_date": "2026-10-29",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "5c8313fdb9163c2a11ea5240",
+        "5d1f7b57bbf937c8ebf47e0f",
+        "8002ea8ad3dc19e8bb7f6e87",
+        "c8d2675444d20d8a452e7b61"
       ]
     }
   ]

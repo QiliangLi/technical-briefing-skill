@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8b23e9e906055216f9fc",
+  "identity": {
+    "problem_key": "clean_run_gate_miscalibration",
+    "mechanism_key": "fault_spectrum_stress_calibrated_gates",
+    "target_key": "tool_chain_acceptance_retry_gates"
+  },
+  "idea_type": "solution_concept",
+  "title": "验收与重试门要经校准故障谱注入压测后再随加速机制同批部署",
+  "problem": "工具链验收门与重试策略默认工具总是正确：干净运行里最强模型GPT-5.4 pass@1为65.36%而pass^20仅25.25%、工具使用类失败占77.5%；而注入按1774个仓库57240条议题与PR线程校准的18条故障规则后任务完成分从8.08降至3.23，75.7%的模型归因损失本就来自已调用过工具的运行。",
+  "hypothesis": "把验收门（终局状态谓词、证据门控）与有界重试的验证从干净运行改为在按真实分布校准的注入故障谱下进行，并要求注入下pass^k可靠性不退化才放行含并行与投机调用的加速机制，可在新增故障暴露面上保持完成率，而不是依赖扩大骨干规模。",
+  "mechanism": "以中间件插入MCP客户端与服务器之间注入校准故障谱，对候选门配置测量注入下的完成分与pass@1对pass^k差距；状态迁移仅在验证谓词满足时放行，失败转有界修复或可审计终止；注入重点按服务器边界归因分布分配。",
+  "target": "Agent工具执行链的验收门与重试策略及其部署流程",
+  "expected_effect": "通过注入压测的门配置在真实工具故障下保持更高完成分与pass^k可靠性；120B保留分数比例不高于20B的对照表明收益来自门与重试设计而非骨干规模。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "将逐期公开记录按共同问题、机制和目标对象综合，并保留同源复报的单一独立分组。"
+  },
+  "evidence": [
+    {
+      "item_id": "9046280e4c0618b742d7618f",
+      "issue_date": "2026-09-24",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.19741v1"
+      ],
+      "reason": "《Thinkingbox用终局后端状态做Agent验收门》给出可靠性度量依据：以最终数据库状态哈希断言与副作用精确集合做验收门，测出最强模型GPT-5.4 pass@1为65.36%但pass^20仅25.25%，失败中工具使用类占77.5%。",
+      "independence_group": "arxiv:2608.19741"
+    },
+    {
+      "item_id": "dc379fc8915c1ed18614168b",
+      "issue_date": "2026-10-21",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.29615v1"
+      ],
+      "reason": "《以证据门控编排器管理云MLOps Agent生命周期》给出门控机制依据：状态迁移须满足验证谓词才放行，失败在预算内反思修复并重验，验收不依赖Agent自报，消融去掉门控后BFR与VODR降至0.00。",
+      "independence_group": "arxiv:2608.29615"
+    },
+    {
+      "item_id": "97fde1681974bb57a0c40227",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.21341v1"
+      ],
+      "reason": "《数据库Agent失败多源于服务器边界而非模型能力》给出故障分布依据：75.7%的模型归因损失来自已调用过工具的运行，五处仅服务器端修改使六个模型在30个格中移动6至21格。",
+      "independence_group": "arxiv:2609.21341"
+    },
+    {
+      "item_id": "cc3a1b10e828cd209f57bf9b",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.32555v1"
+      ],
+      "reason": "《MCP-Injector：注入真实工具故障后扩大模型规模无助于容错》给出注入与规模依据：中间件不改Agent、客户端或服务器，按57240条线程校准18条注入规则，校准故障使任务完成分从8.08降至3.23且120B保留分数比例并不高于20B。",
+      "independence_group": "arxiv:2610.32555"
+    }
+  ],
+  "evidence_item_ids": [
+    "9046280e4c0618b742d7618f",
+    "dc379fc8915c1ed18614168b",
+    "97fde1681974bb57a0c40227",
+    "cc3a1b10e828cd209f57bf9b"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2608.19741v1",
+    "https://arxiv.org/abs/2608.29615v1",
+    "https://arxiv.org/abs/2609.21341v1",
+    "https://arxiv.org/abs/2610.32555v1"
+  ],
+  "independence_groups": [
+    "arxiv:2608.19741",
+    "arxiv:2608.29615",
+    "arxiv:2609.21341",
+    "arxiv:2610.32555"
+  ],
+  "unknowns": [
+    "LLM裁判评分与终局谓词验收之间的口径差异",
+    "注入压测产出的门配置在未注入生产环境的误拒绝代价",
+    "故障谱带GitHub上报偏置且原实验任务偏易",
+    "pass^k可靠性测量的多次运行成本"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在内部工具链上复用校准故障注入中间件，对现有验收门与重试配置测量注入前后的完成分与pass^k。",
+    "inputs": [
+      "内部Agent工具调用轨迹",
+      "按内部工单分布校准的故障注入规则集",
+      "现有验收谓词与重试上限配置"
+    ],
+    "baselines": [
+      "干净运行下的同一门配置",
+      "无门的固定重试策略",
+      "更大骨干规模对照"
+    ],
+    "metrics": [
+      "注入下的任务完成分",
+      "pass@1与pass^20可靠性差距",
+      "重试次数分布",
+      "误放行率"
+    ],
+    "support_criteria": [
+      "注入下完成分降幅显著小于无门基线且pass^k不退化",
+      "重试上限在注入下可收敛"
+    ],
+    "reject_criteria": [
+      "门配置仅在干净运行获益或注入下误拒绝率失控"
+    ],
+    "limitations": [
+      "原始实验仅覆盖两种gpt-oss骨干且得分由LLM裁判评定",
+      "故障谱来自GitHub线程分布带上报偏置"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "终局验收门的可靠性度量、证据门控的生命周期推进与服务器边界归因三组独立机制互补，与校准故障注入联合支撑“门须经注入压测后随加速机制同批部署”这一任何单条记录未陈述的机制；与既有工具调用前监督Idea的分派前检查机制不同，等待人工晋升。",
+  "related_candidate_ids": [
+    "candidate_efdd15613ab672bfe173"
+  ],
+  "related_idea_ids": [
+    "idea_a90d71c35ea8a0f208da"
+  ],
+  "first_seen_issue": "2026-09-24",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_47a0c61e25d792e1e055",
+      "issue_date": "2026-10-29",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "终局验收门的可靠性度量、证据门控的生命周期推进与服务器边界归因三组独立机制互补，与校准故障注入联合支撑“门须经注入压测后随加速机制同批部署”这一任何单条记录未陈述的机制；与既有工具调用前监督Idea的分派前检查机制不同，等待人工晋升。",
+      "evidence_item_ids": [
+        "9046280e4c0618b742d7618f",
+        "dc379fc8915c1ed18614168b",
+        "97fde1681974bb57a0c40227",
+        "cc3a1b10e828cd209f57bf9b"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_3957174660eb8129b82b",
+  "identity": {
+    "problem_key": "rag_non_prefix_reuse_ceiling",
+    "mechanism_key": "segment_kv_reuse_with_causal_suffix_repair",
+    "target_key": "rag_serving_ttft_and_output_consistency"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "RAG段级KV复用加因果后缀修复的重算区间假设",
+  "problem": "主流引擎 KV 复用仅限精确前缀，RAG 请求文档组合多变、常无共享前缀可复用（Zipfian 负载 30GB 缓存下命中率仅 3.3%）；按文档段直接拼接复用又因状态依赖原始上下文而悄然改变输出（仅保留 47.2%/37.8% 全量预填充答案，多跳 2WMQA 从 0.80 退到 0.50）。",
+  "hypothesis": "存在一个重算起点比例区间（预计 5%-30%），使段级 KV 复用加因果后缀修复在 16K+ 输入上同时满足：输出一致率≥99%、多跳质量损失≤2 分、TTFT 低于全量预填充；若任何区间都不能同时满足，则段级复用仅适用于单跳负载、不应进入多跳 RAG 服务路径。",
+  "mechanism": "保留分隔符切分输入、逐段检查 KV 可用性，段键不预旋转位置编码、复用时按当前位置重对齐；选定起始文档后保留其前的拼接缓存，按原顺序重算该文档及其后所有文档与查询使下游因果状态一致，重算起点由检索分数做风险引导选择。",
+  "expected_effect": "命中率从约 3% 量级提升到 50% 以上（对照 KV-Repurpose 的 63.9%），行为一致率恢复到 99% 以上（对照 SAFE-KV 修复后 99.8%/98.4%），并在某重算区间内 16K+ 输入 TTFT 低于全量预填充。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "d58266858faeb6cef77fd7c3",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.13060v1"
+      ],
+      "reason": "实测 Zipfian 负载 30GB 下段级复用把命中率从 3.3% 升至 63.9%、超 1.6 万 token 后 TTFT 低于前缀缓存，同时多跳推理明显退化（2WMQA 0.50 对 0.80）——同时给出收益上限与必须修复的证据。"
+    },
+    {
+      "item_id": "5eed420efde155b0ee118a32",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.28069v2"
+      ],
+      "reason": "SemPIC 把文档 KV 编译成位置无关可复用形态，三模型四任务对 KVPacket 平均 micro-F1 从 0.53 升到 0.60（全量重算 0.62），证明越过精确前缀的文档级复用可行且质量损失有界。"
+    }
+  ],
+  "evidence_against": [
+    {
+      "item_id": "e5ad016e59da3e39390f4363",
+      "issue_date": "2026-10-21",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.15186v1"
+      ],
+      "reason": "SAFE-KV 显示因果后缀修复虽把输出保留率从 47.2%/37.8% 恢复到 99.8%/98.4%，但修复要重算多数上下文，五个负载中四个延迟慢于全量预填充，且仅在 7B 单请求 L40S 微基准验证、未接入服务栈——直接威胁假设中『TTFT 低于全量预填充』的部分。"
+    }
+  ],
+  "unknowns": [
+    "并发多租户吞吐下的修复排队与容量竞争",
+    "真实检索流量分布下的命中率与起点选择稳定性",
+    "闭源超大模型（逾千亿参数）上段级复用行为是否随规模改变",
+    "SemPIC 式离线编译成本未计入 TTFT 口径的影响"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "7B 级开源模型（与 SAFE-KV 的 Qwen2.5-7B 同级）加一个 30B 以上模型验证规模效应；KV-Repurpose 的逾千亿参数结论不外推",
+    "inputs": [
+      "2WikiMQA/MuSiQue 加 Zipfian 文档组合重放（30GB 缓存容量口径对齐 KV-Repurpose）",
+      "重算起点比例扫描 0-30%（步长 5%）",
+      "输入长度 8K/16K/32K"
+    ],
+    "baselines": [
+      "全量预填充",
+      "vLLM-APC 精确前缀缓存",
+      "KV-Repurpose 式直接拼接（无修复）",
+      "SAFE-KV 式风险引导修复"
+    ],
+    "metrics": [
+      "命中率",
+      "TTFT P50/P95",
+      "对全量预填充的输出一致率",
+      "多跳 QA 分数（2WMQA/MuSiQue）",
+      "缓存容量占用"
+    ],
+    "support_criteria": [
+      "输出一致率≥99% 且 16K+ 输入 TTFT 低于全量预填充",
+      "多跳质量损失≤2 分",
+      "命中率≥50%"
+    ],
+    "reject_criteria": [
+      "任何重算比例下一致率<99%",
+      "多跳损失>2 分",
+      "全部区间 TTFT 均高于全量预填充（此时假设限定为仅单跳负载适用）"
+    ],
+    "limitations": [
+      "未覆盖并发多租户吞吐与真实检索流量",
+      "未覆盖闭源超大模型",
+      "未与 CacheBlend 等方法对比（KV-Repurpose 测试床同样缺失）",
+      "SemPIC 式离线编译成本未计入"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-28",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_395e4cd43c6e07064f05",
+      "issue_date": "2026-10-29",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据已发布证据新建 Idea：RAG段级KV复用加因果后缀修复的重算区间假设。",
+      "evidence_item_ids": [
+        "d58266858faeb6cef77fd7c3",
+        "5eed420efde155b0ee118a32",
+        "e5ad016e59da3e39390f4363"
+      ]
+    }
+  ]
+}

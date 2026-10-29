@@ -3,8 +3,8 @@
   "topic_id": "tpn",
   "topic_name": "状态感知网络、TPN",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-27",
-  "summary": "TPN方向本期证据把每次KV交接的固定开销推到中心：InferSlice在英国电信广域网实测单跳WAN的PD解耦，中位TTFT从0.11秒升至4.24秒、P99达19秒且惩罚不随RTT增大，作者归因每请求KV交接的固定开销——先批量化或流水线化交接再谈扩带宽；KVStream把两级存储读取改成完成驱动路由，32B在线平均TTFT从31.1秒降到13.0秒而静态分层对照恶化到122.1秒，证明完成事件而非带宽预测是多路径调度的正确信号（复用集可放进内存时收益消失，2倍写放大）；EdgeFlow按带宽逐层拆分直接传输与激活重算使迁移时间最多降约45%（100Mbps下优势消失）；SARIA在DRAM-SSD分层上叠加GPU入站带宽协调，尾部传输再降11.0%至17.8%（配额须匹配有效路径带宽）。当前判断：跨节点KV放置与带宽调度仍是空位，但节点内与广域证据一致指向调度与交接批量优先于堆带宽；网络侧需联合TTFT与TPOT判别饱和来源，单看利用率不够。",
+  "updated_by_issue": "2026-10-29",
+  "summary": "TPN方向本期证据从解析建模与评估设施一侧强化既有判断：SARA用排队论把预填充、KV传输与解码三阶段纳入分位SLO约束下的资源分配（七天Azure轨迹回放goodput与穷举搜索最大差距3.8%，但26.6%提升仅摘要级声明、传输模型未见实测），ServeTwin闭环模拟器把分布式serving验证误差压到10%以内并显示并发2048时三倍带宽吞吐停滞、调度运行时开销减40%反增60%吞吐（设计扫描均为模拟而非集群实测），PriorityFEC在有损窄带边缘链路按KV价值排序加截止期感知FEC使紧截止期下任务F1约43%对最强基线约8%（指标是F1而非TTFT/TPOT时延），单卡内核剖析则显示长上下文本地解码中注意力内核未达带宽与算力上限——KV网络侧价值论证必须依赖跨节点证据。当前判断：跨节点KV放置与带宽调度仍是空位，交接固定开销与调度时序优先于堆带宽，解析排队模型可先用于按分位SLO估算KV传输带宽，网络侧需联合TTFT与TPOT判别饱和来源。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -423,6 +423,30 @@
             "https://arxiv.org/abs/2610.31169v1"
           ],
           "reason": "SARIA面向代理长前缀重用的SSD扩展：按DRAM驱逐与复用历史决定哪些KV块写SSD（全量双写按推算每天每GPU约103.7TB），SSD命中后延迟部分晋升，协调器为GDS直读与DRAM读取分配GPU入站带宽；平均TTFT较串行基线降5.8%至6.4%，加协调器后尾部传输再降11.0%至17.8%，SSD写入较全量双写少57.1%至58.9%（仅单机DRAM-SSD路径，无TPOT与跨节点结果，双SSD配额失配时协调劣化15.8%）。"
+        },
+        {
+          "item_id": "ed4d6f4a29231c530ddb5255",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.21390v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：PriorityFEC面向边缘多智能体交接的KV缓存传输，先以KV清零实验建立各层与位置的效用画像并排定发送顺序，再用GF(2^8)流式前向纠错、由Double-DQN依接收反馈调度修复包；约8.4%丢包且截止期只容八成KV串行传输时六组任务平均token F1约43%对最强基线约8%，控制开销P99低于一个包间隔（可见指标是任务F1而非TTFT或TPOT时延，宽截止期下FLEC-RT多项反超，回放规模小）；按KV感知调度分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "bd2513bdc6f22c272246d5e0",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.02732v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：ServeTwin以规格驱动闭环模拟把分布式LLM serving架构的验证误差压至10%以内（InferenceX均值3.6%、LMBenchmark多轮9.9%），闭环Serving循环让模拟时间反馈调度决策，成本按吞吐、调度器、运行时分解；并发2048时三倍带宽令吞吐停滞，调度运行时开销减40%反增60%吞吐（设计扫描均为模拟而非集群实测，GB200为迁移预测，逐场景误差-23%至+14%不等）；按KV感知调度分支记录为评估设施信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "3dd51be07a45b1e941acd36f",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.28223v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：内核级剖析三代GPU上长上下文本地推理的解码过程，自注意力主导运行时间却未耗尽带宽与算力，注意力内核在所有上下文长度均未达带宽或算力roofline上限，GPT-2最大上下文时线性投影占用70-80%带宽而注意力仅约15%（仅研究解码阶段，无端到端TTFT或吞吐数据，单卡本地剖析不含任何跨节点KV传输证据）；按KV感知调度分支记录为单卡对照信号，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -477,7 +501,10 @@
         "17bc8acd678fb63dbfcf7ac9",
         "5a66740e74019b21af6ba874",
         "c184313e0ada70903e6ca530",
-        "4b5ef51f782ab2b0cd6102cd"
+        "4b5ef51f782ab2b0cd6102cd",
+        "ed4d6f4a29231c530ddb5255",
+        "bd2513bdc6f22c272246d5e0",
+        "3dd51be07a45b1e941acd36f"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.07207v1",
@@ -527,7 +554,10 @@
         "https://arxiv.org/abs/2610.17202v1",
         "https://arxiv.org/abs/2610.31827v1",
         "https://arxiv.org/abs/2610.22172v1",
-        "https://arxiv.org/abs/2610.31169v1"
+        "https://arxiv.org/abs/2610.31169v1",
+        "https://arxiv.org/abs/2610.21390v1",
+        "https://arxiv.org/abs/2610.02732v1",
+        "https://arxiv.org/abs/2610.28223v1"
       ]
     },
     {
@@ -658,6 +688,14 @@
             "https://arxiv.org/abs/2609.32046v1"
           ],
           "reason": "2026-10-14 已发布日报收录：CacheBack 让接收方把信息需求描述发给发送方、只传对方本地任务所需内容，解决多 agent 潜通信传输完整 KV 随上下文与 agent 数线性增长的问题，FanOutQA 上移除 75% 本应接收的状态、准确率反升 14.7 个百分点、中位完成时延降 3.2 倍，稠密、混合与滑窗三类注意力模型均成立（评估聚焦 fan-out 型任务、过滤质量依赖需求描述、更大 agent 图未展开）；按 KV 传输分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "139b36854d37dc64123fb27d",
+          "issue_date": "2026-10-29",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.26763v1"
+          ],
+          "reason": "2026-10-29 已发布日报收录：SARA用排队论为解耦推理的预填充、KV传输与解码三阶段建模（分别建为M/G/k、M/G/1队列和广义生灭过程），在成本约束下按分位SLO最大化goodput并按边际成本相等分配延迟预算；回放七天Azure推理轨迹时goodput与穷举搜索最大差距3.8%，Splitwise与同置方案在峰值最多退化21.5%和45.6%（26.6%的goodput提升仅为摘要级声明，传输模型未见实测）；按KV传输分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -676,7 +714,8 @@
         "5ace9c0d3d13e04df7122b2b",
         "118ded5a1be93f4bec3b8337",
         "31b2eec535cc393f89cc8308",
-        "96d509d58f4e4506ea914036"
+        "96d509d58f4e4506ea914036",
+        "139b36854d37dc64123fb27d"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.02043v1",
@@ -692,7 +731,8 @@
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.5",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.4",
         "https://arxiv.org/abs/2609.32259v1",
-        "https://arxiv.org/abs/2609.32046v1"
+        "https://arxiv.org/abs/2609.32046v1",
+        "https://arxiv.org/abs/2609.26763v1"
       ]
     },
     {
@@ -1210,6 +1250,19 @@
         "5a66740e74019b21af6ba874",
         "c184313e0ada70903e6ca530",
         "d113056eb7031993bac2c113"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_1356d91d0a48057cac6b",
+      "issue_date": "2026-10-29",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "139b36854d37dc64123fb27d",
+        "3dd51be07a45b1e941acd36f",
+        "bd2513bdc6f22c272246d5e0",
+        "ed4d6f4a29231c530ddb5255"
       ]
     }
   ]

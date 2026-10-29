@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_8aa3d66177596baef1ac",
+  "identity": {
+    "problem_key": "context_trimming_followup_amortization",
+    "mechanism_key": "followup_scored_selective_retention",
+    "target_key": "multi_question_task_success"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "上下文裁剪与压缩要按隐藏后续问题计分，而不是当前问题得分",
+  "problem": "Agent按当前问题压缩或裁剪上下文以省token，但当前问题的得分不能预测该上下文对后续问题的服务：25%预算下成本需约6.6至11.0个后续问题才回本，且按当前对话维护的上下文同时存在大量不需要与关键缺失。",
+  "hypothesis": "在同等token预算下，以隐藏后续问题覆盖为验收目标的选择性保留（标识符与整文件/整span优先、拒绝词级压缩）比按当前问题相似度压缩更能提高多问题任务的端到端成功率并降低补读与总成本。",
+  "mechanism": "把压缩与选择决策的计分对象从当前问题改为对隐藏后续问题的证据覆盖：候选保留单元按标识符保真与问题覆盖打分，验收按后续问题得分而非压缩率。",
+  "expected_effect": "多问题任务上端到端成功率提升、补读次数与总token下降，且压缩的回本次数变为可预测的决策输入。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "a502c5ec42feccc21c908531",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.36319v1"
+      ],
+      "reason": "StateTape实测Claude Code持有token的73.4%不需要、所需的58.5%缺失且浪费随编辑数增长：按当前交互维护的上下文既超载又缺所需，为“当前问题视角不能服务后续需要”提供问题侧依据。"
+    },
+    {
+      "item_id": "521fb45f2cbd6ea0aa1cf6c1",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21073v1"
+      ],
+      "reason": "等预算下不加索引与压缩模型、仅列路径清单取两次答案交集加至多四次grep的整文件选择，在300个SWE-rebench问题上领先最佳压缩基线6.3个百分点且配对检验显著；修补需逐字复现被改行，压缩删减破坏该前提，直接支持选择性整文件保留优于按相似度压缩。"
+    },
+    {
+      "item_id": "0a6e722809c29f7f5a099e93",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.23570v1"
+      ],
+      "reason": "VibeMemBench同任务记忆开关配对显示检索路径12组中11组低于无记忆基线：按需检索回来的历史上下文同样不能默认服务后续任务，属相邻问题侧证据（求解器不含Claude与GPT、未报告记忆构建与检索成本）。"
+    },
+    {
+      "item_id": "628dc72036c5a436fe5250e0",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.27301v1"
+      ],
+      "reason": "该评测直接给出假设的可检验形式：25%预算下按当前问题选句在隐藏问题比随机删除高22.3个百分点、词级压缩无可检测增益、标识符保留66.4%对42.4%，且回本需约6.6至11.0个后续问题；但基于录制轨迹而非在线Agent、仅零售域且问题限于标识符。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "在线Agent下补读行为会怎样改变回本分布（评测基于录制轨迹）。",
+    "非标识符型问题（如行为、时序）上选择性保留的权重如何取。",
+    "压缩与选择本身的计算和时延成本。"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "固定Agent与多问题任务集，在同等token预算下对比三种上下文裁剪策略，验收只按隐藏后续问题计分。",
+    "inputs": [
+      "多问题证据标注语料与录制轨迹，扩至至少一个在线Agent设置",
+      "25%与50%两档token预算",
+      "按隐藏问题标注的答案键"
+    ],
+    "baselines": [
+      "词级压缩（同预算）",
+      "按当前问题相似度选句",
+      "同预算随机删除"
+    ],
+    "metrics": [
+      "隐藏后续问题得分",
+      "端到端任务成功率",
+      "补读次数",
+      "总token与时延"
+    ],
+    "support_criteria": [
+      "至少一档预算下，选择性保留在隐藏问题得分与端到端成功率上同时高于词级压缩与随机删除，且回本次数低于会话平均问题数。"
+    ],
+    "reject_criteria": [
+      "增益只出现在当前问题得分上，或标识符保留在非标识符问题上失效且无替代打分维度。"
+    ],
+    "limitations": [
+      "录制轨迹无法覆盖在线Agent的动态补读；问题类型分布决定标识符保留的权重，单域结论不可外推。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-30",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_2e96d22e9509ec306986",
+      "issue_date": "2026-10-29",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "压缩回本评测与等预算整文件选择对照、持有token浪费实测共同给出明确问题与可检验机制，建立研究假设Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "628dc72036c5a436fe5250e0",
+        "521fb45f2cbd6ea0aa1cf6c1",
+        "a502c5ec42feccc21c908531",
+        "0a6e722809c29f7f5a099e93"
+      ]
+    }
+  ]
+}
