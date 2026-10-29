@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ed74470ce5a24fb550d2",
+  "identity": {
+    "problem_key": "two_tier_kv_read_bandwidth_underutilized",
+    "mechanism_key": "completion_driven_multipath_read_routing",
+    "target_key": "external_kv_storage_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "完成事件驱动的多路径KV读取路由逼近聚合带宽",
+  "problem": "KV缓存超出内存后存储读取进入推理关键路径，按预测带宽静态分配两级存储会严重恶化TTFT。",
+  "hypothesis": "每步读取成批发起、写回滞后于前向计算，每个数据块在两层各存一份、先空闲的层立即认领下一批未读块，路由只依据完成事件，可在不预测带宽的情况下逼近聚合带宽上界并显著降低在线TTFT。",
+  "mechanism": "完成驱动认领加双副本两层数据布局加滞后写回。",
+  "target": "外置两级存储的KV读取路径",
+  "expected_effect": "70B离线吞吐47210 tok/s为LMCache的1.48倍；32B在线平均TTFT从31.1秒降到13.0秒，静态分层对照恶化到122.1秒。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-27",
+    "rationale": "单条已发表记录给出问题、机制、目标与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "5a66740e74019b21af6ba874",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.31827v1"
+      ],
+      "reason": "KVStream给出完成驱动认领与双副本布局机制及TTFT 31.1秒对13.0秒、静态分层122.1秒的对照。",
+      "independence_group": "arxiv:2610.31827"
+    }
+  ],
+  "evidence_item_ids": [
+    "5a66740e74019b21af6ba874"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.31827v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.31827"
+  ],
+  "unknowns": [
+    "复用集可放进主机内存时收益消失",
+    "全量复制带来2倍写放大",
+    "未报告TPOT与TTFT尾部分位；调度的是节点存储I/O而非跨节点网络"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在NVMe加并行文件系统两层上实现完成驱动读取路由并与静态分层对照",
+    "inputs": [
+      "两级存储KV数据集",
+      "在线服务负载",
+      "命中率剖面"
+    ],
+    "baselines": [
+      "LMCache式静态分层",
+      "单层读取"
+    ],
+    "metrics": [
+      "离线吞吐",
+      "在线平均TTFT",
+      "TTFT尾部分位"
+    ],
+    "support_criteria": [
+      "TTFT显著优于静态分层且逼近聚合带宽"
+    ],
+    "reject_criteria": [
+      "写放大或容量代价不可接受"
+    ],
+    "limitations": [
+      "节点内存储I/O范围"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "完成驱动对静态分层的对照完整，但为节点存储I/O且写放大代价明确，作为跨节点方案的机制参照观察。",
+  "related_candidate_ids": [
+    "candidate_c56cd1e6215a71f3f27f",
+    "candidate_827f27dbafeac04e8d94"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-27",
+  "last_updated_issue": "2026-10-27",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5e35598f3a6a3e0f072",
+      "issue_date": "2026-10-27",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "完成驱动对静态分层的对照完整，但为节点存储I/O且写放大代价明确，作为跨节点方案的机制参照观察。",
+      "evidence_item_ids": [
+        "5a66740e74019b21af6ba874"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

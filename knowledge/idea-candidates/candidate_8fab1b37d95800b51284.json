@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8fab1b37d95800b51284",
+  "identity": {
+    "problem_key": "wan_pd_disaggregation_ttft_handoff_overhead",
+    "mechanism_key": "batched_pipelined_kv_handoff_transfer",
+    "target_key": "wan_pd_disaggregated_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "先批量流水线化每请求KV交接再扩广域带宽",
+  "problem": "PD解耦跨广域网部署时，中位TTFT惩罚来自每请求KV交接的固定开销且不随RTT增大，单纯扩带宽无法消除。",
+  "hypothesis": "把逐请求KV交接改为批量化或流水线化传输、控制面联合TTFT与TPOT判别饱和来源，可在单跳WAN下把PD解耦的TTFT惩罚压回接近局域水平。",
+  "mechanism": "KV交接批量化加流水线；TTFT/TPOT与链路吞吐联合的饱和判别。",
+  "target": "广域网PD解耦推理服务",
+  "expected_effect": "反例基线：9毫秒RTT下单跳WAN使中位TTFT从0.11秒升至4.24秒、P99达19秒、吞吐406降至297 token/s，惩罚不随RTT增大。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-27",
+    "rationale": "单条已发表广域实测定位问题根因；候选机制（批量化交接）由归因直接导出。"
+  },
+  "evidence": [
+    {
+      "item_id": "d113056eb7031993bac2c113",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.32638v1"
+      ],
+      "reason": "InferSlice给出单跳WAN PD解耦的TTFT惩罚实测与每请求交接固定开销归因，为批量化方向提供反例基线。",
+      "independence_group": "arxiv:2610.32638"
+    }
+  ],
+  "evidence_item_ids": [
+    "d113056eb7031993bac2c113"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.32638v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.32638"
+  ],
+  "unknowns": [
+    "批量化方案本身未在原文验证",
+    "仅短生命周期无状态ShareGPT请求与同构L40S池",
+    "长上下文与有状态调用不在范围"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在广域测试床实现批量流水线KV交接并与逐请求交接对照",
+    "inputs": [
+      "WAN时延矩阵",
+      "ShareGPT类负载",
+      "PD节点对"
+    ],
+    "baselines": [
+      "逐请求交接基线",
+      "局域PD基线"
+    ],
+    "metrics": [
+      "中位与P99 TTFT",
+      "吞吐",
+      "交接批次效率"
+    ],
+    "support_criteria": [
+      "TTFT惩罚随批量化显著收敛且吞吐恢复"
+    ],
+    "reject_criteria": [
+      "批量化引入的排队抵消收益"
+    ],
+    "limitations": [
+      "反例证据来自第三方实测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "固定开销归因有广域实测支撑但批量化方案尚待原型验证，先观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-10-27",
+  "last_updated_issue": "2026-10-27",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_daf7e5415b6c7ab13d2",
+      "issue_date": "2026-10-27",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "固定开销归因有广域实测支撑但批量化方案尚待原型验证，先观察。",
+      "evidence_item_ids": [
+        "d113056eb7031993bac2c113"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_36aa0ea8a107d5c426c5",
+  "identity": {
+    "problem_key": "exact_prefix_miss_multimodal_vlm",
+    "mechanism_key": "low_entropy_patch_approximate_reuse",
+    "target_key": "vlm_serving_prefix_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "按patch熵选低熵块做近似视觉KV复用",
+  "problem": "VLM的视觉预填充延迟与KV占用随输入增长，现有系统只能复用精确匹配缓存，生产负载命中率天花板明显。",
+  "hypothesis": "按跨图patch熵选出低熵patch复用旧缓存、用预热注意力分数排定其余patch重算优先级，并按精确与近似命中做分层放置，可大幅提升命中率并降低未命中预填充延迟。",
+  "mechanism": "跨图patch熵筛选低熵patch直接复用，预热注意力分数排定重算优先级，精确与近似命中分别三级缓存放置。",
+  "target": "多模态推理服务的前缀缓存层",
+  "expected_effect": "生产负载命中率从27.78%升至61.45%，8K输入下未命中预填充延迟降30.5%-48.3%，79.4%近似命中由CPU或SSD层提供。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-21",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "860372bcbab2b548b050d334",
+      "issue_date": "2026-10-21",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.25136v1"
+      ],
+      "reason": "《VisMemo》给出近似复用机制与生产负载对照。",
+      "independence_group": "arxiv:2610.25136"
+    }
+  ],
+  "evidence_item_ids": [
+    "860372bcbab2b548b050d334"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.25136v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.25136"
+  ],
+  "unknowns": [
+    "近似复用并非总有利，小输入模型组合反而更慢",
+    "主实验硬件与ANLS基线未明"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部VLM服务缓存中实现patch熵近似复用，扫描输入长度与模型组合。",
+    "inputs": [
+      "内部多模态负载",
+      "patch熵画像",
+      "CPU/SSD/GPU三层容量"
+    ],
+    "baselines": [
+      "精确匹配缓存"
+    ],
+    "metrics": [
+      "命中率",
+      "未命中预填充延迟",
+      "近似命中质量退化"
+    ],
+    "support_criteria": [
+      "命中率与延迟同优且质量退化有界"
+    ],
+    "reject_criteria": [
+      "短输入或特定模型上近似命中持续劣化"
+    ],
+    "limitations": [
+      "原始证据未披露主实验硬件"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整，但近似命中在部分输入与模型组合下反而更慢，独立支持不足。",
+  "related_candidate_ids": [
+    "candidate_e224444277282cc28aed"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-21",
+  "last_updated_issue": "2026-10-21",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_afc2700c1544830be58",
+      "issue_date": "2026-10-21",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整，但近似命中在部分输入与模型组合下反而更慢，独立支持不足。",
+      "evidence_item_ids": [
+        "860372bcbab2b548b050d334"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

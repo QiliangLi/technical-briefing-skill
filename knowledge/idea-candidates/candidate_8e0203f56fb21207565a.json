@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8e0203f56fb21207565a",
+  "identity": {
+    "problem_key": "load_dependent_inference_energy_variance",
+    "mechanism_key": "realtime_energy_signal_cross_layer_budgeting",
+    "target_key": "shared_gpu_llm_serving"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "以实时GPU能耗状态同时驱动查询级采样预算与集群级调度",
+  "problem": "共享GPU上同一查询的能耗随时变负载波动可达空闲时的4.1倍，固定采样预算与固定调度口径失效，而token计价与窗口耗电的核算错配进一步使降本决策失真。",
+  "hypothesis": "把在线更新的能耗模型与实时GPU状态作为共享信号，查询级逐步决定采样预算、集群级按状态重排负载与频率，可在高负载时段以可接受的时延代价守住任务精度并压平能耗峰值。",
+  "mechanism": "在线模式从单样本起步逐步加采并以每步更新的能耗模型决定是否继续；NVML读取实时GPU状态；集群侧以Flex SLO契约与KKT在线求解重排三相负载与频率；请求与token双视角能耗刻画为两级模型提供校准。",
+  "target": "共享GPU集群上的LLM推理服务，覆盖测试时扩展采样与负载调度两级",
+  "expected_effect": "ATEST在线模式在高负载下全部作答且保持60.0%精度、计入标定省48倍能耗；PowerSlider在30%帽削减下维持78.3%在线goodput对最佳基线47.6%；能耗刻画给出批处理与上下文的边际能耗校准依据。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "三条跨期记录分别支撑查询级预算自适应、集群级状态驱动调度与能耗核算校准，联合成同一实时能耗信号跨层联动的机制，该联动无任何单条记录陈述或验证。"
+  },
+  "evidence": [
+    {
+      "item_id": "c8d2675444d20d8a452e7b61",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.25519v1"
+      ],
+      "reason": "ATEST以NVML实时GPU状态加每步在线更新的能耗模型逐步决定采样预算，实测同查询高负载能耗达空闲4.1倍时在线模式仍全部作答并保持60.0%精度，构成查询级半边。",
+      "independence_group": "arxiv:2610.25519"
+    },
+    {
+      "item_id": "372e1439344035d54191b769",
+      "issue_date": "2026-09-20",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.21719v1"
+      ],
+      "reason": "PowerSlider用Flex SLO契约、三相分解与KKT在线求解按功率帽状态重排负载与频率，30%帽削减下维持78.3%在线goodput，构成集群级半边。",
+      "independence_group": "arxiv:2608.21719"
+    },
+    {
+      "item_id": "e81bd29c99c999bedbb066d7",
+      "issue_date": "2026-09-03",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.28044v1"
+      ],
+      "reason": "请求与token双视角能耗刻画把推理能耗分解为固定成本加每token边际能耗，揭示token计价与窗口耗电的核算错配，为跨层预算提供核算基础。",
+      "independence_group": "arxiv:2608.28044"
+    }
+  ],
+  "evidence_item_ids": [
+    "c8d2675444d20d8a452e7b61",
+    "372e1439344035d54191b769",
+    "e81bd29c99c999bedbb066d7"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.25519v1",
+    "https://arxiv.org/abs/2608.21719v1",
+    "https://arxiv.org/abs/2608.28044v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.25519",
+    "arxiv:2608.21719",
+    "arxiv:2608.28044"
+  ],
+  "unknowns": [
+    "ATEST的GPU竞争为单卡负载注入模拟，未经真实集群验证",
+    "逐步小批执行使短任务p95时延升至两倍以上且吞吐下降",
+    "PowerSlider大规模结果来自真机校准仿真且功率模型需按硬件重拟合",
+    "跨层联动本身无直接实证，两级能耗模型的相互校准与稳定性未验证"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在共享GPU测试床上注入时变负载，对比能耗信号跨层联动与查询级、集群级各自独立优化的精度、能耗与时延。",
+    "inputs": [
+      "时变负载画像",
+      "NVML能耗模型",
+      "采样预算与调度策略"
+    ],
+    "baselines": [
+      "固定采样预算",
+      "仅查询级自适应采样",
+      "仅集群级功率调度"
+    ],
+    "metrics": [
+      "任务精度",
+      "总能耗",
+      "能耗峰值",
+      "p95时延"
+    ],
+    "support_criteria": [
+      "联动在高负载时段精度不降且能耗峰值显著低于两个单独机制"
+    ],
+    "reject_criteria": [
+      "时延代价超过能耗收益或两级模型漂移导致误判"
+    ],
+    "limitations": [
+      "依赖NVML计数器粒度与每硬件重拟合"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制四要素齐备，但跨层联动无直接实证，关键记录的GPU竞争为单卡模拟，且与功率帽调度候选的家族关系需人工决定合并或分立推进。",
+  "related_candidate_ids": [
+    "candidate_f2acadceb4759ed12598"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-09-03",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d2c2ed8fc512bca32ae9",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制四要素齐备，但跨层联动无直接实证，关键记录的GPU竞争为单卡模拟，且与功率帽调度候选的家族关系需人工决定合并或分立推进。",
+      "evidence_item_ids": [
+        "c8d2675444d20d8a452e7b61",
+        "372e1439344035d54191b769",
+        "e81bd29c99c999bedbb066d7"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

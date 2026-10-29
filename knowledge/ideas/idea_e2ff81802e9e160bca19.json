@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_e2ff81802e9e160bca19",
+  "identity": {
+    "problem_key": "shared_cache_cross_origin_reuse",
+    "mechanism_key": "source_bound_key_descriptors_with_differential_detection",
+    "target_key": "multi_tenant_prefix_cache_correctness"
+  },
+  "idea_type": "solution_concept",
+  "title": "作用域来源绑定的共享KV缓存键与差分检测护栏",
+  "problem": "共享 KV 缓存层仅按 token 内容派生键时，适配器、权重版本/精度与租户身份不同的不兼容状态会互相复用：跨适配器冲突使精度从 0.94 降至 0.64，省略权重版本时 45 页中 42 页冲突；而固定预算下全量来源分离又使吞吐从 42 降到 15 请求每秒，正确性与吞吐成为二选一。",
+  "hypothesis": "按维度作用域分离（只把已知冲突维度绑入键）配合差分检测器护栏，可以在跨来源同键异字节冲突归零的同时，把吞吐损失控制在 20% 以内、命中率损失控制在 10% 以内。",
+  "mechanism": "把适配器身份、租户盐、权重精度/版本与 KV 表示绑入键描述符，使键对计算与共享来源单射；差分检测器让仅差一个维度的工作进程写同一文档并标记同键异字节作上线护栏；Agent 场景在 radix tree 插入 drop 节点按操作历史区分缓存版本。",
+  "expected_effect": "跨来源冲突归零（对照论文恢复绑定后冲突归零），吞吐损失从全量分离的约 64% 降到 20% 以内，形成可随冲突维度清单演进的缓存键工程方案。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "f8c637164ffa4d998894ce4d",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.38706v1"
+      ],
+      "reason": "来源契约论文实测冲突实害（跨适配器精度 0.94→0.64、省略权重版本时 45 页中 42 页冲突）与绑定修复（恢复绑定后冲突归零），并给出全量分离代价边界（吞吐 42→15 请求每秒），是方案的问题定义与机制来源。"
+    },
+    {
+      "item_id": "ac5e43456730856b45a55c92",
+      "issue_date": "2026-10-14",
+      "source_urls": [
+        "https://github.com/vllm-project/vllm/releases/tag/v0.31.0"
+      ],
+      "reason": "vLLM 0.31.0 已对前缀缓存额外键按来源标记防碰撞，证明引擎侧局部来源绑定可随版本升级落地，方案有现实载体。"
+    },
+    {
+      "item_id": "51b028770810a93bcda12391",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.28577v1"
+      ],
+      "reason": "AKV 在 radix tree 插入 drop 节点按操作历史区分缓存版本（三模型×四 Agent 基准成本降 27.7%、平均分升 1.7 点），证明操作历史作为键维度对 Agent 负载必要。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "作用域分离在真实租户多样性分布下的命中率代价",
+    "适配器热更新时的键失效风暴",
+    "多主机广域共享下差分检测器的部署与开销",
+    "恶意租户伪造来源描述符的风险"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "单机双引擎（vLLM + SGLang）共享独立缓存服务器，复现论文的单主机加独立缓存服务器拓扑",
+    "inputs": [
+      "2 个 LoRA 适配器 × 2 个权重版本的固定文档集",
+      "租户数 1-32 扫描",
+      "缓存预算 1-4 倍工作集",
+      "分离作用域三档：仅内容键/全量分离/按维度作用域分离"
+    ],
+    "baselines": [
+      "仅内容键（现状）",
+      "全量来源分离（论文口径，42→15 请求每秒的损失边界）"
+    ],
+    "metrics": [
+      "差分检测器标记的同键异字节冲突数",
+      "目标任务精度",
+      "吞吐（请求每秒）",
+      "命中率",
+      "缓存占用与驱逐压力"
+    ],
+    "support_criteria": [
+      "作用域分离下冲突数为 0",
+      "吞吐损失≤20%（相对仅内容键）",
+      "命中率损失≤10%"
+    ],
+    "reject_criteria": [
+      "出现任一同键异字节静默冲突",
+      "作用域分离吞吐损失>50% 且无缓存预算补偿空间"
+    ],
+    "limitations": [
+      "未覆盖多主机广域共享与恶意租户",
+      "未覆盖适配器热更新风暴与真实生产租户多样性分布"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-10-14",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_7f1acb5e71486547c243",
+      "issue_date": "2026-10-29",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据已发布证据新建 Idea：作用域来源绑定的共享KV缓存键与差分检测护栏。",
+      "evidence_item_ids": [
+        "f8c637164ffa4d998894ce4d",
+        "ac5e43456730856b45a55c92",
+        "51b028770810a93bcda12391"
+      ]
+    }
+  ]
+}

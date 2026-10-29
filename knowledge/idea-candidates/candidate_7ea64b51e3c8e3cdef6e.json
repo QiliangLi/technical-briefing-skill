@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_7ea64b51e3c8e3cdef6e",
+  "identity": {
+    "problem_key": "transferable_kv_head_dim_volume",
+    "mechanism_key": "rope_pair_energy_folding_into_weights",
+    "target_key": "cross_site_kv_transfer"
+  },
+  "idea_type": "solution_concept",
+  "title": "头维度压缩折叠进权重：可传输KV体积减半且免重建",
+  "problem": "跨域搬运KV时头维度压缩多需接收端重建全维表示，解码算力不降反升。",
+  "hypothesis": "把按联合query-key激活能量选出的RoPE对降维折叠进模型权重，可在保持旋转结构下让缓存与注意力计算同时缩小，接收端免重建。",
+  "mechanism": "降维限制为坐标选择并保留完整RoPE旋转对；按联合激活能量保留高能量对；折叠进权重。",
+  "target": "跨域KV传输的发送端模型准备",
+  "expected_effect": "50%保留、256K上下文下总推理FLOPs降47.75%、吞吐升1.79倍、TTFT降43.22%。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-23",
+    "rationale": "单条已发表记录给出问题、机制、目标与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "25984365221418728b500261",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.28385v1"
+      ],
+      "reason": "RACE给出坐标选择加激活能量折叠机制及FLOPs、吞吐与TTFT结果。",
+      "independence_group": "arxiv:2610.28385"
+    }
+  ],
+  "evidence_item_ids": [
+    "25984365221418728b500261"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.28385v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.28385"
+  ],
+  "unknowns": [
+    "结果均含约1M token蒸馏恢复",
+    "仅单卡实测且无WAN数据",
+    "接收端异构算力兼容未验证"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "折叠权重模型加跨站点KV传输模拟",
+    "inputs": [
+      "Llama级模型",
+      "长上下文负载",
+      "WAN时延矩阵"
+    ],
+    "baselines": [
+      "FP16未压缩传输",
+      "重建式头压缩"
+    ],
+    "metrics": [
+      "传输字节",
+      "TTFT",
+      "任务质量"
+    ],
+    "support_criteria": [
+      "体积减半且质量不降"
+    ],
+    "reject_criteria": [
+      "蒸馏成本超过传输节省"
+    ],
+    "limitations": [
+      "无真实WAN实验"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制可复用且与既有传输体积候选互补，但蒸馏依赖与WAN成本未回答。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-10-23",
+  "last_updated_issue": "2026-10-23",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_80462f789133c12c18e",
+      "issue_date": "2026-10-23",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制可复用且与既有传输体积候选互补，但蒸馏依赖与WAN成本未回答。",
+      "evidence_item_ids": [
+        "25984365221418728b500261"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

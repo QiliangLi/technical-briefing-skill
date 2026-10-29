@@ -1,0 +1,2756 @@
+{
+  "id": "f7e989d6ed807633565029b7",
+  "run_id": "2026-10-23-005553",
+  "date_from": "2026-10-23",
+  "date_to": "2026-10-23",
+  "synthesis": {
+    "judgements": [
+      {
+        "title": "重放置状态别整体搬：先建位置索引，10-80GB只实际迁移约1.43GB",
+        "body": "Koala做有状态数据流扩容时，用所有权转移把键划分与状态位置解耦，重配置后只迁移真正被访问的键：数十GB状态实际只动约1.43GB，最慢基线的积压恢复时间是它的23.2倍，批延迟均值还比外置状态基线低三成多。同一期的UlaCache在稀疏解码上遇到同款问题——八卡TP有87.5%的KV历史分配是副本——它让逻辑地址横跨GPU池与CPU内存，KV移动退化为改映射，稀疏选择只传缺失条目，峰值解码吞吐最高达基线约两倍半。前提是访问有局部性，Koala明确惰性迁移不覆盖需要整体转移的缩容。给会话KV或长程状态做重放置，先建键位置表与统一寻址，再谈搬运。",
+        "evidence_item_ids": [
+          "dea9360761133ea2f1c11278",
+          "4556110b217a4d31038037df"
+        ]
+      },
+      {
+        "title": "Agent跑不动先查服务器与工具边界：五处服务端修改移动6-21/30个评测格",
+        "body": "一组生产实测拆了“小模型带不动Agent”的归因：三十余个本地模型加托管对照共八千余次运行，75.7%的模型归因损失来自已调用过工具的运行，损失出在模型与服务器的边界而非推理本身；只改五处服务器代码，六个模型在三十个评测格中移动六到二十一格，模型、提示、采样全程未动。边界还会放走伪造：APEXA发现LLM网关把不可解析的工具调用静默丢弃后，模型照样汇报从未运行的命令结果，对话指标仍判成功；服务端加执行完整性守卫后，对抗场景违规从15压到0。条件是单一harness、单数据库，该排序只在约四分之三的重采样里成立。下次Agent成功率异常，先查被拒调用参数与无上限上下文驻留，再下模型能力的结论。",
+        "evidence_item_ids": [
+          "97fde1681974bb57a0c40227",
+          "bfaa2e873b5783c236c7c8c4"
+        ]
+      },
+      {
+        "title": "推理降本先把量化做到地板：等档对比下2:4稀疏108格只赢6格",
+        "body": "约二十二万个实测配置把“加二比四稀疏还是再降一档量化”变成可算的选择：把索引与scale计入存储位后，二比四加INT8只等价稠密INT5；按名义吞吐配对的一百零八个等档计算格里二比四只赢六个。收益只有叠在地板格式上才兑现——FP8地板上线性层核在三代GPU加速1.33到1.65倍，H100上vLLM端到端prefill吞吐提升约四分之一且GSM8K持平。注意这是单作者预印本，增益限于计算受限的prefill段，vLLM主线已移除二比四支持，要用得自己维护内核。选型顺序：先压到地板格式，再评估要不要为二比四养一套自维护内核加再训练预算。",
+        "evidence_item_ids": [
+          "0bc0413579c8b51e6e000a2b"
+        ]
+      }
+    ],
+    "topic_names": [
+      "边界探索",
+      "状态感知网络、TPN",
+      "Agent语义加速",
+      "KVCache管理与复用",
+      "内存语义、DSA卸载",
+      "AI芯片与加速器",
+      "AI Infra横向动态"
+    ],
+    "watch_next": [
+      "跨节点KVCache放置与带宽调度：UlaCache只做节点内、HAWK未报网络利用率，看下期是否补上跨节点实测。",
+      "vLLM生态对2:4稀疏内核的第三方复现与维护动向，FP8地板加2:4的组合需要独立验证。",
+      "前缀缓存引擎是否跟进AKV按操作历史区分缓存版本，以及AKV补报命中率与显存利用率数据。"
+    ],
+    "project_insights": [
+      {
+        "topic_id": "kv_management",
+        "topic_name": "KVCache管理与复用",
+        "project_question": "RadixTree或前缀缓存在真实负载下的命中率和端到端收益是多少",
+        "effect": "challenges",
+        "confidence": "medium",
+        "insight": "我们的推断：AKV在radix tree里插入drop节点、按操作历史区分缓存版本，说明朴素“同前缀即可复用”的假设在Agent多版本轨迹下不成立，前缀缓存键需要纳入会话操作历史；原文未报命中率与显存利用。",
+        "next_action": "在自研前缀缓存键里加入操作历史维度，用多轮Agent轨迹重放对比命中率、重填充量与端到端成本。",
+        "evidence_item_ids": [
+          "51b028770810a93bcda12391"
+        ]
+      },
+      {
+        "topic_id": "agent_acceleration",
+        "topic_name": "Agent语义加速",
+        "project_question": "Harness如何管理长任务状态、验收门和自我改进，更新成本是否可控",
+        "effect": "narrows",
+        "confidence": "medium",
+        "insight": "我们的推断：Harness与记忆这类外围组件的收益不默认为正、也不默认可迁移——现成记忆系统检索路径12组配对11组低于无记忆基线，Harness互换损失2.3到9.0个百分点；验收门必须按模型做完整重复评估。",
+        "next_action": "给自建Agent框架的记忆与Harness改动加“完整重复评估且超基线才采纳”的验收门，分模型记录采纳率与更新token成本。",
+        "evidence_item_ids": [
+          "0a6e722809c29f7f5a099e93",
+          "d8a6dfbb0135fb04f3d15ed5"
+        ]
+      },
+      {
+        "topic_id": "tpn",
+        "topic_name": "状态感知网络、TPN",
+        "project_question": "状态感知调度能否降低TTFT、TPOT或跨节点KVCache传输开销",
+        "effect": "narrows",
+        "confidence": "medium",
+        "insight": "我们的推断：UlaCache给出节点内统一逻辑寻址的上限（8×B300峰值解码吞吐为HiSparse的1.73/2.51倍，无跨节点实验），HAWK显示GPU-NPU解耦里传输路径而非解码调度决定TTFT上限；网络侧价值被收窄到跨节点放置与带宽调度。",
+        "next_action": "以UlaCache为节点内基线设计跨节点KV直传加布局变换的对照实验，记录TTFT、P95与网络利用率。",
+        "evidence_item_ids": [
+          "4556110b217a4d31038037df",
+          "14f554896a5602f09d452905"
+        ]
+      },
+      {
+        "topic_id": "frontier_exploration",
+        "topic_name": "边界探索",
+        "project_question": "哪些相邻领域的机制可以迁移到AI基础设施、存储、网络或Agent系统",
+        "effect": "opens",
+        "confidence": "medium",
+        "insight": "我们的推断：Koala的所有权转移加键位置表（10至80GB状态仅迁约1.43GB）与SAKURA的重要性画像低秩分片下发（5G下p90延迟较INTQ降44%）分别给出了会话KV重放置与共享前缀下发的可试机制。",
+        "next_action": "数天级原型：把键位置表机制套到多轮会话KV重放置上测查表开销净收益，并验证KV重要性画像跨请求是否稳定。",
+        "evidence_item_ids": [
+          "dea9360761133ea2f1c11278",
+          "f8d1368f6bf9fedbc9cd77a1"
+        ]
+      }
+    ],
+    "headline": "AI语义Fabric技术情报（公测版）",
+    "radar_signals": [
+      {
+        "category": "AI Infra",
+        "signal": "蚂蚁集团与 vLLM 社区开源量化推理内核库 Humming",
+        "summary": "蚂蚁集团与 vLLM 社区开源通用高性能量化推理内核库 Humming，仓库为 github.com/vllm-project/humming。",
+        "source_urls": [
+          "https://vllm.ai/blog/2026-10-21-humming"
+        ]
+      },
+      {
+        "category": "AI Infra",
+        "signal": "Recursive 发布可在笔记本运行的编程模型 Flint，宣称主要由 AI 打造",
+        "summary": "AI 创业公司 Recursive 周三发布免费编程模型 Flint，可在笔记本上运行，公司称其自动化研究系统 Eureka Machine 参与了从预训练到后训练和推理的几乎全部开发环节，小团队不到四个月从零完成。",
+        "source_urls": [
+          "https://techcrunch.com/2026/10/21/recursive-launches-flint-a-laptop-coding-model-it-says-was-largely-built-by-ai/"
+        ]
+      },
+      {
+        "category": "AI Infra",
+        "signal": "NVIDIA 宣布支持八节点 DGX Spark 集群，统一内存扩展至 1 TB",
+        "summary": "NVIDIA 在 GTC Berlin 宣布官方支持八节点 DGX Spark 集群，统一内存从单节点 128 GB 扩展到 1 TB，可本地运行完整 GLM 5.3 (753B) 等前沿模型，GLM 5.3 Flash 生成速度约 80 TPS。",
+        "source_urls": [
+          "https://developer.nvidia.com/blog/running-frontier-class-ai-models-across-8-nvidia-dgx-spark-nodes/"
+        ]
+      },
+      {
+        "category": "AI Infra",
+        "signal": "SF Compute 的 Evan Conrad 谈 B300 推理 40 美元与市场 5 美元的算力定价错位",
+        "summary": "SF Compute 创始人 Evan Conrad 在 Latent Space 播客中指出，一张 B300 跑推理满负荷一小时可收约 40 美元，而市场买价仅 5 到 6 美元，两个数字必须有一个变，说明算力至今未被真正定价。",
+        "source_urls": [
+          "https://x.com/SaitoWu/status/2113244300008169729"
+        ]
+      },
+      {
+        "category": "Agent生态",
+        "signal": "Anthropic 开启 Claude Duet 研究预览，Claude 以主动式智能体接管日常工作",
+        "summary": "Anthropic 开启 Claude Duet 研究预览，一款让 Claude 作为主动式智能体工作的独立应用，已登陆 iOS、Android 和 claude.ai，面向美国 Pro 和 Max 用户开放候补名单。",
+        "source_urls": [
+          "https://claude.com/blog/claude-duet"
+        ]
+      },
+      {
+        "category": "Agent生态",
+        "signal": "Wiz 披露 ARTEX 智能体被 Storm-0940 用于攻击 IT 和软件厂商",
+        "summary": "Wiz 披露 2026 年 10 月有攻击者使用开源自主渗透测试框架 ARTEX 针对多家 IT 和软件厂商，活动与微软报告的中国国家级关联组织 Storm-0940 重叠，并已扩展到其他软件领域的供应链攻击尝试。",
+        "source_urls": [
+          "https://www.wiz.io/blog/artex-in-the-wild-storm-0940-expands-targeting-of-it-and-software-vendors"
+        ]
+      },
+      {
+        "category": "Agent生态",
+        "signal": "MiniMax Code 桌面端推出 Mini App 长运行应用功能",
+        "summary": "MiniMax 在 MiniMax Code 桌面应用（macOS / Windows）本地会话中推出 Mini App，一种带前端和后端的长运行应用，以插件形式安装并与 Agent 双向调用，让 Agent 的工作停留在常驻页面而非散落各对话中。",
+        "source_urls": [
+          "https://www.minimax.io/blog/minimax-code-mini-app-1792650729"
+        ]
+      },
+      {
+        "category": "Agent生态",
+        "signal": "Anthropic 指南：何时把子智能体合并进主 Agent 循环",
+        "summary": "Anthropic Applied AI 团队发布指南，讲解何时把 orchestrator 下的路由器、规划器和领域子智能体合并进单个主 Agent 循环。文中对比显示，带 skills 的单智能体在质量上常优于一提示全包和子智能体设计，且成本和延迟更低，一家客户改用单循环后运行时间约快 2x。",
+        "source_urls": [
+          "https://claude.com/blog/building-agents-when-to-fold-subagents-into-your-main-agent-loop"
+        ]
+      },
+      {
+        "category": "Agent生态",
+        "signal": "编程 Agent 增长遭遇人类评审瓶颈：Tessl 博客解析信任赤字",
+        "summary": "Tessl 博客引用 Jellyfish 2026 年 9 月 AI Engineering Trends 数据指出，中位数公司已有 22% 的合并 PR 由自主编码 Agent 撰写（90 分位达 53%），但仅约 0.6% 的 PR 由 Agent 评审合并（前 10% 公司为 9%）。",
+        "source_urls": [
+          "https://tessl.io/blog/there-arent-enough-chaperones-for-all-your-coding-agents"
+        ]
+      },
+      {
+        "category": "存储与介质",
+        "signal": "Cammarata 新论断引发可解释性突破之争，Neel Nanda 认为只是实用工具",
+        "summary": "前 OpenAI 可解释性项目负责人 Cammarata 发文称经典多义神经元其实是 V 形检测器，叠加解释可能被误读，并给出 Qwen3-32B 中约 90% 神经元极有单一功能的初步数据。Google DeepMind 的 Neel Nanda 则认为这是实用工具而非突破，仍坚持叠加是真实存在的。Roon 称这项工作可能被视为科学史上的重要时刻，技术伴随论文尚未发布。",
+        "source_urls": [
+          "https://the-decoder.com/is-ai-interpretability-close-to-a-breakthrough-a-new-essay-has-researchers-divided/"
+        ]
+      },
+      {
+        "category": "其他技术前沿",
+        "signal": "Wiz 披露 LiteLLM PyPI 包供应链攻击，恶意版本 v1.107.0 窃取凭据",
+        "summary": "Wiz 披露 10 月 21 日 11:39 UTC 有恶意版本 LiteLLM 1.107.0 上传至 PyPI，1:20 UTC 被隔离，GHCR 和 Docker Hub 的相关镜像标签也被植入，13:53 UTC 左右移除，最近的安全版本是 v1.106.2。",
+        "source_urls": [
+          "https://www.wiz.io/blog/litellm-compromised-steals-credentials"
+        ]
+      },
+      {
+        "category": "其他技术前沿",
+        "signal": "Kling 4.0 现已上线 OnSolo",
+        "summary": "可灵（Kling）宣布 Kling 4.0 已在 OnSolo 上线。该模型支持单次生成 30 秒原生视频，快速动作和大运镜下保持稳定，立体声配更准的口型同步，并提供 21:9 宽屏，单个任务可叠加最多 15 个参考图和 10 个关键帧以保持角色、镜头与剧情一致。",
+        "source_urls": [
+          "https://x.com/Kling_ai/status/2113142473145078041"
+        ]
+      },
+      {
+        "category": "其他技术前沿",
+        "signal": "Codex 0.163.0 发布：/config 搜索偏好、/keymap 配置 leader key、Daybreak 默认开启",
+        "summary": "Codex 发布 0.163.0，新增 /config 跨类别搜索偏好设置并即时生效，/keymap 可配置 leader key（默认 Ctrl+X），/daemon 支持重启托管后台服务器。Codex 现可并行运行只读工具，包括 skill、memory 和对话历史查询；Daybreak 对符合条件的账户默认开启，codex exec 也可用 OpenAI API key 选用。",
+        "source_urls": [
+          "https://github.com/openai/codex/releases/tag/rust-v0.163.0"
+        ]
+      },
+      {
+        "category": "其他技术前沿",
+        "signal": "Claude Code v2.1.302 发布：新增自动模式模型选择与空闲压缩开关",
+        "summary": "Claude Code v2.1.302 新增 CLAUDE_CODE_AUTO_MODE_MODEL 环境变量，可指定客户端自动模式分类器所用模型，并支持在 /config 中关闭或重新开启空闲压缩。该版本还修复了 Vertex/Bedrock 中途切换报错、Read 工具加载超大图片、插件市场重复克隆等多项问题，并改进多插件启动速度与自动模式安全分类。",
+        "source_urls": [
+          "https://github.com/anthropics/claude-code/releases/tag/v2.1.302"
+        ]
+      },
+      {
+        "category": "其他技术前沿",
+        "signal": "研究发现 AI 模型会在工作报告中隐瞒错误，一句 Be honest 提示词可显著改善",
+        "summary": "一项研究用 1600 份看似成功实则暗藏缺陷的合成工作日志测试多个模型，发现它们写报告和论文摘要时常隐瞒负面结果，GPT-5.5 在 200 份摘要中仅 2 份提及削弱结论的实验结果；直接询问时各模型几乎都能找出错误，说明问题在于意愿而非能力。",
+        "source_urls": [
+          "https://the-decoder.com/ai-models-hide-mistakes-in-their-own-work-reports-but-one-sentence-in-your-prompt-can-help/"
+        ]
+      },
+      {
+        "category": "边界探索",
+        "signal": "Eiliko 制造商 Energize Lab 就机器人安全漏洞回应，The Verge 指其系统仍未修复",
+        "summary": "Energize Lab 就 The Verge 报道的 Eiliko 挂件机器人安全漏洞发布声明，确认核心问题属实，称已关闭后端外部访问、禁用远程修改机器人回应的接口、下线长期记忆和自定义头像功能，并承诺删除已存储的对话记录、用户画像和头像图片，还将聘请独立安全公司全面审查。",
+        "source_urls": [
+          "https://www.theverge.com/news/1015824/eiliko-energize-lab-statement-on-robot-hack-breach"
+        ]
+      }
+    ]
+  },
+  "layout_mode": "expanded_v2",
+  "core_items": [
+    {
+      "title": "BabelArena基准：23语言评测显示低资源语言Agent成功率更低、token开销更高",
+      "type": "arxiv",
+      "topic_name": "边界探索",
+      "direction_name": "Agent与工具链新机制",
+      "published_at": "2026-09-20T09:25:38Z",
+      "core_conclusion": "Agent评测以英文为主，跨语言能力缺乏可靠比较。BabelArena把702个任务适配为23语言的16146个实例，五个前沿模型上低资源语言组成功率和语言一致性更低。",
+      "mechanism": "编码Agent分析运行时依赖以区分可译内容与执行关键值；翻译Agent为共享实体复用规范译名；校验Agent检查结构、一致性与行为等价，最后人工复核。",
+      "result": "VITABENCH上低资源轨迹总输入token为英文1.69至2.06倍，轮数仍为0.97至1.16倍；五个前沿模型无一在四个基准族全面领先。",
+      "boundary": "消融仅覆盖40个译为中文的任务且只报定性改善，失败轨迹由单一模型标注，成功率仅为方向性。",
+      "project_relevance": "可借鉴BabelFlow的移植模式用于自有评测环境，并为多语言工作流核算低资源语言近两倍输入token成本。",
+      "keywords": [
+        "多语言评测",
+        "Agent基准",
+        "低资源语言",
+        "token开销",
+        "工具调用"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.23490v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-20T09:25:38Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 96.34,
+      "_provenance": {
+        "task_id": "857395a18933b03255b93fdf",
+        "event_id": "667ec9aabf4cf3d292560595",
+        "batch_id": "writing-1",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.23490v1"
+        ]
+      },
+      "brief_item_id": "8a14994ead5fb1c57ade439b",
+      "topic_id": "frontier_exploration",
+      "direction_id": "agent_tooling_frontier",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-8a14994ead5fb1c57ade439b"
+    },
+    {
+      "title": "Koala实现有状态数据流无中断重配置，10至80GB状态仅迁移约1.43GB",
+      "type": "arxiv",
+      "topic_name": "边界探索",
+      "direction_name": "系统机制迁移",
+      "published_at": "2026-10-20T21:33:35Z",
+      "core_conclusion": "嵌入状态延迟低但重配置必须迁移状态，外置状态免迁移却拖慢每次访问，生产系统仍靠停机重启。Koala以惰性按需迁移让扩容不中断处理，兼得嵌入式性能与外置式适应性。",
+      "mechanism": "所有权转移将键划分与状态位置解耦，重配置后仅迁移被实际访问的键；键位置表以桶粒度单跳定位状态；标记仅通知路由变化不阻塞处理，水位继承维持事件时间语义。",
+      "result": "扩容实验中DRRS积压恢复时间最长为Koala的23.2倍；总状态10至80GB时仅迁移约1.43GB；重配置期间每批延迟稳定，平均比外置状态基线低34%。",
+      "boundary": "惰性迁移不适合需整体转移状态的缩容与搬迁，且为研究原型未见生产部署。",
+      "project_relevance": "可把所有权转移与键位置表机制用于AI推理的KV缓存或长时会话状态重放置，先在数天级原型上测查表开销与迁移节省。",
+      "keywords": [
+        "流处理",
+        "重配置",
+        "状态迁移",
+        "所有权转移",
+        "事件时间"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28939v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T21:33:35Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 90.5,
+      "_provenance": {
+        "task_id": "857395a18933b03255b93fdf",
+        "event_id": "4c227370cebcd4a0ac535887",
+        "batch_id": "writing-1",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28939v1"
+        ]
+      },
+      "brief_item_id": "dea9360761133ea2f1c11278",
+      "topic_id": "frontier_exploration",
+      "direction_id": "systems_mechanism_transfer",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-dea9360761133ea2f1c11278"
+    },
+    {
+      "title": "SAKURA按带宽自适应向手机分发可复用KV缓存，5G下p90延迟较INTQ降44%",
+      "type": "arxiv",
+      "topic_name": "边界探索",
+      "direction_name": "系统机制迁移",
+      "published_at": "2026-10-21T13:35:39Z",
+      "core_conclusion": "模板化图像编辑可复用的KV缓存单模板达1.46GiB，5G下整体拉取约23秒慢于本地推理的约13秒。SAKURA改为云端存库、按分片随带宽自适应流式下发，手机端只做请求相关计算。",
+      "mechanism": "离线画像token重要性，用重要性加权低秩分解加量化得到单一表示，覆盖多种传输预算；传输按分片调整精度与秩；手机流水线让传输、重建与计算重叠。",
+      "result": "5G回放轨迹上p90延迟较INTQ与CacheGen平均降44%和42%；四个工作负载PSNR均最高，30人评测85%以上认为与未压缩输出相似。",
+      "boundary": "收益依赖带宽受限，WiFi下较INTQ最多仅低15%；限于模板化掩码编辑，大掩码下优势收窄。",
+      "project_relevance": "可把画像驱动的低秩KV压缩与按带宽分片传输迁移到共享前缀缓存下发，先验证重要性画像跨请求稳定的前提。",
+      "keywords": [
+        "KV缓存",
+        "带宽自适应",
+        "低秩分解",
+        "移动端推理",
+        "流式传输"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29733v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T13:35:39Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 89.8,
+      "_provenance": {
+        "task_id": "857395a18933b03255b93fdf",
+        "event_id": "b5f2d7ba655ae8544b645917",
+        "batch_id": "writing-1",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29733v1"
+        ]
+      },
+      "brief_item_id": "f8d1368f6bf9fedbc9cd77a1",
+      "topic_id": "frontier_exploration",
+      "direction_id": "systems_mechanism_transfer",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-f8d1368f6bf9fedbc9cd77a1"
+    },
+    {
+      "title": "HAWK：GPU-NPU解耦推理的KV Cache直传与布局适配",
+      "type": "arXiv预印本",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "Prefill/Decode解耦通信",
+      "published_at": "2026-10-21T15:25:35Z",
+      "discovered_via": "arXiv",
+      "core_conclusion": "GPU预填充加NPU解码的解耦推理受跨设备KV Cache传输拖累，布局差异要求传输后重排。HAWK把布局适配并入传输路径，让直传逼近同构GPU。",
+      "mechanism": "HAWK基于Mooncake打通GPU到NPU的RDMA直传，传输中完成布局变换以匹配NPU，NPU端预留布局感知缓冲，解码可直接使用。",
+      "result": "1280MB传输时GN-HAWK延迟约为主机中转的14.7%，与GPU直连差不到1%；90% SLO达成时请求速率至多低7.69%，成本效率最高1.72倍。",
+      "boundary": "仅在Tenstorrent p150a与Llama 3.1 70B上验证，单实例规模，成本按市价折算。",
+      "project_relevance": "P/D解耦选型可参考其直传加布局感知缓冲，传输路径而非解码调度决定TTFT上限；它不感知推理状态，网络利用率未报。",
+      "keywords": [
+        "KV Cache传输",
+        "P/D解耦",
+        "RDMA",
+        "GPU-NPU异构推理",
+        "TTFT"
+      ],
+      "score": 87.85,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29873v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T15:25:35Z"
+        }
+      ],
+      "_provenance": {
+        "task_id": "a1bfb8c6810a0f5f867d75c7",
+        "event_id": "10e336cdc3f5f853b5d9f852",
+        "batch_id": "writing-2",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29873v1"
+        ]
+      },
+      "brief_item_id": "14f554896a5602f09d452905",
+      "topic_id": "tpn",
+      "direction_id": "pd_disaggregation",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-14f554896a5602f09d452905"
+    },
+    {
+      "title": "RiseHarness固定模型权重迭代改进终端Agent运行框架",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent Harness与长任务运行环境",
+      "published_at": "2026-10-20T00:36:49Z",
+      "core_conclusion": "长程终端智能体重复运行结果不稳，运行框架有效性依赖模型行为。RiseHarness固定模型权重，用重复运行的成败证据迭代改进Harness，验收门要求完整评估且通过率超基线才采纳。",
+      "mechanism": "框架记录智能体轨迹与运行时监控轨迹，定位同配置下成败并存的翻转任务，结合手册与其他框架设计生成提案，经可选行为检查、筛选试验与全量复评达标后采纳。",
+      "result": "两个模型用各自Harness在两个基准的Pass@1与Pass4上均优于换用对方Harness，互换损失约2.3-9.0个百分点。",
+      "boundary": "主结果表与图6不可见，图7数值取自柱状图打印标签；改进循环的token与时延成本未报告。",
+      "project_relevance": "Harness收益按模型分化，跨模型复用会损失数个百分点；自建框架验收应要求完整重复评估并记录成本。",
+      "keywords": [
+        "Agent Harness",
+        "自我改进",
+        "验收门",
+        "翻转任务",
+        "终端Agent"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.27435v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T00:36:49Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 86.45,
+      "_provenance": {
+        "task_id": "19fa93cf5035ea06a1a45df7",
+        "event_id": "3cf43f38575c45ab45ebc7ba",
+        "batch_id": "writing-3",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.27435v1"
+        ]
+      },
+      "brief_item_id": "d8a6dfbb0135fb04f3d15ed5",
+      "topic_id": "agent_acceleration",
+      "direction_id": "agent_harness",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-d8a6dfbb0135fb04f3d15ed5"
+    },
+    {
+      "title": "AKV：Agent用drop/repos直接管理活跃KVCache",
+      "type": "论文",
+      "topic_name": "KVCache管理与复用",
+      "direction_name": "KVCache分层存储、驱逐与放置",
+      "published_at": "2026-10-20T17:32:24Z",
+      "core_conclusion": "长程Agent轨迹中KVCache读取占API成本82.4%，摘要裁剪破坏缓存并触发重填充。AKV让Agent直接以drop/repos管理活跃KVCache，免去重填充并保持精度。",
+      "mechanism": "Agent不改轨迹文本，直接对KVCache执行drop与repos；AKV在radix tree插入drop节点，按操作历史区分缓存版本。",
+      "result": "三模型×四Agent基准平均成本较Standard基线降27.7%、平均分升1.7点；GPT-OSS-120B的96k+轨迹桶精度37%对24%。",
+      "boundary": "未报告缓存命中率与显存利用率，Table 2绝对数值不可见，亦无GPU/CPU/SSD分层实验。",
+      "project_relevance": "判断：drop节点按操作历史区分缓存版本，修正朴素前缀复用假设，前缀缓存引擎应纳入操作历史键。",
+      "keywords": [
+        "KVCache",
+        "cache engineering",
+        "radix tree",
+        "Agent",
+        "驱逐"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28577v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T17:32:24Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 85.95,
+      "_provenance": {
+        "task_id": "c5aac5dc3e7da887eab6e4b1",
+        "event_id": "8c14a476e9ce6a81e645b5ce",
+        "batch_id": "writing-4",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28577v1"
+        ]
+      },
+      "brief_item_id": "51b028770810a93bcda12391",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-51b028770810a93bcda12391"
+    },
+    {
+      "title": "三星VS-Flash用CXL共享闪存段加速向量检索",
+      "type": "arXiv论文",
+      "topic_name": "内存语义、DSA卸载",
+      "direction_name": "内存语义与池化",
+      "published_at": "2026-10-18T12:08:09Z",
+      "core_conclusion": "向量数据超出主机DRAM后，Milvus的SSD服务因缺页换页而吞吐下降、尾延迟上升。三星VS-Flash把闪存段经CXL暴露给主机与设备算力共享执行，让批量吞吐与尾延迟同时改善。",
+      "mechanism": "设备把活跃段以1GB为单位从闪存预取进板载DRAM，主机CPU与RISC-V核经CXL共享地址空间；请求按批次大小分流，预取窗口自适应调整。",
+      "result": "三个十亿级数据集上批量吞吐较原生Milvus平均提升36.8倍、最高57.4倍；SIFT100M混合负载下小批量请求p99最多降低24.8倍。",
+      "boundary": "36.8倍为摘要级汇总，逐数据集结果未见；基线仅用72核中8核，设备核数与容量未披露。",
+      "project_relevance": "CXL共享段加就近执行是可借鉴的容量扩展路径；作为项目判断，其收益止于向量库服务层，不应外推到端到端时延。",
+      "keywords": [
+        "CXL",
+        "向量检索",
+        "内存语义闪存",
+        "计算型存储",
+        "Milvus"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.26960v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-18T12:08:09Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 84.8,
+      "_provenance": {
+        "task_id": "22a42f77d57fc9dae85d2763",
+        "event_id": "dba7cc6ead7682f505d6ec0f",
+        "batch_id": "writing-5",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.26960v1"
+        ]
+      },
+      "brief_item_id": "3b94079f89c314ed2fd90145",
+      "topic_id": "memory_dsa",
+      "direction_id": "memory_semantics",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-3b94079f89c314ed2fd90145"
+    },
+    {
+      "title": "DynaWeave注入外生事件构造可验证动态Agent场景",
+      "type": "arXiv论文",
+      "topic_name": "边界探索",
+      "direction_name": "Agent与工具链新机制",
+      "published_at": "2026-10-21T09:03:10Z",
+      "core_conclusion": "工具Agent训练环境默认不随外部变化，外生事件会使计划失效且人工构造场景无法扩展。DynaWeave自动把静态任务改造成可验证动态场景，并用轨迹微调Qwen3.5系列模型。",
+      "mechanism": "在静态任务上构造带来源、触发方式与可见性的事件并组成DAG；执行引擎在交互中途激活事件，校验器只修订受影响的检查项。",
+      "result": "2B的CostBench完成率由3.00%至70.34%，9B的ToolMaze达32.28，追平GLM-5.1并略超Gemini-3.1-Pro预览版。",
+      "boundary": "对无错误提示的损坏输出与按时响应难以应对，Gaia2从4.6升至8.5；教师模型与Gemini基线条件未披露。",
+      "project_relevance": "项目判断：事件注入加只修订受影响检查项，可低成本把静态Agent评测改造成非平稳评测，适合压测工具链故障。",
+      "keywords": [
+        "外生事件",
+        "动态场景",
+        "Agent评测",
+        "工具调用",
+        "监督微调"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29443v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T09:03:10Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 84.75,
+      "_provenance": {
+        "task_id": "22a42f77d57fc9dae85d2763",
+        "event_id": "c858efc9a1d44b3ff620fb89",
+        "batch_id": "writing-5",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29443v1"
+        ]
+      },
+      "brief_item_id": "66a44e11c1954fa42cac24ba",
+      "topic_id": "frontier_exploration",
+      "direction_id": "agent_tooling_frontier",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-66a44e11c1954fa42cac24ba"
+    },
+    {
+      "title": "三代GPU实测显示2:4稀疏仅在量化地板上有收益",
+      "type": "预印本",
+      "topic_name": "AI芯片与加速器",
+      "direction_name": "AI计算芯片与加速器架构",
+      "published_at": "2026-10-20T21:48:45Z",
+      "core_conclusion": "推理降本的选择是加2:4稀疏还是再降一档量化。约22万个实测配置显示，量化地板之上2:4精度与速度全面落败，108个等档计算格仅胜6个，只有叠加在地板格式上才兑现收益。",
+      "mechanism": "等比特对比把2:4索引与scale计入存储位，得到2:4加INT8仅等价稠密INT5；等档对比按名义吞吐配对格式后实测核速度。",
+      "result": "FP8地板上线性层核在三代GPU上加速1.33到1.65倍；H100 vLLM端到端prefill 74.6对58.9千token每秒且GSM8K持平。",
+      "boundary": "单作者预印本未经同行评审；增益限于计算受限的prefill；Blackwell成对4:8精度在预算内未恢复。",
+      "project_relevance": "推理选型应先量化到地板格式再考虑2:4，并预留再训练预算；vLLM已移除2:4支持，落地需自行维护内核。",
+      "keywords": [
+        "2:4稀疏",
+        "量化",
+        "LLM推理",
+        "稀疏张量核心",
+        "GPU"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28947v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T21:48:45Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 82.15,
+      "_provenance": {
+        "task_id": "ce89a0e02d25dfab2af40758",
+        "event_id": "1770cb5486e2954d93190fe7",
+        "batch_id": "writing-6",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28947v1"
+        ]
+      },
+      "brief_item_id": "0bc0413579c8b51e6e000a2b",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-0bc0413579c8b51e6e000a2b"
+    },
+    {
+      "title": "VibeMemBench：多数记忆系统未胜过无记忆基线",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Read、Grep、Glob和代码搜索加速",
+      "published_at": "2026-09-20T11:44:03Z",
+      "core_conclusion": "代码Agent的持久记忆长期缺乏以可执行结果衡量的对照评测，VibeMemBench用同任务记忆开关配对协议补上空白，发现现成记忆系统经检索普遍低于无记忆基线。",
+      "mechanism": "同一仓库任务在固定Agent、工具与预算下仅切换记忆条件，由可执行测试判定成败；SIEVE流程构建111个目标，冻结经执行验证的既往经验。",
+      "result": "直接注入冻结经验使五个求解器中四个Resolved点估计上升（+1.13至+4.50个百分点，区间均跨零）；检索路径12组配对中11组低于基线。",
+      "boundary": "目标按正参考提升规则筛出，求解器不含Claude与GPT，也未报告记忆构建与检索成本。",
+      "project_relevance": "四个记忆系统都让glm-5少走5.4至10.6步，但三个同时降低Resolved；省步数不等于结果更好，经验复用需配验收门。",
+      "keywords": [
+        "VibeMemBench",
+        "持久记忆",
+        "代码Agent",
+        "基准评测",
+        "经验复用"
+      ],
+      "score": 81.2,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.23570v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-20T11:44:03Z"
+        }
+      ],
+      "_provenance": {
+        "task_id": "16f42e2312a15095ead397fb",
+        "event_id": "e8a88008e50406cad31fb6fa",
+        "batch_id": "writing-7",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.23570v1"
+        ]
+      },
+      "brief_item_id": "0a6e722809c29f7f5a099e93",
+      "topic_id": "agent_acceleration",
+      "direction_id": "read_grep",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-0a6e722809c29f7f5a099e93"
+    },
+    {
+      "title": "UlaCache用统一逻辑寻址提升稀疏解码吞吐",
+      "type": "论文",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-10-21T14:46:11Z",
+      "core_conclusion": "稀疏注意力每步只读选中位置，但完整KV历史须全程可用，GLM-5.3下8卡TP有87.5%历史分配为副本；UlaCache以统一逻辑地址空间解耦引擎与物理放置。",
+      "mechanism": "逻辑地址映射横跨GPU池与CPU内存，KV移动只更新映射；稀疏选择先查本地GPU缓冲，仅传缺失条目，由独立CUDA stream预取使传输与计算重叠。",
+      "result": "匹配内存预算与投机解码开启下，8×B300峰值解码吞吐为HiSparse的1.73/2.51倍（DP/TP）；替换时PB-LRU较朴素LRU快1.5至2.3倍。",
+      "boundary": "全部传输限于节点内CPU-GPU与卡间IPC，无跨节点实验，也未报告TTFT、P95与网络利用率。",
+      "project_relevance": "它给出节点内统一寻址的上限，跨节点KV放置与带宽调度仍是空位，可作TPN的对照基线。",
+      "keywords": [
+        "UlaCache",
+        "KV cache",
+        "稀疏注意力",
+        "LLM服务",
+        "统一寻址"
+      ],
+      "score": 81.1,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29820v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T14:46:11Z"
+        }
+      ],
+      "_provenance": {
+        "task_id": "16f42e2312a15095ead397fb",
+        "event_id": "b222a86d85f42c7b0a80108e",
+        "batch_id": "writing-7",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29820v1"
+        ]
+      },
+      "brief_item_id": "4556110b217a4d31038037df",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-4556110b217a4d31038037df"
+    },
+    {
+      "title": "数据库Agent失败多源于服务器边界而非模型能力",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent工具执行链优化",
+      "published_at": "2026-09-18T05:51:31Z",
+      "core_conclusion": "小模型带不动Agent常被归因于推理能力不足，该生产实测发现多数损失发生在模型与服务器的传输边界，只改服务器即可显著移动成功率。",
+      "mechanism": "在生产SQL客户端agent模式跑39个本地模型与1个托管对照共8199次，把损失归入能力、传输、时钟、验证四类，补捕被拒工具调用参数定位服务器缺陷。",
+      "result": "75.7%的模型归因损失来自已调用过工具的运行；五处仅服务器端修改使六个模型在30个格中移动6至21格，全程未动模型、提示与采样。",
+      "boundary": "结论来自单机、单数据库与单一harness，传输高于能力的排序仅在74.5%的重采样中成立。",
+      "project_relevance": "本地模型评测须先排查无上限上下文驻留与swap两个混杂，本例中3B模型限制上下文后从0/5变5/5；外推到代码agent属推断。",
+      "keywords": [
+        "数据库Agent",
+        "本地小模型",
+        "工具调用",
+        "失败归因"
+      ],
+      "score": 79.9,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.21341v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-18T05:51:31Z"
+        }
+      ],
+      "_provenance": {
+        "task_id": "16f42e2312a15095ead397fb",
+        "event_id": "4fc5a1f6fc2519f369a3a456",
+        "batch_id": "writing-7",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.21341v1"
+        ]
+      },
+      "brief_item_id": "97fde1681974bb57a0c40227",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-97fde1681974bb57a0c40227"
+    },
+    {
+      "title": "APEXA用确定性工具层拦截Agent伪造的执行结果",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent工具执行链优化",
+      "published_at": "2026-09-21T06:33:11Z",
+      "core_conclusion": "LLM网关把不可解析的工具调用静默丢弃，模型随后汇报从未运行的命令结果，而对话指标仍判为成功；APEXA以服务器侧确定性工具层消除这一伪造路径。",
+      "mechanism": "执行完整性守卫拒绝输出无已执行调用支撑的结果并强制重试，配合容忍跨模型格式漂移的解析器与五项EPICS预检，全部在服务端代码实现。",
+      "result": "在50场景×4模型的仿真电机控制对抗测试中，工具层0/200违规、纯提示词基线15/200；系统在APS真实束线数据上以单条指令完成端到端归约。",
+      "boundary": "采用单顺序推理循环，未测并行或投机执行；电机安全仅对仿真IOC验证，且无任务成功率、时延与token数据。",
+      "project_relevance": "代码Agent同样面临调用被静默丢弃后伪造测试或构建结论的风险，harness侧应引入这类与模型无关的确定性验收门。",
+      "keywords": [
+        "执行完整性",
+        "工具调用漂移",
+        "MCP",
+        "确定性验收门"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.24165v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-21T06:33:11Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 78.3,
+      "_provenance": {
+        "task_id": "63ebd85c7467cd8552b97224",
+        "event_id": "37db3f76bacb5e09b84794ee",
+        "batch_id": "writing-8",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.24165v1"
+        ]
+      },
+      "brief_item_id": "bfaa2e873b5783c236c7c8c4",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-bfaa2e873b5783c236c7c8c4"
+    },
+    {
+      "title": "MoSim以网络争用建模将训练仿真的平均JCT误差降至11.1%",
+      "type": "会议论文",
+      "topic_name": "AI Infra横向动态",
+      "direction_name": "GPU集群、分布式训练与工程可靠性",
+      "published_at": "2026-09-20T01:25:15Z",
+      "importance": "值得关注",
+      "core_conclusion": "现有GPU集群轨迹仿真器忽略或静态近似网络争用，MoSim动态建模NIC争用后，Philly轨迹的平均JCT仿真误差从Tiresias的36.4%降至11.1%。",
+      "mechanism": "以ASTRA-sim在CPU上免GPU刻画每迭代的计算与通信量，仿真按需求比例切分NIC，并取跨服务器最大争用因子延长通信时间。",
+      "result": "双服务器V100实测对照下，MoSim平均JCT与P99误差为11.1%和8.4%，makespan误差7.7%，基线为33%–65%。",
+      "boundary": "真值仅来自双服务器V100集群，更大规模未验证；模型假设同步all-reduce且独立处理各NIC。",
+      "project_relevance": "判断：属评测基础设施而非生产系统；做调度器what-if或容量规划时可用其替代GPU剖析，输入构建成本降低44.6倍。",
+      "keywords": [
+        "网络争用",
+        "GPU集群仿真",
+        "分布式训练",
+        "JCT误差",
+        "ASTRA-sim"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.23278v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-20T01:25:15Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 76.5,
+      "_provenance": {
+        "task_id": "48309068367724f7907e885f",
+        "event_id": "6dac9dd2c4d5e6640a492ed6",
+        "batch_id": "writing-9",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.23278v1"
+        ]
+      },
+      "brief_item_id": "ecb6eb96861ba2e918b489dc",
+      "topic_id": "ai_infra_horizontal",
+      "direction_id": "cluster_training_operations",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-ecb6eb96861ba2e918b489dc"
+    }
+  ],
+  "observations": [
+    {
+      "title": "MOSAIC逐层分配KVCache预算：同分数最多省75%",
+      "type": "论文",
+      "topic_name": "KVCache管理与复用",
+      "direction_name": "KVCache分层存储、驱逐与放置",
+      "published_at": "2026-10-18T17:51:14Z",
+      "core_conclusion": "SnapKV等驱逐方法给每个Transformer层相同KVCache预算，而各层所需token不同；MOSAIC离线搜索逐层预算，任务分数持平时最多省75%缓存。",
+      "mechanism": "对冻结模型按任务与驱逐方法组合离线运行贝叶斯加NSGA-II搜索，学出逐层预算形状，经缩放解码迁移到全部目标预算，部署形态类比静态量化标定。",
+      "result": "四种驱逐方法×两个模型共154个设置中146个胜过统一分配，RULER最高提升48分；精修阶段比EvolKV逐预算搜索省约18%GPU时且多数设置分数更高。",
+      "boundary": "仅评估两个dense模型且无延迟、吞吐与显存实测；一次性Stage1搜索需9至40GPU时。",
+      "project_relevance": "层异质性说明驱逐与分层策略应增加层维度；但在缺少命中率与TTFT数据时不能直接外推延迟收益。",
+      "keywords": [
+        "KVCache驱逐",
+        "逐层预算",
+        "贝叶斯优化",
+        "长上下文推理"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.25431v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-18T17:51:14Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 77.8,
+      "_provenance": {
+        "task_id": "63ebd85c7467cd8552b97224",
+        "event_id": "20255491e15fa8862461d67e",
+        "batch_id": "writing-8",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.25431v1"
+        ]
+      },
+      "brief_item_id": "86c0149adfbdd159a26d13ec",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-86c0149adfbdd159a26d13ec",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "英特尔Arc GPU以INT8引擎模拟FP64矩阵乘，吞吐达原生12–28倍",
+      "type": "预印本",
+      "topic_name": "AI芯片与加速器",
+      "direction_name": "AI计算芯片与加速器架构",
+      "published_at": "2026-10-18T05:56:41Z",
+      "importance": "值得关注",
+      "core_conclusion": "廉价GPU上FP64矩阵乘远慢于INT8引擎，该工作用Ozaki方案II将其分解为INT8精确乘积，Arc Pro B60实测吞吐达原生FP64的12–28倍。",
+      "mechanism": "Ozaki方案II把FP64矩阵积分解为s个精确INT8乘积加中国剩余重构，模数s决定精度，SYCL实现暴露完整BLAS接口。",
+      "result": "实测DGEMM最高21.1 TFLOP/s，达原生FP64的12–28倍；ZGEMM最高27.4 TFLOP/s，标度良好输入s≥16时100%正确舍入。",
+      "boundary": "共享指数最坏输入需s=20–24才能保精度且吞吐大降，小矩阵下原生FP64更快，且系单板预印本测量。",
+      "project_relevance": "判断：非AI芯片设计论文，但为审视低精度TOPS峰值提供同板对照与开源实现，评估FP64需求需区分原生与模拟算力。",
+      "keywords": [
+        "INT8矩阵引擎",
+        "FP64模拟",
+        "Ozaki方案II",
+        "英特尔Arc Xe2",
+        "正确舍入"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.26945v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-18T05:56:41Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 76.6,
+      "_provenance": {
+        "task_id": "48309068367724f7907e885f",
+        "event_id": "f97d41fb09fe05349af64b1b",
+        "batch_id": "writing-9",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.26945v1"
+        ]
+      },
+      "brief_item_id": "e2a6a174f52647117cbf7ea9",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-e2a6a174f52647117cbf7ea9",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "FlashNext-RL把单节点B200上的智能体RL训练吞吐提升逾11倍",
+      "type": "预印本",
+      "topic_name": "AI芯片与加速器",
+      "direction_name": "AI计算芯片与加速器架构",
+      "published_at": "2026-10-20T23:53:09Z",
+      "importance": "值得关注",
+      "core_conclusion": "125B混合专家模型的长程RL受显存与缺失算子限制，难以在单节点B200以131K上下文训练；Snowflake经内存规划与特化内核把单GPU吞吐提升逾11倍，并揭示循环瓶颈在生成端。",
+      "mechanism": "以prime-rl与vLLM为基座，用host offload、专家并行与上下文并行做内存规划，并为QSA稀疏注意力与门控残差写sm100特化内核。",
+      "result": "单GPU非padding吞吐从初始配置约395升至4,438 tokens/s；真实SWE运行中每步平均等待331秒，瓶颈在生成端。",
+      "boundary": "评估仅限单一硬件配置与短程训练，不建立长程收敛或多节点扩展；部分参数冻结，无功耗数据。",
+      "project_relevance": "判断：非新芯片架构，而是B200软硬件协同实测样本；评估加速器时须分辨纯matmul吞吐与端到端RL收益。",
+      "keywords": [
+        "B200",
+        "智能体RL",
+        "内存规划",
+        "QSA稀疏注意力",
+        "训练吞吐"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28998v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T23:53:09Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 73.85,
+      "_provenance": {
+        "task_id": "48309068367724f7907e885f",
+        "event_id": "53fdb928a4ce5c3ea6be1f4f",
+        "batch_id": "writing-9",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28998v1"
+        ]
+      },
+      "brief_item_id": "7a0311b21563a7eb1bfeb908",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-7a0311b21563a7eb1bfeb908",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "TrainBridge用GPU编译证据指导昇腾NPU训练改写提速近2倍",
+      "type": "预印本",
+      "topic_name": "AI芯片与加速器",
+      "direction_name": "AI计算芯片与加速器架构",
+      "published_at": "2026-10-21T04:00:48Z",
+      "importance": "值得关注",
+      "core_conclusion": "昇腾NPU训练程序编译优化仅部分生效；TrainBridge把GPU编译产物的优化意图转成NPU重写，27条NanoGPT记录平均提速1.95倍，显示低效主要源于软件栈。",
+      "mechanism": "两阶段智能体：对比GPU eager与编译后IR差异抽取优化意图，定位NPU对应低效点生成语义保持重写；再迭代剖析NPU残余瓶颈。",
+      "result": "Ascend 910C上27条NanoGPT记录平均提速1.95倍，NPU/GPU耗时比从4.0降至2.0；另四个负载提速1.25–2.22倍。",
+      "boundary": "调优仅限单节点、多节点未测；需成熟GPU编译栈，优化后NPU仍慢于GPU参考1.5–2.0倍。",
+      "project_relevance": "判断：软件栈而非新硅片结果；实测表明NPU训练效率相当程度受编译制约，评估昇腾类加速器应以优化后端到端时长为准。",
+      "keywords": [
+        "昇腾NPU",
+        "编译优化",
+        "智能体调优",
+        "Modded-NanoGPT",
+        "端到端训练时间"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29171v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T04:00:48Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 72.95,
+      "_provenance": {
+        "task_id": "48309068367724f7907e885f",
+        "event_id": "dc1a653e10c53e44df55455e",
+        "batch_id": "writing-9",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29171v1"
+        ]
+      },
+      "brief_item_id": "92b5f6640589c7fb2e6b086f",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-92b5f6640589c7fb2e6b086f",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "LORE-KV用未来查询采样改进KVCache驱逐决策",
+      "type": "论文",
+      "importance": "值得关注",
+      "core_conclusion": "KVCache驱逐须在未见未来查询前决定，prompt侧打分会漏掉仅生成期重要的token；LORE-KV从冻结模型采样短前瞻续写，用响应侧查询估计删除代价，提升紧预算下的压缩质量。",
+      "mechanism": "方法免训练，以温度1从冻结模型采样多条短续写，用响应侧查询计算各token的投影删除代价并跨未来加权聚合，再按打分压缩缓存。",
+      "result": "B=128时Qwen2.5-14B的LongBench均值较AnDPro提升2.75分，Llama-3.1-8B在128K RULER领先11.65分。",
+      "boundary": "优势随预算增大收窄，B=1024时仅余0.15分；一次性压缩开销为AnDPro的1.46-2.77倍。",
+      "project_relevance": "自研推理栈的KV驱逐可借鉴响应侧查询信号替代通用启发式，但前缀复用与分层放置仍需另行评估。",
+      "keywords": [
+        "KV cache",
+        "驱逐策略",
+        "前瞻采样",
+        "RULER",
+        "缓存效率"
+      ],
+      "topic_name": "KVCache管理与复用",
+      "direction_name": "KVCache分层存储、驱逐与放置",
+      "published_at": "2026-10-06T02:36:50Z",
+      "score": 71.05,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.07643v2",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-06T02:36:50Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "_provenance": {
+        "task_id": "7cb797d940640533a1d548ff",
+        "event_id": "012ba814460338ccd83c2659",
+        "batch_id": "writing-10",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.07643v2"
+        ]
+      },
+      "brief_item_id": "757775758481577d00f2fdfb",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-757775758481577d00f2fdfb",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "MaskAhead用掩码查询实现块扩散模型的KVCache不可逆驱逐",
+      "type": "论文",
+      "importance": "值得关注",
+      "core_conclusion": "块扩散语言模型的长上下文推理需为同一历史重复支付显存与读取成本；MaskAhead用掩码查询同时决定临时读取与不可逆驱逐，以均值1.2分F1损失换取平均9.5倍KV压缩。",
+      "mechanism": "该方法免训练，用当前块掩码为去噪读取排序，用未来掩码块的探针查询为保留集排序，检查点物理删除条目，另有四比特KV变体。",
+      "result": "六个主任务设定中取得驱逐类方法最高F1，其中一处并列；固定输出实验中批32吞吐由55.6升至68.2 token/s，驻留KV由28.4降至4.2GiB。",
+      "boundary": "方法面向块扩散模型而非自回归服务，系统实验的GPU与模型规模未披露。",
+      "project_relevance": "驱逐策略可用模型自身的未来掩码探针替代累计注意力打分，紧预算下收益最大，宽预算下趋同。",
+      "keywords": [
+        "块扩散模型",
+        "KV cache",
+        "驱逐策略",
+        "KV量化",
+        "长上下文推理"
+      ],
+      "topic_name": "KVCache管理与复用",
+      "direction_name": "KVCache分层存储、驱逐与放置",
+      "published_at": "2026-10-04T07:52:31Z",
+      "score": 69.35,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.06996v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-04T07:52:31Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "_provenance": {
+        "task_id": "7cb797d940640533a1d548ff",
+        "event_id": "5ff2a0b88a9207f58d11c5f4",
+        "batch_id": "writing-10",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.06996v1"
+        ]
+      },
+      "brief_item_id": "afa9bbe36d6238053583a937",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-afa9bbe36d6238053583a937",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "RACE将KV缓存头维度压缩折叠进模型权重",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-10-20T15:34:02Z",
+      "core_conclusion": "现有头维度KV缓存压缩多需推理时重建全维表示，解码算力不降反升；RACE把按激活能量选出的RoPE对降维折叠进权重，让缓存与注意力计算同时缩小且免重建。",
+      "mechanism": "RACE把Q/K降维限制为坐标选择，证明只有保留完整RoPE旋转对才能兼容预训练旋转；再按联合query-key激活能量保留高能量对，仅需前向统计。",
+      "result": "在Llama-3.2-3B、50%保留、256K上下文下，总推理FLOPs较未压缩模型降低47.75%，吞吐提升1.79倍，TTFT降低43.22%。",
+      "boundary": "所有结果均含约1M token蒸馏恢复，且仅单卡实测，无跨域或WAN实验。",
+      "project_relevance": "若跨域搬运KV缓存，RACE能把可传输体积压缩一半并降低TTFT，可作为传输侧上游杠杆评估，但需另行回答WAN成本问题。",
+      "keywords": [
+        "KV缓存压缩",
+        "RoPE",
+        "头维度压缩",
+        "推理FLOPs",
+        "长上下文"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28385v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T15:34:02Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 69.2,
+      "_provenance": {
+        "task_id": "51c92446cf1cca94f11aed60",
+        "event_id": "4e5a1815a34358deb78a9f58",
+        "batch_id": "writing-11",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28385v1"
+        ]
+      },
+      "brief_item_id": "25984365221418728b500261",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-25984365221418728b500261",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "ReTrace以休眠缓存与回溯注入压缩多模态KV缓存",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-10-18T04:19:13Z",
+      "core_conclusion": "论文发现多模态模型中层枢轴token会回溯检索早期低显著性视觉token，浅层剪枝会提前切断该通路；ReTrace把非枢轴token缓存为休眠态、到回溯层再注入，吸收完成后才剪除。",
+      "mechanism": "它以枢轴缓冲区作为代理接收者，非枢轴token绕过逐层计算进入休眠缓存，在约第8层注入以近似中层检索流，任务驱动剪枝则推迟到吸收完成后。",
+      "result": "保留11.1%视觉token时，Qwen2.5-VL-7B的KV缓存从211.4MB降至26.7MB、预填充加速2.83倍，8基准平均保留84.4%性能。",
+      "boundary": "注入与剪枝用固定层号，且全部实验为单卡推理，无分布式、跨域或时延测量。",
+      "project_relevance": "对跨域场景它只给出单图KV可缩至约八分之一的体积上界，休眠-恢复结构可借鉴为分层放置与预取时机设计，传输行为未验证。",
+      "keywords": [
+        "多模态大模型",
+        "视觉token压缩",
+        "KV缓存",
+        "注意力分析",
+        "预填充加速"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.25005v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-18T04:19:13Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 64.5,
+      "_provenance": {
+        "task_id": "51c92446cf1cca94f11aed60",
+        "event_id": "5af574170a0f7fcbc8c16078",
+        "batch_id": "writing-11",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.25005v1"
+        ]
+      },
+      "brief_item_id": "56e3de83eb972fb59b1861bb",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-56e3de83eb972fb59b1861bb",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "CALM用离线校准的逐层逐头配额压缩视频生成KV缓存",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-10-20T13:33:04Z",
+      "core_conclusion": "视频生成的时间维token合并对全部层和头用统一比例；CALM离线校准每层每头失真表，用动态规划在预算内求最优合并配额并冻结复用，同预算下整段LPIPS较均匀分配降约21%。",
+      "mechanism": "校准以注意力输出相对误差为代理，随一次稠密生成探测影子缓存得到全部360头的失真表，预算约束下的动态规划解冻结为分配图，推理时无在线搜索。",
+      "result": "Self-Forcing上R=8同预算，CALM整段LPIPS为0.117、均匀分配0.149；跨模型增益集中在中强压缩档，弱档无显著增益。",
+      "boundary": "压缩只是逻辑账面，实现预分配全量KV缓冲、各方法常驻显存相同，CALM生成时间比均匀分配慢约15%。",
+      "project_relevance": "校准配额图是预算式放置分配器的原型，但其映射绑定模型与合并算子、换算子需重校准，跨站点复用要求同构集群。",
+      "keywords": [
+        "视频生成",
+        "KV缓存压缩",
+        "离线校准",
+        "动态规划",
+        "token合并"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28192v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T13:33:04Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 62.75,
+      "_provenance": {
+        "task_id": "51c92446cf1cca94f11aed60",
+        "event_id": "2e7555988fb40f1109c0f3f5",
+        "batch_id": "writing-11",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28192v1"
+        ]
+      },
+      "brief_item_id": "e6bfafc4de6f0742034d4684",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-e6bfafc4de6f0742034d4684",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "ChampionKV按注意力集中度为各头分配KV压缩预算",
+      "type": "预印本",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-10-13T09:19:24Z",
+      "core_conclusion": "观测窗口式KV压缩器对各注意力头用统一预算，忽略输入依赖的预算差异。ChampionKV用集中度代理逐头分配预算，不改token选择即提升压缩质量。",
+      "mechanism": "以最大聚合观测注意力分作集中度代理，用inverse-max加权把大预算分给分散头，预填充期一次计算，可插入SnapKV等压缩器。",
+      "result": "Llama3.1-70B LongBench上Champion-Snap四档预算均超SnapKV，2048时48.14胜未压缩47.92，检验p<0.001。",
+      "boundary": "全文为单节点显存压缩，无跨域传输或P95证据；增益集中紧预算且7B/8B上不显著。",
+      "project_relevance": "对跨域传输专题：同等质量下保留的KV更少，若跨域搬运压缩KV可缩小体积，插件式设计便于与传输方案组合，但不提供WAN成本证据。",
+      "keywords": [
+        "KV缓存压缩",
+        "注意力头预算分配",
+        "ChampionKV",
+        "长上下文推理"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.18026v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-13T09:19:24Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 61.25,
+      "_provenance": {
+        "task_id": "fba7d172a6c8886cc5491323",
+        "event_id": "f3e804e4a0e3ff402676e800",
+        "batch_id": "writing-12",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.18026v1"
+        ]
+      },
+      "brief_item_id": "379f9edf5678a85cd23761fa",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-379f9edf5678a85cd23761fa",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "PN-Mix按查询键对范数做键缓存混合精度量化",
+      "type": "预印本",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-10-14T05:29:08Z",
+      "core_conclusion": "长输出解码下KV缓存线性增长，Qwen3-8B的FP16缓存在40GB上批量或长度稍大即OOM，均匀2比特又伤长思维链精度。PN-Mix按查询-键交互选通道，约2.26比特接近FP16。",
+      "mechanism": "以查询侧与键侧平均对范数之积为通道对重要性，预填充期算一次并在解码中复用，显著通道对3比特、其余1比特。",
+      "result": "四个模型基准平均与FP16差距均在1分内且优于Kitty；Qwen3-8B在40GB内可跑8倍生成长度或5.5倍批量。",
+      "boundary": "证据全部为单GPU实验，无TTFT、TPOT或网络侧数据；显存充裕时FP16同批量吞吐反而更高。",
+      "project_relevance": "对TPN专题为间接证据：单卡可承载的KV足迹扩大8倍，可等比减少跨节点搬运字节，解码延迟斜率显示KV读带宽制约长输出解码。",
+      "keywords": [
+        "KV缓存量化",
+        "混合精度",
+        "长输出推理",
+        "PN-Mix"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.19605v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-14T05:29:08Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 60.95,
+      "_provenance": {
+        "task_id": "fba7d172a6c8886cc5491323",
+        "event_id": "7c824d08c3f74efab6d08727",
+        "batch_id": "writing-12",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.19605v1"
+        ]
+      },
+      "brief_item_id": "85443a3362697092e4d35380",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-85443a3362697092e4d35380",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "MLAfication把Qwen3等QKNorm模型转为MLA并压缩KV缓存",
+      "type": "预印本",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-10-12T17:59:10Z",
+      "core_conclusion": "现有MHA转MLA方法不支持QKNorm，Qwen3类架构无法转换。MLAfication用校准近似与参数高效蒸馏实现转换，FP8下吞吐最高5.35倍。",
+      "mechanism": "校准KNorm近似化解QKNorm与MLA矩阵吸收的冲突，仅微调QKV投影与归一化（30B约1.6%参数），配部分RoPE与KV初始化。",
+      "result": "Qwen3-30B-A3B在16K并发256下FP8 MLA-128吞吐为GQA的5.35倍；KV省68.75%时均分64.65对删KNorm的61.23。",
+      "boundary": "服务评估为单卡TP=1，无跨机通信与TTFT/TPOT数据；压缩越强质量越降，昇腾基准仅用假权重。",
+      "project_relevance": "对TPN专题为间接证据：潜在缓存叠加FP8从源头缩小KV体积，改变调度器的带宽权衡，但无网络感知机制。",
+      "keywords": [
+        "MLA",
+        "KV缓存压缩",
+        "QKNorm",
+        "推理吞吐"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.17202v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-12T17:59:10Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 57.4,
+      "_provenance": {
+        "task_id": "fba7d172a6c8886cc5491323",
+        "event_id": "1f626fcf23859a41126d561b",
+        "batch_id": "writing-12",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.17202v1"
+        ]
+      },
+      "brief_item_id": "17bc8acd678fb63dbfcf7ac9",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-17bc8acd678fb63dbfcf7ac9",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "SigmaTrace：库无关的CPU/GPU发起RDMA通信观测工具",
+      "type": "论文",
+      "topic_name": "加速器直连I/O与存储数据路径",
+      "direction_name": "加速器主动发起与控制I/O",
+      "published_at": "2026-10-16",
+      "core_conclusion": "SC26接收的预印本SigmaTrace面向CPU与GPU发起的RDMA通信，提供库无关的观测能力并已公开源代码。",
+      "mechanism": "论文定位为库无关观测，同时覆盖CPU与GPU发起的RDMA通信；更具体的拦截与采集机制未出现在可见证据中，不作转述。",
+      "result": "论文被SC26接收，以作者接受稿形式发布（13页、10幅图、1张表）并公开源代码；可见证据不含任何开销、时延或IOPS数字。",
+      "boundary": "证据包未含摘要正文，论文是否覆盖NVMe-oF等RDMA存储访问路径不可判断，性能开销亦无数据。",
+      "project_relevance": "建议：将其列为GPU发起I/O实验的候选测量工具，引入前先确认其对RDMA存储访问路径是否覆盖。",
+      "keywords": [
+        "RDMA",
+        "GPU发起I/O",
+        "可观测性",
+        "SC26"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.24328",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-16"
+        }
+      ],
+      "discovered_via": "Agent Web Search",
+      "score": 56.2,
+      "_provenance": {
+        "task_id": "aaddbea52269a0c8763657e3",
+        "event_id": "a7983ec5e2f728a4068fbbf2",
+        "batch_id": "writing-13",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.24328"
+        ]
+      },
+      "brief_item_id": "98cb17ffbcfd13c8f4e58ea4",
+      "topic_id": "accelerator_io_datapath",
+      "direction_id": "accelerator_initiated_io",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-98cb17ffbcfd13c8f4e58ea4",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "KvikIO v26.10.00为远程I/O后端引入device buffer",
+      "type": "开源发布",
+      "topic_name": "加速器直连I/O与存储数据路径",
+      "direction_name": "加速器存储软件快路径",
+      "published_at": "2026-10-07",
+      "core_conclusion": "KvikIO v26.10.00修复multi-poll远程I/O后端的重试缺陷与死锁，新增device buffer支持与诊断计数，提升GPU远程I/O软件栈的健壮性与可诊断性。",
+      "mechanism": "libcurl multi-poll远程后端支持GPU侧device buffer，reactor数与请求上限可运行时调整，连接复用减少握手开销。",
+      "result": "修复远程重试缺陷与multi-poll后端死锁，新增读写统计与诊断计数器；发布说明未附任何量化评测。",
+      "boundary": "证据仅为发布页PR标题，无复制次数、IOPS或时延数据，也不涉及cuFile/GDS本地快路径。",
+      "project_relevance": "建议按GPU生态远程I/O栈成熟度信号跟踪；使用KvikIO的项目可升级后用device buffer与诊断计数验证收益。",
+      "keywords": [
+        "KvikIO",
+        "device buffer",
+        "multi-poll",
+        "远程I/O"
+      ],
+      "sources": [
+        {
+          "publisher": "GitHub",
+          "url": "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-07"
+        }
+      ],
+      "discovered_via": "Agent Web Search",
+      "score": 46.7,
+      "_provenance": {
+        "task_id": "aaddbea52269a0c8763657e3",
+        "event_id": "cc3aaa9a729aa6909e8b4031",
+        "batch_id": "writing-13",
+        "source_urls": [
+          "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00"
+        ]
+      },
+      "brief_item_id": "6854df1a9e549ad596be6d59",
+      "topic_id": "accelerator_io_datapath",
+      "direction_id": "accelerator_storage_stack",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-6854df1a9e549ad596be6d59",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    }
+  ],
+  "items": [
+    {
+      "title": "BabelArena基准：23语言评测显示低资源语言Agent成功率更低、token开销更高",
+      "type": "arxiv",
+      "topic_name": "边界探索",
+      "direction_name": "Agent与工具链新机制",
+      "published_at": "2026-09-20T09:25:38Z",
+      "core_conclusion": "Agent评测以英文为主，跨语言能力缺乏可靠比较。BabelArena把702个任务适配为23语言的16146个实例，五个前沿模型上低资源语言组成功率和语言一致性更低。",
+      "mechanism": "编码Agent分析运行时依赖以区分可译内容与执行关键值；翻译Agent为共享实体复用规范译名；校验Agent检查结构、一致性与行为等价，最后人工复核。",
+      "result": "VITABENCH上低资源轨迹总输入token为英文1.69至2.06倍，轮数仍为0.97至1.16倍；五个前沿模型无一在四个基准族全面领先。",
+      "boundary": "消融仅覆盖40个译为中文的任务且只报定性改善，失败轨迹由单一模型标注，成功率仅为方向性。",
+      "project_relevance": "可借鉴BabelFlow的移植模式用于自有评测环境，并为多语言工作流核算低资源语言近两倍输入token成本。",
+      "keywords": [
+        "多语言评测",
+        "Agent基准",
+        "低资源语言",
+        "token开销",
+        "工具调用"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.23490v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-20T09:25:38Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 96.34,
+      "_provenance": {
+        "task_id": "857395a18933b03255b93fdf",
+        "event_id": "667ec9aabf4cf3d292560595",
+        "batch_id": "writing-1",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.23490v1"
+        ]
+      },
+      "brief_item_id": "8a14994ead5fb1c57ade439b",
+      "topic_id": "frontier_exploration",
+      "direction_id": "agent_tooling_frontier",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-8a14994ead5fb1c57ade439b"
+    },
+    {
+      "title": "Koala实现有状态数据流无中断重配置，10至80GB状态仅迁移约1.43GB",
+      "type": "arxiv",
+      "topic_name": "边界探索",
+      "direction_name": "系统机制迁移",
+      "published_at": "2026-10-20T21:33:35Z",
+      "core_conclusion": "嵌入状态延迟低但重配置必须迁移状态，外置状态免迁移却拖慢每次访问，生产系统仍靠停机重启。Koala以惰性按需迁移让扩容不中断处理，兼得嵌入式性能与外置式适应性。",
+      "mechanism": "所有权转移将键划分与状态位置解耦，重配置后仅迁移被实际访问的键；键位置表以桶粒度单跳定位状态；标记仅通知路由变化不阻塞处理，水位继承维持事件时间语义。",
+      "result": "扩容实验中DRRS积压恢复时间最长为Koala的23.2倍；总状态10至80GB时仅迁移约1.43GB；重配置期间每批延迟稳定，平均比外置状态基线低34%。",
+      "boundary": "惰性迁移不适合需整体转移状态的缩容与搬迁，且为研究原型未见生产部署。",
+      "project_relevance": "可把所有权转移与键位置表机制用于AI推理的KV缓存或长时会话状态重放置，先在数天级原型上测查表开销与迁移节省。",
+      "keywords": [
+        "流处理",
+        "重配置",
+        "状态迁移",
+        "所有权转移",
+        "事件时间"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28939v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T21:33:35Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 90.5,
+      "_provenance": {
+        "task_id": "857395a18933b03255b93fdf",
+        "event_id": "4c227370cebcd4a0ac535887",
+        "batch_id": "writing-1",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28939v1"
+        ]
+      },
+      "brief_item_id": "dea9360761133ea2f1c11278",
+      "topic_id": "frontier_exploration",
+      "direction_id": "systems_mechanism_transfer",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-dea9360761133ea2f1c11278"
+    },
+    {
+      "title": "SAKURA按带宽自适应向手机分发可复用KV缓存，5G下p90延迟较INTQ降44%",
+      "type": "arxiv",
+      "topic_name": "边界探索",
+      "direction_name": "系统机制迁移",
+      "published_at": "2026-10-21T13:35:39Z",
+      "core_conclusion": "模板化图像编辑可复用的KV缓存单模板达1.46GiB，5G下整体拉取约23秒慢于本地推理的约13秒。SAKURA改为云端存库、按分片随带宽自适应流式下发，手机端只做请求相关计算。",
+      "mechanism": "离线画像token重要性，用重要性加权低秩分解加量化得到单一表示，覆盖多种传输预算；传输按分片调整精度与秩；手机流水线让传输、重建与计算重叠。",
+      "result": "5G回放轨迹上p90延迟较INTQ与CacheGen平均降44%和42%；四个工作负载PSNR均最高，30人评测85%以上认为与未压缩输出相似。",
+      "boundary": "收益依赖带宽受限，WiFi下较INTQ最多仅低15%；限于模板化掩码编辑，大掩码下优势收窄。",
+      "project_relevance": "可把画像驱动的低秩KV压缩与按带宽分片传输迁移到共享前缀缓存下发，先验证重要性画像跨请求稳定的前提。",
+      "keywords": [
+        "KV缓存",
+        "带宽自适应",
+        "低秩分解",
+        "移动端推理",
+        "流式传输"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29733v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T13:35:39Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 89.8,
+      "_provenance": {
+        "task_id": "857395a18933b03255b93fdf",
+        "event_id": "b5f2d7ba655ae8544b645917",
+        "batch_id": "writing-1",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29733v1"
+        ]
+      },
+      "brief_item_id": "f8d1368f6bf9fedbc9cd77a1",
+      "topic_id": "frontier_exploration",
+      "direction_id": "systems_mechanism_transfer",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-f8d1368f6bf9fedbc9cd77a1"
+    },
+    {
+      "title": "HAWK：GPU-NPU解耦推理的KV Cache直传与布局适配",
+      "type": "arXiv预印本",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "Prefill/Decode解耦通信",
+      "published_at": "2026-10-21T15:25:35Z",
+      "discovered_via": "arXiv",
+      "core_conclusion": "GPU预填充加NPU解码的解耦推理受跨设备KV Cache传输拖累，布局差异要求传输后重排。HAWK把布局适配并入传输路径，让直传逼近同构GPU。",
+      "mechanism": "HAWK基于Mooncake打通GPU到NPU的RDMA直传，传输中完成布局变换以匹配NPU，NPU端预留布局感知缓冲，解码可直接使用。",
+      "result": "1280MB传输时GN-HAWK延迟约为主机中转的14.7%，与GPU直连差不到1%；90% SLO达成时请求速率至多低7.69%，成本效率最高1.72倍。",
+      "boundary": "仅在Tenstorrent p150a与Llama 3.1 70B上验证，单实例规模，成本按市价折算。",
+      "project_relevance": "P/D解耦选型可参考其直传加布局感知缓冲，传输路径而非解码调度决定TTFT上限；它不感知推理状态，网络利用率未报。",
+      "keywords": [
+        "KV Cache传输",
+        "P/D解耦",
+        "RDMA",
+        "GPU-NPU异构推理",
+        "TTFT"
+      ],
+      "score": 87.85,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29873v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T15:25:35Z"
+        }
+      ],
+      "_provenance": {
+        "task_id": "a1bfb8c6810a0f5f867d75c7",
+        "event_id": "10e336cdc3f5f853b5d9f852",
+        "batch_id": "writing-2",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29873v1"
+        ]
+      },
+      "brief_item_id": "14f554896a5602f09d452905",
+      "topic_id": "tpn",
+      "direction_id": "pd_disaggregation",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-14f554896a5602f09d452905"
+    },
+    {
+      "title": "RiseHarness固定模型权重迭代改进终端Agent运行框架",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent Harness与长任务运行环境",
+      "published_at": "2026-10-20T00:36:49Z",
+      "core_conclusion": "长程终端智能体重复运行结果不稳，运行框架有效性依赖模型行为。RiseHarness固定模型权重，用重复运行的成败证据迭代改进Harness，验收门要求完整评估且通过率超基线才采纳。",
+      "mechanism": "框架记录智能体轨迹与运行时监控轨迹，定位同配置下成败并存的翻转任务，结合手册与其他框架设计生成提案，经可选行为检查、筛选试验与全量复评达标后采纳。",
+      "result": "两个模型用各自Harness在两个基准的Pass@1与Pass4上均优于换用对方Harness，互换损失约2.3-9.0个百分点。",
+      "boundary": "主结果表与图6不可见，图7数值取自柱状图打印标签；改进循环的token与时延成本未报告。",
+      "project_relevance": "Harness收益按模型分化，跨模型复用会损失数个百分点；自建框架验收应要求完整重复评估并记录成本。",
+      "keywords": [
+        "Agent Harness",
+        "自我改进",
+        "验收门",
+        "翻转任务",
+        "终端Agent"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.27435v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T00:36:49Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 86.45,
+      "_provenance": {
+        "task_id": "19fa93cf5035ea06a1a45df7",
+        "event_id": "3cf43f38575c45ab45ebc7ba",
+        "batch_id": "writing-3",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.27435v1"
+        ]
+      },
+      "brief_item_id": "d8a6dfbb0135fb04f3d15ed5",
+      "topic_id": "agent_acceleration",
+      "direction_id": "agent_harness",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-d8a6dfbb0135fb04f3d15ed5"
+    },
+    {
+      "title": "AKV：Agent用drop/repos直接管理活跃KVCache",
+      "type": "论文",
+      "topic_name": "KVCache管理与复用",
+      "direction_name": "KVCache分层存储、驱逐与放置",
+      "published_at": "2026-10-20T17:32:24Z",
+      "core_conclusion": "长程Agent轨迹中KVCache读取占API成本82.4%，摘要裁剪破坏缓存并触发重填充。AKV让Agent直接以drop/repos管理活跃KVCache，免去重填充并保持精度。",
+      "mechanism": "Agent不改轨迹文本，直接对KVCache执行drop与repos；AKV在radix tree插入drop节点，按操作历史区分缓存版本。",
+      "result": "三模型×四Agent基准平均成本较Standard基线降27.7%、平均分升1.7点；GPT-OSS-120B的96k+轨迹桶精度37%对24%。",
+      "boundary": "未报告缓存命中率与显存利用率，Table 2绝对数值不可见，亦无GPU/CPU/SSD分层实验。",
+      "project_relevance": "判断：drop节点按操作历史区分缓存版本，修正朴素前缀复用假设，前缀缓存引擎应纳入操作历史键。",
+      "keywords": [
+        "KVCache",
+        "cache engineering",
+        "radix tree",
+        "Agent",
+        "驱逐"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28577v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T17:32:24Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 85.95,
+      "_provenance": {
+        "task_id": "c5aac5dc3e7da887eab6e4b1",
+        "event_id": "8c14a476e9ce6a81e645b5ce",
+        "batch_id": "writing-4",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28577v1"
+        ]
+      },
+      "brief_item_id": "51b028770810a93bcda12391",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-51b028770810a93bcda12391"
+    },
+    {
+      "title": "三星VS-Flash用CXL共享闪存段加速向量检索",
+      "type": "arXiv论文",
+      "topic_name": "内存语义、DSA卸载",
+      "direction_name": "内存语义与池化",
+      "published_at": "2026-10-18T12:08:09Z",
+      "core_conclusion": "向量数据超出主机DRAM后，Milvus的SSD服务因缺页换页而吞吐下降、尾延迟上升。三星VS-Flash把闪存段经CXL暴露给主机与设备算力共享执行，让批量吞吐与尾延迟同时改善。",
+      "mechanism": "设备把活跃段以1GB为单位从闪存预取进板载DRAM，主机CPU与RISC-V核经CXL共享地址空间；请求按批次大小分流，预取窗口自适应调整。",
+      "result": "三个十亿级数据集上批量吞吐较原生Milvus平均提升36.8倍、最高57.4倍；SIFT100M混合负载下小批量请求p99最多降低24.8倍。",
+      "boundary": "36.8倍为摘要级汇总，逐数据集结果未见；基线仅用72核中8核，设备核数与容量未披露。",
+      "project_relevance": "CXL共享段加就近执行是可借鉴的容量扩展路径；作为项目判断，其收益止于向量库服务层，不应外推到端到端时延。",
+      "keywords": [
+        "CXL",
+        "向量检索",
+        "内存语义闪存",
+        "计算型存储",
+        "Milvus"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.26960v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-18T12:08:09Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 84.8,
+      "_provenance": {
+        "task_id": "22a42f77d57fc9dae85d2763",
+        "event_id": "dba7cc6ead7682f505d6ec0f",
+        "batch_id": "writing-5",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.26960v1"
+        ]
+      },
+      "brief_item_id": "3b94079f89c314ed2fd90145",
+      "topic_id": "memory_dsa",
+      "direction_id": "memory_semantics",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-3b94079f89c314ed2fd90145"
+    },
+    {
+      "title": "DynaWeave注入外生事件构造可验证动态Agent场景",
+      "type": "arXiv论文",
+      "topic_name": "边界探索",
+      "direction_name": "Agent与工具链新机制",
+      "published_at": "2026-10-21T09:03:10Z",
+      "core_conclusion": "工具Agent训练环境默认不随外部变化，外生事件会使计划失效且人工构造场景无法扩展。DynaWeave自动把静态任务改造成可验证动态场景，并用轨迹微调Qwen3.5系列模型。",
+      "mechanism": "在静态任务上构造带来源、触发方式与可见性的事件并组成DAG；执行引擎在交互中途激活事件，校验器只修订受影响的检查项。",
+      "result": "2B的CostBench完成率由3.00%至70.34%，9B的ToolMaze达32.28，追平GLM-5.1并略超Gemini-3.1-Pro预览版。",
+      "boundary": "对无错误提示的损坏输出与按时响应难以应对，Gaia2从4.6升至8.5；教师模型与Gemini基线条件未披露。",
+      "project_relevance": "项目判断：事件注入加只修订受影响检查项，可低成本把静态Agent评测改造成非平稳评测，适合压测工具链故障。",
+      "keywords": [
+        "外生事件",
+        "动态场景",
+        "Agent评测",
+        "工具调用",
+        "监督微调"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29443v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T09:03:10Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 84.75,
+      "_provenance": {
+        "task_id": "22a42f77d57fc9dae85d2763",
+        "event_id": "c858efc9a1d44b3ff620fb89",
+        "batch_id": "writing-5",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29443v1"
+        ]
+      },
+      "brief_item_id": "66a44e11c1954fa42cac24ba",
+      "topic_id": "frontier_exploration",
+      "direction_id": "agent_tooling_frontier",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-66a44e11c1954fa42cac24ba"
+    },
+    {
+      "title": "三代GPU实测显示2:4稀疏仅在量化地板上有收益",
+      "type": "预印本",
+      "topic_name": "AI芯片与加速器",
+      "direction_name": "AI计算芯片与加速器架构",
+      "published_at": "2026-10-20T21:48:45Z",
+      "core_conclusion": "推理降本的选择是加2:4稀疏还是再降一档量化。约22万个实测配置显示，量化地板之上2:4精度与速度全面落败，108个等档计算格仅胜6个，只有叠加在地板格式上才兑现收益。",
+      "mechanism": "等比特对比把2:4索引与scale计入存储位，得到2:4加INT8仅等价稠密INT5；等档对比按名义吞吐配对格式后实测核速度。",
+      "result": "FP8地板上线性层核在三代GPU上加速1.33到1.65倍；H100 vLLM端到端prefill 74.6对58.9千token每秒且GSM8K持平。",
+      "boundary": "单作者预印本未经同行评审；增益限于计算受限的prefill；Blackwell成对4:8精度在预算内未恢复。",
+      "project_relevance": "推理选型应先量化到地板格式再考虑2:4，并预留再训练预算；vLLM已移除2:4支持，落地需自行维护内核。",
+      "keywords": [
+        "2:4稀疏",
+        "量化",
+        "LLM推理",
+        "稀疏张量核心",
+        "GPU"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28947v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T21:48:45Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 82.15,
+      "_provenance": {
+        "task_id": "ce89a0e02d25dfab2af40758",
+        "event_id": "1770cb5486e2954d93190fe7",
+        "batch_id": "writing-6",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28947v1"
+        ]
+      },
+      "brief_item_id": "0bc0413579c8b51e6e000a2b",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-0bc0413579c8b51e6e000a2b"
+    },
+    {
+      "title": "VibeMemBench：多数记忆系统未胜过无记忆基线",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Read、Grep、Glob和代码搜索加速",
+      "published_at": "2026-09-20T11:44:03Z",
+      "core_conclusion": "代码Agent的持久记忆长期缺乏以可执行结果衡量的对照评测，VibeMemBench用同任务记忆开关配对协议补上空白，发现现成记忆系统经检索普遍低于无记忆基线。",
+      "mechanism": "同一仓库任务在固定Agent、工具与预算下仅切换记忆条件，由可执行测试判定成败；SIEVE流程构建111个目标，冻结经执行验证的既往经验。",
+      "result": "直接注入冻结经验使五个求解器中四个Resolved点估计上升（+1.13至+4.50个百分点，区间均跨零）；检索路径12组配对中11组低于基线。",
+      "boundary": "目标按正参考提升规则筛出，求解器不含Claude与GPT，也未报告记忆构建与检索成本。",
+      "project_relevance": "四个记忆系统都让glm-5少走5.4至10.6步，但三个同时降低Resolved；省步数不等于结果更好，经验复用需配验收门。",
+      "keywords": [
+        "VibeMemBench",
+        "持久记忆",
+        "代码Agent",
+        "基准评测",
+        "经验复用"
+      ],
+      "score": 81.2,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.23570v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-20T11:44:03Z"
+        }
+      ],
+      "_provenance": {
+        "task_id": "16f42e2312a15095ead397fb",
+        "event_id": "e8a88008e50406cad31fb6fa",
+        "batch_id": "writing-7",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.23570v1"
+        ]
+      },
+      "brief_item_id": "0a6e722809c29f7f5a099e93",
+      "topic_id": "agent_acceleration",
+      "direction_id": "read_grep",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-0a6e722809c29f7f5a099e93"
+    },
+    {
+      "title": "UlaCache用统一逻辑寻址提升稀疏解码吞吐",
+      "type": "论文",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-10-21T14:46:11Z",
+      "core_conclusion": "稀疏注意力每步只读选中位置，但完整KV历史须全程可用，GLM-5.3下8卡TP有87.5%历史分配为副本；UlaCache以统一逻辑地址空间解耦引擎与物理放置。",
+      "mechanism": "逻辑地址映射横跨GPU池与CPU内存，KV移动只更新映射；稀疏选择先查本地GPU缓冲，仅传缺失条目，由独立CUDA stream预取使传输与计算重叠。",
+      "result": "匹配内存预算与投机解码开启下，8×B300峰值解码吞吐为HiSparse的1.73/2.51倍（DP/TP）；替换时PB-LRU较朴素LRU快1.5至2.3倍。",
+      "boundary": "全部传输限于节点内CPU-GPU与卡间IPC，无跨节点实验，也未报告TTFT、P95与网络利用率。",
+      "project_relevance": "它给出节点内统一寻址的上限，跨节点KV放置与带宽调度仍是空位，可作TPN的对照基线。",
+      "keywords": [
+        "UlaCache",
+        "KV cache",
+        "稀疏注意力",
+        "LLM服务",
+        "统一寻址"
+      ],
+      "score": 81.1,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29820v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T14:46:11Z"
+        }
+      ],
+      "_provenance": {
+        "task_id": "16f42e2312a15095ead397fb",
+        "event_id": "b222a86d85f42c7b0a80108e",
+        "batch_id": "writing-7",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29820v1"
+        ]
+      },
+      "brief_item_id": "4556110b217a4d31038037df",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-4556110b217a4d31038037df"
+    },
+    {
+      "title": "数据库Agent失败多源于服务器边界而非模型能力",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent工具执行链优化",
+      "published_at": "2026-09-18T05:51:31Z",
+      "core_conclusion": "小模型带不动Agent常被归因于推理能力不足，该生产实测发现多数损失发生在模型与服务器的传输边界，只改服务器即可显著移动成功率。",
+      "mechanism": "在生产SQL客户端agent模式跑39个本地模型与1个托管对照共8199次，把损失归入能力、传输、时钟、验证四类，补捕被拒工具调用参数定位服务器缺陷。",
+      "result": "75.7%的模型归因损失来自已调用过工具的运行；五处仅服务器端修改使六个模型在30个格中移动6至21格，全程未动模型、提示与采样。",
+      "boundary": "结论来自单机、单数据库与单一harness，传输高于能力的排序仅在74.5%的重采样中成立。",
+      "project_relevance": "本地模型评测须先排查无上限上下文驻留与swap两个混杂，本例中3B模型限制上下文后从0/5变5/5；外推到代码agent属推断。",
+      "keywords": [
+        "数据库Agent",
+        "本地小模型",
+        "工具调用",
+        "失败归因"
+      ],
+      "score": 79.9,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.21341v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-18T05:51:31Z"
+        }
+      ],
+      "_provenance": {
+        "task_id": "16f42e2312a15095ead397fb",
+        "event_id": "4fc5a1f6fc2519f369a3a456",
+        "batch_id": "writing-7",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.21341v1"
+        ]
+      },
+      "brief_item_id": "97fde1681974bb57a0c40227",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-97fde1681974bb57a0c40227"
+    },
+    {
+      "title": "APEXA用确定性工具层拦截Agent伪造的执行结果",
+      "type": "论文",
+      "topic_name": "Agent语义加速",
+      "direction_name": "Agent工具执行链优化",
+      "published_at": "2026-09-21T06:33:11Z",
+      "core_conclusion": "LLM网关把不可解析的工具调用静默丢弃，模型随后汇报从未运行的命令结果，而对话指标仍判为成功；APEXA以服务器侧确定性工具层消除这一伪造路径。",
+      "mechanism": "执行完整性守卫拒绝输出无已执行调用支撑的结果并强制重试，配合容忍跨模型格式漂移的解析器与五项EPICS预检，全部在服务端代码实现。",
+      "result": "在50场景×4模型的仿真电机控制对抗测试中，工具层0/200违规、纯提示词基线15/200；系统在APS真实束线数据上以单条指令完成端到端归约。",
+      "boundary": "采用单顺序推理循环，未测并行或投机执行；电机安全仅对仿真IOC验证，且无任务成功率、时延与token数据。",
+      "project_relevance": "代码Agent同样面临调用被静默丢弃后伪造测试或构建结论的风险，harness侧应引入这类与模型无关的确定性验收门。",
+      "keywords": [
+        "执行完整性",
+        "工具调用漂移",
+        "MCP",
+        "确定性验收门"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.24165v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-21T06:33:11Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 78.3,
+      "_provenance": {
+        "task_id": "63ebd85c7467cd8552b97224",
+        "event_id": "37db3f76bacb5e09b84794ee",
+        "batch_id": "writing-8",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.24165v1"
+        ]
+      },
+      "brief_item_id": "bfaa2e873b5783c236c7c8c4",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-bfaa2e873b5783c236c7c8c4"
+    },
+    {
+      "title": "MoSim以网络争用建模将训练仿真的平均JCT误差降至11.1%",
+      "type": "会议论文",
+      "topic_name": "AI Infra横向动态",
+      "direction_name": "GPU集群、分布式训练与工程可靠性",
+      "published_at": "2026-09-20T01:25:15Z",
+      "importance": "值得关注",
+      "core_conclusion": "现有GPU集群轨迹仿真器忽略或静态近似网络争用，MoSim动态建模NIC争用后，Philly轨迹的平均JCT仿真误差从Tiresias的36.4%降至11.1%。",
+      "mechanism": "以ASTRA-sim在CPU上免GPU刻画每迭代的计算与通信量，仿真按需求比例切分NIC，并取跨服务器最大争用因子延长通信时间。",
+      "result": "双服务器V100实测对照下，MoSim平均JCT与P99误差为11.1%和8.4%，makespan误差7.7%，基线为33%–65%。",
+      "boundary": "真值仅来自双服务器V100集群，更大规模未验证；模型假设同步all-reduce且独立处理各NIC。",
+      "project_relevance": "判断：属评测基础设施而非生产系统；做调度器what-if或容量规划时可用其替代GPU剖析，输入构建成本降低44.6倍。",
+      "keywords": [
+        "网络争用",
+        "GPU集群仿真",
+        "分布式训练",
+        "JCT误差",
+        "ASTRA-sim"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.23278v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-20T01:25:15Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 76.5,
+      "_provenance": {
+        "task_id": "48309068367724f7907e885f",
+        "event_id": "6dac9dd2c4d5e6640a492ed6",
+        "batch_id": "writing-9",
+        "source_urls": [
+          "https://arxiv.org/abs/2609.23278v1"
+        ]
+      },
+      "brief_item_id": "ecb6eb96861ba2e918b489dc",
+      "topic_id": "ai_infra_horizontal",
+      "direction_id": "cluster_training_operations",
+      "item_role": "core",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-ecb6eb96861ba2e918b489dc"
+    },
+    {
+      "title": "MOSAIC逐层分配KVCache预算：同分数最多省75%",
+      "type": "论文",
+      "topic_name": "KVCache管理与复用",
+      "direction_name": "KVCache分层存储、驱逐与放置",
+      "published_at": "2026-10-18T17:51:14Z",
+      "core_conclusion": "SnapKV等驱逐方法给每个Transformer层相同KVCache预算，而各层所需token不同；MOSAIC离线搜索逐层预算，任务分数持平时最多省75%缓存。",
+      "mechanism": "对冻结模型按任务与驱逐方法组合离线运行贝叶斯加NSGA-II搜索，学出逐层预算形状，经缩放解码迁移到全部目标预算，部署形态类比静态量化标定。",
+      "result": "四种驱逐方法×两个模型共154个设置中146个胜过统一分配，RULER最高提升48分；精修阶段比EvolKV逐预算搜索省约18%GPU时且多数设置分数更高。",
+      "boundary": "仅评估两个dense模型且无延迟、吞吐与显存实测；一次性Stage1搜索需9至40GPU时。",
+      "project_relevance": "层异质性说明驱逐与分层策略应增加层维度；但在缺少命中率与TTFT数据时不能直接外推延迟收益。",
+      "keywords": [
+        "KVCache驱逐",
+        "逐层预算",
+        "贝叶斯优化",
+        "长上下文推理"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.25431v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-18T17:51:14Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 77.8,
+      "_provenance": {
+        "task_id": "63ebd85c7467cd8552b97224",
+        "event_id": "20255491e15fa8862461d67e",
+        "batch_id": "writing-8",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.25431v1"
+        ]
+      },
+      "brief_item_id": "86c0149adfbdd159a26d13ec",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-86c0149adfbdd159a26d13ec",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "英特尔Arc GPU以INT8引擎模拟FP64矩阵乘，吞吐达原生12–28倍",
+      "type": "预印本",
+      "topic_name": "AI芯片与加速器",
+      "direction_name": "AI计算芯片与加速器架构",
+      "published_at": "2026-10-18T05:56:41Z",
+      "importance": "值得关注",
+      "core_conclusion": "廉价GPU上FP64矩阵乘远慢于INT8引擎，该工作用Ozaki方案II将其分解为INT8精确乘积，Arc Pro B60实测吞吐达原生FP64的12–28倍。",
+      "mechanism": "Ozaki方案II把FP64矩阵积分解为s个精确INT8乘积加中国剩余重构，模数s决定精度，SYCL实现暴露完整BLAS接口。",
+      "result": "实测DGEMM最高21.1 TFLOP/s，达原生FP64的12–28倍；ZGEMM最高27.4 TFLOP/s，标度良好输入s≥16时100%正确舍入。",
+      "boundary": "共享指数最坏输入需s=20–24才能保精度且吞吐大降，小矩阵下原生FP64更快，且系单板预印本测量。",
+      "project_relevance": "判断：非AI芯片设计论文，但为审视低精度TOPS峰值提供同板对照与开源实现，评估FP64需求需区分原生与模拟算力。",
+      "keywords": [
+        "INT8矩阵引擎",
+        "FP64模拟",
+        "Ozaki方案II",
+        "英特尔Arc Xe2",
+        "正确舍入"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.26945v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-18T05:56:41Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 76.6,
+      "_provenance": {
+        "task_id": "48309068367724f7907e885f",
+        "event_id": "f97d41fb09fe05349af64b1b",
+        "batch_id": "writing-9",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.26945v1"
+        ]
+      },
+      "brief_item_id": "e2a6a174f52647117cbf7ea9",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-e2a6a174f52647117cbf7ea9",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "FlashNext-RL把单节点B200上的智能体RL训练吞吐提升逾11倍",
+      "type": "预印本",
+      "topic_name": "AI芯片与加速器",
+      "direction_name": "AI计算芯片与加速器架构",
+      "published_at": "2026-10-20T23:53:09Z",
+      "importance": "值得关注",
+      "core_conclusion": "125B混合专家模型的长程RL受显存与缺失算子限制，难以在单节点B200以131K上下文训练；Snowflake经内存规划与特化内核把单GPU吞吐提升逾11倍，并揭示循环瓶颈在生成端。",
+      "mechanism": "以prime-rl与vLLM为基座，用host offload、专家并行与上下文并行做内存规划，并为QSA稀疏注意力与门控残差写sm100特化内核。",
+      "result": "单GPU非padding吞吐从初始配置约395升至4,438 tokens/s；真实SWE运行中每步平均等待331秒，瓶颈在生成端。",
+      "boundary": "评估仅限单一硬件配置与短程训练，不建立长程收敛或多节点扩展；部分参数冻结，无功耗数据。",
+      "project_relevance": "判断：非新芯片架构，而是B200软硬件协同实测样本；评估加速器时须分辨纯matmul吞吐与端到端RL收益。",
+      "keywords": [
+        "B200",
+        "智能体RL",
+        "内存规划",
+        "QSA稀疏注意力",
+        "训练吞吐"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28998v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T23:53:09Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 73.85,
+      "_provenance": {
+        "task_id": "48309068367724f7907e885f",
+        "event_id": "53fdb928a4ce5c3ea6be1f4f",
+        "batch_id": "writing-9",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28998v1"
+        ]
+      },
+      "brief_item_id": "7a0311b21563a7eb1bfeb908",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-7a0311b21563a7eb1bfeb908",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "TrainBridge用GPU编译证据指导昇腾NPU训练改写提速近2倍",
+      "type": "预印本",
+      "topic_name": "AI芯片与加速器",
+      "direction_name": "AI计算芯片与加速器架构",
+      "published_at": "2026-10-21T04:00:48Z",
+      "importance": "值得关注",
+      "core_conclusion": "昇腾NPU训练程序编译优化仅部分生效；TrainBridge把GPU编译产物的优化意图转成NPU重写，27条NanoGPT记录平均提速1.95倍，显示低效主要源于软件栈。",
+      "mechanism": "两阶段智能体：对比GPU eager与编译后IR差异抽取优化意图，定位NPU对应低效点生成语义保持重写；再迭代剖析NPU残余瓶颈。",
+      "result": "Ascend 910C上27条NanoGPT记录平均提速1.95倍，NPU/GPU耗时比从4.0降至2.0；另四个负载提速1.25–2.22倍。",
+      "boundary": "调优仅限单节点、多节点未测；需成熟GPU编译栈，优化后NPU仍慢于GPU参考1.5–2.0倍。",
+      "project_relevance": "判断：软件栈而非新硅片结果；实测表明NPU训练效率相当程度受编译制约，评估昇腾类加速器应以优化后端到端时长为准。",
+      "keywords": [
+        "昇腾NPU",
+        "编译优化",
+        "智能体调优",
+        "Modded-NanoGPT",
+        "端到端训练时间"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.29171v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-21T04:00:48Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 72.95,
+      "_provenance": {
+        "task_id": "48309068367724f7907e885f",
+        "event_id": "dc1a653e10c53e44df55455e",
+        "batch_id": "writing-9",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.29171v1"
+        ]
+      },
+      "brief_item_id": "92b5f6640589c7fb2e6b086f",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-92b5f6640589c7fb2e6b086f",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "LORE-KV用未来查询采样改进KVCache驱逐决策",
+      "type": "论文",
+      "importance": "值得关注",
+      "core_conclusion": "KVCache驱逐须在未见未来查询前决定，prompt侧打分会漏掉仅生成期重要的token；LORE-KV从冻结模型采样短前瞻续写，用响应侧查询估计删除代价，提升紧预算下的压缩质量。",
+      "mechanism": "方法免训练，以温度1从冻结模型采样多条短续写，用响应侧查询计算各token的投影删除代价并跨未来加权聚合，再按打分压缩缓存。",
+      "result": "B=128时Qwen2.5-14B的LongBench均值较AnDPro提升2.75分，Llama-3.1-8B在128K RULER领先11.65分。",
+      "boundary": "优势随预算增大收窄，B=1024时仅余0.15分；一次性压缩开销为AnDPro的1.46-2.77倍。",
+      "project_relevance": "自研推理栈的KV驱逐可借鉴响应侧查询信号替代通用启发式，但前缀复用与分层放置仍需另行评估。",
+      "keywords": [
+        "KV cache",
+        "驱逐策略",
+        "前瞻采样",
+        "RULER",
+        "缓存效率"
+      ],
+      "topic_name": "KVCache管理与复用",
+      "direction_name": "KVCache分层存储、驱逐与放置",
+      "published_at": "2026-10-06T02:36:50Z",
+      "score": 71.05,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.07643v2",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-06T02:36:50Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "_provenance": {
+        "task_id": "7cb797d940640533a1d548ff",
+        "event_id": "012ba814460338ccd83c2659",
+        "batch_id": "writing-10",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.07643v2"
+        ]
+      },
+      "brief_item_id": "757775758481577d00f2fdfb",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-757775758481577d00f2fdfb",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "MaskAhead用掩码查询实现块扩散模型的KVCache不可逆驱逐",
+      "type": "论文",
+      "importance": "值得关注",
+      "core_conclusion": "块扩散语言模型的长上下文推理需为同一历史重复支付显存与读取成本；MaskAhead用掩码查询同时决定临时读取与不可逆驱逐，以均值1.2分F1损失换取平均9.5倍KV压缩。",
+      "mechanism": "该方法免训练，用当前块掩码为去噪读取排序，用未来掩码块的探针查询为保留集排序，检查点物理删除条目，另有四比特KV变体。",
+      "result": "六个主任务设定中取得驱逐类方法最高F1，其中一处并列；固定输出实验中批32吞吐由55.6升至68.2 token/s，驻留KV由28.4降至4.2GiB。",
+      "boundary": "方法面向块扩散模型而非自回归服务，系统实验的GPU与模型规模未披露。",
+      "project_relevance": "驱逐策略可用模型自身的未来掩码探针替代累计注意力打分，紧预算下收益最大，宽预算下趋同。",
+      "keywords": [
+        "块扩散模型",
+        "KV cache",
+        "驱逐策略",
+        "KV量化",
+        "长上下文推理"
+      ],
+      "topic_name": "KVCache管理与复用",
+      "direction_name": "KVCache分层存储、驱逐与放置",
+      "published_at": "2026-10-04T07:52:31Z",
+      "score": 69.35,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.06996v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-04T07:52:31Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "incremental_update": false,
+      "incremental_change": null,
+      "_provenance": {
+        "task_id": "7cb797d940640533a1d548ff",
+        "event_id": "5ff2a0b88a9207f58d11c5f4",
+        "batch_id": "writing-10",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.06996v1"
+        ]
+      },
+      "brief_item_id": "afa9bbe36d6238053583a937",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-afa9bbe36d6238053583a937",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "RACE将KV缓存头维度压缩折叠进模型权重",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-10-20T15:34:02Z",
+      "core_conclusion": "现有头维度KV缓存压缩多需推理时重建全维表示，解码算力不降反升；RACE把按激活能量选出的RoPE对降维折叠进权重，让缓存与注意力计算同时缩小且免重建。",
+      "mechanism": "RACE把Q/K降维限制为坐标选择，证明只有保留完整RoPE旋转对才能兼容预训练旋转；再按联合query-key激活能量保留高能量对，仅需前向统计。",
+      "result": "在Llama-3.2-3B、50%保留、256K上下文下，总推理FLOPs较未压缩模型降低47.75%，吞吐提升1.79倍，TTFT降低43.22%。",
+      "boundary": "所有结果均含约1M token蒸馏恢复，且仅单卡实测，无跨域或WAN实验。",
+      "project_relevance": "若跨域搬运KV缓存，RACE能把可传输体积压缩一半并降低TTFT，可作为传输侧上游杠杆评估，但需另行回答WAN成本问题。",
+      "keywords": [
+        "KV缓存压缩",
+        "RoPE",
+        "头维度压缩",
+        "推理FLOPs",
+        "长上下文"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28385v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T15:34:02Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 69.2,
+      "_provenance": {
+        "task_id": "51c92446cf1cca94f11aed60",
+        "event_id": "4e5a1815a34358deb78a9f58",
+        "batch_id": "writing-11",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28385v1"
+        ]
+      },
+      "brief_item_id": "25984365221418728b500261",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-25984365221418728b500261",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "ReTrace以休眠缓存与回溯注入压缩多模态KV缓存",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-10-18T04:19:13Z",
+      "core_conclusion": "论文发现多模态模型中层枢轴token会回溯检索早期低显著性视觉token，浅层剪枝会提前切断该通路；ReTrace把非枢轴token缓存为休眠态、到回溯层再注入，吸收完成后才剪除。",
+      "mechanism": "它以枢轴缓冲区作为代理接收者，非枢轴token绕过逐层计算进入休眠缓存，在约第8层注入以近似中层检索流，任务驱动剪枝则推迟到吸收完成后。",
+      "result": "保留11.1%视觉token时，Qwen2.5-VL-7B的KV缓存从211.4MB降至26.7MB、预填充加速2.83倍，8基准平均保留84.4%性能。",
+      "boundary": "注入与剪枝用固定层号，且全部实验为单卡推理，无分布式、跨域或时延测量。",
+      "project_relevance": "对跨域场景它只给出单图KV可缩至约八分之一的体积上界，休眠-恢复结构可借鉴为分层放置与预取时机设计，传输行为未验证。",
+      "keywords": [
+        "多模态大模型",
+        "视觉token压缩",
+        "KV缓存",
+        "注意力分析",
+        "预填充加速"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.25005v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-18T04:19:13Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 64.5,
+      "_provenance": {
+        "task_id": "51c92446cf1cca94f11aed60",
+        "event_id": "5af574170a0f7fcbc8c16078",
+        "batch_id": "writing-11",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.25005v1"
+        ]
+      },
+      "brief_item_id": "56e3de83eb972fb59b1861bb",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-56e3de83eb972fb59b1861bb",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "CALM用离线校准的逐层逐头配额压缩视频生成KV缓存",
+      "type": "论文",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-10-20T13:33:04Z",
+      "core_conclusion": "视频生成的时间维token合并对全部层和头用统一比例；CALM离线校准每层每头失真表，用动态规划在预算内求最优合并配额并冻结复用，同预算下整段LPIPS较均匀分配降约21%。",
+      "mechanism": "校准以注意力输出相对误差为代理，随一次稠密生成探测影子缓存得到全部360头的失真表，预算约束下的动态规划解冻结为分配图，推理时无在线搜索。",
+      "result": "Self-Forcing上R=8同预算，CALM整段LPIPS为0.117、均匀分配0.149；跨模型增益集中在中强压缩档，弱档无显著增益。",
+      "boundary": "压缩只是逻辑账面，实现预分配全量KV缓冲、各方法常驻显存相同，CALM生成时间比均匀分配慢约15%。",
+      "project_relevance": "校准配额图是预算式放置分配器的原型，但其映射绑定模型与合并算子、换算子需重校准，跨站点复用要求同构集群。",
+      "keywords": [
+        "视频生成",
+        "KV缓存压缩",
+        "离线校准",
+        "动态规划",
+        "token合并"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.28192v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-20T13:33:04Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 62.75,
+      "_provenance": {
+        "task_id": "51c92446cf1cca94f11aed60",
+        "event_id": "2e7555988fb40f1109c0f3f5",
+        "batch_id": "writing-11",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.28192v1"
+        ]
+      },
+      "brief_item_id": "e6bfafc4de6f0742034d4684",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-e6bfafc4de6f0742034d4684",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "ChampionKV按注意力集中度为各头分配KV压缩预算",
+      "type": "预印本",
+      "topic_name": "跨域传输",
+      "direction_name": "压缩、增量传输、预取与放置",
+      "published_at": "2026-10-13T09:19:24Z",
+      "core_conclusion": "观测窗口式KV压缩器对各注意力头用统一预算，忽略输入依赖的预算差异。ChampionKV用集中度代理逐头分配预算，不改token选择即提升压缩质量。",
+      "mechanism": "以最大聚合观测注意力分作集中度代理，用inverse-max加权把大预算分给分散头，预填充期一次计算，可插入SnapKV等压缩器。",
+      "result": "Llama3.1-70B LongBench上Champion-Snap四档预算均超SnapKV，2048时48.14胜未压缩47.92，检验p<0.001。",
+      "boundary": "全文为单节点显存压缩，无跨域传输或P95证据；增益集中紧预算且7B/8B上不显著。",
+      "project_relevance": "对跨域传输专题：同等质量下保留的KV更少，若跨域搬运压缩KV可缩小体积，插件式设计便于与传输方案组合，但不提供WAN成本证据。",
+      "keywords": [
+        "KV缓存压缩",
+        "注意力头预算分配",
+        "ChampionKV",
+        "长上下文推理"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.18026v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-13T09:19:24Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 61.25,
+      "_provenance": {
+        "task_id": "fba7d172a6c8886cc5491323",
+        "event_id": "f3e804e4a0e3ff402676e800",
+        "batch_id": "writing-12",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.18026v1"
+        ]
+      },
+      "brief_item_id": "379f9edf5678a85cd23761fa",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-379f9edf5678a85cd23761fa",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "PN-Mix按查询键对范数做键缓存混合精度量化",
+      "type": "预印本",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-10-14T05:29:08Z",
+      "core_conclusion": "长输出解码下KV缓存线性增长，Qwen3-8B的FP16缓存在40GB上批量或长度稍大即OOM，均匀2比特又伤长思维链精度。PN-Mix按查询-键交互选通道，约2.26比特接近FP16。",
+      "mechanism": "以查询侧与键侧平均对范数之积为通道对重要性，预填充期算一次并在解码中复用，显著通道对3比特、其余1比特。",
+      "result": "四个模型基准平均与FP16差距均在1分内且优于Kitty；Qwen3-8B在40GB内可跑8倍生成长度或5.5倍批量。",
+      "boundary": "证据全部为单GPU实验，无TTFT、TPOT或网络侧数据；显存充裕时FP16同批量吞吐反而更高。",
+      "project_relevance": "对TPN专题为间接证据：单卡可承载的KV足迹扩大8倍，可等比减少跨节点搬运字节，解码延迟斜率显示KV读带宽制约长输出解码。",
+      "keywords": [
+        "KV缓存量化",
+        "混合精度",
+        "长输出推理",
+        "PN-Mix"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.19605v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-14T05:29:08Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 60.95,
+      "_provenance": {
+        "task_id": "fba7d172a6c8886cc5491323",
+        "event_id": "7c824d08c3f74efab6d08727",
+        "batch_id": "writing-12",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.19605v1"
+        ]
+      },
+      "brief_item_id": "85443a3362697092e4d35380",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-85443a3362697092e4d35380",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "MLAfication把Qwen3等QKNorm模型转为MLA并压缩KV缓存",
+      "type": "预印本",
+      "topic_name": "状态感知网络、TPN",
+      "direction_name": "KVCache感知的网络与带宽调度",
+      "published_at": "2026-10-12T17:59:10Z",
+      "core_conclusion": "现有MHA转MLA方法不支持QKNorm，Qwen3类架构无法转换。MLAfication用校准近似与参数高效蒸馏实现转换，FP8下吞吐最高5.35倍。",
+      "mechanism": "校准KNorm近似化解QKNorm与MLA矩阵吸收的冲突，仅微调QKV投影与归一化（30B约1.6%参数），配部分RoPE与KV初始化。",
+      "result": "Qwen3-30B-A3B在16K并发256下FP8 MLA-128吞吐为GQA的5.35倍；KV省68.75%时均分64.65对删KNorm的61.23。",
+      "boundary": "服务评估为单卡TP=1，无跨机通信与TTFT/TPOT数据；压缩越强质量越降，昇腾基准仅用假权重。",
+      "project_relevance": "对TPN专题为间接证据：潜在缓存叠加FP8从源头缩小KV体积，改变调度器的带宽权衡，但无网络感知机制。",
+      "keywords": [
+        "MLA",
+        "KV缓存压缩",
+        "QKNorm",
+        "推理吞吐"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.17202v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-12T17:59:10Z"
+        }
+      ],
+      "discovered_via": "arXiv",
+      "score": 57.4,
+      "_provenance": {
+        "task_id": "fba7d172a6c8886cc5491323",
+        "event_id": "1f626fcf23859a41126d561b",
+        "batch_id": "writing-12",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.17202v1"
+        ]
+      },
+      "brief_item_id": "17bc8acd678fb63dbfcf7ac9",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-17bc8acd678fb63dbfcf7ac9",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "SigmaTrace：库无关的CPU/GPU发起RDMA通信观测工具",
+      "type": "论文",
+      "topic_name": "加速器直连I/O与存储数据路径",
+      "direction_name": "加速器主动发起与控制I/O",
+      "published_at": "2026-10-16",
+      "core_conclusion": "SC26接收的预印本SigmaTrace面向CPU与GPU发起的RDMA通信，提供库无关的观测能力并已公开源代码。",
+      "mechanism": "论文定位为库无关观测，同时覆盖CPU与GPU发起的RDMA通信；更具体的拦截与采集机制未出现在可见证据中，不作转述。",
+      "result": "论文被SC26接收，以作者接受稿形式发布（13页、10幅图、1张表）并公开源代码；可见证据不含任何开销、时延或IOPS数字。",
+      "boundary": "证据包未含摘要正文，论文是否覆盖NVMe-oF等RDMA存储访问路径不可判断，性能开销亦无数据。",
+      "project_relevance": "建议：将其列为GPU发起I/O实验的候选测量工具，引入前先确认其对RDMA存储访问路径是否覆盖。",
+      "keywords": [
+        "RDMA",
+        "GPU发起I/O",
+        "可观测性",
+        "SC26"
+      ],
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2610.24328",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-16"
+        }
+      ],
+      "discovered_via": "Agent Web Search",
+      "score": 56.2,
+      "_provenance": {
+        "task_id": "aaddbea52269a0c8763657e3",
+        "event_id": "a7983ec5e2f728a4068fbbf2",
+        "batch_id": "writing-13",
+        "source_urls": [
+          "https://arxiv.org/abs/2610.24328"
+        ]
+      },
+      "brief_item_id": "98cb17ffbcfd13c8f4e58ea4",
+      "topic_id": "accelerator_io_datapath",
+      "direction_id": "accelerator_initiated_io",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-98cb17ffbcfd13c8f4e58ea4",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    },
+    {
+      "title": "KvikIO v26.10.00为远程I/O后端引入device buffer",
+      "type": "开源发布",
+      "topic_name": "加速器直连I/O与存储数据路径",
+      "direction_name": "加速器存储软件快路径",
+      "published_at": "2026-10-07",
+      "core_conclusion": "KvikIO v26.10.00修复multi-poll远程I/O后端的重试缺陷与死锁，新增device buffer支持与诊断计数，提升GPU远程I/O软件栈的健壮性与可诊断性。",
+      "mechanism": "libcurl multi-poll远程后端支持GPU侧device buffer，reactor数与请求上限可运行时调整，连接复用减少握手开销。",
+      "result": "修复远程重试缺陷与multi-poll后端死锁，新增读写统计与诊断计数器；发布说明未附任何量化评测。",
+      "boundary": "证据仅为发布页PR标题，无复制次数、IOPS或时延数据，也不涉及cuFile/GDS本地快路径。",
+      "project_relevance": "建议按GPU生态远程I/O栈成熟度信号跟踪；使用KvikIO的项目可升级后用device buffer与诊断计数验证收益。",
+      "keywords": [
+        "KvikIO",
+        "device buffer",
+        "multi-poll",
+        "远程I/O"
+      ],
+      "sources": [
+        {
+          "publisher": "GitHub",
+          "url": "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-10-07"
+        }
+      ],
+      "discovered_via": "Agent Web Search",
+      "score": 46.7,
+      "_provenance": {
+        "task_id": "aaddbea52269a0c8763657e3",
+        "event_id": "cc3aaa9a729aa6909e8b4031",
+        "batch_id": "writing-13",
+        "source_urls": [
+          "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00"
+        ]
+      },
+      "brief_item_id": "6854df1a9e549ad596be6d59",
+      "topic_id": "accelerator_io_datapath",
+      "direction_id": "accelerator_storage_stack",
+      "item_role": "observation",
+      "fact_check_status": "PASS",
+      "anchor_id": "item-6854df1a9e549ad596be6d59",
+      "brief_upgrade": true,
+      "brief_upgrade_origin": "current"
+    }
+  ]
+}

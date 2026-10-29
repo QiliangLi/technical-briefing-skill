@@ -1,0 +1,315 @@
+{
+  "roadmap_id": "roadmap_accelerator_io_datapath",
+  "topic_id": "accelerator_io_datapath",
+  "topic_name": "加速器直连I/O与存储数据路径",
+  "evidence_scope": "published_archive_only",
+  "updated_by_issue": "2026-10-27",
+  "summary": "加速器I/O数据路径本期主线是控制路径出内核：uGDS把NVMe命令生命周期移入用户空间、数据经P2P DMA直传显存，内核驱动仅做一次性特权初始化，A100上4KiB同步写时延较GDS再低84.1%、LMCache命中时TTFT降62.7%、并发256下KV吞吐50.2对约19 kTokens/s（每句柄仅支持一块本地NVMe，错误恢复与隔离证据薄弱，12.12倍批量增益含GDS首批惩罚，尚属原型）；三星OCP 2026的AiSIO把GPU发起、P2P与CPU发起I/O收敛到统一API，100M IOPS与10倍冷启动为无基线的厂商声称；HotStorage 2026的一亿IOPS海报仅见于会议程序页、arXiv 2610.06622仅抓到题录，机制与结果均不可见。当前判断：GPU发起I/O正从数据面直达推进到控制面出内核，uGDS可试点用于KV缓存或向量检索外置、先评估错误恢复语义并补齐POSIX适配；厂商数字在给出可复现条件前不作为架构决策依据。",
+  "view_mode": "evidence_timeline",
+  "branches": [
+    {
+      "branch_id": "accelerator_initiated_io",
+      "name": "加速器发起I/O",
+      "direction_ids": [
+        "accelerator_initiated_io"
+      ],
+      "status": "emerging",
+      "stages": [],
+      "evidence_timeline": [
+        {
+          "item_id": "30d45b2e7f98cfb8329a6b56",
+          "issue_date": "2026-09-04",
+          "source_urls": [
+            "https://graidtech.com/post/100-million-iops-for-gpu-initiated-io"
+          ],
+          "reason": "2026-09-04 已发布日报收录：GRAID 宣布在受保护 RAID 5 卷上达成 1 亿随机 512 字节 GPU 发起 IOPS（厂商单方声明无第三方复测、缺少时延队列深度与功耗口径）；当前仅记录其出现，不据此强行划分阶段。"
+        },
+        {
+          "item_id": "6d2d783dbbd72017f98515e0",
+          "issue_date": "2026-09-04",
+          "source_urls": [
+            "https://www.h3platform.com/blog-detail/81"
+          ],
+          "reason": "2026-09-04 已发布日报收录：SCADA 官方解读确认 GPU 线程直接发起并控制小于 4KB 的细粒度 NVMe 访问、把发起者从主机移到 GPU 执行侧（解读文章无量化实验、路线图数字非现售规格）；当前仅记录其出现，不据此强行划分阶段。"
+        },
+        {
+          "item_id": "20fb8a6279b3bbd998425ffa",
+          "issue_date": "2026-09-06",
+          "source_urls": [
+            "https://blogs.nvidia.com/blog/ai-storage-fms"
+          ],
+          "reason": "2026-09-06 已发布日报收录：NVIDIA 在 FMS 2026 正式发布 SCADA 框架并开源 cuFile 存储栈、联合 40 余家厂商推进 Storage-Next 标准（全部为厂商口径、无 IOPS 与时延数值、3.21 倍的基线条件未给出）；按加速器发起 I/O 分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "3d79b03c1e8162d381969a4d",
+          "issue_date": "2026-09-20",
+          "source_urls": [
+            "https://www.ddn.com/press-releases/ddn-and-nvidia-collaborate-to-advance-gpu-initiated-data-access-for-next-generation-ai"
+          ],
+          "reason": "2026-09-20 已发布日报收录：DDN 与 NVIDIA 在 Storage-Next 下合作让 GPU 经 Infinia 平台更直接发起数据访问并在 FMS 2026 现场演示（公告未披露 I/O 发起方、控制路径与复制次数变化，无任何性能规模数字）；按加速器发起 I/O 分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "9eaeb8c9af21d31b8c60dfdd",
+          "issue_date": "2026-09-28",
+          "source_urls": [
+            "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-2.html"
+          ],
+          "reason": "2026-09-28 已发布日报收录：Kioxia 在 FMS 2026 把 GP1 系列 SSD 明确定位为'为 GPU 直接访问优化'并展示 BiCS FLASH 第 10 代 CM10 与 NX1 系列，介质厂商开始为 GPU 发起访问重构产品线（展会预告稿无量化基准、接口与控制器细节未展开）；按加速器发起 I/O 分支记录产品化信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "ea689bb652526e0e8a1731e6",
+          "issue_date": "2026-09-28",
+          "source_urls": [
+            "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-1.html"
+          ],
+          "reason": "2026-09-28 已发布日报收录：Kioxia GP1 系列 PCIe 6.0 SSD 定位 HBM 的闪存扩展层，以 XL-FLASH 第 2 代实现最高 1000 万 512 字节随机读 IOPS、路线图指向 1 亿 IOPS，厂商称每 GB 成本显著低于节点内 HBM 或 DRAM 扩容（数字为厂商规格口径、无第三方评测与写 IOPS 数据、评测样品 2026 年底交付）；按加速器发起 I/O 分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "155916e55ef052afb120e3fe",
+          "issue_date": "2026-10-12",
+          "source_urls": [
+            "https://developer.nvidia.com/blog/expanding-ai-storage-access-with-nvidia-cuobject-and-the-nvidia-scada-server-sdk"
+          ],
+          "reason": "2026-10-12 已发布日报收录：NVIDIA 宣布 cuObject 库 GA，GPU 经 RDMA 直连文件与对象存储、绕过服务器 CPU 内存转发，同时发布 SCADA Server SDK，xio-sig 纳入 cuObject 扩展，IBM 已演示 Storage Scale 原型 server（吞吐、时延与 CPU 利用率收益均为官方定性声明、无基准数字与基线）；按加速器发起 I/O 分支记录产品化信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "98cb17ffbcfd13c8f4e58ea4",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.24328"
+          ],
+          "reason": "SigmaTrace面向CPU与GPU发起的RDMA通信提供库无关观测能力并公开源代码，以SC26作者接受稿形式发布；可见证据不含任何开销、时延或IOPS数字，也无法判断是否覆盖NVMe-oF等RDMA存储访问路径，只能作为GPU发起I/O实验的候选测量工具跟踪。"
+        },
+        {
+          "item_id": "fcc0c18d8d6e0695d8d52b2d",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://www.hotstorage.org/2026/program.html"
+          ],
+          "reason": "据发现摘要，HotStorage 2026有一张海报提出把GPU发起的存储I/O推向1亿IOPS；可见证据只有会议程序页且未见该海报条目，1亿IOPS是标题目标值而非实测，无基线与条件，列为观察项、取得原文后再核对（与BaM、GIDS同类跟踪清单）。"
+        },
+        {
+          "item_id": "7185271b4bf979dfc1fcc43c",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.06622"
+          ],
+          "reason": "arXiv预印本2610.06622提出以GPU发起方式处理离散模拟分岔中的低延迟请求与稠密耦合流式传输；证据包只抓到题录页，发现摘要提及的DOCA GPUNetIO与GPU工作队列设计均未经原文核实，可见信息不含存储、NVMe或持久化访问，暂不纳入存储路径观察清单，待摘要或全文出现再确认。"
+        }
+      ],
+      "open_questions": [],
+      "evidence_item_ids": [
+        "30d45b2e7f98cfb8329a6b56",
+        "6d2d783dbbd72017f98515e0",
+        "20fb8a6279b3bbd998425ffa",
+        "3d79b03c1e8162d381969a4d",
+        "9eaeb8c9af21d31b8c60dfdd",
+        "ea689bb652526e0e8a1731e6",
+        "155916e55ef052afb120e3fe",
+        "98cb17ffbcfd13c8f4e58ea4",
+        "fcc0c18d8d6e0695d8d52b2d",
+        "7185271b4bf979dfc1fcc43c"
+      ],
+      "source_urls": [
+        "https://blogs.nvidia.com/blog/ai-storage-fms",
+        "https://graidtech.com/post/100-million-iops-for-gpu-initiated-io",
+        "https://www.h3platform.com/blog-detail/81",
+        "https://www.ddn.com/press-releases/ddn-and-nvidia-collaborate-to-advance-gpu-initiated-data-access-for-next-generation-ai",
+        "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-2.html",
+        "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-1.html",
+        "https://developer.nvidia.com/blog/expanding-ai-storage-access-with-nvidia-cuobject-and-the-nvidia-scada-server-sdk",
+        "https://arxiv.org/abs/2610.24328",
+        "https://www.hotstorage.org/2026/program.html",
+        "https://arxiv.org/abs/2610.06622"
+      ]
+    },
+    {
+      "branch_id": "accelerator_storage_stack",
+      "name": "加速器存储栈",
+      "direction_ids": [
+        "accelerator_storage_stack"
+      ],
+      "status": "emerging",
+      "stages": [],
+      "evidence_timeline": [
+        {
+          "item_id": "dda95f5f23dfe81db0904c32",
+          "issue_date": "2026-09-04",
+          "source_urls": [
+            "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide"
+          ],
+          "reason": "2026-09-04 已发布日报收录：MinIO 发布三层 GPU 存储栈参考架构，MemKV 层经端到端 RDMA 在显存与 NVMe 间移动 KV、无 CPU 数据路径（无量化基准、微秒时延为厂商宣称）；当前仅记录其出现，不据此强行划分阶段。"
+        },
+        {
+          "item_id": "9492668fe785e6a4c535f9bb",
+          "issue_date": "2026-09-30",
+          "source_urls": [
+            "https://github.com/NVIDIA/gds-nvidia-fs/releases/tag/v2.30.2"
+          ],
+          "reason": "2026-09-30 已发布日报收录：NVIDIA 开源仓库发布 GPUDirect Storage 内核驱动 nvidia-fs v2.30.2，维护存储到 GPU 显存直接 DMA 路径的内核态基石（发布页正文未渲染出变更明细，仅版本身份可证、仓库 386 星 72 派生）；按加速器存储栈分支记录版本信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "6b1b36b87ef9d28a4e47b854",
+          "issue_date": "2026-10-18",
+          "source_urls": [
+            "https://docs.nvidia.com/gpudirect-storage/release-notes/index.html"
+          ],
+          "reason": "2026-10-18 已发布日报收录：GDS为GPU显存与存储建立DMA直连路径,v1.19线侧重工程可用性:新增分散聚集cuFile API、POSIX回退、稀疏文件读优化(默认对16 KiB及以上的读启用)与NVMe RAID1/10支持,直连路径由cuFile库与nvidia-fs.ko驱动实现并保留兼容模式,v1.19.1新增VDURA PanFS支持并修复缺陷;文档没有任何带基线的带宽、时延或CPU占用数字,收益均为定性声明,NVMe P2PDMA不支持RAID0和多路径、Stream API不支持CUDA graphs；按加速器存储栈分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "6854df1a9e549ad596be6d59",
+          "issue_date": "2026-10-23",
+          "source_urls": [
+            "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00"
+          ],
+          "reason": "KvikIO v26.10.00修复libcurl multi-poll远程I/O后端的重试缺陷与死锁，新增GPU侧device buffer支持、运行时可调的reactor数与请求上限以及读写统计与诊断计数器；发布说明不附任何量化评测，也不涉及cuFile/GDS本地快路径，属GPU生态远程I/O栈的成熟度信号。"
+        },
+        {
+          "item_id": "ada8f3547af65d6b8dfc29be",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.30868v2",
+            "https://arxiv.org/abs/2610.30868"
+          ],
+          "reason": "uGDS把NVMe命令构建、PRP、BAR0门铃直写与完成队列轮询全部移入用户空间库，内核驱动只做一次性特权初始化，代价是设备脱离内核栈、仅剩裸块设备语义；A100上4KiB同步写时延较GDS低84.1%，LMCache命中时TTFT降62.7%，并发256下KV吞吐50.2对约19 kTokens/s（每句柄仅一块本地NVMe，错误恢复与隔离证据薄弱，12.12倍批量增益含GDS首批惩罚，尚属原型）。"
+        },
+        {
+          "item_id": "f22e0fdf7a5a4d877a23ca9b",
+          "issue_date": "2026-10-27",
+          "source_urls": [
+            "https://semiconductor.samsung.com/events/ocp-2026"
+          ],
+          "reason": "三星在OCP 2026演示开源AiSIO：一个公共API同时暴露GPU发起、P2P与CPU发起三类I/O，整合Linux内核上游工作与主流加速器框架；厂商页面宣称借OpenDS达到100M IOPS存储饱和、LLM冷启动加载最快10倍，两项数字均无基线、硬件与I/O大小条件，控制路径与数据复制次数不明，记为未验证声称（全部证据为一份展会演示页）。"
+        }
+      ],
+      "open_questions": [],
+      "evidence_item_ids": [
+        "dda95f5f23dfe81db0904c32",
+        "9492668fe785e6a4c535f9bb",
+        "6b1b36b87ef9d28a4e47b854",
+        "6854df1a9e549ad596be6d59",
+        "ada8f3547af65d6b8dfc29be",
+        "f22e0fdf7a5a4d877a23ca9b"
+      ],
+      "source_urls": [
+        "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide",
+        "https://github.com/NVIDIA/gds-nvidia-fs/releases/tag/v2.30.2",
+        "https://docs.nvidia.com/gpudirect-storage/release-notes/index.html",
+        "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00",
+        "https://arxiv.org/abs/2610.30868v2",
+        "https://arxiv.org/abs/2610.30868",
+        "https://semiconductor.samsung.com/events/ocp-2026"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "version": 1,
+  "change_type": "no_material_change",
+  "history": [
+    {
+      "version": 1,
+      "issue_date": "2026-09-04",
+      "change_type": "material_change",
+      "path": "knowledge/history/roadmaps/accelerator_io_datapath/v1.json"
+    }
+  ],
+  "change_log": [
+    {
+      "event_id": "roadmap_change_eb5815c06558e030036a",
+      "issue_date": "2026-09-04",
+      "change_type": "material_change",
+      "version": 1,
+      "summary": "本期证据改变了分支、阶段、状态或开放问题。",
+      "evidence_item_ids": [
+        "30d45b2e7f98cfb8329a6b56",
+        "6d2d783dbbd72017f98515e0",
+        "dda95f5f23dfe81db0904c32"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_4b0a36b8b32390f337ab",
+      "issue_date": "2026-09-06",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "20fb8a6279b3bbd998425ffa"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_900b1fb363910f8afd35",
+      "issue_date": "2026-09-20",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "3d79b03c1e8162d381969a4d"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_6c8f6c6f2af608a4958a",
+      "issue_date": "2026-09-28",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "9eaeb8c9af21d31b8c60dfdd",
+        "ea689bb652526e0e8a1731e6"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_bedb7827e54444c5de54",
+      "issue_date": "2026-09-30",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "9492668fe785e6a4c535f9bb"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_3a5ce73d46fff9ed77c6",
+      "issue_date": "2026-10-12",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "155916e55ef052afb120e3fe"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_4a118d8d40c2a9591386",
+      "issue_date": "2026-10-18",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "6b1b36b87ef9d28a4e47b854"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_dfaac1ee59572580c28f",
+      "issue_date": "2026-10-23",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "6854df1a9e549ad596be6d59",
+        "98cb17ffbcfd13c8f4e58ea4"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_405899fa50bf518ea2c1",
+      "issue_date": "2026-10-27",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "7185271b4bf979dfc1fcc43c",
+        "ada8f3547af65d6b8dfc29be",
+        "f22e0fdf7a5a4d877a23ca9b",
+        "fcc0c18d8d6e0695d8d52b2d"
+      ]
+    }
+  ]
+}
