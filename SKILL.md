@@ -137,7 +137,7 @@ python briefing.py send --confirm-send
 
 发送成功后，CLI会自动把该run归档到`archive/issues/<date>/`，只提交归档产物并推送`main`，由GitHub Pages workflow完成部署。若传输成功但发布因网络或工作树状态失败，可在修复后运行`python briefing.py publish-archive --run <run_id>`重试；自动流程不会把邮件发送结果伪装成已发布。
 
-没有`--confirm-send`时必须拒绝发送。使用默认`agently-cli`时，第一次带`--confirm-send`的调用只请求发送确认令牌并停止；将摘要展示给用户，等待用户确认后，再次运行同一命令完成发送。令牌保存在当前运行目录的被忽略文件中，不能提交到仓库。
+没有`--confirm-send`时必须拒绝发送。使用默认`agently-cli`时，第一次带`--confirm-send`的调用拿到发送确认令牌与摘要后，会先做确定性信封校验：摘要主题与本期生成主题一致、收件人与解析配置一致、附件数为1，且收件人与上一期已发送收件人一致。全部一致时，同一次调用内自动携令牌完成发送（校验记录写入运行目录被忽略的`agently-send-verified.json`），用户在预览页后的一次确认即为全部人工确认。任一不符、`config/settings.yaml`的`send.auto_confirm_envelope`关闭或 agently 再次要求确认时，命令停止并打印摘要与判错原因，回退为把摘要展示给用户、等待确认后重跑同一命令的两步流程。令牌保存在当前运行目录的被忽略文件中，不能提交到仓库。
 
 如果需要使用SMTP备用后端，先设置`EMAIL_BACKEND=smtp`，再按同一人工确认和`--confirm-send`门禁发送。
 

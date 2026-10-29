@@ -4,7 +4,7 @@ The production briefing delivery path has one transport owner: Agently CLI.
 
 A completed illustrated issue is sendable only when every reader-facing `<img>` uses a public HTTPS URL. Generated explanatory images are written under `published-assets/<run_id>/`, committed and pushed, and represented in the illustration manifest by a commit-SHA-pinned `raw.githubusercontent.com` URL. Local filesystem paths and branch-name URLs are not publication artifacts.
 
-The exact final `email-illustrated.html` is passed to Agently both as `--body-file` and as `--attachment`. The same two-step confirmation-token flow remains in effect. Direct SMTP is retired from the active runtime so body rendering, attachments, confirmation, and sent-history handoff cannot diverge across transport implementations.
+The exact final `email-illustrated.html` is passed to Agently both as `--body-file` and as `--attachment`. The confirmation-token protocol is envelope-verified: after the first `--confirm-send` call obtains the token summary, the transport deterministically compares it against the submitted envelope (subject, recipients, attachment count) and the last SENT issue's recipients; when everything matches, the send auto-completes inside the same invocation and an audit record is written to the run directory's ignored `agently-send-verified.json`. Any mismatch, a disabled `send.auto_confirm_envelope`, or a renewed confirmation request stops with the summary plus the failed checks, falling back to the manual rerun-the-same-command flow. Direct SMTP is retired from the active runtime so body rendering, attachments, confirmation, and sent-history handoff cannot diverge across transport implementations.
 
 ## Atomicity boundary
 

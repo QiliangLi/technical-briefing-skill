@@ -11,7 +11,7 @@ from briefing_skill.agently_transport import (
 )
 from briefing_skill.config import ConfigBundle
 from briefing_skill.db import Database
-from briefing_skill.emailer import EmailService
+from briefing_skill.emailer import AgentlyConfirmationRequired, EmailService
 
 
 PINNED_URL = (
@@ -153,3 +153,178 @@ def test_publication_input_moves_assets_to_tracked_publication_directory():
     assert policy["required"] is True
     assert "<40-char-commit-sha>" in policy["preferred_url_format"]
     assert "<release-tag>" in policy["backup_url_format"]
+
+
+def _autocompletion_fixture(tmp_path, settings=None):
+    db = Database(tmp_path / "workspace" / "briefing.sqlite")
+    db.init()
+    service = EmailService(
+        tmp_path,
+        ConfigBundle(topics={}, sources={}, scoring={}, settings=settings or {}, email={}),
+        db,
+    )
+    run_id = "run-1"
+    body = tmp_path / "workspace" / "runs" / run_id / "email-illustrated.html"
+    body.parent.mkdir(parents=True)
+    body.write_text("<html><body>ok</body></html>", encoding="utf-8")
+    issue = {
+        "id": "issue-1",
+        "run_id": run_id,
+        "subject": "Brief",
+        "email_path": str(body.relative_to(tmp_path)),
+    }
+    return service, issue, run_id
+
+
+def test_agently_send_autocompletes_when_envelope_matches(tmp_path, monkeypatch):
+    service, issue, run_id = _autocompletion_fixture(tmp_path)
+    monkeypatch.setenv("EMAIL_TO", "one@example.com")
+    calls = []
+    recorded = []
+
+    def fake_cli(args, config):
+        calls.append(args)
+        if len(calls) == 1:
+            return {
+                "data": {
+                    "confirmation_required": True,
+                    "confirmation_token": "ctk_ok",
+                    "summary": {
+                        "subject": "Brief",
+                        "to": ["one@example.com"],
+                        "attachment_count": 1,
+                    },
+                }
+            }
+        return {"data": {"message_id": "msg-ok"}}
+
+    monkeypatch.setattr(service, "_run_agently_cli", fake_cli)
+    monkeypatch.setattr(
+        service,
+        "_record_sent",
+        lambda issue, sent_at, recipients, message_id: recorded.append(
+            (issue["id"], recipients, message_id)
+        ),
+    )
+
+    agently_send(service, issue, run_id)
+
+    assert len(calls) == 2
+    assert "--confirmation-token" not in calls[0]
+    assert calls[1][calls[1].index("--confirmation-token") + 1] == "ctk_ok"
+    assert recorded == [("issue-1", "one@example.com", "msg-ok")]
+    verified = tmp_path / "workspace" / "runs" / run_id / "agently-send-verified.json"
+    assert verified.exists()
+    assert not (tmp_path / "workspace" / "runs" / run_id / "agently-send-pending.json").exists()
+
+
+def test_agently_send_autocompletes_exit8_path(tmp_path, monkeypatch):
+    from briefing_skill.emailer import AgentlyCLIError
+
+    service, issue, run_id = _autocompletion_fixture(tmp_path)
+    monkeypatch.setenv("EMAIL_TO", "one@example.com")
+    calls = []
+
+    def fake_cli(args, config):
+        calls.append(args)
+        if len(calls) == 1:
+            raise AgentlyCLIError(
+                8,
+                "confirmation required",
+                {
+                    "data": {
+                        "confirmation_token": "ctk_exit8",
+                        "summary": {"subject": "Brief", "to": ["one@example.com"]},
+                    }
+                },
+            )
+        return {"data": {"message_id": "msg-exit8"}}
+
+    monkeypatch.setattr(service, "_run_agently_cli", fake_cli)
+    monkeypatch.setattr(service, "_record_sent", lambda *a, **k: None)
+
+    agently_send(service, issue, run_id)
+
+    assert len(calls) == 2
+    assert calls[1][calls[1].index("--confirmation-token") + 1] == "ctk_exit8"
+
+
+def test_agently_send_stops_when_recipients_drift_from_last_sent(tmp_path, monkeypatch):
+    service, issue, run_id = _autocompletion_fixture(tmp_path)
+    monkeypatch.setenv("EMAIL_TO", "one@example.com")
+    service.db.execute(
+        "INSERT INTO send_history(issue_id, sent_at, recipients, message_id, status) "
+        "VALUES ('issue-0', '2026-10-27T00:00:00', 'someone-else@example.com', 'm', 'SENT')"
+    )
+    calls = []
+
+    def fake_cli(args, config):
+        calls.append(args)
+        return {
+            "data": {
+                "confirmation_required": True,
+                "confirmation_token": "ctk_drift",
+                "summary": {"subject": "Brief", "to": ["one@example.com"], "attachment_count": 1},
+            }
+        }
+
+    monkeypatch.setattr(service, "_run_agently_cli", fake_cli)
+
+    with pytest.raises(AgentlyConfirmationRequired) as excinfo:
+        agently_send(service, issue, run_id)
+
+    assert len(calls) == 1
+    assert any("differ from last SENT" in line for line in excinfo.value.verification_errors)
+
+
+def test_agently_send_stops_on_envelope_mismatch(tmp_path, monkeypatch):
+    service, issue, run_id = _autocompletion_fixture(tmp_path)
+    monkeypatch.setenv("EMAIL_TO", "one@example.com")
+    calls = []
+
+    def fake_cli(args, config):
+        calls.append(args)
+        return {
+            "data": {
+                "confirmation_required": True,
+                "confirmation_token": "ctk_bad",
+                "summary": {"subject": "Brief", "to": ["one@example.com"], "attachment_count": 2},
+            }
+        }
+
+    monkeypatch.setattr(service, "_run_agently_cli", fake_cli)
+
+    with pytest.raises(AgentlyConfirmationRequired) as excinfo:
+        agently_send(service, issue, run_id)
+
+    assert len(calls) == 1
+    assert any("attachment_count" in line for line in excinfo.value.verification_errors)
+    # A stopped send keeps the pending token file for the manual second call.
+    pending = tmp_path / "workspace" / "runs" / run_id / "agently-send-pending.json"
+    assert pending.exists()
+
+
+def test_agently_send_respects_disabled_auto_confirm(tmp_path, monkeypatch):
+    service, issue, run_id = _autocompletion_fixture(
+        tmp_path, settings={"send": {"auto_confirm_envelope": False}}
+    )
+    monkeypatch.setenv("EMAIL_TO", "one@example.com")
+    calls = []
+
+    def fake_cli(args, config):
+        calls.append(args)
+        return {
+            "data": {
+                "confirmation_required": True,
+                "confirmation_token": "ctk_off",
+                "summary": {"subject": "Brief", "to": ["one@example.com"], "attachment_count": 1},
+            }
+        }
+
+    monkeypatch.setattr(service, "_run_agently_cli", fake_cli)
+
+    with pytest.raises(AgentlyConfirmationRequired) as excinfo:
+        agently_send(service, issue, run_id)
+
+    assert len(calls) == 1
+    assert excinfo.value.verification_errors == []

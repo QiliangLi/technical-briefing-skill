@@ -154,6 +154,90 @@ def _write_plain_fallback_body(service, run_id: str, issue: dict[str, Any]) -> s
     return path.relative_to(service.root.resolve()).as_posix()
 
 
+def _envelope_auto_complete_allowed(service) -> bool:
+    send_config = (service.config.settings.get("send") or {}) if isinstance(service.config.settings, dict) else {}
+    return bool(send_config.get("auto_confirm_envelope", True))
+
+
+def _autocomplete_or_raise(
+    service,
+    *,
+    config,
+    args: list[str],
+    token: str,
+    summary: object,
+    subject: str,
+    pending_path: Path,
+    run_id: str,
+    cause: BaseException | None = None,
+) -> dict[str, Any]:
+    """Complete the two-step agently confirmation inside the same invocation.
+
+    Only when the token summary matches the submitted envelope exactly (and the
+    recipients match the last SENT issue) does the send auto-complete; anything
+    else stops for human review exactly like the manual second call would.
+    """
+
+    from .emailer import AgentlyConfirmationRequired  # lazy: avoid bootstrap import cycles
+
+    def stop(verification_errors: list[str] | None = None) -> AgentlyConfirmationRequired:
+        return AgentlyConfirmationRequired(summary, verification_errors=verification_errors)
+
+    if not _envelope_auto_complete_allowed(service):
+        raise stop()
+    errors = service._verify_send_envelope(
+        summary,
+        subject=subject,
+        recipients=config.recipients,
+        cc=config.cc,
+        bcc=config.bcc,
+    )
+    if not errors:
+        previous = service._previous_sent_recipients()
+        if previous and set(previous) != set(config.recipients):
+            errors.append(
+                f"recipients {sorted(config.recipients)} differ from last SENT issue "
+                f"recipients {sorted(previous)}"
+            )
+    if errors:
+        raise stop(errors)
+    write_json(
+        service.root / "workspace" / "runs" / run_id / "agently-send-verified.json",
+        {
+            "verified_at": now_iso(),
+            "subject": subject,
+            "to": list(config.recipients),
+            "cc": list(config.cc),
+            "bcc": list(config.bcc),
+            "summary": summary,
+        },
+    )
+    retry_args = list(args) + ["--confirmation-token", token]
+    try:
+        payload = service._run_agently_cli(retry_args, config)
+    except AgentlyCLIError as exc:
+        text = str(getattr(exc, "stderr", "") or "") + str(exc)
+        if "security filtering" in text:
+            pending = read_json(pending_path, {}) if pending_path.exists() else {}
+            write_json(
+                pending_path,
+                {
+                    "request_key": pending.get("request_key") if isinstance(pending, dict) else None,
+                    "body_fallback": True,
+                    "summary": summary,
+                    "created_at": now_iso(),
+                },
+            )
+            raise RuntimeError(
+                "agently 网关以安全过滤拒绝了 HTML 正文；已记录降级标记，"
+                "请重跑 `python briefing.py send --confirm-send` 以纯文本正文+HTML附件重发"
+            ) from exc
+        raise stop() from (exc if cause is None else cause)
+    if service._payload_value(payload, "confirmation_required", "confirmationRequired"):
+        raise stop()
+    return payload
+
+
 def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
     """Send the exact final HTML as both body and attachment through agently-cli."""
 
@@ -244,8 +328,18 @@ def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
                 pending_path.chmod(0o600)
             except OSError:
                 pass
-            raise AgentlyConfirmationRequired(summary) from exc
-        if "security filtering" in str(getattr(exc, "stderr", "") or "") + str(exc):
+            payload = _autocomplete_or_raise(
+                service,
+                config=config,
+                args=args,
+                token=str(candidate),
+                summary=summary,
+                subject=subject,
+                pending_path=pending_path,
+                run_id=run_id,
+                cause=exc,
+            )
+        elif "security filtering" in str(getattr(exc, "stderr", "") or "") + str(exc):
             # The gateway rejected the rich HTML body itself. Persist the
             # degradation marker so the next attempt sends the same content
             # with a plain-text body and the full HTML attached, exactly the
@@ -264,7 +358,8 @@ def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
                 "agently 网关以安全过滤拒绝了 HTML 正文；已记录降级标记，"
                 "请重跑 `python briefing.py send --confirm-send` 以纯文本正文+HTML附件重发"
             ) from exc
-        raise
+        else:
+            raise
 
     if service._payload_value(payload, "confirmation_required", "confirmationRequired"):
         candidate = service._payload_value(payload, "confirmation_token", "confirmationToken")
@@ -280,7 +375,16 @@ def agently_send(service, issue: dict[str, Any], run_id: str) -> str:
                     "created_at": now_iso(),
                 },
             )
-            raise AgentlyConfirmationRequired(summary)
+            payload = _autocomplete_or_raise(
+                service,
+                config=config,
+                args=args,
+                token=str(candidate),
+                summary=summary,
+                subject=subject,
+                pending_path=pending_path,
+                run_id=run_id,
+            )
 
     pending_path.unlink(missing_ok=True)
     sent_at = now_iso()

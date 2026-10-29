@@ -45,12 +45,17 @@ class AgentlyConfirmationRequired(RuntimeError):
 
     exit_code = 8
 
-    def __init__(self, summary: object):
+    def __init__(self, summary: object, verification_errors: list[str] | None = None):
         self.summary = summary
+        self.verification_errors = verification_errors or []
+        detail = ""
+        if self.verification_errors:
+            listed = "; ".join(self.verification_errors)
+            detail = f" Envelope verification failed, human review required: {listed}."
         super().__init__(
             "agently-cli requires a second confirmation call. Review this summary, "
             "then rerun `python briefing.py send --confirm-send`: "
-            f"{json.dumps(summary, ensure_ascii=False)}"
+            f"{json.dumps(summary, ensure_ascii=False)}.{detail}"
         )
 
 
@@ -647,6 +652,57 @@ class EmailService:
             if value:
                 return str(value)
         return "agently-cli"
+
+    @staticmethod
+    def _verify_send_envelope(
+        summary: object,
+        *,
+        subject: str,
+        recipients: tuple[str, ...],
+        cc: tuple[str, ...],
+        bcc: tuple[str, ...],
+    ) -> list[str]:
+        """Compare the agently-cli token summary against the envelope we submitted.
+
+        Fields the summary omits are skipped (nothing independent to compare);
+        a field that is present but disagrees with the submission is an error,
+        because it means agently prepared a different draft than this run's.
+        """
+
+        if not isinstance(summary, dict):
+            return ["agently-cli returned no machine-readable summary"]
+        errors: list[str] = []
+        if "subject" in summary and str(summary.get("subject")) != subject:
+            errors.append(
+                f"summary subject {summary.get('subject')!r} != submitted {subject!r}"
+            )
+        for field, expected in (("to", recipients), ("cc", cc), ("bcc", bcc)):
+            value = summary.get(field)
+            if value is None:
+                continue
+            if not isinstance(value, list):
+                errors.append(f"summary {field} is not a list: {value!r}")
+                continue
+            if {str(item) for item in value} != set(expected):
+                errors.append(
+                    f"summary {field} {sorted(str(item) for item in value)} != "
+                    f"submitted {sorted(expected)}"
+                )
+        count = summary.get("attachment_count", summary.get("attachmentCount"))
+        if count is not None and str(count) != "1":
+            errors.append(f"summary attachment_count {count!r} != 1")
+        return errors
+
+    def _previous_sent_recipients(self) -> list[str]:
+        """Recipients of the most recent SENT issue, as a drift reference."""
+
+        row = self.db.fetchone(
+            "SELECT recipients FROM send_history WHERE status='SENT' "
+            "ORDER BY sent_at DESC, rowid DESC LIMIT 1"
+        )
+        if not row or not row.get("recipients"):
+            return []
+        return [part.strip() for part in str(row["recipients"]).split(",") if part.strip()]
 
     def _agently_send(self, issue: dict[str, Any], run_id: str) -> str:
         config = resolve_agently_config()
