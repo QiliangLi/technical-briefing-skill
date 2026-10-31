@@ -1,6 +1,6 @@
 /* zcode-workflow
 description: 编排一期技术 briefing 的完整流水线：采集/续跑 → 逐个执行 Agent 任务卡（每任务全新子代理上下文）→
-  渲染与发布前校验，终止于 READY_TO_SEND 并发布邮件预览与校验报告。运行中提供任务看板。不发送、不归档；发送确认保留在主会话。
+  渲染与发布前校验，终止于 READY_TO_SEND 并发布邮件预览与校验报告。运行中提供阶段进度看板与进度总览。不发送、不归档；发送确认保留在主会话。
 whenToUse: 在 ZCode 宿主运行或续跑一期 briefing 时使用；替代 SKILL.md 手动任务循环，避免主会话上下文膨胀。
 args:
   mode:
@@ -41,16 +41,33 @@ interface AdvanceResult {
 }
 
 interface BoardItem {
-  /** 波次在看板上的稳定标识（wave-N） */
+  /** 卡片在看板上的稳定标识（阶段名，或进度总览的固定键 now） */
   key: string;
-  /** 卡片所在列：执行中 / 修复中 / 完成 / 修复后完成 */
+  /** 卡片所在列：执行中 / 完成 */
   status: string;
-  /** 卡片标题，如“第 3 波·4 个任务” */
+  /** 卡片标题 */
   title: string;
-  /** 波内各任务的功能·对象标签串 */
-  tasks_text: string;
+  /** 阶段卡：该阶段最近一批任务的功能·对象标签串；无则整个字段省略 */
+  tasks_text?: string;
   /** 一行补充说明；无则整个字段省略（undefined 只允许出现在可选属性上） */
   note?: string;
+}
+
+/** 一个流水线阶段在看板上的累计状态 */
+interface StageState {
+  /** 该阶段第一次进入派发的批次号 */
+  firstWave: number;
+  /** 出现在派发批中的次数 */
+  batches: number;
+  /** 最近一批的任务标签（对象部分），显示在卡面 */
+  lastBatch: string;
+  /** 该阶段 INVALID 修复子代理派发次数 */
+  repaired: number;
+  /** 是否仍在执行（出现在派发批或待办列表中） */
+  active: boolean;
+  /** 上次上卡的列与备注，用于跳过无变化的重复上卡 */
+  reportedStatus: string;
+  reportedNote: string;
 }
 
 interface InvalidRow {
@@ -176,7 +193,7 @@ const mode: string = typeof args.mode === "string" && args.mode === "run" ? "run
 const rawK = typeof args.concurrency === "number" ? args.concurrency : 6;
 const K = Math.max(1, Math.min(6, Math.floor(rawK) || 6));
 
-// 功能直述命名：任务类型 → 用户一眼能懂的功能标签。名字按"功能·对象·第N轮"组成，
+// 功能直述命名：任务类型 → 用户一眼能懂的功能标签。名字按"功能·对象·第N波"组成，
 // 对象取自任务 input.json 的人读字段；各功能读什么/产出什么的对照表见 docs/operations/zcode-workflow-run.md。
 const ROLE: Record<string, string> = {
   agent_web_search: "开放搜索",
@@ -192,6 +209,11 @@ const ROLE: Record<string, string> = {
   reader_projection: "读者润稿",
   illustrated_publication: "生成插画",
 };
+
+// 阶段 = 功能标签；未知任务类型归入"执行编辑"兜底阶段
+function stageOf(taskType: string): string {
+  return ROLE[taskType] || "执行编辑";
+}
 
 function rec(v: unknown): Record<string, unknown> {
   return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
@@ -267,18 +289,27 @@ function uniqueName(base: string): string {
   return name;
 }
 
-// 任务看板：每波一张卡片（受单次运行 256 条 report 上限约束，不按任务拆卡），
-// 任务级"谁在做什么"由命名子代理在运行流中承担
-artifact.board("tasks", {
-  title: "任务波次看板",
+// 阶段进度看板：每个流水线阶段一张卡，在 执行中/完成 间移动（阶段判定只用每波已有的 tasks list 输出）；
+// 任务级"谁在做什么"由命名子代理在运行流中承担。report 上限 65,536 条/运行，阶段卡按列+备注去重后每期仅几十条。
+artifact.board("stages", {
+  title: "阶段进度看板",
   key: "key",
   status: "status",
-  columns: ["执行中", "修复中", "完成", "修复后完成"],
+  columns: ["执行中", "完成"],
   cardTitle: "title",
   detail: [
-    { field: "tasks_text", label: "波内任务" },
-    { field: "note", label: "备注" },
+    { field: "tasks_text", label: "最近一批" },
+    { field: "note", label: "进度" },
   ],
+});
+
+// 进度总览：单张固定键的卡，每批原位更新，回答"现在到哪一步、完成了多少、还剩多少"
+artifact.board("progress", {
+  title: "进度总览",
+  key: "key",
+  status: "status",
+  columns: ["执行中", "完成"],
+  cardTitle: "title",
 });
 
 phase("初始化 briefing 运行");
@@ -307,12 +338,53 @@ const notes: Finding[] = [];
 const invalidBudget = new Map<string, number>();
 let waves = 0;
 let queueEmpty = false;
+// 进度累计：advance 的 applied 只在任务进入终态 APPLIED 时计数（见 pipeline.py advance），
+// 跨次求和即累计完成数，INVALID 修复后重应用不会重复计数；总数 = 完成 + 当前待办，随补充通道新增任务自然增长。
+let appliedTotal = initAdv.applied;
+let lastPending = initAdv.pending;
+let repairedTotal = 0;
+const stageStates = new Map<string, StageState>();
+
+function reportStage(name: string): void {
+  const st = stageStates.get(name);
+  if (!st) {
+    return;
+  }
+  const note = `第 ${st.firstWave} 批起·累计 ${st.batches} 批${st.repaired > 0 ? `·修复 ${st.repaired} 个` : ""}`;
+  const status = st.active ? "执行中" : "完成";
+  if (status === st.reportedStatus && note === st.reportedNote) {
+    return;
+  }
+  const card: BoardItem = { key: name, status, title: name, tasks_text: st.lastBatch, note };
+  report(card, "stages");
+  st.reportedStatus = status;
+  st.reportedNote = note;
+}
+
+function reportProgress(stageNow: string): void {
+  const total = appliedTotal + lastPending;
+  const suffix = repairedTotal > 0 ? `｜INVALID 修复 ${repairedTotal} 个` : "";
+  const card: BoardItem = {
+    key: "now",
+    status: "执行中",
+    title: `当前：${stageNow}·第 ${waves} 批｜完成 ${appliedTotal}/${total}｜待办 ${lastPending}${suffix}`,
+  };
+  report(card, "progress");
+}
 
 phase("按波次并行执行任务");
 while (waves < MAX_WAVES) {
   const listRun = await world.run(".venv/bin/python3", ["briefing.py", "tasks", "list", "--status", "PENDING", "--run", "latest"]);
   const rows = parsePendingRows(listRun.stdout);
   if (rows.length === 0) {
+    // 队列清空：全部仍在执行的阶段卡收口为完成，进度总览定格
+    for (const [name, st] of stageStates) {
+      if (st.active) {
+        st.active = false;
+        reportStage(name);
+      }
+    }
+    report({ key: "now", status: "完成", title: `任务全部完成｜共应用 ${appliedTotal} 个任务·${waves} 批` }, "progress");
     queueEmpty = true;
     if (!RENDER_STAGES.includes(stage)) {
       notes.push({
@@ -326,6 +398,14 @@ while (waves < MAX_WAVES) {
     break;
   }
   waves += 1;
+  // 阶段收口：已开卡且不再出现在待办列表的阶段转完成（INVALID 重开会使其自然回到执行中）
+  const presentStages = new Set(rows.map((row) => stageOf(row.task_type)));
+  for (const [name, st] of stageStates) {
+    if (st.active && !presentStages.has(name)) {
+      st.active = false;
+      reportStage(name);
+    }
+  }
   // 波 = PENDING 前缀（与串行队列同序，不跳优先级）；逐任务取 canonical 执行卡，取卡失败者本波跳过、仍为 PENDING
   const waveRows = rows.slice(0, K);
   const cardRuns = await Promise.all(
@@ -340,38 +420,61 @@ while (waves < MAX_WAVES) {
     if (cardRun.exitCode === 0 && cardRun.stdout.trim().length > 0) {
       wave.push({ row, instructions: cardRun.stdout.trim() });
     } else {
-      log(`第 ${waves} 波：任务 ${row.task_id} 取卡失败，本波跳过（仍为 PENDING）`);
+      log(`第 ${waves} 批：任务 ${row.task_id} 取卡失败，本批跳过（仍为待办）`);
     }
   }
   if (wave.length === 0) {
     notes.push({
       where: "tasks card",
-      what: `第 ${waves} 波全部取卡失败，停止等待人工介入`,
+      what: `第 ${waves} 批全部取卡失败，停止等待人工介入`,
       evidence: ((cardRuns[0] && cardRuns[0].stderr) || (cardRuns[0] && cardRuns[0].stdout) || "").slice(0, 400),
       status: "unconfirmed",
       severity: "high",
     });
     break;
   }
-  const waveKey = `wave-${waves}`;
   const labels = await Promise.all(wave.map((t) => cardLabel(t.instructions, t.row.task_type)));
-  const waveTitle = `第 ${waves} 波·${wave.length} 个任务`;
   const tasksText = wave
     .map((t, i) => `${labels[i].role}${labels[i].subject ? "·" + labels[i].subject : ""}`)
     .join("；");
-  log(`第 ${waves} 波（并行 ${wave.length}/${rows.length} 待办）：${tasksText}`);
-  const started: BoardItem = { key: waveKey, status: "执行中", title: waveTitle, tasks_text: tasksText };
-  report(started, "tasks");
-  const waveNames = labels.map((label) =>
-    uniqueName(label.subject ? `${label.role}·${label.subject}·第${waves}波` : `${label.role}·第${waves}波`),
-  );
+  const waveStage = stageOf(wave[0].row.task_type);
+  // 阶段卡：本批标签上卡，note 记累计批次与修复数
+  const batchByStage = new Map<string, string[]>();
+  for (let i = 0; i < wave.length; i += 1) {
+    const s = stageOf(wave[i].row.task_type);
+    const label = labels[i].subject || wave[i].row.task_id.slice(0, 6);
+    const list = batchByStage.get(s) ?? [];
+    list.push(label);
+    batchByStage.set(s, list);
+  }
+  for (const [s, items] of batchByStage) {
+    let st = stageStates.get(s);
+    if (!st) {
+      st = { firstWave: waves, batches: 0, lastBatch: "", repaired: 0, active: true, reportedStatus: "", reportedNote: "" };
+      stageStates.set(s, st);
+    }
+    st.batches += 1;
+    st.lastBatch = items.join("；");
+    st.active = true;
+    reportStage(s);
+  }
+  log(`${waveStage}·第 ${waves} 批（并行 ${wave.length}/${rows.length} 待办）：${tasksText}；已完成 ${appliedTotal}`);
+  // 子代理名在 agent() 调用点内联为模板字面量（保留"·/第/波"字面片段，供运行图解析泳道名）；
+  // 去重后缀由 uniqueName 预计算进插值变量，最终名字与旧脚本逐字节一致（AmendWorkflow 按名匹配缓存）
+  const waveTags = labels.map((label) => {
+    const base = label.subject ? `${label.role}·${label.subject}·第${waves}波` : `${label.role}·第${waves}波`;
+    const unique = uniqueName(base);
+    return { role: label.role, subject: label.subject, suffix: unique === base ? "" : unique.slice(base.length) };
+  });
   // 一波 K 个命名子代理并行；单个失败不拖垮兄弟（allSettled），未写输出的任务仍为 PENDING，下一波重发
   const outcomes = await Promise.allSettled(
-    wave.map((t, i) => agent(waveNames[i]).ask<TaskOutcome>(taskAsk(t.instructions))),
+    wave.map((t, i) => waveTags[i].subject
+      ? agent(`${waveTags[i].role}·${waveTags[i].subject}·第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions))
+      : agent(`${waveTags[i].role}·第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions))),
   );
   const rejected = outcomes.filter((o) => o.status === "rejected").length;
   if (rejected > 0) {
-    log(`第 ${waves} 波 ${rejected} 个任务执行失败（未写输出），下一波将重发`);
+    log(`${waveStage}·第 ${waves} 批 ${rejected} 个任务执行失败（未写输出），下一批将重发`);
   }
   // 阶段切换（如 relevance 收尾触发 fact 重组）或 DB 锁竞争时 advance 可能超过默认 300s；放宽后重试一次
   let advRun;
@@ -391,17 +494,15 @@ while (waves < MAX_WAVES) {
         status: "unconfirmed",
         severity: "high",
       }],
-      verified: [`前 ${Math.max(0, waves - 1)} 波已 advance，第 ${waves} 波 advance 状态未知`],
+      verified: [`前 ${Math.max(0, waves - 1)} 批已 advance，第 ${waves} 批 advance 状态未知`],
       notCovered: ["剩余任务", "渲染与校验"],
     };
     return failReport;
   }
   stage = adv.stage || stage;
-  if (adv.invalid === 0) {
-    const done: BoardItem = { key: waveKey, status: "完成", title: waveTitle, tasks_text: tasksText };
-    if (rejected > 0) done.note = `${rejected} 个任务失败待重发`;
-    report(done, "tasks");
-  }
+  appliedTotal += adv.applied;
+  lastPending = adv.pending;
+  reportProgress(waveStage);
   if (adv.invalid > 0) {
     const listInvalid = await world.run(".venv/bin/python3", ["briefing.py", "tasks", "list", "--status", "INVALID", "--run", "latest"]);
     const invalidRows = parseInvalidList(listInvalid.stdout);
@@ -421,30 +522,45 @@ while (waves < MAX_WAVES) {
           status: "verified",
           severity: "high",
         }],
-        verified: [`前 ${waves} 波任务执行`],
+        verified: [`前 ${waves} 批任务执行`],
         notCovered: ["剩余任务", "渲染与校验"],
       };
       return stopReport;
     }
-    log(`第 ${waves} 波后修复 ${invalidRows.length} 个 INVALID 任务（逐任务并行）`);
-    const repairNames = invalidRows.map((row) => uniqueName(`第${waves}波·修复输出·${row.task_id.slice(0, 8)}`));
+    log(`${waveStage}·第 ${waves} 批后修复 ${invalidRows.length} 个未过校验任务（逐任务并行）`);
+    // 修复子代理名同样内联模板字面量：功能标签取自任务类型，前 6 位 ID 保证跨波唯一
+    const repairTags = invalidRows.map((row) => {
+      const role = ROLE[row.task_type] || "执行编辑";
+      const base = `修复输出·${role}·${row.task_id.slice(0, 6)}`;
+      const unique = uniqueName(base);
+      return { role, id: row.task_id.slice(0, 6), suffix: unique === base ? "" : unique.slice(base.length) };
+    });
+    // 阶段卡记修复数（修复中的任务不属于 PENDING，靠 active=true 防止本波后被误收口）
+    for (const row of invalidRows) {
+      const s = stageOf(row.task_type);
+      const st = stageStates.get(s);
+      if (st) {
+        st.repaired += 1;
+        st.active = true;
+        reportStage(s);
+      }
+    }
+    repairedTotal += invalidRows.length;
     await Promise.allSettled(
-      invalidRows.map((row, i) => agent(repairNames[i]).ask<TaskOutcome>(repairAsk(row))),
+      invalidRows.map((row, i) => agent(`修复输出·${repairTags[i].role}·${repairTags[i].id}${repairTags[i].suffix}`).ask<TaskOutcome>(repairAsk(row))),
     );
     await world.run(".venv/bin/python3", ["briefing.py", "tasks", "reopen-invalid", "--run", "latest"]);
     const reRun = await world.run(".venv/bin/python3", ["briefing.py", "advance", "--run", "latest"], { timeoutMs: 900000 });
     const re = parseTrailingJson(reRun.stdout);
-    if (re) stage = re.stage || stage;
-    const repaired: BoardItem = {
-      key: waveKey,
-      status: re && re.invalid === 0 ? "修复后完成" : "修复中",
-      title: waveTitle,
-      tasks_text: tasksText,
-    };
-    report(repaired, "tasks");
+    if (re) {
+      stage = re.stage || stage;
+      appliedTotal += re.applied;
+      lastPending = re.pending;
+      reportProgress(waveStage);
+    }
     notes.push({
       where: "INVALID 修复",
-      what: `第 ${waves} 波后修复 ${invalidRows.length} 个任务并重同步`,
+      what: `第 ${waves} 批后修复 ${invalidRows.length} 个任务并重同步`,
       evidence: invalidRows.map((r) => r.task_id).join(", "),
       status: "verified",
       severity: "low",
@@ -453,9 +569,9 @@ while (waves < MAX_WAVES) {
 }
 if (!queueEmpty) {
   const capReport: WorkflowReport = {
-    conclusion: `任务波次达到上限 ${MAX_WAVES}，停止等待人工介入；已完成任务均已落盘，可续跑。`,
+    conclusion: `任务批次达到上限 ${MAX_WAVES}，停止等待人工介入；已完成任务均已落盘，可续跑。`,
     findings: notes,
-    verified: [`${waves} 波任务执行并 advance`],
+    verified: [`${waves} 批任务执行并 advance`],
     notCovered: ["剩余任务", "渲染与校验"],
   };
   return capReport;
@@ -473,7 +589,7 @@ if (renderRun.exitCode !== 0) {
       status: "unconfirmed",
       severity: "high",
     }],
-    verified: [`Agent 任务波次完成（${waves} 波）`],
+    verified: [`Agent 任务批次完成（${waves} 批）`],
     notCovered: ["校验"],
   };
   return failReport;
@@ -506,7 +622,7 @@ if (!validated) {
       status: "verified",
       severity: "high",
     }],
-    verified: [`Agent 任务波次完成（${waves} 波）`, "render --execute 已执行"],
+    verified: [`Agent 任务批次完成（${waves} 批）`, "render --execute 已执行"],
     notCovered: ["READY_TO_SEND"],
   };
   return failReport;
@@ -541,9 +657,9 @@ if (emailPath) {
 }
 
 const finalReport: WorkflowReport = {
-  conclusion: `briefing 已达 READY_TO_SEND（${waves} 波 Agent 任务，发布校验通过）。请人工阅读 email.html 与 validation.json，确认后在主会话执行 send --confirm-send 完成两步发送确认。`,
+  conclusion: `briefing 已达 READY_TO_SEND（${waves} 批 Agent 任务，发布校验通过）。请人工阅读 email.html 与 validation.json，确认后在主会话执行 send --confirm-send 完成两步发送确认。`,
   findings: notes,
-  verified: [`Agent 任务波次 ${waves} 波全部 advance`, "render --execute", "validate 退出码 0"],
+  verified: [`Agent 任务 ${waves} 批全部 advance`, "render --execute", "validate 退出码 0"],
   notCovered: ["send --confirm-send（主会话人工确认）", "发送后的归档与推送"],
 };
 return finalReport;
