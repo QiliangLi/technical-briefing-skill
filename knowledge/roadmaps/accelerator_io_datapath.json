@@ -3,8 +3,8 @@
   "topic_id": "accelerator_io_datapath",
   "topic_name": "加速器直连I/O与存储数据路径",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-27",
-  "summary": "加速器I/O数据路径本期主线是控制路径出内核：uGDS把NVMe命令生命周期移入用户空间、数据经P2P DMA直传显存，内核驱动仅做一次性特权初始化，A100上4KiB同步写时延较GDS再低84.1%、LMCache命中时TTFT降62.7%、并发256下KV吞吐50.2对约19 kTokens/s（每句柄仅支持一块本地NVMe，错误恢复与隔离证据薄弱，12.12倍批量增益含GDS首批惩罚，尚属原型）；三星OCP 2026的AiSIO把GPU发起、P2P与CPU发起I/O收敛到统一API，100M IOPS与10倍冷启动为无基线的厂商声称；HotStorage 2026的一亿IOPS海报仅见于会议程序页、arXiv 2610.06622仅抓到题录，机制与结果均不可见。当前判断：GPU发起I/O正从数据面直达推进到控制面出内核，uGDS可试点用于KV缓存或向量检索外置、先评估错误恢复语义并补齐POSIX适配；厂商数字在给出可复现条件前不作为架构决策依据。",
+  "updated_by_issue": "2026-11-02",
+  "summary": "加速器直连I/O数据路径的主线仍是把发起与控制权推向加速器侧、数据经DMA直达显存：uGDS把NVMe命令生命周期移入用户空间，A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型）；本期五节点PoC以gds_stats计数器证实124012次I/O全部走nvfs DMA、零次兼容回退、聚合读132.1 GiB/s（厂商自测、未测能耗与端到端负载），AWS以GDS把KV缓存分层单客户端吞吐上限由ENA 100 Gbps、EFA 700 Gbps提到1200 Gbps（架构文规格口径、仅限NVIDIA实例且需同可用区），AMD ROCm 10.1为hipFILE补上异步直连快路径但全为定性声明，SCADA/cuObject标准化与Kioxia GP1介质侧持续推进；当前判断：GDS系数据面直连正从厂商宣称进入计数器可验证的工程验证期，控制面出内核（uGDS）可试点KV缓存或向量检索外置但须先评估错误恢复语义并补齐POSIX适配，FlatCake等主源缺失条目与全部无基线厂商数字维持待复核、不作为架构决策依据；第三方复测与时延/能耗/尾时延口径，或uGDS错误恢复与多盘扩展证据出现，即应上调直连路径成熟度判断。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -180,6 +180,38 @@
             "https://semiconductor.samsung.com/events/ocp-2026"
           ],
           "reason": "三星在OCP 2026演示开源AiSIO：一个公共API同时暴露GPU发起、P2P与CPU发起三类I/O，整合Linux内核上游工作与主流加速器框架；厂商页面宣称借OpenDS达到100M IOPS存储饱和、LLM冷启动加载最快10倍，两项数字均无基线、硬件与I/O大小条件，控制路径与数据复制次数不明，记为未验证声称（全部证据为一份展会演示页）。"
+        },
+        {
+          "item_id": "363c4ba5b9dc1ce36a6f1bec",
+          "issue_date": "2026-11-02",
+          "source_urls": [
+            "https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science"
+          ],
+          "reason": "2026-11-02 已发布日报收录：五节点PoC把每节点5块NVMe组成RAID5并经NVMe-oF/RDMA汇成单一命名空间，GPFS控制走独立以太网、数据走400G IB，聚合读达132.1 GiB/s；gds_stats计数显示124012次I/O全部走nvfs DMA、零次兼容回退，用计数器而非吞吐推断证实存储直达显存的真DMA路径（厂商自测于单一五节点集群，未测能耗与端到端负载，收敛角色下真DMA受限）；其计数器加CPU路径A/B验证法可套用于内部评判GDS宣称，按加速器存储栈分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "c9a391c1a7a6260629294381",
+          "issue_date": "2026-11-02",
+          "source_urls": [
+            "https://rocm.blogs.amd.com/ecosystems-and-partners/rocm-10.1-blog/README.html"
+          ],
+          "reason": "2026-11-02 已发布日报收录：AMD ROCm 10.1为hipFILE新增异步直连快路径（读写在HIP stream执行、跳过主机内存中转）、批量I/O与按NUMA节点分配主机内存，厂商称可降低时延并提高checkpoint引擎与KV缓存卸载的持续吞吐（全部为定性声明、无IOPS与时延数字；批量I/O仍由主机线程池分发即主机仍在请求路径，错误恢复与成熟度未说明）；属出货软件栈成熟度信号，性能判断需自测，按加速器存储栈分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "74f57e627ff3e61c3d6c26a1",
+          "issue_date": "2026-11-02",
+          "source_urls": [
+            "https://aws.amazon.com/blogs/storage/accelerate-inference-with-kv-cache-tiering-on-aws"
+          ],
+          "reason": "2026-11-02 已发布日报收录：AWS提出HBM、主机DRAM、并行文件系统与S3的KV缓存四级分层并按温度LRU逐出，NVIDIA实例上GDS在显存与FSx for Lustre间直接DMA、绕过CPU中转缓冲，单客户端吞吐上限由ENA的100 Gbps、EFA的700 Gbps升至加GDS后1200 Gbps，T3提升约数百微秒、5万token以上通常快于重算（厂商架构文无实测、吞吐为规格上限，GDS仅限NVIDIA实例且需同可用区、Trainium改走EFA）；其直连路径与分层时延预算带可套用，跨层收益仍需自测TTFT与命中率，按加速器存储栈分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "4c68d8cf2adfe933d7dd7040",
+          "issue_date": "2026-11-02",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.38355"
+          ],
+          "reason": "2026-11-02 已发布日报收录：FlatCake预印本面向LLM服务的KV cache存储架构并主张扁平化设计，但抓取仅得arXiv页面框架，地址空间布局、SSD到GPU传输路径与队列设计在可见证据中完全缺失，发现摘要中的命中率与时延数字未被主源证实、不计为事实；标记待复核，待摘要或正文可见后再评估其与GPUDirect Storage直连路径的相关性，本期不据此支撑任何路径判断。"
         }
       ],
       "open_questions": [],
@@ -189,7 +221,11 @@
         "6b1b36b87ef9d28a4e47b854",
         "6854df1a9e549ad596be6d59",
         "ada8f3547af65d6b8dfc29be",
-        "f22e0fdf7a5a4d877a23ca9b"
+        "f22e0fdf7a5a4d877a23ca9b",
+        "363c4ba5b9dc1ce36a6f1bec",
+        "c9a391c1a7a6260629294381",
+        "74f57e627ff3e61c3d6c26a1",
+        "4c68d8cf2adfe933d7dd7040"
       ],
       "source_urls": [
         "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide",
@@ -198,7 +234,11 @@
         "https://github.com/rapidsai/kvikio/releases/tag/v26.10.00",
         "https://arxiv.org/abs/2610.30868v2",
         "https://arxiv.org/abs/2610.30868",
-        "https://semiconductor.samsung.com/events/ocp-2026"
+        "https://semiconductor.samsung.com/events/ocp-2026",
+        "https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science",
+        "https://rocm.blogs.amd.com/ecosystems-and-partners/rocm-10.1-blog/README.html",
+        "https://aws.amazon.com/blogs/storage/accelerate-inference-with-kv-cache-tiering-on-aws",
+        "https://arxiv.org/abs/2610.38355"
       ]
     }
   ],
@@ -309,6 +349,19 @@
         "ada8f3547af65d6b8dfc29be",
         "f22e0fdf7a5a4d877a23ca9b",
         "fcc0c18d8d6e0695d8d52b2d"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_94d4e8d85a03373267c5",
+      "issue_date": "2026-11-02",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "363c4ba5b9dc1ce36a6f1bec",
+        "4c68d8cf2adfe933d7dd7040",
+        "74f57e627ff3e61c3d6c26a1",
+        "c9a391c1a7a6260629294381"
       ]
     }
   ]

@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_726b07dbca622b39bd2a",
+  "identity": {
+    "problem_key": "transport_residency_format_coupling",
+    "mechanism_key": "decoupled_transport_codec_residency_quantization",
+    "target_key": "cross_region_kv_pipeline"
+  },
+  "idea_type": "solution_concept",
+  "title": "传输编解码与驻留格式解耦：跨域KV按质量成本压缩传输、落地转低比特驻留",
+  "problem": "跨域搬运压缩KV时传输格式与接收端驻留格式被耦合：DCKV类学习编解码器把缓存压到55倍以上，但解码前完整还原bf16、不降接收端显存；RAQ-MLA类整体量化把驻留体积降到约六分之一，但只测单节点解码精度、无传输评估。接收端要么为质量付全量显存，要么为省显存放弃传输侧压缩收益，两段格式没有联合设计。",
+  "hypothesis": "若把传输段与驻留段的格式解耦——传输用端到端学习编解码器按质量-成本曲线选字节预算，落地时不还原全精度而是转入角色感知低比特驻留格式——则跨域KV可同时压低传输字节与接收端驻留，TTFT、解码吞吐与任务质量保持在可预算界内，优于单格式直传或目的地全量还原。",
+  "mechanism": "发送端用DCKV式变换加量化器加熵模型联合训练的编解码器压缩提示词KV并按质量-成本选定字节预算；接收端解出的缓存不落地为bf16，而是经RAQ-MLA式按张量角色（隐向量与位置键）拟合的可逆变换重编码为约2.5比特驻留格式，反变换折入解码上投影；两段格式各自独立选点、互不绑定。",
+  "target": "跨域KV传输与接收端驻留的两段式链路",
+  "expected_effect": "传输段55倍以上压缩且三项长上下文基准平均损失1.8点内，驻留段100万token缓存从52.9GiB量级降到8.2GiB量级、与BF16差距0.5分内；端到端TTFT与P95优于全量重算prefill与目的地bf16还原，接收端显存显著低于还原方案。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "同一期两个独立组分别给出传输侧按质量成本可选的学习编解码（DCKV）与接收端角色感知低比特驻留（RAQ-MLA），且各自边界恰好缺少对方那一半；传输格式与驻留格式解耦的完整机制没有任何单条记录声明。"
+  },
+  "evidence": [
+    {
+      "item_id": "ba40335bbe25e9864da31278",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36950v1"
+      ],
+      "reason": "《DCKV：混合语言模型KV缓存的端到端学习压缩编解码器》把变换、量化器与熵模型对冻结模型端到端训练、可按质量成本选定字节预算，Qwen3.5-2B上55倍以上压缩把三项长上下文基准平均损失控制在1.8点内；其边界明示解码前完整还原bf16缓存、不降接收端显存且无跨域传输实测，给出传输侧可用而接收端驻留未解的半边机制。",
+      "independence_group": "arxiv:2610.36950"
+    },
+    {
+      "item_id": "ac7bcf0c0b42e6bffdaf4ec1",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.33625v1"
+      ],
+      "reason": "《RAQ-MLA把MLA KV缓存整体量化到约2.5比特》按张量角色为隐向量与位置键分别拟合面向注意力输出误差的可逆变换并把反变换折入解码端上投影，四个MLA模型与BF16差距均在0.5分内、100万token序列缓存从52.9GiB降到8.2GiB；仅测单节点解码精度与内核时延，给出接收端低比特驻留的另一半机制而未做传输评估。",
+      "independence_group": "arxiv:2610.33625"
+    }
+  ],
+  "evidence_item_ids": [
+    "ba40335bbe25e9864da31278",
+    "ac7bcf0c0b42e6bffdaf4ec1"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.36950v1",
+    "https://arxiv.org/abs/2610.33625v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.36950",
+    "arxiv:2610.33625"
+  ],
+  "unknowns": [
+    "DCKV仅在Qwen3.5-2B单一混合模型验证，且解码前还原bf16的转换开销未量化",
+    "RAQ-MLA内核时延数据限于H20双卡batch为1，非MLA架构未覆盖",
+    "两段格式转换时间、跨节点格式版本一致性与WAN RTT、P95均无实测",
+    "驻留低比特化后再增量追加提示词KV时误差累积未验证"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在可控WAN仿真链路上实现两段式原型：传输段DCKV式学习编解码按质量-成本预算压缩，落地段RAQ-MLA式约2.5比特角色感知重编码为驻留格式，对比单格式直传与目的地全量还原。",
+    "inputs": [
+      "混合与MLA模型的提示词KV缓存集",
+      "WAN时延与带宽矩阵",
+      "质量-成本预算扫描"
+    ],
+    "baselines": [
+      "全量重算prefill",
+      "bf16原样传输",
+      "单一RAQ-MLA格式直传且原样驻留"
+    ],
+    "metrics": [
+      "传输字节",
+      "接收端驻留显存",
+      "TTFT与P95",
+      "下游长上下文任务分数",
+      "两段编解码与转换开销"
+    ],
+    "support_criteria": [
+      "同质量界内，两段式同时低于单格式直传的传输字节与目的地还原方案的驻留显存"
+    ],
+    "reject_criteria": [
+      "两段转换开销抵消传输与驻留节省，或低比特驻留使长上下文质量跌破设定界"
+    ],
+    "limitations": [
+      "链路为仿真而非真实跨域部署"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，由同一期两个独立组的互补半边联合支持；与wan_state_transfer_volume（只管传输体积）、transformed_kv_destination_read_path（只管接收端免重编码读取）、persistent_kv_compression_without_error_bound（只管持久层误差预算）等既有身份含义不同，等待人工晋升。",
+  "related_candidate_ids": [
+    "candidate_5b2eac76b34dc8a2d3bb",
+    "candidate_045301052ee5f2b35358"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_0ccf2397832c9dde5cf3",
+      "issue_date": "2026-11-02",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应完整，由同一期两个独立组的互补半边联合支持，与既有身份含义不同，等待人工晋升。",
+      "evidence_item_ids": [
+        "ba40335bbe25e9864da31278",
+        "ac7bcf0c0b42e6bffdaf4ec1"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

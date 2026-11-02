@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_fb9acc51f933f50a67e7",
+  "identity": {
+    "problem_key": "logical_token_savings_misprice_physical_prefill",
+    "mechanism_key": "reusable_prefix_conditioned_strategy_gate",
+    "target_key": "agent_context_strategy_selection"
+  },
+  "idea_type": "solution_concept",
+  "title": "按可复用前缀与缓存价格比门控上下文策略选择：串行Agent负载下预取优先于改写",
+  "problem": "上下文策略通常按逻辑token数评判节省，但缓存运行时只预填未命中前缀，改写可复用历史使更短的提示反而更贵（MASK-5较EAGER提示降33.3%而未缓存预填增608.5%）；同时生产Agent负载高度串行（串行任务占请求77.6%），单工具转移后首后继请求缓存输入占比中位约99%，历史前缀复用是主导成本结构，逻辑token指标系统性掩盖破坏该结构的物理代价。",
+  "hypothesis": "以实测可复用前缀占比与缓存价格比为输入的策略选择门——串行与高复用场景选预取检索与append-only、仅在缓存价格比超过阈值时允许改写裁剪，并以未缓存预填、KV时间面积、墙钟与扣除空闲的能耗做净额验收——可在质量非劣的前提下取得物理成本净节省，并拦截按逻辑token看似节省、物理上更贵的策略。",
+  "mechanism": "三段：从服务轨迹测量每请求可复用前缀占比与串行结构；按缓存价格比（ContextPipe计费权衡，缓存价格比超14.5%时计费才更低）折算改写带来的未缓存预填增量相对逻辑token节省的净额；过质量门的策略才进入成本比较，按物理核算（调用数、KV时间面积、wall time、扣除空闲的能耗）在EAGER预取、append-only与改写裁剪之间选择。",
+  "target": "缓存运行时上的编码Agent上下文策略选择层（harness与serving栈接口）",
+  "expected_effect": "串行主导负载下预取与append-only的物理净成本低于改写策略；被门拦截的正是逻辑提示更短但未缓存预填剧增的一类（+608.5%）；预取在缓存禁用时较grep每任务省46.3k token、调用少35.7%且质量非劣；改写仅在缓存价格比阈值之上被采纳，与ContextPipe观测的计费边界一致。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "将逐期公开记录按共同问题、机制和目标对象综合，并保留同源复报的单一独立分组。"
+  },
+  "evidence": [
+    {
+      "item_id": "cb947b5fca532ba294de3889",
+      "issue_date": "2026-09-03",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.00749v1"
+      ],
+      "reason": "《ContextPipe数据库式上下文组装》给出缓存经济条件依据：较append-only总token降30.1%、调用降17.2%，但缓存命中95.6%降到86.3%，缓存价格比超14.5%时计费才更低，计费权衡模型E(r)可直接复用。",
+      "independence_group": "arxiv:2609.00749"
+    },
+    {
+      "item_id": "5d254b3de13ed90ba5af3f6d",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.34432v1"
+      ],
+      "reason": "《蚂蚁集团两周千万级请求揭示agent服务负载画像》给出串行复用结构依据：串行任务占请求77.6%、逻辑兄弟请求仅0.225%服务区间重叠，单工具转移后首后继请求缓存输入占比中位约99%，历史前缀复用是生产Agent服务的主导成本结构。",
+      "independence_group": "arxiv:2609.34432"
+    },
+    {
+      "item_id": "8c4e6d80b1f1777a2b0c593c",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.34763v1"
+      ],
+      "reason": "《编码Agent上下文策略核算显示预取检索执行成本低于按需搜索》给出物理核算与改写惩罚依据：缓存运行时只预填未命中前缀，改写历史使更短提示反而更贵——MASK-5较EAGER提示降33.3%而未缓存预填增608.5%；禁用缓存时EAGER预取检索较grep每任务省46.3k token、调用少35.7%且质量非劣（成本结论来自两个100任务异栈队列、能耗为代理值）。",
+      "independence_group": "arxiv:2610.34763"
+    }
+  ],
+  "evidence_item_ids": [
+    "cb947b5fca532ba294de3889",
+    "5d254b3de13ed90ba5af3f6d",
+    "8c4e6d80b1f1777a2b0c593c"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.00749v1",
+    "https://arxiv.org/abs/2609.34432v1",
+    "https://arxiv.org/abs/2610.34763v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.00749",
+    "arxiv:2609.34432",
+    "arxiv:2610.34763"
+  ],
+  "unknowns": [
+    "内部serving轨迹的可复用前缀占比与串行结构分布未测量（画像来自两周单一平台且episode调度建议未实现验证）",
+    "ContextPipe自述为初步评测且仅单一SWE子集，缓存价格比阈值跨栈标定未知",
+    "物理核算中能耗为代理值，主队列查询由LLM策划与评判",
+    "与按后续问题摊销核算（candidate_80c1ad4772073ab741c2与idea_8aa3d66177596baef1ac）的口径合并方式待定"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在内部Agent服务轨迹上重建每请求可复用前缀占比与缓存价格比，回放对比EAGER预取、append-only与改写裁剪三类策略的未缓存预填、KV时间面积、墙钟与能耗净额，质量门通过后才进入成本比较。",
+    "inputs": [
+      "内部多会话请求轨迹（含工具转移与串行结构标记）",
+      "缓存命中与计费口径",
+      "候选上下文策略集（预取检索、append-only、改写裁剪）"
+    ],
+    "baselines": [
+      "按逻辑token数选择策略的现状",
+      "固定单一策略（全预取或全改写）"
+    ],
+    "metrics": [
+      "未缓存预填量",
+      "KV时间面积与墙钟",
+      "扣除空闲的能耗",
+      "调用数",
+      "质量门通过率",
+      "缓存价格比阈值处的净计费"
+    ],
+    "support_criteria": [
+      "串行主导负载下门控选择的物理净成本低于按逻辑token选择的策略且质量非劣，改写仅在价格比阈值之上被采纳"
+    ],
+    "reject_criteria": [
+      "门控依赖的占比与价格信号在内部轨迹不可得，或质量门通过率下降吞噬物理节省"
+    ],
+    "limitations": [
+      "原证据分别来自两个100任务异栈队列、单一SWE子集的初步评测与两周单一平台画像"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "三组独立证据联合支撑按可复用前缀与缓存经济条件门控上下文策略选择这一任何单条记录未陈述的机制，但适用边界（内部缓存价格与串行复用分布未测量、ContextPipe为初步单子集评测）及其与摊销采纳门候选（candidate_80c1ad4772073ab741c2）和按后续问题计分Idea（idea_8aa3d66177596baef1ac，同触发证据已在其本期决策中被吸收为物理维度扩展）之间的谱系分工需人工裁定。",
+  "related_candidate_ids": [
+    "candidate_80c1ad4772073ab741c2"
+  ],
+  "related_idea_ids": [
+    "idea_8aa3d66177596baef1ac"
+  ],
+  "first_seen_issue": "2026-09-03",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_9e8b132b5cbf63e410a3",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "三组独立证据联合支撑按可复用前缀与缓存经济条件门控上下文策略选择这一任何单条记录未陈述的机制，但适用边界（内部缓存价格与串行复用分布未测量、ContextPipe为初步单子集评测）及其与摊销采纳门候选（candidate_80c1ad4772073ab741c2）和按后续问题计分Idea（idea_8aa3d66177596baef1ac，同触发证据已在其本期决策中被吸收为物理维度扩展）之间的谱系分工需人工裁定。",
+      "evidence_item_ids": [
+        "cb947b5fca532ba294de3889",
+        "5d254b3de13ed90ba5af3f6d",
+        "8c4e6d80b1f1777a2b0c593c"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

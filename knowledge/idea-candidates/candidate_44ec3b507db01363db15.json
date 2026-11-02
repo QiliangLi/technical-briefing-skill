@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_44ec3b507db01363db15",
+  "identity": {
+    "problem_key": "moe_ep_collective_step_dominance",
+    "mechanism_key": "compute_slack_gated_collective_placement",
+    "target_key": "moe_expert_parallel_communication"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "以计算松弛量门控MoE专家并行集合通信的端侧单步与网内执行选择",
+  "problem": "MoE专家并行推理的dispatch/combine集合通信主导该层延迟：单节点PCIe上小消息同步开销与NCCL环形逐步依赖链主导，跨节点时端侧集合通信还只能单向占用链路；现有serving栈按fabric固定一条通信路径，缺少何时降步数已足够、何时必须把集合通信移入网络执行的判据。",
+  "hypothesis": "以逐层计算松弛量为门控可在两种执行位置间做可解释选择：异步集合通信低于松弛量时其时延只进完成时间常数项、不改变稳态吞吐斜率，端侧单步算法即可；仅当通信仍超松弛量且路径上有可编程交换机时，交换机侧AllGather/ReduceScatter的双向链路复用才带来斜率级收益，两种模式均与专家计算重叠。",
+  "mechanism": "用异构流水线精确完成时间界的松弛量判据逐层判定：低于松弛量走端侧单步All-Gather/DMA（削减约40%流量、缩短Reduce-Scatter依赖链、按发送方同步、与prefill计算重叠）；超过松弛量改用交换机侧AllGather与ReduceScatter并发占用链路双向、由持久kernel按band与专家计算重叠。",
+  "target": "MoE专家并行serving的集合通信层（单节点PCIe与跨节点两类fabric）",
+  "expected_effect": "相对vLLM默认NCCL路径，prefill吞吐与TTFT的改善应集中在通信超过计算松弛量的负载段（两机制分别报告端侧最高1.66倍prefill加速、交换机侧TTFT降20.2%–33.1%），低于松弛量段两种执行位置的差异退化为常数项。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "同期三条独立记录联合支撑一个任何单条都未陈述的机制：INC-MoE与ThunderEP分别给出EP集合通信在交换机侧与端侧两种执行位置的证据，异构流水线完成时间界给出通信优化何时改变稳态吞吐的解析门控。它与现有结构性热点Idea（idea_e63d79458c2079f00edf：按流量结构选网络元件机制对ECMP热点）与KV传输重算交叉点Idea（idea_f7841984fcce6a274881：按请求估算KV传输/重算/就地代价选执行位置）身份与含义均不同：本候选的对象是MoE激活集合通信的执行位置，而非KV缓存传输或ECMP负载不均，且核心增量是松弛量门控判据。"
+  },
+  "evidence": [
+    {
+      "item_id": "108f9f19c75e539258853563",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36339v1"
+      ],
+      "reason": "INC-MoE证明交换机侧AllGather/ReduceScatter可并发占用链路双向并与专家计算重叠：TTFT降20.2%–33.1%、并发AG与RS等效带宽提升25.6%–31.8%、逐层输出余弦相似度1.0，给出超松弛量时的网内执行选项及其量级；交换机由加速器仿真、仅评估OLMoE-1B-7B的prefill，N=8增益为分析值。",
+      "independence_group": "arxiv:2610.36339"
+    },
+    {
+      "item_id": "ec1ea177b0a399d941b6ce94",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.40093v1"
+      ],
+      "reason": "ThunderEP证明小消息下同步开销主导而非带宽：单步All-Gather把6卡流量减少40%、缩短Reduce-Scatter依赖链、按发送方同步并与prefill计算重叠，6卡RTX 4090/5090上prefill最高1.66倍，给出低于松弛量时的端侧单步选项；仅限单节点PCIe消费级GPU、decode无通信重叠。",
+      "independence_group": "arxiv:2609.40093"
+    },
+    {
+      "item_id": "d2349c5d97fce5e346d06f86",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21815v1"
+      ],
+      "reason": "异构GPU流水线精确完成时间界给出选择判据：异步传输时逐次通信时延只进常数项、不改变稳态吞吐斜率，阻塞传输仅当某段传输时延超过计算松弛量时才改变斜率，为两种执行位置的分界提供解析门控；闭式解与动态规划在两万组随机配置上误差低于十亿分之一，但假设逐次传输时延恒定。",
+      "independence_group": "arxiv:2610.21815"
+    }
+  ],
+  "evidence_item_ids": [
+    "108f9f19c75e539258853563",
+    "ec1ea177b0a399d941b6ce94",
+    "d2349c5d97fce5e346d06f86"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.36339v1",
+    "https://arxiv.org/abs/2609.40093v1",
+    "https://arxiv.org/abs/2610.21815v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.36339",
+    "arxiv:2609.40093",
+    "arxiv:2610.21815"
+  ],
+  "unknowns": [
+    "交换机侧结果来自加速器仿真而非硬件实现，仅评估OLMoE-1B-7B的prefill，N=8增益为分析值",
+    "完成时间界假设逐次传输时延恒定，未覆盖带宽受限共享链路、有界缓冲与prefill/decode交错",
+    "端侧单步仅在单节点PCIe消费级GPU验证，不涉及KVCache与多节点，decode无通信重叠",
+    "EP各层计算松弛量的在线测量方法及其开销未在任一记录中给出"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在MoE专家并行serving（vLLM）上实现松弛量门控的通信路径选择层：默认按ThunderEP式单步All-Gather/DMA走端侧路径，逐层监测通信时延与计算松弛量，超阈值负载段切换到INC-MoE式交换机侧AG/RS路径（仿真或可编程交换机），与固定NCCL路径对照。",
+    "inputs": [
+      "MoE模型与专家并行配置（含OLMoE-1B-7B与更大档）",
+      "逐层计算松弛量在线测量",
+      "可编程交换机仿真或硬件平台",
+      "单节点PCIe与跨节点两类fabric的负载集"
+    ],
+    "baselines": [
+      "vLLM默认NCCL集合通信路径",
+      "固定端侧单步路径",
+      "固定交换机侧网内路径"
+    ],
+    "metrics": [
+      "TTFT",
+      "每加速器prefill吞吐",
+      "稳态吞吐斜率与完成时间常数项分解",
+      "通信低于/超过松弛量负载段的收益差"
+    ],
+    "support_criteria": [
+      "收益集中于通信超过计算松弛量的负载段，低于松弛量段两种路径差异退化为常数项",
+      "门控路径整体不劣于两种固定路径中的较优者"
+    ],
+    "reject_criteria": [
+      "松弛量测量与路径切换开销吞没选择收益",
+      "低于松弛量段仍出现斜率级差异，说明完成时间界判据不能迁移到EP集合通信"
+    ],
+    "limitations": [
+      "交换机侧仅有仿真证据",
+      "完成时间界的恒定时延假设未覆盖共享链路竞争",
+      "端侧单步未在跨节点fabric验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "三条独立记录联合给出完整的问题、机制、目标与可检验效应，身份与含义不同于现有Candidate与Idea，等待人工晋升决策。",
+  "related_candidate_ids": [
+    "candidate_fe5ae3613b2811ae297e"
+  ],
+  "related_idea_ids": [
+    "idea_e63d79458c2079f00edf"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_7db3c24e89e19c5a8f29",
+      "issue_date": "2026-11-02",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "三条独立记录联合给出完整的问题、机制、目标与可检验效应，身份与含义不同于现有Candidate与Idea，等待人工晋升决策。",
+      "evidence_item_ids": [
+        "108f9f19c75e539258853563",
+        "ec1ea177b0a399d941b6ce94",
+        "d2349c5d97fce5e346d06f86"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_9b899f5928d24ae421c1",
+  "identity": {
+    "problem_key": "edge_npu_linear_attention_execution_mismatch",
+    "mechanism_key": "softmax_rearrangement_dataflow_reorg",
+    "target_key": "edge_npu_vlm_inference"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "边缘NPU线性注意力执行失配的机理与数据流重排修复",
+  "problem": "线性注意力在理论上降低算力与KV压力，但在解耦矩阵/向量单元的边缘NPU上实测吞吐反而低于同SoC GPU基线，理论优势无法兑现，端侧VLM优化缺少可操作的失配定位与修复判据。",
+  "hypothesis": "在解耦矩阵/向量单元的边缘NPU上，线性注意力相对GPU的劣势主要来自softmax与张量重排落在向量单元与数据搬移路径而非矩阵单元算力不足；若按NPU数据流对二者做核心级切分、算子级融合与布局重排，端侧VLM的线性注意力层能否恢复并超过同NPU全注意力路径与同SoC GPU基线？",
+  "mechanism": "对softmax与张量重排按NPU数据流重组：核心级按头维度切分并融合依赖算子消除跨核全局内存访问，算子级即时消费中间张量，张量级布局规划减少单元间变换开销，全程不改算法语义。",
+  "expected_effect": "线性注意力层在边缘NPU的吞吐从低于GPU基线恢复到超过同NPU全注意力路径，端到端请求时延与设备能耗同步下降。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "32755bf6c4765a74a4f57f80",
+      "issue_date": "2026-08-17",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.09385v1"
+      ],
+      "reason": "STEEL为AMD XDNA类NPU开源FlashAttention：预填注意力数据流形式化加因果掩码稀疏感知放置，同SoC较CPU平均省能9.17倍、较GPU省1.75倍；其结论（显式数据搬移编程模型下负载均衡比算子本身更关键）是该Idea前提在端侧NPU注意力算子上的早期实证（只覆盖注意力算子与单一SoC家族，长序列完整扫描表未含在证据内）。"
+    },
+    {
+      "item_id": "553537e4cdf72815498f5933",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.21264v1"
+      ],
+      "reason": "XDNA 2编程判据给出中间张量驻留位置决定性能、融合到越过ridge point即止的规则，三阶段全融合FlashAttention达3.62 TFLOP/s、2K token以上能效为同芯片集成GPU的5.3至7.2倍而XDNA 1上同一融合几乎无益；支撑算子-存储层级映射而非峰值算力主导端侧NPU实测性能的前提（案例限FlashAttention、结论绑定两代XDNA，外推需重算ridge point）。"
+    },
+    {
+      "item_id": "a39fefe1c419f15c07e2cde0",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.32114v1"
+      ],
+      "reason": "HA-NPU实测Qwen3.5-2B线性注意力层在Ascend 310P慢于全注意力3.02至4.98倍且占75%以上prefill时间，并证明核心级按头维度切分、算子级即时消费中间张量、张量级布局规划的三层数据流重组可把竞争基线LA内核最高加速35.95倍、端到端请求时延最高快2.03倍、设备能耗降48%；是该Idea机制在真实边缘NPU上的直接可行性证据（评估聚焦prefill与单芯片边缘NPU，内核级最优与端到端2.03倍差距大）。"
+    },
+    {
+      "item_id": "1ce17ac6120740f77513a2da",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.40039v1"
+      ],
+      "reason": "边缘NPU实测把问题定位到非矩阵算子：softmax与张量重排使注意力kernel占计算密集kernel时延最高89.4%并令矩阵单元空转，GDN线性注意力较Adreno GPU基线吞吐低30%至71%而同NPU上matmul/conv加速6.3至11.4倍；直接证明失配在softmax与重排的执行路径而非矩阵单元算力（覆盖Hexagon与RKNPU等解耦矩阵/向量单元NPU，功耗与热降频不可见，只含推理）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "失配与修复效果是否跨NPU厂商与代际成立（现有证据绑定Hexagon、RKNPU、Ascend 310P与XDNA两代）",
+    "decode与prefill两相位的失配构成是否不同，现有实测以prefill为主",
+    "功耗与热降频约束下的净收益未测"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在1至2款解耦矩阵/向量单元的边缘NPU上，以含线性注意力（如GDN类）与全注意力对照变体的端侧VLM做kernel级与端到端双口径评测。",
+    "inputs": [
+      "端侧VLM checkpoints（线性与全注意力变体）",
+      "目标NPU工具链与kernel级profiler",
+      "同SoC GPU官方栈基线实现"
+    ],
+    "baselines": [
+      "未重排的NPU线性注意力实现",
+      "同NPU全注意力路径",
+      "同SoC GPU官方栈推理"
+    ],
+    "metrics": [
+      "线性注意力层吞吐与注意力kernel时延占比",
+      "矩阵单元利用率",
+      "端到端请求时延",
+      "设备能耗"
+    ],
+    "support_criteria": [
+      "重排后线性注意力层超过同NPU全注意力路径并接近或超过同SoC GPU基线，且端到端时延与能耗同步下降"
+    ],
+    "reject_criteria": [
+      "重排后线性注意力层仍持续低于同NPU全注意力路径或GPU基线，说明失配是结构性的而非可调度修复"
+    ],
+    "limitations": [
+      "首版仅覆盖少量设备与模型族，不含训练与热降频场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-17",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_4c9778ed63ff2f9e7704",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "跨期已发布证据（STEEL、XDNA编程判据、HA-NPU）与本期边缘NPU实测收敛于同一失配机理，HA-NPU已给出数据流重排修复机制的直接实测，按problem+mechanism+target身份创建为正式Idea并保持observing；四条证据指向同一机理的聚合判断属跨记录推断(inferred)。",
+      "evidence_item_ids": [
+        "32755bf6c4765a74a4f57f80",
+        "553537e4cdf72815498f5933",
+        "a39fefe1c419f15c07e2cde0",
+        "1ce17ac6120740f77513a2da"
+      ]
+    }
+  ]
+}

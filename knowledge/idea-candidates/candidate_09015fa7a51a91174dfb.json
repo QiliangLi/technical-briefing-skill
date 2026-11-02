@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_09015fa7a51a91174dfb",
+  "identity": {
+    "problem_key": "fixed_threshold_pd_routing_tradeoff",
+    "mechanism_key": "request_cluster_offline_learned_routing_table",
+    "target_key": "pd_disaggregated_request_routing"
+  },
+  "idea_type": "solution_concept",
+  "title": "按请求簇离线学习聚合或分离prefill的查表路由兼顾P90 TTFT与TPOT",
+  "problem": "PD分离推理中按固定长度阈值做请求路由顾此失彼，P90 TTFT与TPOT难以同时改善。",
+  "hypothesis": "若以原始长度、两侧缓存折算ISL与输出长度四个特征对请求聚类，离线为每个簇学习聚合或分离prefill的二值动作、在线仅查表执行，可在真实PD分离集群同时降低P90 TTFT与TPOT。",
+  "mechanism": "四特征聚类请求；离线以SLO奖励（满足端到端时限的请求占比）为每个簇学一个二值动作；在线仅查表。",
+  "target": "PD分离推理集群的请求级路由决策层",
+  "expected_effect": "H20集群vLLM加Mooncake真实部署中相对Dynamo长度规则，P90 TTFT降5.7-7.9%、P90 TPOT降2.6-10.1%。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的请求簇离线学习路由决策机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "d2334e0d811f04c7dd7eaee4",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.40292v1"
+      ],
+      "reason": "《DolphinRouting学习请求簇级PD路由决策以兼顾TTFT与TPOT》给出机制与真实集群对照：四特征聚类加离线二值动作查表在H20集群vLLM+Mooncake部署中相对Dynamo长度规则P90 TTFT降5.7-7.9%、P90 TPOT降2.6-10.1%。",
+      "independence_group": "arxiv:2610.40292"
+    }
+  ],
+  "evidence_item_ids": [
+    "d2334e0d811f04c7dd7eaee4"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.40292v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.40292"
+  ],
+  "unknowns": [
+    "基线仅Dynamo长度规则，未与其他自适应或学习型路由对照",
+    "吞吐与KV传输量未报告，路由收益的代价不可见",
+    "簇结构与二值动作在负载漂移下的重训频率未知",
+    "验证只报告P90 TTFT与TPOT，绝对数值在证据外"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在内部PD分离集群的请求迹上复现四特征聚类与离线二值动作学习，回放评估相对固定长度阈值与Dynamo式长度规则路由的P90 TTFT与TPOT，并补记吞吐与KV传输量。",
+    "inputs": [
+      "内部PD分离集群请求迹（原始长度、两侧缓存折算ISL、输出长度）",
+      "聚类数与二值动作档位",
+      "端到端时限SLO目标"
+    ],
+    "baselines": [
+      "固定长度阈值路由",
+      "Dynamo长度规则（证据内基线）"
+    ],
+    "metrics": [
+      "P90 TTFT",
+      "P90 TPOT",
+      "SLO满足请求占比",
+      "吞吐",
+      "KV传输量"
+    ],
+    "support_criteria": [
+      "P90 TTFT与TPOT同时不劣于两条基线，且吞吐与KV传输量无显著恶化"
+    ],
+    "reject_criteria": [
+      "负载漂移使簇查表频繁失效需重训，或TTFT收益以TPOT、吞吐显著恶化为代价"
+    ],
+    "limitations": [
+      "内部负载特征可能偏离H20集群vLLM+Mooncake部署",
+      "证据内无吞吐与KV传输量口径可对照"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且区别于既有候选与Idea，但仅单一arXiv独立组，基线只有Dynamo长度规则且吞吐与KV传输量未报告，缺独立支持与适用边界。",
+  "related_candidate_ids": [
+    "candidate_7dbcf1f5c24bf8b8528b",
+    "candidate_9d439729d29356fd6625"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881",
+    "idea_08f0269ef7fd181c9968"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_0479fe93b91582c64df",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且区别于既有候选与Idea，但仅单一arXiv独立组，基线只有Dynamo长度规则且吞吐与KV传输量未报告，缺独立支持与适用边界。",
+      "evidence_item_ids": [
+        "d2334e0d811f04c7dd7eaee4"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

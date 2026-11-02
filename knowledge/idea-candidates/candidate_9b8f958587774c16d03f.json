@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_9b8f958587774c16d03f",
+  "identity": {
+    "problem_key": "evicted_session_kv_rebuild_floor",
+    "mechanism_key": "learned_gist_retention_tier",
+    "target_key": "multi_region_agent_session_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "把被挤出的跨部署会话KV降级为可学习gist层而非数值低比特保留",
+  "problem": "M365四条生产链路实测显示会话KV驻留总量巨大且大多闲置，跨部署复用率从88.9%跌至29.0%；按会话与部署双键控后无限内存的重建下限仍达20.2%，十分之一预算下int4多分辨率保留把重算率压到13.6%，但保留的仍是数值低比特表示，键控重建下限本身没有被压低，跨部署会话回到原部署仍要为缺口重算。",
+  "hypothesis": "若跨部署被挤出或闲置的会话KV不落在数值int4层，而是降级为可学习gist条目加有界原始窗口的双分辨率表示，则gist回放可替代部分重算，把键控重建下限与重算token量压到int4保留之下，同时驻留字节随会话时长近似亚线性增长。",
+  "mechanism": "用TRC式双分辨率表示做保留层降级目标：会话切成约1秒量级片段、每片压成一个可学习gist键值条目，仅保留约10秒局部原始窗口，久远信息经gist链传递；跨部署缓存预算耗尽时先降gist而非int4或丢弃，请求回到原部署时经gist条目回放重建而非全量重算prefill。",
+  "target": "多区域Agent会话缓存的分层保留层",
+  "expected_effect": "参照TRC的KV缓存增速降低91.7%至95.8%，gist层用于跨部署保留时，重建率与重算token量低于int4多分辨率保留的13.6%，跨部署TTFT下降，召回与任务质量保持在设定界内。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "同一期两个独立组分别给出生产侧重建下限与数值保留的剩余缺口（M365实测）、以及语音侧gist加原始窗口的双分辨率压缩机制（TRC）；被挤出KV降级为语义gist层并按gist回放重建的联合机制没有任何单条记录声明。"
+  },
+  "evidence": [
+    {
+      "item_id": "2224d2aa0004e9d9d8ad28ac",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.22863v1"
+      ],
+      "reason": "微软四条M365生产链路逾1.21亿次模型调用的驻留重放实测：会话KV跨部署复用率从88.9%跌至29.0%，按会话与部署双键控后无限内存的重建下限仍达20.2%，十分之一预算下int4多分辨率保留把重算率压到13.6%（先知式FNU为31.1%、LRU为63%）；给出保留层仍是数值低比特表示、重建下限未消除的问题侧证据（字节估算借用Llama-2-70B布局，未测WAN传输与时延）。",
+      "independence_group": "arxiv:2610.22863"
+    },
+    {
+      "item_id": "f5ffdf3396372ceb3bd0ddf9",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.34991v2"
+      ],
+      "reason": "双分辨率上下文压缩TRC把会话切成约1秒片段、每片压成一个可学习gist键值条目，仅约10秒局部窗口保留原始token，三个全双工语音模型KV缓存增速降低91.7%至95.8%、骨干时延从1到20分钟仅增12%至15%（不压缩时为141%至259%）；给出久远历史可降级为语义gist条目的机制侧证据（近距离单针召回低于全分辨率基线，无跨域实测）。",
+      "independence_group": "arxiv:2610.34991"
+    }
+  ],
+  "evidence_item_ids": [
+    "2224d2aa0004e9d9d8ad28ac",
+    "f5ffdf3396372ceb3bd0ddf9"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.22863v1",
+    "https://arxiv.org/abs/2610.34991v2"
+  ],
+  "independence_groups": [
+    "arxiv:2610.22863",
+    "arxiv:2610.34991"
+  ],
+  "unknowns": [
+    "TRC的gist条目仅在全双工语音长会话验证，文本Agent KV的gist化表示未证",
+    "近距离单针召回低于全分辨率基线，gist层重建的回答链一致性未测",
+    "gist链跨部署同步的字节量、版本一致性与回放时延无数据",
+    "与idea_984fec4fcf65a75a6b1f的亲和路由加键控压缩保留如何分工需人工lineage决策"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在M365式会话加部署双键生产轨迹回放中加入gist降级层：预算耗尽时将被挤出会话KV压成TRC式gist条目加有界原始窗口，请求回原部署时经gist回放重建，对比int4多分辨率保留、先知式FNU与LRU。",
+    "inputs": [
+      "跨部署会话轨迹",
+      "gist化与原始窗口预算扫描",
+      "召回与问答探针"
+    ],
+    "baselines": [
+      "int4多分辨率保留",
+      "先知式FNU淘汰",
+      "LRU",
+      "全量重算prefill"
+    ],
+    "metrics": [
+      "重建率与重算token量",
+      "驻留字节",
+      "跨部署TTFT",
+      "召回与任务质量"
+    ],
+    "support_criteria": [
+      "同预算下gist层重建率与重算token量显著低于int4保留且质量不跌破设定界"
+    ],
+    "reject_criteria": [
+      "gist回放质量随会话时长衰减到低于int4保留，或gist链同步字节抵消驻留节省"
+    ],
+    "limitations": [
+      "静态轨迹回放无法完全代表在线会话漂移"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且由两个独立组的问题侧与机制侧互补支持，但gist层仅在全双工语音验证、文本Agent KV适用边界缺失，且与idea_984fec4fcf65a75a6b1f的键控压缩保留机制相邻，lineage需人工决定。",
+  "related_candidate_ids": [
+    "candidate_c20150e31dbc8040bdac",
+    "candidate_045301052ee5f2b35358"
+  ],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f",
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ff7991090988eb09fc42",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整，但gist层仅在语音域验证、文本Agent适用边界缺失，且与既有Idea的压缩保留机制相邻，留待人工lineage决策。",
+      "evidence_item_ids": [
+        "2224d2aa0004e9d9d8ad28ac",
+        "f5ffdf3396372ceb3bd0ddf9"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

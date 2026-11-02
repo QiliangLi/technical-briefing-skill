@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_dadc3140f9ade3ddc59c",
+  "identity": {
+    "problem_key": "hbm_capacity_cost_wall",
+    "mechanism_key": "gpu_initiated_fine_grained_flash_reads",
+    "target_key": "inference_kv_and_weight_tiering"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "GPU发起的512B级细粒度闪存读能否以可接受尾时延替代部分HBM扩容",
+  "problem": "扩HBM或节点内DRAM的每GB成本高且容量受限，推理的KV缓存与冷权重需要更便宜的近GPU容量层；主机中转路径的粒度与时延无法匹配细粒度随机读需求，粗粒度预取又浪费带宽与显存。",
+  "hypothesis": "若GPU线程直接发起512B-4KiB细粒度闪存读（GPU侧客户端库加低延迟闪存介质），则可在尾时延与每I/O功耗受控的前提下，以显著低于HBM的每GB成本承接KV与冷权重读取，使端到端TTFT与吞吐优于重算和主机中转基线。",
+  "mechanism": "GPU侧客户端库直接构建并下发NVMe细粒度读命令、数据直达显存；介质层用512B粒度低延迟闪存（XL-FLASH第2代、50 DWPD级耐久）；按热度分级决定KV块驻留HBM还是闪存层。",
+  "expected_effect": "HBM容量墙外移：热工作集溢出部分落到近GPU闪存层，5万token以上长上下文的读取成本低于重算；若假设失效则退回粗粒度预取加内核GDS路径。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "ea689bb652526e0e8a1731e6",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-1.html"
+      ],
+      "reason": "Kioxia GP1以XL-FLASH第2代实现最高1000万512B随机读IOPS、路线图指向1亿IOPS，厂商称每GB成本显著低于节点内HBM或DRAM扩容，E3.S/E1.S支持冷板液冷，为本Idea提供介质层供给锚点（规格口径，无第三方评测与写IOPS数据，评测样品2026年底交付）。"
+    },
+    {
+      "item_id": "6d2d783dbbd72017f98515e0",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://www.h3platform.com/blog-detail/81"
+      ],
+      "reason": "SCADA官方解读确认GPU线程直接发起并控制小于4KB的细粒度NVMe访问、把发起者从主机移到GPU执行侧；当前PCIe Gen6企业SSD约五到六百万4KB随机读IOPS每盘、下一代路线图约两千五百万、平台最多集成48块E1.S，为本Idea的发起机制与平台要素提供依据（解读文章无量化实验，路线图数字非现售规格）。"
+    },
+    {
+      "item_id": "20fb8a6279b3bbd998425ffa",
+      "issue_date": "2026-09-06",
+      "source_urls": [
+        "https://blogs.nvidia.com/blog/ai-storage-fms"
+      ],
+      "reason": "NVIDIA发布SCADA框架并开源cuFile存储栈：大规模并行GPU只拉取所需数据直接进显存、用户态高速路径留在可信基之外、特权组件在setup时按Linux协议配置受保护访问，为GPU按需细粒度拉取提供框架与生态基础（全部为厂商口径，无IOPS与时延数字）。"
+    },
+    {
+      "item_id": "30d45b2e7f98cfb8329a6b56",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://graidtech.com/post/100-million-iops-for-gpu-initiated-io"
+      ],
+      "reason": "GRAID报告在受保护RAID 5卷上达成1亿随机512字节GPU发起IOPS、WholeGraph训练负载下受保护卷与基线持平，说明GPU发起512B细粒度读在数据保护卷上也有规模先例（厂商单方声明，无第三方复测，缺时延队列深度与功耗口径）。"
+    },
+    {
+      "item_id": "fcc0c18d8d6e0695d8d52b2d",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://www.hotstorage.org/2026/program.html"
+      ],
+      "reason": "HotStorage 2026海报以把GPU发起存储I/O推向1亿IOPS为目标，说明该扩展性问题已进入系统研究议程，与本Idea的问题层相关（仅见会议程序页，1亿IOPS为标题目标而非实测，取得原文前不作为成果引用）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "GP1写IOPS与尾时延分布缺失，评测样品2026年底才交付",
+    "GPU侧发起路径的错误恢复与多进程隔离语义未公开",
+    "512B粒度在真实KV与权重访问模式下的有效命中率未知"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "一台GPU节点配SCADA式GPU侧客户端库与1-4块512B细粒度低延迟SSD（GP1样品交付前用现有低延迟NVMe近似），跑KV命中与冷权重读取负载。",
+    "inputs": [
+      "读粒度512B-4KiB扫描",
+      "队列深度扫描",
+      "KV与权重热度分布（Zipf参数）",
+      "闪存层容量取HBM的0.5-2倍",
+      "命中率先验"
+    ],
+    "baselines": [
+      "全HBM驻留",
+      "主机中转读（POSIX路径）",
+      "内核GDS粗粒度预取"
+    ],
+    "metrics": [
+      "细粒度随机读IOPS与时延P50/P99",
+      "每I/O功耗",
+      "TTFT与吞吐",
+      "HBM替代比例与每GB成本"
+    ],
+    "support_criteria": [
+      "在P99时延预算内以更低每GB成本承接热工作集溢出，端到端TTFT优于重算基线"
+    ],
+    "reject_criteria": [
+      "尾时延或写耐久限制使可用命中率不足",
+      "GPU发起路径错误恢复不可用或隔离代价过高"
+    ],
+    "limitations": [
+      "GP1为厂商规格，无第三方评测与写IOPS数据",
+      "SCADA服务器生态与错误恢复语义未公开",
+      "未覆盖多节点共享与RDMA远程层"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-04",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_ec4d10d0cb04192e966e",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "介质（GP1）、发起机制（SCADA解读与框架）、保护卷规模先例（GRAID）与研究议程（HotStorage海报）共同支撑该可检验假设，但关键量化口径均为厂商规格或目标值、样品未交付，状态置observing。",
+      "evidence_item_ids": [
+        "ea689bb652526e0e8a1731e6",
+        "6d2d783dbbd72017f98515e0",
+        "20fb8a6279b3bbd998425ffa",
+        "30d45b2e7f98cfb8329a6b56",
+        "fcc0c18d8d6e0695d8d52b2d"
+      ]
+    }
+  ]
+}

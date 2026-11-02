@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_e63d79458c2079f00edf",
+  "identity": {
+    "problem_key": "structured_inference_flow_hotspots",
+    "mechanism_key": "deterministic_topology_circuit_innetwork_offload",
+    "target_key": "token_slo_aware_cluster_network"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "网络元件侧机制相对通用ECMP的结构化推理流量收益存在随负载模式变化的边界",
+  "problem": "PD解耦KV传输与MoE专家并行集合通信形成持续、位置相关的大流，在通用ECMP网络下产生结构性热点并叠加进TTFT。",
+  "hypothesis": "在结构化推理流量下，确定路径拓扑、按需光电路预留、按负载模式重构与网内计算卸载等网络元件侧机制相对ECMP基准的TTFT/TPOT与成本收益存在可量化边界，且边界随负载模式（纯推理、训练推理混部、MoE占比）移动。",
+  "mechanism": "按流量结构选择或重配网络元件侧机制：确定路径拓扑消除Braess子图、预填充期间按单次传输预留光电路、按负载模式重配光拓扑边、交换机侧执行集合通信并双向复用链路。",
+  "expected_effect": "在不增加等比带宽的前提下降低P99 TTFT与链路不均衡度，并给出每类机制适用的负载区间与交换/光模块成本节省。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "b3f2652bd5d7b29c134a3ae5",
+      "issue_date": "2026-08-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.21893v1"
+      ],
+      "reason": "ZCube针对PD解耦产生的持续、位置相关KVCache大流取消Spine与ECMP、以确定路径避免结构性热点：约千卡GLM-5.1集群迁移中吞吐提升15%、P99 TTFT降低40.6%、交换机与光模块成本降低33%，128 GPU仿真中25/75 PD连续分块流量最大/平均链路负载由ROFT+ECMP的4.50降至1.33（单作者预印本、仅一个模型家族且未公开原始遥测，随机elephant流量下两种拓扑不均衡度都接近9）。"
+    },
+    {
+      "item_id": "0aaf1f8c19ef8c0026d594cd",
+      "issue_date": "2026-08-17",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.21893v1"
+      ],
+      "reason": "ZCube补充记录以Braess悖论解释去Spine的少路径反而更优：静态ECMP哈希在结构化LLM流量下最坏无界不均衡，ZCube不含Braess子图、可证对任意流量矩阵均衡；千卡生产集群迁移后稳定运行数周、核心链路故障域0.006%（单一集群与模型族，故障恢复依赖毫秒级集中控制面）。"
+    },
+    {
+      "item_id": "d4a3a688d5c7879541acbb95",
+      "issue_date": "2026-09-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.20220v1"
+      ],
+      "reason": "MoX在光交换等直连拓扑上用静态、需求无知的token感知多播树加离线预计算的偏斜无忽视均衡，真实流量下16/32/64节点训练块时间距理想交换机仅0.5%/0.6%/7%、比需求优化的拓扑自适应方案快27%；为动态重构是否必须提供反例并界定边界（全程仿真、逐token转发与combine归约的实现开销未实测）。"
+    },
+    {
+      "item_id": "62a6332108ef8cd2abc46c28",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.18444v1"
+      ],
+      "reason": "面向P/D解耦的光电路KV缓存传输网络按单次传输预留全速率光电路（预填充期间提交、尾部在最后2048 token块开始时预留），以0.55-0.78倍2:1成本达到1:1性能、128卡仿真SLO达成率距1:1 EPS在0.4点内，且超额订阅损失主要来自ECMP冲突而非带宽不足（流级仿真、解码仅建模为KV接收端而无TPOT、会话亲和下优势缩小）。"
+    },
+    {
+      "item_id": "0e9ca85cd1bb3307fb817e90",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.39138v1"
+      ],
+      "reason": "MoSE针对训练推理混部中P-D解耦KV传输与训练通信对稀疏拓扑需求相反的问题，在同一光路预算内按负载模式重配边：推理重负载下KV通信成本均值与P95较静态训练拓扑降90.8%与91.9%，训练重负载下训练通信成本较滞留推理拓扑降22.7%与27.6%（仅为流级仿真、成本是归一化模型量、未建模OCS重构开销）。"
+    },
+    {
+      "item_id": "108f9f19c75e539258853563",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36339v1"
+      ],
+      "reason": "INC-MoE把专家并行MoE的dispatch与combine卸载到网内计算交换机（交换机侧AllGather与ReduceScatter、链路双向并发复用、与专家计算重叠），TTFT降低20.2%-33.1%、每加速器prefill吞吐提升25.3%-49.5%、等效带宽提升25.6%-31.8%、逐层输出余弦相似度1.0；补齐交换机内计算这块机制拼图（交换机由加速器仿真、仅OLMoE-1B-7B prefill、N=8增益为分析值）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "OCS重构与光电路建立的时延及控制平面开销在各机制下普遍未建模。",
+    "多租户与弹性负载下结构化流量假设是否保持。",
+    "网内计算交换机的可编程性、数值一致性与部署成本。",
+    "各机制的TPOT与尾部分位口径缺失，无法比较对生成期的影响。"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "流级网络模拟器承载结构化推理流量（PD解耦KV传输与MoE dispatch/combine），支持ECMP、确定路径、光电路预留与交换机内卸载四种路径机制，并用已发表的链路不均衡度、TTFT与成本数字校准。",
+    "inputs": [
+      "负载模式扫描：纯推理、训练推理混部、MoE占比",
+      "PD配比与KV传输量",
+      "光路预算与重构/电路建立时延",
+      "集群规模16-128卡"
+    ],
+    "baselines": [
+      "ECMP/ROFT通用网络",
+      "静态训练拓扑",
+      "1:1全速率EPS"
+    ],
+    "metrics": [
+      "P99 TTFT与TPOT",
+      "SLO达成率",
+      "最大/平均链路负载不均衡度",
+      "交换与光模块成本",
+      "重构与电路建立时延开销"
+    ],
+    "support_criteria": [
+      "在至少两类负载模式下，网络元件侧机制同时改善尾TTFT与成本且优于ECMP对照。"
+    ],
+    "reject_criteria": [
+      "收益只在单一负载模式或随机流量下出现，或重构与建立开销吞没全部收益。"
+    ],
+    "limitations": [
+      "流级模拟无法覆盖真实RDMA栈抖动、交换机微突发与故障恢复；网内计算的数值一致性在仿真中难以验证。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_3102ef96a8f2d4fa8941",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "ZCube确定路径、MoX静态路由、光电路预留、MoSE按模式重构与INC-MoE网内卸载跨多期形成同构证据链，INC-MoE补齐交换机内计算机制后问题-机制-目标身份成立，据此建立研究假设；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "b3f2652bd5d7b29c134a3ae5",
+        "0aaf1f8c19ef8c0026d594cd",
+        "d4a3a688d5c7879541acbb95",
+        "62a6332108ef8cd2abc46c28",
+        "0e9ca85cd1bb3307fb817e90",
+        "108f9f19c75e539258853563"
+      ]
+    }
+  ]
+}

@@ -426,7 +426,7 @@ def test_renderer_adapter_style_tables_and_vendored_cytoscape():
 
 LENS_REPRO = {
     "topic": "agent_acceleration",
-    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (21, 25)},
+    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (22, 27)},
 }
 
 
@@ -552,17 +552,24 @@ def test_lens_layout_is_deterministic_and_has_no_coordinate_voids():
                 // offsets into false void reports, so the ratio is judged
                 // over nonzero lengths only.
                 const nonzero = sorted.filter((d) => d > 0);
-                const median = nonzero.length
-                  ? nonzero[Math.floor((nonzero.length - 1) / 2)]
+                // A small direction-aligned column can be bimodal (items
+                // pinned to far-apart direction lanes with the issue node
+                // centered between them): with half the edges long, the
+                // median still describes the short mode and flags the whole
+                // spread as a void. Judging max against the 75th percentile
+                // keeps single genuine outliers (bulk short, one huge edge)
+                // caught while accepting an evenly spread column.
+                const p75 = nonzero.length
+                  ? nonzero[Math.floor((nonzero.length - 1) * 0.75)]
                   : 0;
-                const row = {{ count: sorted.length, median, max: sorted[sorted.length - 1] }};
+                const row = {{ count: sorted.length, p75, max: sorted[sorted.length - 1] }};
                 // Semantic edges (has_item / published_in / supports_judgement)
-                // must stay local to their lane or column: max ≤ 4× median.
+                // must stay local to their lane or column: max ≤ 4× p75.
                 // Containment edges (has_direction, tracks, …) may span layout
                 // context but are bounded outright.
                 const semantic = ['has_item', 'published_in', 'supports_judgement'].includes(relation);
                 const violated = semantic
-                  ? (nonzero.length >= 3 && median > 0 && row.max > median * 4)
+                  ? (nonzero.length >= 3 && p75 > 0 && row.max > p75 * 4)
                   : row.max > 4200;
                 if (violated) violations.push({{ topic, range, lens, relation, ...row }});
               }}

@@ -8,8 +8,8 @@
       "path": "knowledge/roadmaps/accelerator_io_datapath.json",
       "version": 1,
       "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-27",
-      "summary": "加速器I/O数据路径本期主线是控制路径出内核：uGDS把NVMe命令生命周期移入用户空间、数据经P2P DMA直传显存，内核驱动仅做一次性特权初始化，A100上4KiB同步写时延较GDS再低84.1%、LMCache命中时TTFT降62.7%、并发256下KV吞吐50.2对约19 kTokens/s（每句柄仅支持一块本地NVMe，错误恢复与隔离证据薄弱，12.12倍批量增益含GDS首批惩罚，尚属原型）；三星OCP 2026的AiSIO把GPU发起、P2P与CPU发起I/O收敛到统一API，100M IOPS与10倍冷启动为无基线的厂商声称；HotStorage 2026的一亿IOPS海报仅见于会议程序页、arXiv 2610.06622仅抓到题录，机制与结果均不可见。当前判断：GPU发起I/O正从数据面直达推进到控制面出内核，uGDS可试点用于KV缓存或向量检索外置、先评估错误恢复语义并补齐POSIX适配；厂商数字在给出可复现条件前不作为架构决策依据。"
+      "updated_by_issue": "2026-11-02",
+      "summary": "加速器直连I/O数据路径的主线仍是把发起与控制权推向加速器侧、数据经DMA直达显存：uGDS把NVMe命令生命周期移入用户空间，A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型）；本期五节点PoC以gds_stats计数器证实124012次I/O全部走nvfs DMA、零次兼容回退、聚合读132.1 GiB/s（厂商自测、未测能耗与端到端负载），AWS以GDS把KV缓存分层单客户端吞吐上限由ENA 100 Gbps、EFA 700 Gbps提到1200 Gbps（架构文规格口径、仅限NVIDIA实例且需同可用区），AMD ROCm 10.1为hipFILE补上异步直连快路径但全为定性声明，SCADA/cuObject标准化与Kioxia GP1介质侧持续推进；当前判断：GDS系数据面直连正从厂商宣称进入计数器可验证的工程验证期，控制面出内核（uGDS）可试点KV缓存或向量检索外置但须先评估错误恢复语义并补齐POSIX适配，FlatCake等主源缺失条目与全部无基线厂商数字维持待复核、不作为架构决策依据；第三方复测与时延/能耗/尾时延口径，或uGDS错误恢复与多盘扩展证据出现，即应上调直连路径成熟度判断。"
     },
     {
       "topic_id": "agent_acceleration",
@@ -17,8 +17,8 @@
       "path": "knowledge/roadmaps/agent_acceleration.json",
       "version": 2,
       "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-29",
-      "summary": "Agent加速本期四条核心证据把上期“确定性护栏下的复用与拦截”判断推进到摊销核算与故障面：MCP-Injector在MCP客户端与服务器之间注入按1774个仓库57240条线程校准的18条故障规则，两骨干三Agent栈上任务完成分从8.08降至3.23（约六成）且120B保留分数比例并不高于20B——工具链容错买不来模型规模，重试限制、输出校验与验收门必须与加速机制同设计，并行与投机调用本身是新故障暴露面（仅两种gpt-oss骨干、任务偏易、LLM裁判评分）；按当前问题压缩上下文的评测显示当前问题得分不能预测对隐藏后续问题的服务，25%预算需约6.6至11.0个后续问题回本、词级压缩无可检测增益而标识符保留66.4%对42.4%（录制轨迹而非在线Agent、仅零售域）；同一期，教训规则只增不退役使文档漂移造成118次失败中的48次、单轮LLM审计仅找出约一半过期陈述（单作者单仓库不可外推），SWE-Residual残留状态使干净起点已解任务失败61.9%至81.3%、保留前任行数高于中位数的续作少成功14.0至22.7个百分点——继承工作须先验证再信任。当前判断：复用、压缩与投机类加速的收益都要按后续问题与后续会话摊销核算并计入新增故障面，护栏（验收门、退役测试、继承验证）与机制本身同设计仍是该主题的胜出方向；会改变判断的观察：出现按隐藏后续问题计分仍稳定回正的压缩或复用机制，或在注入故障下成功率不退化的加速执行链。"
+      "updated_by_issue": "2026-11-02",
+      "summary": "Agent加速本期四条核心证据把上期“复用、压缩与投机类收益按后续问题与后续会话摊销核算并计入新增故障面”的判断落到工具配给与交付链完整性上：受控消融显示代码图与嵌入检索工具把8B编码Agent函数级定位从16.7%提到33.2%而增益从4-8B档的10-17个百分点缩到32B档的2-4个百分点——检索工具投资应优先配给小模型并按规模逐个验证而非默认继承（只测定位不写补丁、未报token与时延、限单一Python基准）；STRATUM把根因与失败笔记持久化为仓库旁分层知识图记忆供下个会话继承，8个真实bug上根因文件命中21/24对纯检索6/24、中位工具调用9次对18次（自述草图与初步证据、原型仅实现4/9工具且用词法检索、判据止于文件级）；同一期，质量门约束的物理资源核算显示禁用缓存时EAGER预取检索较grep每任务省46.3k token且调用少35.7%而质量非劣，MASK-5裁剪逻辑提示降33.3%却使未缓存预填增608.5%——改写可复用历史会以物理成本换逻辑token节省，裁剪收益必须按未缓存预填与能耗净计（成本结论来自两个100任务异栈队列、能耗为代理值）；harness固定前缀截断使720次实测中34%的工具结果在送达模型前被截成坏JSON而最大提示仅占窗口5.75%，按行感知截断修复后同正确率下工具调用由68降至53、计算由32降至18——交付链静默丢失是可逐段计量的真实浪费源（截断对答案的因果占比仍是开放问题）。当前判断：该主题最便宜的加速仍不是换更强模型，而是按规模配检索工具、跨会话继承仓库记忆、并给上下文策略与工具结果交付加物理核算和逐段丢失计量，任何节省主张都应按未缓存预填、后续问题与后续会话净计并保留验收门；会改变判断的观察：出现32B以上模型仍稳定受益的检索工具组合、按隐藏后续问题计分仍稳定回正的压缩机制，或跨会话记忆继承在多仓库多作者环境下的复现。"
     },
     {
       "topic_id": "ai_chip_accelerator",
@@ -26,17 +26,17 @@
       "path": "knowledge/roadmaps/ai_chip_accelerator.json",
       "version": 2,
       "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-29",
-      "summary": "AI芯片本期证据延续可用算力由软件栈与格式选择决定的判断并扩展到显存与资源调度侧：Proteus把解压融合进查询引擎单内核省46%至60%显存但运行开销8%至45%、专用内核仍快2.7至4.7倍；LIRQuant把W4A4KV4校准降到H20上25分钟与20.3GB、A100 prefill较FP16加速2.18至2.32倍，但batch=1的decode只有0.73至0.77倍；GeoTrain在异构GPU池上联合选择子集与流水线放置把迭代时间最多缩短61.4%（最优计划只用4卡中的3卡）；ATEST按实时GPU负载调节采样预算、同查询高负载能耗可达空闲4.1倍时在线模式仍全部作答保持60.0%精度。当前判断：决定算力兑现的是格式、内核与调度这些软件层选择而非峰值硬件，引用任何加速比前必须核对batch口径、负载与能耗状态以及显存-开销权衡。"
+      "updated_by_issue": "2026-11-02",
+      "summary": "AI芯片本期证据把可用算力由软件栈与执行映射决定的判断扩展到端侧与异构集群两侧：边缘NPU实测显示softmax与张量重排使注意力kernel占计算密集kernel时延最高89.4%并令矩阵单元空转、GDN线性注意力较Adreno GPU慢30%-71%而同NPU上matmul/conv快6.3-11.4倍，GPU与WSE异构组合中只有P/D分离超过两类设备独立吞吐之和且7B/70B模型集群级KV-cache带宽下界为209.6与150.4GB/s，S3R把INT8训练随机数生成移出逐元素向量单元后TPU v5p全训练步达BF16的1.24至1.32倍，MCCL让10GbE下M4 Max集群以95.9%并行效率训练、5.5台约抵一台A100的TF32吞吐；当前判断：决定算力兑现的仍是算子到执行单元的映射与软件栈成熟度而非峰值硬件——端侧应优先适配softmax与张量重排而非堆峰值算力、集群侧按通信范式选择硬件组合，引用任何加速比前必须核对执行路径、batch与能耗口径。"
     },
     {
       "topic_id": "ai_infra_horizontal",
       "topic_name": "AI Infra横向动态",
       "path": "knowledge/roadmaps/ai_infra_horizontal.json",
-      "version": 1,
-      "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-27",
-      "summary": "AI Infra横向动态本期两条核心证据都在推理服务与运行时：MacPaw用统一单请求解码负载在四台Apple机型配RTX 4090对照逐项复测四类服务器GPU上验证的优化，KV剪枝吞吐在Apple上最高1.75倍而RTX 4090至多1.02倍、六种投机解码方法主基准全部负收益、唯一解码提升1.1%的例外端到端反降13.8%，端侧选型不能照搬服务器结论（限于单请求本地解码，未评估多请求批处理）；TRE以跨模型可比的令牌服务份额统一驱动共享GPU池的副本调配、按10秒周期向缺口最大模型小步迁移并保持副本秒级睡眠唤醒，较KV缓存反应式扩缩器把P95端到端时延降11.9%至79.0%（仅2节点8卡测试台，未报告生产部署与吞吐影响）。当前判断：端侧选型应按目标机型实测并复用其HW-GAP类标签预判可移植性；多模型混部容量调度可跟踪其跨模型信号与热切换设计，引用时标注测试台预印本。"
+      "version": 2,
+      "change_type": "material_change",
+      "updated_by_issue": "2026-11-02",
+      "summary": "AI Infra横向动态本期两条新证据都指向推理链路的时延与容量杠杆：SCR把选择性稀疏注意力的检索按簇摊销（相似查询块只做一次检索并继承TokenSelect选择缓存），较TokenSelect把检索调用从8959次降到1165次、InfiniteBench平均TTFT降约35%、RULER在128K降32.9%，属预填充时延优化而非全链路加速，且仅在单张H100验证、吞吐利用率与成本缺失；HBF近旁内存分层以HBM–HBF–host三层放置加10%准入缓冲，在trace驱动仿真中把高吞吐serving完成时间降46.0–60.0%、GLM-5.2在5× trace达7.0×加速，但全部为仿真而非实机且混合配置平均TPOT高于HBM-only，不适用延迟敏感serving。当前判断：serving_runtime_compiler仍是证据最密集的主线，证据已从kernel与调度延伸到预填充检索摊销，加速器内存分层作为新分支首次出现；两个新杠杆共同的限制是验证规模（单卡实测与trace仿真），若出现多卡实机复现或生产trace上的TPOT/P95与成本数据，应把对应观察项升级为可复用结论，在此之前延迟敏感场景不应采用HBF混合分层配置。"
     },
     {
       "topic_id": "cross_region",
@@ -44,8 +44,8 @@
       "path": "knowledge/roadmaps/cross_region.json",
       "version": 1,
       "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-29",
-      "summary": "跨域传输本期证据继续收紧“先把状态压小再谈搬运”的路线：Dual-QK以互逆非正交Q/K变换让INT2量化与查询通道剪枝同时成立，128K上下文、40%查询稀疏下每元素存储2.34位、带宽1.93位，接收端须配套互逆变换（8.3倍读取减少为估计值，仅单GPU解码评估，长上下文检索仍低于BF16）；BeNice!用随机深度预训练让循环模型各轮共享末轮KV，1.3B模型全局显存从63.82GB降至21.60GB、高负载回放缓存命中率升8.1个百分点（服务结果为代理模型仿真）。当前判断：压缩与放置分支已把可传输的KV字节推到约每元素2位的量级，体积不再是跨域搬运的第一约束，限定因素转为真实WAN下传输对重算的判据与尾延迟——Lightstorm解析模型给出的GQA-1/8交叉点9～14Gbps至今没有跨域实测校准；在拿到端到端WAN数据前，评估压缩格式应连同接收端配套变换一起核算编解码与随机访问开销，而不是据单机压缩比外推传输收益。"
+      "updated_by_issue": "2026-11-02",
+      "summary": "本期微软 M365 四条生产链路（逾 1.21 亿次模型调用）首次以生产实测给出跨域 KV 的硬约束：会话 KV 跨部署复用率从 88.9% 跌至 29.0%，按会话与部署双键控后无限内存的重建下限仍达 20.2%，十分之一预算下 int4 多分辨率保留把重算率压到 13.6%（LRU 为 63%）——部署亲和路由与按部署键控的压缩保留应取代“先把字节压小”成为跨域 KV 的第一设计变量；体积侧证据同步收紧（RAQ-MLA 把整份 MLA 缓存量化到约 2.5 比特、100 万 token 序列从 52.9GiB 降至 8.2GiB，DCKV 以端到端学习编解码器在 55 倍以上压缩下把三项长上下文基准平均损失控制在 1.8 点内），但 Lightstorm 给出的传输对重算交叉点（GQA-1/8 为 9～14Gbps）至今没有跨域端到端实测校准，评估压缩格式时应连同接收端配套变换与按需访问开销一起核算，并把部署亲和路由加压缩保留作为对照基线，而不是据单机压缩比外推跨域传输收益。"
     },
     {
       "topic_id": "dpu_inline",
@@ -62,8 +62,8 @@
       "path": "knowledge/roadmaps/kv_management.json",
       "version": 1,
       "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-29",
-      "summary": "KVCache管理最新证据把复用边界从精确前缀推向更一般形态：Tail-Replay 与 9 月末的 SuffixReplay 两条独立工作线显示混合架构 LLM 可用近期尾部重放重建线性注意力状态、摆脱检查点对齐（Tail-Replay 5%至10%重放保留92.8%至99.9%质量、32K下TTFT最高加速14.32倍，重放预算需按模型标定且服务级评估不完整）；SparseEngine 以生命周期契约把15种KV稀疏方法统一进引擎并跨轮保留压缩KV（Agent回放加速1.57至2.24倍，激进预算下AIME正确率降至18.3%）；Lafa 的前缀复用只是模型内机制旁证（无命中率与TTFT数据、仅单卡batch为1），LMCache MUSA wheel 仅是非CUDA可安装性信号。结合已确立约束——非前缀/分段复用必须带修复与来源绑定（KV-Repurpose 命中率3.3%升至63.9%但多跳明显退化、SAFE-KV 修复后五个负载仍有四个慢于全量预填充、跨适配器冲突使精度从0.94降至0.64）、SSD分层收益取决于持久化分块与GPU前缀块对齐（LMCache 实测热请求TTFT由27毫秒升至93.1毫秒的反例，Range 按字节引擎距HBM驻留仅58-66毫秒）、vLLM v0.32.0 的FP8 KV与 Vosti 页级校验是升级即得项——当前判断：自研KV栈应把『页粒度尾部重放复用＋来源绑定缓存键＋分块对齐的分层卸载』作为下一轮改造优先组合，任何非精确前缀复用上线前必须先过行为一致性与来源冲突两道门，低精度KV与页级不变式回归则可随版本升级直接落地。"
+      "updated_by_issue": "2026-11-02",
+      "summary": "本期证据把 KVCache 管理的重心从『扩展复用机制』进一步推向『驱逐策略与缓存键身份的动态化』：单轮/多轮/Agent 混合流量下没有静态驱逐策略始终占优（WAKMan 实测 vLLM 默认 LRU 最多落后最优策略 22.4 个百分点，旁路影子副本加块哈希重放的在线切换把差距压到 2.04 个百分点，但证据全部来自合成轨迹且只报告命中率），而 Flex 证明请求自适应混合模型下同一文本前缀会按执行路径分裂为互不兼容的层缓存，把执行路径绑入两级基数树校验后命中率从 18.7% 升到 43.4%、TTFT 从 10.68 秒降到 5.92 秒——与来源契约证据叠加，『多维身份绑定缓存键』从工程建议升级为双证据支持的必选项；分层侧的限制因素则从容量转为调度权与 CPU 算力（DualPace 显示主机 KV 池在 120-240GiB 之间收益持平，LMCache ROCm wheel 只解决部署前提），因此当前判断：自研 KV 栈下一轮改造的优先组合是『流量自适应驱逐切换＋含执行路径的多维来源绑定缓存键』，页粒度尾部重放与分块对齐的分层卸载保持既有优先级；会把判断推向升级或推翻的观察点，是 WAKMan 式在线切换在真实流量上把命中率增益兑现为 TTFT/吞吐改善，以及主机层容量越过约 240GiB 后边际收益是否仍然趋平。"
     },
     {
       "topic_id": "memory_dsa",
@@ -71,8 +71,8 @@
       "path": "knowledge/roadmaps/memory_dsa.json",
       "version": 1,
       "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-23",
-      "summary": "内存语义与DSA卸载本期新增CXL共享闪存的近数据执行实证：三星VS-Flash把闪存段经CXL暴露给主机CPU与设备RISC-V核共享执行，以1GB为单位自适应预取活跃段并按批次大小分流请求，向量数据超出主机DRAM后批量吞吐较原生Milvus平均提升36.8倍、小批量p99最多降24.8倍（36.8倍为摘要级汇总，基线仅用72核中8核，设备核数与容量未披露，收益止于向量库服务层）。当前判断：CXL共享段加就近执行是可借鉴的超出本地DRAM的容量扩展路径，与此前CXDVirt评测基础设施一起说明CXL内存语义正从仿真走向器件级原型；但证据仍限单一厂商原型与向量检索负载，不应外推到端到端时延或KV复用，公平基线下的对照与第二家实现出现才会升级判断。"
+      "updated_by_issue": "2026-11-02",
+      "summary": "本期Callosal把Linux页缓存重构为以共享解耦内存为中心的集群级缓存，由可编程交换机内一致性目录线速排序页粒度MSI失效，10-30%写、争用不极端的混合读写下平均吞吐为NFS的4.6倍、99%读均匀访问跨4节点约4.5Mops（冲突写与私有覆写吞吐低于NFS、5%写时所有权迁移无法扩展出单节点、缺时延与CPU数据），把内存语义路线从单层容量扩展（HyMCache、TempoKV、VS-Flash）推进到交换机协调的跨节点强一致共享；当前判断：内存语义与池化分支在本专题占优，DSA/IAA卸载在全部已发布证据中仍缺席（REMOP明确不涉及DSA或IAA卸载），限制因素是实证均绑定单一厂商原型与单一拓扑且写争用、时延与CPU代价未量化，公平基线下的独立复现或第二家实现（含冲突写比例扫描与时延/CPU数据）出现才应升级判断。"
     },
     {
       "topic_id": "optical_network",
@@ -80,8 +80,8 @@
       "path": "knowledge/roadmaps/optical_network.json",
       "version": 1,
       "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-21",
-      "summary": "光交换网络本期新增OCS布线与重配时机的统一建模信号:Llama 3 405B预训练54天快照中8.4%的意外中断归因于交换机与线缆,该预印本用信息几何把布线选择、偏离对称程度与重配时机纳入凸优化与变化检测,布线为概率单纯形上受度约束的点、以对对称先验的KL散度正则,重配时机用GLR-CUSUM检测,合成动态负载下regret约为静态先验的五分之一(单作者预印本未经同行评审,全部实验为合成,无生产trace与真实OCS硬件)。当前判断:电光混合组网的重配调度可参考其变化检测与公平性建模,部署决策仍需真实集群测量支撑;维持emerging。"
+      "updated_by_issue": "2026-11-02",
+      "summary": "光交换网络当前的主线仍是仿真驱动的OCS调度设计,设计轴已从拓扑选择推进到供给粒度与重配时机——LACE通道级非对称分配仿真通信加速1.21-2.04倍、Flux负载级调度把训练迭代时间降至多10倍、RingStitch光缝合把95%负载下阻塞率从6.9%降到0.4%、OOLS机会式启用空闲端口使makespan较SAN基线缩短66%-85%——共同限制是除LACE三服务器测试床外全部结果止于仿真且重配开销多按抽象轮次计(代工兼容MEMS器件仅确认论文存在、无器件参数),判断维持emerging;若出现纳入真实毫秒级OCS重配时延与生产训练负载的评估或真实集群部署,应把该分支从emerging上调并重估各调度收益的可信度。"
     },
     {
       "topic_id": "storage_media",
@@ -89,8 +89,8 @@
       "path": "knowledge/roadmaps/storage_media.json",
       "version": 1,
       "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-21",
-      "summary": "存储介质本期仅一条器件可靠性观察信号:在轨辐射误码数据稀缺且短期无法补充,论文用变分自编码器学习立方星FRAM实收误码掩码的空间模式,仅用解码器从随机隐向量生成合成掩码供应用级故障注入,对在轨观测掩码十折交叉验证precision 0.92、recall 0.91(验证仅为统计层面且未披露快照样本量,注入机制未在真实负载上演示,仅覆盖FRAM器件)。当前判断:该信号补充FRAM抗辐照特性与星载低功耗存储选型背景,不改变存储层级结论;HBF实物硅片数据依旧缺失,各分支维持emerging。"
+      "updated_by_issue": "2026-11-02",
+      "summary": "本期闪存作推理内存层的需求侧证据落地:DeepInfer-Mac 将 337.6GiB 的 750B 级 MoE 权重放入 MacBook 内置 SSD 按需流式,24GB 统一内存即可运行但实测解码仅 0.21-0.72 tok/s、3764 token 提示 TTFT 达 309.0s,瓶颈从容量转为消费级 SSD 带宽(论文未实测 SSD 带宽、路由依赖链限制加带宽收益)。当前判断:NAND/Flash/HBF 分支证据最厚且闪存承接 AI 状态的需求已被端侧实测坐实,但介质侧系统证据仍分歧——FLINT 支持 HBF 作 HBM 旁只读权重容量层,而 KV 卸载栈底层直接换成 HBF 的模拟显示时延反升 2-5.5 倍且热极限先于峰值带宽到达;限制因素依旧是 HBF 实物硅片数据缺失,首批样片的带宽/时延/耐久实测或消费级 SSD 带宽被端侧实测确证为硬瓶颈将改变判断,各分支维持 emerging、evidence_timeline。"
     },
     {
       "topic_id": "tpn",
@@ -98,8 +98,8 @@
       "path": "knowledge/roadmaps/tpn.json",
       "version": 2,
       "change_type": "no_material_change",
-      "updated_by_issue": "2026-10-29",
-      "summary": "TPN方向本期证据从解析建模与评估设施一侧强化既有判断：SARA用排队论把预填充、KV传输与解码三阶段纳入分位SLO约束下的资源分配（七天Azure轨迹回放goodput与穷举搜索最大差距3.8%，但26.6%提升仅摘要级声明、传输模型未见实测），ServeTwin闭环模拟器把分布式serving验证误差压到10%以内并显示并发2048时三倍带宽吞吐停滞、调度运行时开销减40%反增60%吞吐（设计扫描均为模拟而非集群实测），PriorityFEC在有损窄带边缘链路按KV价值排序加截止期感知FEC使紧截止期下任务F1约43%对最强基线约8%（指标是F1而非TTFT/TPOT时延），单卡内核剖析则显示长上下文本地解码中注意力内核未达带宽与算力上限——KV网络侧价值论证必须依赖跨节点证据。当前判断：跨节点KV放置与带宽调度仍是空位，交接固定开销与调度时序优先于堆带宽，解析排队模型可先用于按分位SLO估算KV传输带宽，网络侧需联合TTFT与TPOT判别饱和来源。"
+      "updated_by_issue": "2026-11-02",
+      "summary": "TPN方向本期证据首次把网络元件侧机制连成证据链：INC-MoE将专家并行MoE的dispatch/combine集合通信卸载到网内计算交换机并以链路双向复用，TTFT降低20.2%–33.1%、每加速器prefill吞吐提升25.3%–49.5%、并发AG与RS等效带宽提升25.6%–31.8%（交换机由加速器仿真而非硬件实现，仅评估OLMoE-1B-7B的prefill，N=8增益为分析值）；ThunderEP在PCIe消费级GPU上以单步DMA把MoE激活通信流量减40%、prefill最高加速1.66倍（仅单节点、不涉KVCache与多节点）；异构GPU流水线的精确完成时间界证明异步传输下逐次通信时延低于计算松弛量时只进常数项、不改变稳态吞吐斜率，评估网络侧收益应先比对这一阈值再谈扩带宽；DolphinRouting在H20集群vLLM加Mooncake真实部署中把PD路由从固定长度阈值升级为按请求簇查表，P90 TTFT降5.7–7.9%、P90 TPOT降2.6–10.1%（基线仅Dynamo长度规则，吞吐与KV传输量未报告）。当前判断：结构化推理流量的收益来自路径与交换机机制及调度时序而非裸带宽，确定路径（ZCube）、按负载模式重构（MoSE）、光电路预留与网内卸载已构成可检验的机制族，但均未在多租户生产网与TPOT尾部分位口径下验证；跨节点KV放置与带宽调度空位仍在，这是把TPN从证据时间线升级为阶段判断的关键观察点。"
     }
   ],
   "ideas": [
@@ -112,7 +112,7 @@
         "tpn"
       ],
       "path": "knowledge/ideas/idea_08f0269ef7fd181c9968.json",
-      "last_updated_issue": "2026-10-23"
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_0beeab7573d3f58b0330",
@@ -123,7 +123,7 @@
         "ai_chip_accelerator"
       ],
       "path": "knowledge/ideas/idea_0beeab7573d3f58b0330.json",
-      "last_updated_issue": "2026-10-29"
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_2f2161ae7470caca28bb",
@@ -134,7 +134,7 @@
         "memory_dsa"
       ],
       "path": "knowledge/ideas/idea_2f2161ae7470caca28bb.json",
-      "last_updated_issue": "2026-10-23"
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_3957174660eb8129b82b",
@@ -156,7 +156,7 @@
         "storage_media"
       ],
       "path": "knowledge/ideas/idea_45751e91b7abebcf4f0e.json",
-      "last_updated_issue": "2026-09-24"
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_6e6886675f61e74dd472",
@@ -167,7 +167,7 @@
         "agent_acceleration"
       ],
       "path": "knowledge/ideas/idea_6e6886675f61e74dd472.json",
-      "last_updated_issue": "2026-10-27"
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_791733287c306fe0d68e",
@@ -201,7 +201,7 @@
         "agent_acceleration"
       ],
       "path": "knowledge/ideas/idea_876c619ed473b24b78bc.json",
-      "last_updated_issue": "2026-10-29"
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_8aa3d66177596baef1ac",
@@ -212,7 +212,7 @@
         "agent_acceleration"
       ],
       "path": "knowledge/ideas/idea_8aa3d66177596baef1ac.json",
-      "last_updated_issue": "2026-10-29"
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_8eb01e6f36fc7709c772",
@@ -224,6 +224,39 @@
       ],
       "path": "knowledge/ideas/idea_8eb01e6f36fc7709c772.json",
       "last_updated_issue": "2026-10-29"
+    },
+    {
+      "idea_id": "idea_984fec4fcf65a75a6b1f",
+      "title": "用部署亲和路由与按部署键控的压缩保留治理跨部署 KV 复用坍塌",
+      "idea_type": "solution_concept",
+      "status": "observing",
+      "topic_ids": [
+        "cross_region"
+      ],
+      "path": "knowledge/ideas/idea_984fec4fcf65a75a6b1f.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "idea_id": "idea_9933531fde69ffb5a17c",
+      "title": "负载结构级OCS调度MILP的可扩展启发式替代",
+      "idea_type": "research_hypothesis",
+      "status": "seed",
+      "topic_ids": [
+        "optical_network"
+      ],
+      "path": "knowledge/ideas/idea_9933531fde69ffb5a17c.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "idea_id": "idea_9b899f5928d24ae421c1",
+      "title": "边缘NPU线性注意力执行失配的机理与数据流重排修复",
+      "idea_type": "research_hypothesis",
+      "status": "observing",
+      "topic_ids": [
+        "ai_chip_accelerator"
+      ],
+      "path": "knowledge/ideas/idea_9b899f5928d24ae421c1.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_a90d71c35ea8a0f208da",
@@ -248,6 +281,17 @@
       "last_updated_issue": "2026-10-27"
     },
     {
+      "idea_id": "idea_d1a94da7ed02e4533537",
+      "title": "空闲OCS端口机会式复用在真实重配时延下的收益保持性",
+      "idea_type": "research_hypothesis",
+      "status": "seed",
+      "topic_ids": [
+        "optical_network"
+      ],
+      "path": "knowledge/ideas/idea_d1a94da7ed02e4533537.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "idea_id": "idea_d994d97852383184acfe",
       "title": "增量与残差压缩能否把跨域状态同步从带宽瓶颈变成可调度开销",
       "idea_type": "research_hypothesis",
@@ -256,7 +300,40 @@
         "cross_region"
       ],
       "path": "knowledge/ideas/idea_d994d97852383184acfe.json",
-      "last_updated_issue": "2026-10-29"
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "idea_id": "idea_dadc3140f9ade3ddc59c",
+      "title": "GPU发起的512B级细粒度闪存读能否以可接受尾时延替代部分HBM扩容",
+      "idea_type": "research_hypothesis",
+      "status": "observing",
+      "topic_ids": [
+        "accelerator_io_datapath"
+      ],
+      "path": "knowledge/ideas/idea_dadc3140f9ade3ddc59c.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "idea_id": "idea_e201a2fc3d5bd226c7fe",
+      "title": "把NVMe控制路径移入用户空间，为外置KV缓存构建低于内核GDS时延的直连试点",
+      "idea_type": "solution_concept",
+      "status": "observing",
+      "topic_ids": [
+        "accelerator_io_datapath"
+      ],
+      "path": "knowledge/ideas/idea_e201a2fc3d5bd226c7fe.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "idea_id": "idea_e2f9f007a7d278e1e449",
+      "title": "交换机一致性目录与公平准入联合的共享内存缓存层",
+      "idea_type": "solution_concept",
+      "status": "observing",
+      "topic_ids": [
+        "memory_dsa"
+      ],
+      "path": "knowledge/ideas/idea_e2f9f007a7d278e1e449.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_e2ff81802e9e160bca19",
@@ -267,7 +344,29 @@
         "kv_management"
       ],
       "path": "knowledge/ideas/idea_e2ff81802e9e160bca19.json",
-      "last_updated_issue": "2026-10-29"
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "idea_id": "idea_e63d79458c2079f00edf",
+      "title": "网络元件侧机制相对通用ECMP的结构化推理流量收益存在随负载模式变化的边界",
+      "idea_type": "research_hypothesis",
+      "status": "observing",
+      "topic_ids": [
+        "tpn"
+      ],
+      "path": "knowledge/ideas/idea_e63d79458c2079f00edf.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "idea_id": "idea_e8ac8cc5cd625623e8dd",
+      "title": "混合流量下影子重放在线切换驱逐策略的命中率与端到端收益假设",
+      "idea_type": "research_hypothesis",
+      "status": "seed",
+      "topic_ids": [
+        "kv_management"
+      ],
+      "path": "knowledge/ideas/idea_e8ac8cc5cd625623e8dd.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "idea_id": "idea_f7841984fcce6a274881",
@@ -278,7 +377,7 @@
         "tpn"
       ],
       "path": "knowledge/ideas/idea_f7841984fcce6a274881.json",
-      "last_updated_issue": "2026-10-29"
+      "last_updated_issue": "2026-11-02"
     }
   ],
   "idea_candidates": [
@@ -294,6 +393,19 @@
       "trigger_issue": "2026-09-30",
       "path": "knowledge/idea-candidates/candidate_0213c6ebda9867b2b582.json",
       "last_updated_issue": "2026-09-30"
+    },
+    {
+      "candidate_id": "candidate_03aa11f8d422220637ce",
+      "title": "多层OCS重配控制的组合:变化检测触发与摊销门控下的空闲端口机会式激活",
+      "idea_type": "research_hypothesis",
+      "disposition": "proposed",
+      "topic_ids": [
+        "optical_network"
+      ],
+      "origin_kind": "cross_issue_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_03aa11f8d422220637ce.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_045301052ee5f2b35358",
@@ -322,6 +434,19 @@
       "last_updated_issue": "2026-10-18"
     },
     {
+      "candidate_id": "candidate_04af8f5a62d2db2fff9f",
+      "title": "按token共享随机舍入阈值把INT8训练的随机数生成移出向量单元瓶颈",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "ai_chip_accelerator"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_04af8f5a62d2db2fff9f.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_079a62a6e119a9b1913c",
       "title": "用beacon查询预测长推理模型对思维链token的重访",
       "idea_type": "solution_concept",
@@ -335,6 +460,19 @@
       "last_updated_issue": "2026-09-10"
     },
     {
+      "candidate_id": "candidate_09015fa7a51a91174dfb",
+      "title": "按请求簇离线学习聚合或分离prefill的查表路由兼顾P90 TTFT与TPOT",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "tpn"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_09015fa7a51a91174dfb.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_0beeab7573d3f58b0330",
       "title": "把硬件知识与真实部署验收接成内核优化闭环",
       "idea_type": "solution_concept",
@@ -346,6 +484,19 @@
       "trigger_issue": "2026-08-29",
       "path": "knowledge/idea-candidates/candidate_0beeab7573d3f58b0330.json",
       "last_updated_issue": "2026-09-03"
+    },
+    {
+      "candidate_id": "candidate_0cc5d88d05aa567d0a74",
+      "title": "HBM–HBF–host近旁分层加缓冲式cache-aware调度扩展高吞吐LLM serving容量",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "ai_infra_horizontal"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_0cc5d88d05aa567d0a74.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_0e9bb94286d9297f9c6c",
@@ -517,6 +668,32 @@
       "last_updated_issue": "2026-10-29"
     },
     {
+      "candidate_id": "candidate_25ddd6588a4f3c17a200",
+      "title": "单步DMA通信消除PCIe消费级GPU上MoE专家并行的主机中转",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "tpn"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_25ddd6588a4f3c17a200.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "candidate_id": "candidate_2869e9753cbf999dc290",
+      "title": "以统一内存原地桶式all-reduce补齐Mac集群的PyTorch分布式训练后端",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "ai_chip_accelerator"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_2869e9753cbf999dc290.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_2a9418c21c31e0997a20",
       "title": "用带预算设施选址的可证近似做前缀KV放置",
       "idea_type": "solution_concept",
@@ -528,6 +705,19 @@
       "trigger_issue": "2026-09-28",
       "path": "knowledge/idea-candidates/candidate_2a9418c21c31e0997a20.json",
       "last_updated_issue": "2026-09-28"
+    },
+    {
+      "candidate_id": "candidate_2af8c1c8910ba5843e7a",
+      "title": "仓库旁驻留分层知识图记忆供编码Agent跨会话继承",
+      "idea_type": "solution_concept",
+      "disposition": "duplicate",
+      "topic_ids": [
+        "agent_acceleration"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_2af8c1c8910ba5843e7a.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_2d2155f62e0bb4dc1f0d",
@@ -567,6 +757,19 @@
       "trigger_issue": "2026-10-23",
       "path": "knowledge/idea-candidates/candidate_30000ab57d8d17fb38df.json",
       "last_updated_issue": "2026-10-23"
+    },
+    {
+      "candidate_id": "candidate_354849a7e622a14673a6",
+      "title": "解耦矩阵/向量单元加速器上非矩阵算子饿死矩阵单元：跨训练与推理的单元级负载再平衡机理",
+      "idea_type": "research_hypothesis",
+      "disposition": "proposed",
+      "topic_ids": [
+        "ai_chip_accelerator"
+      ],
+      "origin_kind": "cross_issue_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_354849a7e622a14673a6.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_362068f7684cc5f18b4f",
@@ -634,6 +837,32 @@
       "last_updated_issue": "2026-09-04"
     },
     {
+      "candidate_id": "candidate_3e8af628b225ab4e43d5",
+      "title": "网内计算交换机承接专家并行MoE集合通信并与专家计算重叠",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "tpn"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_3e8af628b225ab4e43d5.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "candidate_id": "candidate_4338ead7c8aa2f8ab129",
+      "title": "按簇摊销选择性稀疏注意力的检索开销以降长上下文TTFT",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "ai_infra_horizontal"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_4338ead7c8aa2f8ab129.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_43f490bd18a15229bf1a",
       "title": "同族模型间以KV缓存插值替代文本交换",
       "idea_type": "solution_concept",
@@ -645,6 +874,19 @@
       "trigger_issue": "2026-10-21",
       "path": "knowledge/idea-candidates/candidate_43f490bd18a15229bf1a.json",
       "last_updated_issue": "2026-10-21"
+    },
+    {
+      "candidate_id": "candidate_44ec3b507db01363db15",
+      "title": "以计算松弛量门控MoE专家并行集合通信的端侧单步与网内执行选择",
+      "idea_type": "research_hypothesis",
+      "disposition": "proposed",
+      "topic_ids": [
+        "tpn"
+      ],
+      "origin_kind": "cross_source_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_44ec3b507db01363db15.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_4712cdbe2d8960143688",
@@ -855,6 +1097,32 @@
       "last_updated_issue": "2026-10-27"
     },
     {
+      "candidate_id": "candidate_68a0b3404f5d3b4cb63a",
+      "title": "交换机内一致性目录支撑的强一致集群级内核页缓存",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "memory_dsa"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_68a0b3404f5d3b4cb63a.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "candidate_id": "candidate_6df55f097eece2b8f831",
+      "title": "端到端学习编解码器按质量成本压缩混合模型KV缓存供跨设备搬运",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "cross_region"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_6df55f097eece2b8f831.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_6e5db588e2f81f9058b6",
       "title": "有损窄带KV交接按效用排序并用截止期感知FEC纠错",
       "idea_type": "solution_concept",
@@ -866,6 +1134,32 @@
       "trigger_issue": "2026-10-29",
       "path": "knowledge/idea-candidates/candidate_6e5db588e2f81f9058b6.json",
       "last_updated_issue": "2026-10-29"
+    },
+    {
+      "candidate_id": "candidate_726b07dbca622b39bd2a",
+      "title": "传输编解码与驻留格式解耦：跨域KV按质量成本压缩传输、落地转低比特驻留",
+      "idea_type": "solution_concept",
+      "disposition": "proposed",
+      "topic_ids": [
+        "cross_region"
+      ],
+      "origin_kind": "cross_source_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_726b07dbca622b39bd2a.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "candidate_id": "candidate_72af15691dc45ce846eb",
+      "title": "分层KV卸载的驻留侧独立调度与主机层容量收益边界",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "kv_management"
+      ],
+      "origin_kind": "cross_issue_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_72af15691dc45ce846eb.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_7492ef1eacba2e0e3260",
@@ -1272,6 +1566,19 @@
       "last_updated_issue": "2026-09-14"
     },
     {
+      "candidate_id": "candidate_984fec4fcf65a75a6b1f",
+      "title": "部署亲和路由加双键控压缩保留治理跨部署KV复用坍塌：与既有Idea同身份",
+      "idea_type": "solution_concept",
+      "disposition": "duplicate",
+      "topic_ids": [
+        "cross_region"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_984fec4fcf65a75a6b1f.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_9b7d3ff1f874dbee1686",
       "title": "分离式解码中cache侧只需query即可开工：FFN先行的协议级重排",
       "idea_type": "research_hypothesis",
@@ -1283,6 +1590,32 @@
       "trigger_issue": "2026-09-06",
       "path": "knowledge/idea-candidates/candidate_9b7d3ff1f874dbee1686.json",
       "last_updated_issue": "2026-09-06"
+    },
+    {
+      "candidate_id": "candidate_9b899f5928d24ae421c1",
+      "title": "边缘NPU线性注意力执行失配的机理与数据流重排修复",
+      "idea_type": "research_hypothesis",
+      "disposition": "duplicate",
+      "topic_ids": [
+        "ai_chip_accelerator"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_9b899f5928d24ae421c1.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "candidate_id": "candidate_9b8f958587774c16d03f",
+      "title": "把被挤出的跨部署会话KV降级为可学习gist层而非数值低比特保留",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "cross_region"
+      ],
+      "origin_kind": "cross_source_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_9b8f958587774c16d03f.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_9d439729d29356fd6625",
@@ -1309,6 +1642,19 @@
       "trigger_issue": "2026-10-27",
       "path": "knowledge/idea-candidates/candidate_9e927e70e72ef3e7c872.json",
       "last_updated_issue": "2026-10-27"
+    },
+    {
+      "candidate_id": "candidate_a0e495b04844b03f0ce9",
+      "title": "有界度数OCS拓扑空闲端口机会式激活的并发度与成本收益",
+      "idea_type": "research_hypothesis",
+      "disposition": "duplicate",
+      "topic_ids": [
+        "optical_network"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_a0e495b04844b03f0ce9.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_a1008f40dbda996d4400",
@@ -1350,6 +1696,19 @@
       "last_updated_issue": "2026-09-14"
     },
     {
+      "candidate_id": "candidate_a7843920cea22c6b1550",
+      "title": "CPU解码引擎独立调度KV卸载驻留请求以压低P99尾延迟",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "kv_management"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_a7843920cea22c6b1550.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_a7e706f184c1e497cc7d",
       "title": "以令牌服务份额统一驱动多模型共享GPU池的全局扩缩",
       "idea_type": "solution_concept",
@@ -1374,6 +1733,19 @@
       "trigger_issue": "2026-08-26",
       "path": "knowledge/idea-candidates/candidate_a90d71c35ea8a0f208da.json",
       "last_updated_issue": "2026-09-03"
+    },
+    {
+      "candidate_id": "candidate_a9fd5a6395ecd7254f29",
+      "title": "按张量角色分离拟合可逆变换，把整份MLA KV缓存量化到约2.5比特",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "cross_region"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_a9fd5a6395ecd7254f29.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_aa038cc28689bde871b6",
@@ -1454,6 +1826,19 @@
       "last_updated_issue": "2026-09-03"
     },
     {
+      "candidate_id": "candidate_bdb0696e327a14d413de",
+      "title": "把每节点NVMe池化为NVMe-oF共享命名空间，作GDS直连KV/Checkpoint分层的共享外置层",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "accelerator_io_datapath"
+      ],
+      "origin_kind": "cross_source_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_bdb0696e327a14d413de.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_bdec6affe7133892a18e",
       "title": "把检查点保留策略译为ZNS回收分区提示再放置",
       "idea_type": "solution_concept",
@@ -1478,6 +1863,32 @@
       "trigger_issue": "2026-10-21",
       "path": "knowledge/idea-candidates/candidate_c20150e31dbc8040bdac.json",
       "last_updated_issue": "2026-10-21"
+    },
+    {
+      "candidate_id": "candidate_c2e7a31aab71f40c2ba4",
+      "title": "请求自适应混合模型的执行路径感知两级基数树前缀缓存",
+      "idea_type": "solution_concept",
+      "disposition": "duplicate",
+      "topic_ids": [
+        "kv_management"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_c2e7a31aab71f40c2ba4.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
+      "candidate_id": "candidate_c2fb5af7575398119fff",
+      "title": "分段gist加局部原始窗口的双分辨率压缩抑制全双工语音模型长会话KV线性膨胀",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "cross_region"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_c2fb5af7575398119fff.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_c56cd1e6215a71f3f27f",
@@ -1519,6 +1930,19 @@
       "last_updated_issue": "2026-09-03"
     },
     {
+      "candidate_id": "candidate_cb9767a88f8fc52c7fff",
+      "title": "跨阶段选择性KV访问：预填充簇摊销检索联合解码期KV访问计划",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "ai_infra_horizontal"
+      ],
+      "origin_kind": "cross_issue_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_cb9767a88f8fc52c7fff.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_ccdfa5b1ca5299f7009f",
       "title": "把检索层提升为KV复用控制平面触达非前缀复发",
       "idea_type": "solution_concept",
@@ -1556,6 +1980,19 @@
       "trigger_issue": "2026-10-21",
       "path": "knowledge/idea-candidates/candidate_d07fef8532bb5bcc7c10.json",
       "last_updated_issue": "2026-10-21"
+    },
+    {
+      "candidate_id": "candidate_d1059104d9697849e82a",
+      "title": "跨AIDC检查点传输认证窗口的空闲光路机会式激活",
+      "idea_type": "research_hypothesis",
+      "disposition": "proposed",
+      "topic_ids": [
+        "optical_network"
+      ],
+      "origin_kind": "cross_issue_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_d1059104d9697849e82a.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_d12cd71359d58f2356ea",
@@ -1662,6 +2099,19 @@
       "last_updated_issue": "2026-09-28"
     },
     {
+      "candidate_id": "candidate_e2ff81802e9e160bca19",
+      "title": "作用域来源绑定（含执行路径维度）的共享KV缓存键与差分检测护栏",
+      "idea_type": "solution_concept",
+      "disposition": "duplicate",
+      "topic_ids": [
+        "kv_management"
+      ],
+      "origin_kind": "cross_issue_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_e2ff81802e9e160bca19.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_e5563020923e9d940d63",
       "title": "校准式逐层逐头压缩配额作为跨域传输体积分配器",
       "idea_type": "solution_concept",
@@ -1675,6 +2125,19 @@
       "last_updated_issue": "2026-10-23"
     },
     {
+      "candidate_id": "candidate_e6f5198f91d7bfa7c20a",
+      "title": "按段计量harness工具结果截断损耗并改用按行感知截断修复静默丢失",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "agent_acceleration"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_e6f5198f91d7bfa7c20a.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_e7519c587b0f339feb1f",
       "title": "端侧SSD权重流式的推测-精炼双向协调预取",
       "idea_type": "solution_concept",
@@ -1686,6 +2149,19 @@
       "trigger_issue": "2026-09-06",
       "path": "knowledge/idea-candidates/candidate_e7519c587b0f339feb1f.json",
       "last_updated_issue": "2026-09-06"
+    },
+    {
+      "candidate_id": "candidate_e8ac8cc5cd625623e8dd",
+      "title": "混合流量下按影子重放在线切换前缀缓存驱逐策略",
+      "idea_type": "research_hypothesis",
+      "disposition": "duplicate",
+      "topic_ids": [
+        "kv_management"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_e8ac8cc5cd625623e8dd.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_ed74470ce5a24fb550d2",
@@ -1740,6 +2216,19 @@
       "last_updated_issue": "2026-10-29"
     },
     {
+      "candidate_id": "candidate_f105d7cfb21b6ac6bf72",
+      "title": "AMD hipFILE异步直连快路径：加速器侧发起I/O跳过主机内存中转的出货实例",
+      "idea_type": "solution_concept",
+      "disposition": "duplicate",
+      "topic_ids": [
+        "accelerator_io_datapath"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_f105d7cfb21b6ac6bf72.json",
+      "last_updated_issue": "2026-11-02"
+    },
+    {
       "candidate_id": "candidate_f2acadceb4759ed12598",
       "title": "Flex SLO契约加KKT在线求解保住功率帽下的集群goodput",
       "idea_type": "solution_concept",
@@ -1751,6 +2240,19 @@
       "trigger_issue": "2026-09-20",
       "path": "knowledge/idea-candidates/candidate_f2acadceb4759ed12598.json",
       "last_updated_issue": "2026-09-20"
+    },
+    {
+      "candidate_id": "candidate_f5af74f4c65305de3ee8",
+      "title": "把孤立节点NVMe组成每节点RAID5加NVMe-oF单一命名空间的共享Tier-0，保持GDS真DMA零回退",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "accelerator_io_datapath"
+      ],
+      "origin_kind": "single_evidence",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_f5af74f4c65305de3ee8.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_f86718e80193a11d9b02",
@@ -1777,6 +2279,19 @@
       "trigger_issue": "2026-09-10",
       "path": "knowledge/idea-candidates/candidate_f8fe9c67adaa93382b5a.json",
       "last_updated_issue": "2026-09-10"
+    },
+    {
+      "candidate_id": "candidate_fb9acc51f933f50a67e7",
+      "title": "按可复用前缀与缓存价格比门控上下文策略选择：串行Agent负载下预取优先于改写",
+      "idea_type": "solution_concept",
+      "disposition": "deferred",
+      "topic_ids": [
+        "agent_acceleration"
+      ],
+      "origin_kind": "cross_issue_synthesis",
+      "trigger_issue": "2026-11-02",
+      "path": "knowledge/idea-candidates/candidate_fb9acc51f933f50a67e7.json",
+      "last_updated_issue": "2026-11-02"
     },
     {
       "candidate_id": "candidate_fce89a52e9e56e2c83b3",
@@ -1840,7 +2355,7 @@
       ],
       "status": "temporary",
       "first_seen_issue": "2026-08-10",
-      "last_seen_issue": "2026-10-29",
+      "last_seen_issue": "2026-11-02",
       "evidence_item_ids": [
         "radar_99ba4ed0f9936caea1e5",
         "radar_63df618d0cb6a6c6cfec",
@@ -1952,55 +2467,60 @@
         "radar_160a4a760b7a02713cf5",
         "radar_399fa8c4c78783b54825",
         "radar_6b276f9361c79c972d5d",
-        "radar_e4d78b121fd866e5e4de"
+        "radar_e4d78b121fd866e5e4de",
+        "radar_2521436e563ba135f8b1",
+        "radar_4a6365f1fe23bf470230",
+        "radar_99814d869375c1f43c77",
+        "radar_5ae634b5e9e197a9ca65",
+        "radar_238a4e44bf1c664fbb89"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2608.06301",
         "https://arxiv.org/abs/2608.06370v1",
         "https://arxiv.org/abs/2608.13317v1",
         "https://arxiv.org/abs/2608.13334v1",
-        "https://arxiv.org/abs/2608.14074v1",
         "https://arxiv.org/abs/2608.14528v1",
-        "https://arxiv.org/abs/2608.17597",
+        "https://arxiv.org/abs/2608.14074v1",
+        "https://developers.googleblog.com/build-zero-trust-ai-agents-with-googles-agent-development-kit",
+        "https://www.reuters.com/world/how-texas-student-blew-whistle-rogue-ai-hacking-attempt-2026-08-20",
         "https://arxiv.org/abs/2608.17800",
+        "https://arxiv.org/abs/2608.17597",
         "https://arxiv.org/abs/2608.18565",
+        "https://openrouter.ai/blog/tutorials/choose-best-ai-model",
+        "https://www.tomtunguz.com/how-long-should-an-agent-live",
+        "https://fabiensanglard.net/agent.md/index.html",
+        "https://x.com/AndrewYNg/status/2092315079576555806",
         "https://arxiv.org/abs/2608.22510",
+        "https://github.com/calmrocks/ai-engineer-notebooks",
+        "https://www.terminal-bench-science.ai/announcement",
+        "https://garymarcus.substack.com/p/5-lessons-from-the-openai-hugging",
+        "https://www.lmsys.org/blog/2026-08-28-infer-forge-loop-engineering",
         "https://arxiv.org/abs/2608.24876",
-        "https://arxiv.org/abs/2608.30428",
-        "https://arxiv.org/abs/2609.01481",
-        "https://arxiv.org/abs/2609.11042",
-        "https://claude.com/blog/the-anatomy-of-effective-commerce-agents",
-        "https://cursor.com/blog/self-hosted-machines",
         "https://deepmind.google/blog/introducing-agentic-video-in-gemini",
         "https://dev.to/googleai/what-is-harness-engineering-and-why-should-i-care-8n0",
         "https://developers.googleblog.com/4-engineering-patterns-behind-the-strongest-ai-agents-challenge-submissions",
-        "https://developers.googleblog.com/build-zero-trust-ai-agents-with-googles-agent-development-kit",
-        "https://fabiensanglard.net/agent.md/index.html",
-        "https://garymarcus.substack.com/p/5-lessons-from-the-openai-hugging",
-        "https://github.com/anthropics/claude-code/releases/tag/v2.1.261",
-        "https://github.com/calmrocks/ai-engineer-notebooks",
-        "https://github.com/godot-pty/gpty",
-        "https://huggingface.co/blog/funes",
-        "https://magazine.sebastianraschka.com/p/gpt-6-astra-looped-transformers-and",
+        "https://arxiv.org/abs/2609.01481",
+        "https://arxiv.org/abs/2608.30428",
+        "https://claude.com/blog/the-anatomy-of-effective-commerce-agents",
+        "https://cursor.com/blog/self-hosted-machines",
         "https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation",
-        "https://mp.weixin.qq.com/s?__biz=MzIyMzA5NjEyMA%3D%3D&mid=2647686094&idx=1&sn=c06c40993f7ab28f2302619e4b89986b",
-        "https://openai.com/index/research-acceleration-view-inside-openai",
-        "https://openrouter.ai/blog/tutorials/choose-best-ai-model",
-        "https://rdi.berkeley.edu/blog/vero",
-        "https://simonwillison.net/2026/Sep/4/rogue-agent-wikis",
-        "https://tomtunguz.com/openai-research-acceleration-agentic-productivity",
-        "https://www.ithome.com/0/998/814.htm",
-        "https://www.llamaindex.ai/blog/just-in-time-agentic-ocr",
-        "https://www.lmsys.org/blog/2026-08-28-infer-forge-loop-engineering",
-        "https://www.marktechpost.com/2026/09/12/context-engineering-inside-the-harness-4-mechanisms-that-beat-context-overflow-and-goal-loss-on-long-horizon-tasks",
-        "https://www.reuters.com/world/how-texas-student-blew-whistle-rogue-ai-hacking-attempt-2026-08-20",
-        "https://www.terminal-bench-science.ai/announcement",
-        "https://www.theverge.com/ai-artificial-intelligence/990773/openai-german-wiki-incident",
-        "https://www.tomtunguz.com/how-long-should-an-agent-live",
-        "https://x.com/AndrewYNg/status/2092315079576555806",
+        "https://huggingface.co/blog/funes",
         "https://x.com/ArtificialAnlys/status/2095595489031000350",
-        "https://x.com/EMostaque/status/2097378223138959719",
+        "https://www.theverge.com/ai-artificial-intelligence/990773/openai-german-wiki-incident",
+        "https://www.ithome.com/0/998/814.htm",
+        "https://simonwillison.net/2026/Sep/4/rogue-agent-wikis",
+        "https://github.com/anthropics/claude-code/releases/tag/v2.1.261",
+        "https://rdi.berkeley.edu/blog/vero",
+        "https://mp.weixin.qq.com/s?__biz=MzIyMzA5NjEyMA%3D%3D&mid=2647686094&idx=1&sn=c06c40993f7ab28f2302619e4b89986b",
+        "https://tomtunguz.com/openai-research-acceleration-agentic-productivity",
+        "https://openai.com/index/research-acceleration-view-inside-openai",
         "https://x.com/alexandr_wang/status/2097472059077202339",
+        "https://x.com/EMostaque/status/2097378223138959719",
+        "https://github.com/godot-pty/gpty",
+        "https://magazine.sebastianraschka.com/p/gpt-6-astra-looped-transformers-and",
+        "https://www.llamaindex.ai/blog/just-in-time-agentic-ocr",
+        "https://www.marktechpost.com/2026/09/12/context-engineering-inside-the-harness-4-mechanisms-that-beat-context-overflow-and-goal-loss-on-long-horizon-tasks",
+        "https://arxiv.org/abs/2609.11042",
         "https://newsletter.pragmaticengineer.com/p/openai-software-factory",
         "https://claude.com/blog/agentic-coding-is-straining-ci-heres-how-we-scaled-test-impact-analysis-at-anthropic",
         "https://blog.trailofbits.com/2026/09/15/1passwords-ai-patching-benchmark-is-misleading",
@@ -2065,7 +2585,12 @@
         "https://openrouter.ai/blog/tutorials/claude-code-usage-limit",
         "https://blogs.microsoft.com/blog/2026/10/28/introducing-the-microsoft-copilot-harness-unlocking-the-potential-of-truly-multi-model-agentic-work",
         "https://the-decoder.com/ai-agents-hacked-anthropic-maker-of-arguably-the-most-capable-ai-models-for-cyberdefense",
-        "https://www.a16z.news/p/the-new-security-agenda"
+        "https://www.a16z.news/p/the-new-security-agenda",
+        "https://www.wiz.io/blog/black-october-for-ai-developer-platforms",
+        "https://openrouter.ai/blog/tutorials/build-always-on-ai-agent",
+        "https://openai.com/index/how-we-detect-frontier-model-misalignment",
+        "https://the-decoder.com/experts-adopt-ai-agents-random-opinions-and-think-theyre-their-own-anthropic-study-finds",
+        "https://www.wiz.io/blog/the-rise-of-agentic-attacks"
       ],
       "idea_ids": [],
       "promotion_reason": null,
@@ -2079,7 +2604,7 @@
       ],
       "status": "temporary",
       "first_seen_issue": "2026-08-23",
-      "last_seen_issue": "2026-10-29",
+      "last_seen_issue": "2026-11-02",
       "evidence_item_ids": [
         "9534ebfb735333bf4c38a088",
         "5c600b1b112f6638a2229341",
@@ -2145,34 +2670,37 @@
         "557657d7cd5453dfe0c30cab",
         "a2ba0f30d711ac64f8298f96",
         "a057eea225e666889c3fe5f0",
-        "1d9113fdb11055a8ef5458e7"
+        "1d9113fdb11055a8ef5458e7",
+        "a0c3374195ae86b7886deadc",
+        "47f3af0702ae5b5949b89c33",
+        "5fdc0d683427199dbd9a30b4"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2608.13900v1",
-        "https://arxiv.org/abs/2608.18279v1",
         "https://arxiv.org/abs/2608.19861v1",
         "https://arxiv.org/abs/2608.19902v1",
-        "https://arxiv.org/abs/2608.20041v1",
+        "https://arxiv.org/abs/2608.13900v1",
+        "https://arxiv.org/abs/2608.18279v1",
         "https://arxiv.org/abs/2608.20319v1",
         "https://arxiv.org/abs/2608.26780v1",
-        "https://arxiv.org/abs/2608.26882v1",
-        "https://arxiv.org/abs/2608.27348v1",
         "https://arxiv.org/abs/2608.27439v1",
-        "https://arxiv.org/abs/2609.00050v1",
+        "https://arxiv.org/abs/2608.26882v1",
+        "https://arxiv.org/abs/2608.20041v1",
         "https://arxiv.org/abs/2609.01095v1",
+        "https://arxiv.org/abs/2609.00050v1",
         "https://arxiv.org/abs/2609.01281v1",
-        "https://arxiv.org/abs/2609.01428v1",
-        "https://arxiv.org/abs/2609.02074v1",
-        "https://arxiv.org/abs/2609.02094v1",
+        "https://arxiv.org/abs/2608.27348v1",
         "https://arxiv.org/abs/2609.02730v1",
         "https://arxiv.org/abs/2609.02783v1",
+        "https://arxiv.org/abs/2609.02094v1",
+        "https://arxiv.org/abs/2609.04010v1",
+        "https://arxiv.org/abs/2609.01428v1",
+        "https://arxiv.org/abs/2609.02074v1",
+        "https://arxiv.org/abs/2609.04148v1",
+        "https://arxiv.org/abs/2609.09153v1",
+        "https://arxiv.org/abs/2609.08275v1",
         "https://arxiv.org/abs/2609.03718v1",
         "https://arxiv.org/abs/2609.03753v1",
-        "https://arxiv.org/abs/2609.04010v1",
-        "https://arxiv.org/abs/2609.04148v1",
-        "https://arxiv.org/abs/2609.08275v1",
         "https://arxiv.org/abs/2609.08418v1",
-        "https://arxiv.org/abs/2609.09153v1",
         "https://arxiv.org/abs/2609.08965v1",
         "https://arxiv.org/abs/2609.01335v1",
         "https://arxiv.org/abs/2608.15145v1",
@@ -2212,7 +2740,10 @@
         "https://arxiv.org/abs/2609.38178v1",
         "https://arxiv.org/abs/2610.06597v1",
         "https://arxiv.org/abs/2609.38147v1",
-        "https://arxiv.org/abs/2610.07386v1"
+        "https://arxiv.org/abs/2610.07386v1",
+        "https://arxiv.org/abs/2610.14382v1",
+        "https://arxiv.org/abs/2610.17418v1",
+        "https://arxiv.org/abs/2610.13335v1"
       ],
       "idea_ids": [],
       "promotion_reason": null,
@@ -2226,7 +2757,7 @@
       ],
       "status": "temporary",
       "first_seen_issue": "2026-08-10",
-      "last_seen_issue": "2026-10-29",
+      "last_seen_issue": "2026-11-02",
       "evidence_item_ids": [
         "radar_0ea8bdbe1bf914d4008e",
         "radar_c7498c238d7f20b734c7",
@@ -2309,47 +2840,50 @@
         "radar_82c83edfb2ccd67abd40",
         "radar_7651cd3801f2641f8a7e",
         "radar_c41a9b05b7380d7b1fe1",
-        "radar_c683dc45ff1279cb2a4f"
+        "radar_c683dc45ff1279cb2a4f",
+        "radar_f5d560c4d0183e09f417",
+        "radar_c8a8ea0514182c93648d",
+        "radar_19cf30d8ede569729dac"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2608.04450v1",
+        "https://github.com/vllm-project/vllm/releases/tag/v0.27.0",
         "https://arxiv.org/abs/2608.08878v1",
         "https://arxiv.org/abs/2608.09160v1",
-        "https://arxiv.org/abs/2608.12932v1",
         "https://arxiv.org/abs/2608.13499v1",
+        "https://arxiv.org/abs/2608.12932v1",
         "https://arxiv.org/abs/2608.14205v1",
-        "https://arxiv.org/abs/2608.17379",
+        "https://www.modular.com/blog/mojo-open-source",
+        "https://www.lmsys.org/blog/2026-08-21-sglang-fast-recovery",
         "https://arxiv.org/abs/2608.19758",
-        "https://arxiv.org/abs/2609.03586",
-        "https://arxiv.org/abs/2609.05275",
-        "https://arxiv.org/abs/2609.10355",
-        "https://boydkane.com/essays/llms-could-control-their-host-machines-by-exploiting-inference-engines",
+        "https://arxiv.org/abs/2608.17379",
+        "https://www.marktechpost.com/2026/08/23/meet-freetoken-an-edge-native-moe-serving-engine-that-runs-753b-glm-5-2-on-a-single-workstation-gpu",
+        "https://www.apple.com/newsroom/2026/08/apple-introduces-m6-and-m5-ultra-for-a-big-leap-in-performance-and-ai-compute",
         "https://engineering.fb.com/2026/08/24/networking-traffic/metaroce-rdma-transport-ai-ethernet",
         "https://engineering.fb.com/2026/08/24/networking-traffic/mtia-300-meta-training-chip-built-in-nics",
-        "https://github.blog/ai-and-ml/github-copilot/how-we-make-ai-coding-more-cost-efficient-without-sacrificing-task-quality",
-        "https://github.blog/ai-and-ml/github-copilot/project-hydrafusion-frontier-quality-via-multi-model-orchestration",
-        "https://github.com/anthropics/claude-code/releases/tag/v2.1.267",
-        "https://github.com/vllm-project/vllm/releases/tag/v0.27.0",
+        "https://boydkane.com/essays/llms-could-control-their-host-machines-by-exploiting-inference-engines",
+        "https://www.marktechpost.com/2026/08/25/meta-ai-introduces-metaroce-a-clean-sheet-rdma-transport-built-for-ai-scale-ethernet",
         "https://huggingface.co/blog/webgpu-kernels",
         "https://lws.io/blog/my-local-model-setup",
-        "https://openai.com/index/introducing-gpt-live-1-in-the-api",
-        "https://openai.com/index/supporting-next-generation-ai-startups-thailand",
         "https://techcrunch.com/2026/09/02/indias-richest-man-now-wants-to-turn-aging-computers-into-ai-ready-pcs",
-        "https://www.apple.com/newsroom/2026/08/apple-introduces-m6-and-m5-ultra-for-a-big-leap-in-performance-and-ai-compute",
         "https://www.baseten.co/blog/the-efficient-frontier-of-llm-inference",
-        "https://www.databricks.com/blog/achieving-extreme-efficiency-through-specialized-gpu-kernel-generation",
-        "https://www.lmsys.org/blog/2026-08-21-sglang-fast-recovery",
-        "https://www.marktechpost.com/2026/08/23/meet-freetoken-an-edge-native-moe-serving-engine-that-runs-753b-glm-5-2-on-a-single-workstation-gpu",
-        "https://www.marktechpost.com/2026/08/25/meta-ai-introduces-metaroce-a-clean-sheet-rdma-transport-built-for-ai-scale-ethernet",
-        "https://www.marktechpost.com/2026/09/02/perplexity-open-sources-lily-a-rust-metal-inference-engine-for-qwen3-6-35b-a3b-on-apple-silicon",
-        "https://www.marktechpost.com/2026/09/04/nvidia-releases-personal-ai-router-pair-an-open-source-virtual-inference-router-that-distributes-local-ai-requests-across-rtx-dgx-spark-and-mac-nodes",
-        "https://www.marktechpost.com/2026/09/05/nous-research-hermes-desktop-one-click-local-model-setup",
-        "https://www.marktechpost.com/2026/09/08/nvidia-announces-cuda-rust-with-cuda-oxide-simt-and-cutile-rs-tile-for-compile-time-safe-gpu-kernels",
-        "https://www.modular.com/blog/mojo-open-source",
+        "https://openai.com/index/supporting-next-generation-ai-startups-thailand",
+        "https://github.blog/ai-and-ml/github-copilot/how-we-make-ai-coding-more-cost-efficient-without-sacrificing-task-quality",
         "https://x.com/AravSrinivas/status/2095264908762140823",
-        "https://x.com/OpenAIDevs/status/2098509226335412479",
+        "https://www.marktechpost.com/2026/09/02/perplexity-open-sources-lily-a-rust-metal-inference-engine-for-qwen3-6-35b-a3b-on-apple-silicon",
+        "https://www.databricks.com/blog/achieving-extreme-efficiency-through-specialized-gpu-kernel-generation",
+        "https://github.blog/ai-and-ml/github-copilot/project-hydrafusion-frontier-quality-via-multi-model-orchestration",
+        "https://www.marktechpost.com/2026/09/04/nvidia-releases-personal-ai-router-pair-an-open-source-virtual-inference-router-that-distributes-local-ai-requests-across-rtx-dgx-spark-and-mac-nodes",
         "https://x.com/SemiAnalysis_/status/2095980532186140692",
         "https://x.com/perplexity_ai/status/2095241544383226274",
+        "https://arxiv.org/abs/2609.05275",
+        "https://www.marktechpost.com/2026/09/08/nvidia-announces-cuda-rust-with-cuda-oxide-simt-and-cutile-rs-tile-for-compile-time-safe-gpu-kernels",
+        "https://www.marktechpost.com/2026/09/05/nous-research-hermes-desktop-one-click-local-model-setup",
+        "https://arxiv.org/abs/2609.03586",
+        "https://github.com/anthropics/claude-code/releases/tag/v2.1.267",
+        "https://openai.com/index/introducing-gpt-live-1-in-the-api",
+        "https://arxiv.org/abs/2609.10355",
+        "https://x.com/OpenAIDevs/status/2098509226335412479",
         "https://vllm.ai/blog/2026-09-10-minimax-m3-mi355x",
         "https://x.com/ArtificialAnlys/status/2099698254414029207",
         "https://x.com/NVIDIAAI/status/2099550869381353910",
@@ -2393,7 +2927,10 @@
         "https://github.com/openai/codex/releases/tag/rust-v0.164.0",
         "https://x.com/shao__meng/status/2114533468826952112",
         "https://pytorch.org/blog/pytorch-2-15-release-blog",
-        "https://x.com/SaitoWu/status/2115376256929948006"
+        "https://x.com/SaitoWu/status/2115376256929948006",
+        "https://deploymentsafety.openai.com/gpt-rosalind-6",
+        "https://x.com/_philschmid/status/2116235686445502608",
+        "https://the-decoder.com/former-deepmind-researcher-thinks-alphagos-playbook-can-cure-ai-hallucinations"
       ],
       "idea_ids": [],
       "promotion_reason": null,
@@ -2407,7 +2944,7 @@
       ],
       "status": "temporary",
       "first_seen_issue": "2026-08-23",
-      "last_seen_issue": "2026-10-29",
+      "last_seen_issue": "2026-11-02",
       "evidence_item_ids": [
         "radar_f4998433a881f222ad38",
         "radar_8d5d9c55ca8948384571",
@@ -2427,11 +2964,13 @@
         "radar_ae35a41c6b104d326279",
         "radar_8420c68a3594f7409f54",
         "radar_e44af6eff0f1fec0dd55",
-        "radar_8ece9760b9380d3efd21"
+        "radar_8ece9760b9380d3efd21",
+        "radar_e2d4003c860d31c566fe",
+        "radar_0b64797f49f681b40118"
       ],
       "source_urls": [
-        "https://claude.com/blog/claudes-memory-works-everywhere-and-you-decide-whats-in-it",
         "https://cursor.com/blog/git-at-any-scale",
+        "https://claude.com/blog/claudes-memory-works-everywhere-and-you-decide-whats-in-it",
         "https://hack8s.com/422/once-again-software-engineering-is-about-managing-complexity",
         "https://huggingface.co/inclusionAI/Ling-3.0-flash-Fin",
         "https://www.ithome.com/1/002/750.htm",
@@ -2448,7 +2987,9 @@
         "https://microsoft.ai/news/building-medical-superintelligence",
         "https://deepmind.google/blog/genie-4-a-new-generation-of-world-simulation",
         "https://techcrunch.com/2026/10/27/frontier-ai-labs-say-their-models-refuted-the-exponential-time-hypothesis-what-does-that-mean",
-        "https://huggingface.co/blog/nvidia/nemotron-transcribe-granary"
+        "https://huggingface.co/blog/nvidia/nemotron-transcribe-granary",
+        "https://www.figma.com/blog/the-tldr-on-figma-weave",
+        "https://engineering.fb.com/2026/10/29/security/catching-bugs-before-they-land-jittestings-human-on-the-loop-approach-at-full-scale"
       ],
       "idea_ids": [],
       "promotion_reason": null,
@@ -2483,7 +3024,7 @@
       ],
       "status": "temporary",
       "first_seen_issue": "2026-08-10",
-      "last_seen_issue": "2026-10-29",
+      "last_seen_issue": "2026-11-02",
       "evidence_item_ids": [
         "radar_74beaefafc0dc03054b5",
         "radar_c7c4a0d5f358d8045a6f",
@@ -2506,19 +3047,20 @@
         "radar_8ce77f2502c9b91ed646",
         "radar_fe8ad8fd72c0bf0ffa68",
         "radar_3c34f49c4ddb0483e394",
-        "radar_6f00f693d989a51b4a69"
+        "radar_6f00f693d989a51b4a69",
+        "radar_4138bcfc1251e218a289"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2609.02737",
-        "https://arxiv.org/abs/2609.03430",
-        "https://example.com/kv-network-paper",
-        "https://github.com/LMCache/LMCache/releases/tag/nightly",
-        "https://github.com/LMCache/LMCache/releases/tag/nightly-cu129",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.3",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.3-cu129",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.3-rocm",
-        "https://github.com/LMCache/LMCache/releases/tag/v0.5.4rc2-rocm",
+        "https://github.com/LMCache/LMCache/releases/tag/nightly",
+        "https://example.com/kv-network-paper",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.4rc4-cu129",
+        "https://github.com/LMCache/LMCache/releases/tag/v0.5.4rc2-rocm",
+        "https://github.com/LMCache/LMCache/releases/tag/nightly-cu129",
+        "https://arxiv.org/abs/2609.02737",
+        "https://arxiv.org/abs/2609.03430",
         "https://x.com/dongxi_nlp/status/2098043379196068109",
         "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf",
         "https://x.com/dongxi_nlp/status/2099397246479401151",
@@ -2529,7 +3071,8 @@
         "https://research.ibm.com/blog/distributed-inference",
         "https://vllm.ai/blog/2026-10-23-glm53-part2-pcp-dcp-hisparse",
         "https://www.marktechpost.com/2026/10/26/tsinghua-akv-kv-cache-engineering-llm-agents",
-        "https://blog.cloudflare.com/kv-cache-exposure-remediation"
+        "https://blog.cloudflare.com/kv-cache-exposure-remediation",
+        "https://www.lmsys.org/blog/2026-10-26-cf-security"
       ],
       "idea_ids": [],
       "promotion_reason": null,
@@ -2543,7 +3086,7 @@
       ],
       "status": "temporary",
       "first_seen_issue": "2026-08-10",
-      "last_seen_issue": "2026-10-29",
+      "last_seen_issue": "2026-11-02",
       "evidence_item_ids": [
         "radar_9d893da9ce328cd7b0a4",
         "radar_645f121504240647deef",
@@ -2647,50 +3190,55 @@
         "radar_3486ed100ddceca1f22e",
         "radar_1443676685dc07638b22",
         "radar_10f4de87a9db27600710",
-        "radar_bd9d64664942d487423e"
+        "radar_bd9d64664942d487423e",
+        "radar_682f9d74bdeec019e89f",
+        "radar_1f70c96e1d4cac00e0e0",
+        "radar_cae5ef10ef1403cc1def",
+        "radar_ab1f6227c529fa9f5e7d",
+        "radar_184f3d6ae19d17486c1c"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2606.13610",
-        "https://arxiv.org/abs/2608.00146",
         "https://arxiv.org/abs/2608.04439v1",
-        "https://catalystneuro.com/blog/cost-of-intelligence-drops-100x",
-        "https://deepmind.google/blog/introducing-gemini-3-8-flash-and-38-flash-cyber",
-        "https://deepmind.google/blog/introducing-weathernext-3-our-most-advanced-and-accurate-global-weather-ai-model",
-        "https://dev.to/googleai/how-to-write-reliable-rubrics-for-llm-as-a-judge-evaluations-ndp",
-        "https://dev.to/googleai/stop-wrestling-with-asr-the-complete-guide-to-gemini-35-transcribe-1m6i",
         "https://github.com/vllm-project/vllm/releases/tag/v0.27.1",
-        "https://ifm.ai/blog/k2",
-        "https://machinelearning.apple.com/research/starflow2-multimodal-generation",
-        "https://mp.weixin.qq.com/s?__biz=MzIyMzA5NjEyMA%3D%3D&mid=2647685772&idx=1&sn=a073c30899a7f420147673def8209609",
-        "https://mp.weixin.qq.com/s?__biz=MzkwODU2OTQyNQ%3D%3D&mid=2247498484&idx=1&sn=0db140a12b8e18601ac933788045c831",
-        "https://openai.com/index/daybreak-for-frontline-defenders",
-        "https://openai.com/index/gpt-6-astra",
-        "https://openai.com/index/introducing-chatgpt-images-2-5",
-        "https://openai.com/index/path-to-astra",
-        "https://openrouter.ai/blog/tutorials/video-generation-api",
-        "https://qwen.ai/blog?id=qwen3.8-flash-next",
-        "https://rust-glancer.github.io/blog/hello-world",
-        "https://simonwillison.net/2026/Sep/8/on-navier-stokes",
-        "https://techcrunch.com/2026/09/03/openai-launches-astra-its-powerful-and-controversial-new-model",
-        "https://the-decoder.com/benchmarks-disagree-on-gpt-6-astra-but-its-human-beating-efficiency-on-arc-agi-3-pulls-chollets-agi-forecast-forward",
-        "https://the-decoder.com/openais-gpt-6-astra-hallucinates-less-but-remains-vulnerable-to-hidden-prompt-injections",
+        "https://catalystneuro.com/blog/cost-of-intelligence-drops-100x",
         "https://transformer-circuits.pub/2026/interference_effectiveness_helpfulness/index.html",
+        "https://rust-glancer.github.io/blog/hello-world",
         "https://waymo.com/blog/2026/08/look-under-our-trunk",
-        "https://www.anthropic.com/claude-fable-and-mythos-5-1",
-        "https://www.anthropic.com/institute/econ-scenarios",
-        "https://www.anthropic.com/research/automated-researchers-mitigate-alignment-failures",
-        "https://www.dwarkesh.com/p/pretraining-progress-is-mostly-data",
-        "https://www.inceptionlabs.ai/blog/introducing-mercury-2-5",
-        "https://www.ithome.com/1/000/277.htm",
+        "https://arxiv.org/abs/2608.00146",
+        "https://openrouter.ai/blog/tutorials/video-generation-api",
         "https://www.langchain.com/blog/making-data-ingestion-production-ready-a-langchain-powered-airbyte-destination",
-        "https://www.marktechpost.com/2026/09/01/anthropic-releases-claude-fable-5-1-and-claude-mythos-5-1-52-6-on-terminal-bench-science-and-75-cheaper-cache-reads",
-        "https://www.together.ai/blog/together-ai-expands-fine-tuning-service-with-more-models-live-metrics-and-finer-controls",
-        "https://x.com/Alibaba_Qwen/status/2094982928371794077",
         "https://x.com/GoogleAI/status/2092275116503707733",
+        "https://arxiv.org/abs/2606.13610",
+        "https://machinelearning.apple.com/research/starflow2-multimodal-generation",
+        "https://mp.weixin.qq.com/s?__biz=MzkwODU2OTQyNQ%3D%3D&mid=2247498484&idx=1&sn=0db140a12b8e18601ac933788045c831",
+        "https://www.anthropic.com/research/automated-researchers-mitigate-alignment-failures",
+        "https://dev.to/googleai/stop-wrestling-with-asr-the-complete-guide-to-gemini-35-transcribe-1m6i",
+        "https://qwen.ai/blog?id=qwen3.8-flash-next",
+        "https://x.com/omarsar0/status/2091558158439182738",
+        "https://www.anthropic.com/claude-fable-and-mythos-5-1",
+        "https://openai.com/index/path-to-astra",
+        "https://deepmind.google/blog/introducing-gemini-3-8-flash-and-38-flash-cyber",
+        "https://mp.weixin.qq.com/s?__biz=MzIyMzA5NjEyMA%3D%3D&mid=2647685772&idx=1&sn=a073c30899a7f420147673def8209609",
+        "https://x.com/Alibaba_Qwen/status/2094982928371794077",
+        "https://deepmind.google/blog/introducing-weathernext-3-our-most-advanced-and-accurate-global-weather-ai-model",
+        "https://ifm.ai/blog/k2",
+        "https://techcrunch.com/2026/09/03/openai-launches-astra-its-powerful-and-controversial-new-model",
+        "https://openai.com/index/daybreak-for-frontline-defenders",
+        "https://dev.to/googleai/how-to-write-reliable-rubrics-for-llm-as-a-judge-evaluations-ndp",
+        "https://openai.com/index/gpt-6-astra",
+        "https://the-decoder.com/openais-gpt-6-astra-hallucinates-less-but-remains-vulnerable-to-hidden-prompt-injections",
+        "https://x.com/sama/status/2096008528834244741",
+        "https://the-decoder.com/benchmarks-disagree-on-gpt-6-astra-but-its-human-beating-efficiency-on-arc-agi-3-pulls-chollets-agi-forecast-forward",
+        "https://www.marktechpost.com/2026/09/01/anthropic-releases-claude-fable-5-1-and-claude-mythos-5-1-52-6-on-terminal-bench-science-and-75-cheaper-cache-reads",
+        "https://openai.com/index/introducing-chatgpt-images-2-5",
+        "https://www.ithome.com/1/000/277.htm",
+        "https://www.dwarkesh.com/p/pretraining-progress-is-mostly-data",
+        "https://simonwillison.net/2026/Sep/8/on-navier-stokes",
+        "https://www.anthropic.com/institute/econ-scenarios",
+        "https://www.inceptionlabs.ai/blog/introducing-mercury-2-5",
+        "https://www.together.ai/blog/together-ai-expands-fine-tuning-service-with-more-models-live-metrics-and-finer-controls",
         "https://x.com/PeterMcCrory/status/2098868931071226252",
         "https://x.com/arena/status/2098814378971717916",
-        "https://x.com/omarsar0/status/2091558158439182738",
-        "https://x.com/sama/status/2096008528834244741",
         "https://entelligence.ai/blogs/gpt-5.6-luna-vs-gpt-6-astra-is-a-1.20-model-good-enough-for-code-review",
         "https://fireworks.ai/blog/DeepSeek-V4.1-Flash-Astra",
         "https://mp.weixin.qq.com/s?__biz=MzkzMDQ5NTQwMQ%3D%3D&mid=2247489246&idx=2&sn=b23b39da69f6c75594eccac11854111f",
@@ -2752,7 +3300,12 @@
         "https://www.ithome.com/1/019/268.htm",
         "https://openrouter.ai/blog/tutorials/extract-tables-from-pdf-llm",
         "https://openmoss.ai/blog/cn/moss-image",
-        "https://www.marktechpost.com/2026/10/27/leann-vector-index-mlsys-2026"
+        "https://www.marktechpost.com/2026/10/27/leann-vector-index-mlsys-2026",
+        "https://epochai.substack.com/p/glm-patch-gap-exploit-firefox",
+        "https://mp.weixin.qq.com/s?__biz=MzYzNDE5MDEwMQ%3D%3D&mid=2247489416&idx=1&sn=9525f61df8086fcd6fe4d4183da068de",
+        "https://github.com/openai/codex/releases/tag/rust-v0.166.0",
+        "https://cohere.com/blog/concerning-behaviour-popular-open-weight-ai-model",
+        "https://alignment.openai.com/how-we-detect-frontier-model-misalignment"
       ],
       "idea_ids": [],
       "promotion_reason": null,
@@ -2783,13 +3336,13 @@
         "radar_61d72555126425c711d5"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2608.08097v1",
         "https://news.skhynix.com/en/fms-2026",
         "https://news.skhynix.com/en/hbf-at-fms-2026",
+        "https://www.sandisk.com/company/newsroom/press-releases/2026/2026-08-04-new-3d-flash-memory-technology-from-kioxia-and-sandisk-qlc-nand",
+        "https://arxiv.org/abs/2608.08097v1",
+        "https://x.com/rohanpaul_ai/status/2095784429142880415",
         "https://www.ifanr.com/1679729",
         "https://www.marktechpost.com/2026/09/11/can-llms-engineer-their-own-agent-harness-bytedance-seeds-harnessdev-says-only-34-of-64-changes-generalize",
-        "https://www.sandisk.com/company/newsroom/press-releases/2026/2026-08-04-new-3d-flash-memory-technology-from-kioxia-and-sandisk-qlc-nand",
-        "https://x.com/rohanpaul_ai/status/2095784429142880415",
         "https://gamersnexus.net/news-features/memory-companies-have-destroyed-consumer-market",
         "https://www.ithome.com/1/012/160.htm",
         "https://x.com/rohanpaul_ai/status/2112437556445106638",
@@ -2808,7 +3361,7 @@
       ],
       "status": "temporary",
       "first_seen_issue": "2026-08-26",
-      "last_seen_issue": "2026-10-27",
+      "last_seen_issue": "2026-11-02",
       "evidence_item_ids": [
         "4b34f9662b88580eda4cb1ba",
         "fdc32646fe3fb206d2a3e5a3",
@@ -2821,21 +3374,23 @@
         "d9674b70405b7604079b0e09",
         "dea9360761133ea2f1c11278",
         "f8d1368f6bf9fedbc9cd77a1",
-        "af9599134f5d56d0f4cd5346"
+        "af9599134f5d56d0f4cd5346",
+        "cc6d2829e93155ecd4cafaad"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2608.20053v1",
         "https://arxiv.org/abs/2608.20201v1",
         "https://arxiv.org/abs/2609.04159v1",
-        "https://arxiv.org/abs/2609.07805v1",
         "https://arxiv.org/abs/2609.07843v1",
+        "https://arxiv.org/abs/2609.07805v1",
         "https://arxiv.org/abs/2608.27099v1",
         "https://arxiv.org/abs/2609.31388v1",
         "https://arxiv.org/abs/2609.36731v1",
         "https://link.springer.com/article/10.1007/s13222-026-00556-6",
         "https://arxiv.org/abs/2610.28939v1",
         "https://arxiv.org/abs/2610.29733v1",
-        "https://arxiv.org/abs/2610.32632v1"
+        "https://arxiv.org/abs/2610.32632v1",
+        "https://arxiv.org/abs/2610.40305v1"
       ],
       "idea_ids": [],
       "promotion_reason": null,

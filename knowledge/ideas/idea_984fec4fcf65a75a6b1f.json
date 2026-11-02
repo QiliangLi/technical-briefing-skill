@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_984fec4fcf65a75a6b1f",
+  "identity": {
+    "problem_key": "cross_deployment_kv_reuse_collapse",
+    "mechanism_key": "affinity_routing_keyed_compressed_retention",
+    "target_key": "multi_region_agent_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "用部署亲和路由与按部署键控的压缩保留治理跨部署 KV 复用坍塌",
+  "problem": "会话 KV 复用在跨部署/跨区域边界上大幅坍塌（M365 生产实测从 88.9% 跌至 29.0%），无限内存加最优淘汰也无法消除约 20.2% 的键控重建下限，跨域 Agent 服务缺少把放置、键控与压缩保留一起调度的机制。",
+  "hypothesis": "把部署亲和作为路由的一阶信号、按会话与部署双键控缓存，并在预算紧张时把被挤出的 KV 降级为低比特多分辨率保留而非丢弃，可将跨部署重建下限与重算率压到可预算水平，优于纯负载均衡或容量驱逐。",
+  "mechanism": "网关按各区域 KV 占用率与重算代价做亲和路由；缓存以会话加部署双键索引，工作集在线估计决定各站点驻留容量；预算耗尽时对低重用条目做 int4 级降级保留，驻留价值按重用概率乘恢复代价评估。",
+  "expected_effect": "跨部署会话的重建率与 TTFT 尾延迟下降、闲置驻留减少，并形成何时值得复制或迁移 KV 而非本地重算的成本判据。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "70bff2fea5073e37e20123fc",
+      "issue_date": "2026-08-23",
+      "source_urls": [
+        "https://docs.cloud.google.com/kubernetes-engine/docs/how-to/setup-multicluster-inference-gateway"
+      ],
+      "reason": "GKE多集群Inference Gateway把各区域集群的KV Cache占用率作为自定义负载信号做同VPC跨集群路由，提供把KV状态纳入跨区域放置决策的已发布工程形态（部署指南而非性能评测，无WAN RTT、迁移字节或P95数据）。"
+    },
+    {
+      "item_id": "34e8f80e6e88560bfecccced",
+      "issue_date": "2026-08-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.14967v1"
+      ],
+      "reason": "Lightstorm用可复现解析模型给出跨站传输对重算的上下文无关交叉点（70B MHA每流74-111Gbps，GQA-1/8降到9-14Gbps）并以GPU稀缺、KV复用与注意力架构三个乘子界定盈亏平衡，为“何时不值得跨域搬运、退回本地重算”提供启停判据（数值全部来自解析模型而非实测，三站试点在2026年末）。"
+    },
+    {
+      "item_id": "b02f068a7194e15d5022152f",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.28870v1"
+      ],
+      "reason": "agentic前缀缓存替换再评估显示LRU底座加计算感知PartialNode驱逐优于花哨策略（真实vLLM上TTFT平均降19.9%、P99从26.0秒降到16.8秒），且命中率不预测计算节省、指标应以重算token量为准，为按重算代价而非命中率做保留与放置决策提供生产轨迹依据（结论绑定长序列与重算代价结构，P99收益以中位TTFT小幅劣化为代价）。"
+    },
+    {
+      "item_id": "7969d844772e0670919bfec6",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.27746v1"
+      ],
+      "reason": "KVSET用Mattson栈算法一次遍历在线估计达到目标命中率所需的最小缓存容量并与真实部署吻合，回答亲和放置下各站点该驻留多少KV的容量规划前提（栈距离框架隐含LRU语义，容量映射依赖负载平稳性）。"
+    },
+    {
+      "item_id": "c20166db3479fce4ead49178",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.32999v1"
+      ],
+      "reason": "Tessera把检索层提升为KV复用的控制平面、在模型执行前用需求信息决定缓存保留与请求路由，触达agent记忆负载中73.9%-76.3%非前缀位置复发的注入token，匹配请求率下平均TTFT较SGLang与LMCache+EPIC最多降3.6倍，是需求感知放置决策的实测原型（绑定EPIC组合策略，高请求率下所有系统TTFT最终上升）。"
+    },
+    {
+      "item_id": "0f50174ab0e5a72b0a8f97a8",
+      "issue_date": "2026-10-12",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.33224v1"
+      ],
+      "reason": "PackServe在网关用白盒时延预测做KVC感知准入与打包、以重计算预算限制缓存损失，64 GPU回放较LMetric省13.0-16.8% GPU-hours；其重计算预算扫描量化复用换灵活性的净收益边界，明确跨实例KV传输成本须低于重算成本与SLO余量才划算（打包推高TTFT，重算预算去界时GPU-hours反增23.7%）。"
+    },
+    {
+      "item_id": "34cdffbf507f9b88369b2324",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.19822v1"
+      ],
+      "reason": "JointServe按重用概率乘恢复代价选择会话KV驻留对象并把权重分片与KV块并入同一显存预算统一调度，32GB预算下中位会话完成516秒较最强基线降21.7%；驻留价值等于重用概率乘恢复成本的估值为放置决策给出可计算的效用函数（仅单卡层级，无跨机或WAN结果，显存充裕时收益收窄）。"
+    },
+    {
+      "item_id": "2224d2aa0004e9d9d8ad28ac",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.22863v1"
+      ],
+      "reason": "微软在四条M365生产链路逾1.21亿次调用上做驻留重放：跨部署复用率从88.9%跌至29.0%，按会话与部署双键控后无限内存的重建下限从5.4%升至20.2%，十分之一预算下int4多分辨率保留重算率13.6%优于先知式FNU 31.1%与LRU 63%；首次以生产数据证明部署位置是KV复用的硬约束、压缩保留可对冲预算紧张（字节估算借用Llama-2-70B布局，未测WAN传输与时延，仅覆盖四类M365负载）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "亲和路由在会话跨区迁移下的尾延迟与状态迁移代价",
+    "会话加部署双键控索引的元数据与一致性开销",
+    "int4降级保留对下游质量、审计与遗忘义务的影响"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在带部署与会话标识的多站点请求trace上回放部署亲和路由加双键控压缩保留策略，与负载均衡及容量驱逐基线对比。",
+    "inputs": [
+      "带部署与会话标识的生产请求trace",
+      "各站点KV容量与带宽配置",
+      "压缩保留档位（全量/int4/丢弃）"
+    ],
+    "baselines": [
+      "负载均衡路由加LRU驱逐",
+      "仅按KV占用率路由",
+      "无限内存上界（先知式淘汰）"
+    ],
+    "metrics": [
+      "跨部署重建率（对齐20.2%键控下限）",
+      "重算token量",
+      "TTFT P95/P99",
+      "闲置驻留字节"
+    ],
+    "support_criteria": [
+      "重建率显著低于无亲和基线且TTFT尾延迟不劣化"
+    ],
+    "reject_criteria": [
+      "亲和路由的迁移或复制成本在主要负载上抵消重建节省，或收益只在低切换率负载出现"
+    ],
+    "limitations": [
+      "trace回放不覆盖WAN拥塞、故障重试与多租户隔离的全部行为"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-23",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_1d66c552d84879e9cc56",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "微软M365生产实测首次量化跨部署KV复用坍塌与双键控重建下限，并与既有的占用率路由、传输对重算交叉点、重算代价感知驱逐、工作集估计、需求感知放置与重用概率乘恢复代价驻留证据同构；据此建立部署亲和放置与压缩保留的方案概念 Idea，当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "2224d2aa0004e9d9d8ad28ac",
+        "70bff2fea5073e37e20123fc",
+        "34e8f80e6e88560bfecccced",
+        "b02f068a7194e15d5022152f",
+        "7969d844772e0670919bfec6",
+        "c20166db3479fce4ead49178",
+        "0f50174ab0e5a72b0a8f97a8",
+        "34cdffbf507f9b88369b2324"
+      ]
+    }
+  ]
+}

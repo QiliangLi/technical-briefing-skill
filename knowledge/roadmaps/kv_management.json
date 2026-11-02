@@ -3,8 +3,8 @@
   "topic_id": "kv_management",
   "topic_name": "KVCache管理与复用",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-10-29",
-  "summary": "KVCache管理最新证据把复用边界从精确前缀推向更一般形态：Tail-Replay 与 9 月末的 SuffixReplay 两条独立工作线显示混合架构 LLM 可用近期尾部重放重建线性注意力状态、摆脱检查点对齐（Tail-Replay 5%至10%重放保留92.8%至99.9%质量、32K下TTFT最高加速14.32倍，重放预算需按模型标定且服务级评估不完整）；SparseEngine 以生命周期契约把15种KV稀疏方法统一进引擎并跨轮保留压缩KV（Agent回放加速1.57至2.24倍，激进预算下AIME正确率降至18.3%）；Lafa 的前缀复用只是模型内机制旁证（无命中率与TTFT数据、仅单卡batch为1），LMCache MUSA wheel 仅是非CUDA可安装性信号。结合已确立约束——非前缀/分段复用必须带修复与来源绑定（KV-Repurpose 命中率3.3%升至63.9%但多跳明显退化、SAFE-KV 修复后五个负载仍有四个慢于全量预填充、跨适配器冲突使精度从0.94降至0.64）、SSD分层收益取决于持久化分块与GPU前缀块对齐（LMCache 实测热请求TTFT由27毫秒升至93.1毫秒的反例，Range 按字节引擎距HBM驻留仅58-66毫秒）、vLLM v0.32.0 的FP8 KV与 Vosti 页级校验是升级即得项——当前判断：自研KV栈应把『页粒度尾部重放复用＋来源绑定缓存键＋分块对齐的分层卸载』作为下一轮改造优先组合，任何非精确前缀复用上线前必须先过行为一致性与来源冲突两道门，低精度KV与页级不变式回归则可随版本升级直接落地。",
+  "updated_by_issue": "2026-11-02",
+  "summary": "本期证据把 KVCache 管理的重心从『扩展复用机制』进一步推向『驱逐策略与缓存键身份的动态化』：单轮/多轮/Agent 混合流量下没有静态驱逐策略始终占优（WAKMan 实测 vLLM 默认 LRU 最多落后最优策略 22.4 个百分点，旁路影子副本加块哈希重放的在线切换把差距压到 2.04 个百分点，但证据全部来自合成轨迹且只报告命中率），而 Flex 证明请求自适应混合模型下同一文本前缀会按执行路径分裂为互不兼容的层缓存，把执行路径绑入两级基数树校验后命中率从 18.7% 升到 43.4%、TTFT 从 10.68 秒降到 5.92 秒——与来源契约证据叠加，『多维身份绑定缓存键』从工程建议升级为双证据支持的必选项；分层侧的限制因素则从容量转为调度权与 CPU 算力（DualPace 显示主机 KV 池在 120-240GiB 之间收益持平，LMCache ROCm wheel 只解决部署前提），因此当前判断：自研 KV 栈下一轮改造的优先组合是『流量自适应驱逐切换＋含执行路径的多维来源绑定缓存键』，页粒度尾部重放与分块对齐的分层卸载保持既有优先级；会把判断推向升级或推翻的观察点，是 WAKMan 式在线切换在真实流量上把命中率增益兑现为 TTFT/吞吐改善，以及主机层容量越过约 240GiB 后边际收益是否仍然趋平。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -135,6 +135,22 @@
             "https://arxiv.org/abs/2610.28559v1"
           ],
           "reason": "2026-10-29 已发布日报收录：Lafa 把自回归模型改造成块内并行去噪的流式模型，前缀用因果注意力、块内用双向异步流，干净前缀的 KV 跨块复用、自投机解码把草稿与验证合并进一次前向；单张 H100、batch 为 1 时 7B 块大小 16 平均精度 74.5% 对 73.9%、吞吐 100.2 对 39.5TPS 即 2.54 倍（前缀缓存收益未量化：无命中率与 TTFT 数据，仅在单卡 batch 为 1 下测量、无多请求服务负载）；其前缀复用属模型内机制而非服务层跨请求复用，只作机制性旁证；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "262a10b7f9c473a53e199f85",
+          "issue_date": "2026-11-02",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.36355v1"
+          ],
+          "reason": "2026-11-02 已发布日报收录：单轮、多轮与Agent请求混合时没有静态驱逐策略始终占优,vLLM默认LRU最多落后最优策略22.4个百分点,WAKMan在vLLM旁运行LRU与S3FIFO影子副本,每15分钟只用块哈希重放近期流量,把在线驱逐切到模拟命中率更高的策略,不依赖请求类型或提示内容;20个合成混合负载上与最优策略平均命中率差距2.04个百分点(LRU为7.09、S3FIFO为2.53),最差情况差距也最小(证据全部来自作者自建合成轨迹,且全文只报告命中率,没有TTFT、吞吐或成本数据);跨条目推断(inferred):与SGLang会话感知驱逐、Agentic LRU同读为驱逐策略需随流量形态动态选择的信号;按前缀复用分支记录,不据此改变阶段判断。"
+        },
+        {
+          "item_id": "b4413d2ec63271e4e832211d",
+          "issue_date": "2026-11-02",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.37432v1"
+          ],
+          "reason": "2026-11-02 已发布日报收录：静态混合LLM固定单一注意力与SSM层布局而最优布局随数据集与请求变化,按请求选层后同一文本前缀产生互不兼容的层缓存,Flex用两级基数树同时校验前缀与执行路径兼容性:外层索引文本上下文,内层按层索引KV与SSM状态并校验执行路径兼容后复用;PubMed共享前缀下命中率从18.7%升至43.4%、TTFT从10.68秒降至5.92秒,最大批次下TTFT较vLLM平均降80.9%(命中率仅在PubMed共享前缀消融中报告,多轮系统提示复用只作图示,GPU数量与显存未说明);跨条目推断(inferred):执行路径应纳入缓存键身份维度,与来源契约证据互为佐证;按前缀复用分支记录,不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -153,7 +169,9 @@
         "e5ad016e59da3e39390f4363",
         "a356fb1d228c266c8744ca41",
         "5f259cb3ff24288516bac4f7",
-        "5026f6918e135833d004f591"
+        "5026f6918e135833d004f591",
+        "262a10b7f9c473a53e199f85",
+        "b4413d2ec63271e4e832211d"
       ],
       "source_urls": [
         "https://github.com/sgl-project/sglang/releases/tag/v0.5.16",
@@ -170,7 +188,9 @@
         "https://arxiv.org/abs/2610.15186v1",
         "https://arxiv.org/abs/2608.30310v2",
         "https://arxiv.org/abs/2609.39068v1",
-        "https://arxiv.org/abs/2610.28559v1"
+        "https://arxiv.org/abs/2610.28559v1",
+        "https://arxiv.org/abs/2610.36355v1",
+        "https://arxiv.org/abs/2610.37432v1"
       ]
     },
     {
@@ -425,6 +445,22 @@
             "https://github.com/LMCache/LMCache/releases/tag/v0.5.5rc7-musa"
           ],
           "reason": "2026-10-29 已发布日报收录：LMCache 以本地版本号 wheel（0.5.5rc7+musa）分发摩尔线程 MUSA 兼容构建，安装用 --no-deps 跳过依赖解析、TorchMUSA 等 MUSA 依赖保留在宿主镜像，在匹配的 MUSA 运行时镜像内完成构建与冒烟测试（无 KVCache 机制描述、无性能数据、验证仅到冒烟测试级别）；仅作 KV 分层组件向非 CUDA 硬件移植的可安装性信号与部署背景，对命中率与分层收益问题无证据价值；按分层存储分支记录版本跟踪信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "7fcabc4e54e77f51ba45316e",
+          "issue_date": "2026-11-02",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.33501v1"
+          ],
+          "reason": "2026-11-02 已发布日报收录：现有KV卸载中CPU侧请求须等GPU调度让位,解码进展突发并推高P99尾延迟,DualPace让AMX CPU引擎以自有队列独立推进驻留解码、GPU引擎负责prefill,按离线profiling阈值选择本地执行或GPU Dense Assist;1.5秒P99 TPOT下请求率较NEO高61%(8B单卡)至3%(32B四卡),主机KV池在120~240GiB间收益持平、CPU算力与带宽成为新瓶颈(吞吐区间属摘要级声明且容量实验配置未说明,分层仅GPU显存加主机内存、无SSD层);按分层存储与驱逐分支记录为主机层容量收益上限与调度权瓶颈信号,不据此改变阶段判断。"
+        },
+        {
+          "item_id": "a29d7177782a113870992014",
+          "issue_date": "2026-11-02",
+          "source_urls": [
+            "https://github.com/LMCache/LMCache/releases/tag/v0.5.5rc6-rocm-torch210"
+          ],
+          "reason": "2026-11-02 已发布日报收录：LMCache发布AMD平台官方ROCm wheel,digest锁定的容器内构建测试并绑定torch 2.10与ROCm 7.2.4的ABI,内置gfx942与gfx950代码对象,镜像按sha256 digest锁定、面向x86_64与Python 3.12(release说明无KV卸载、分层与驱逐机制细节,版本为rc候选,无命中率、TTFT或吞吐负载数据);仅作KV分层组件在AMD平台的部署前提信号,对命中率与分层收益问题无证据价值;按分层存储分支记录版本跟踪信号,不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -449,7 +485,9 @@
         "afa9bbe36d6238053583a937",
         "6781d10382738565515010ba",
         "e4713bb91707e4da8632575b",
-        "bea84b61ada9249d4d36dabc"
+        "bea84b61ada9249d4d36dabc",
+        "7fcabc4e54e77f51ba45316e",
+        "a29d7177782a113870992014"
       ],
       "source_urls": [
         "https://github.com/sgl-project/sglang/releases/tag/v0.5.17",
@@ -472,7 +510,9 @@
         "https://arxiv.org/abs/2610.06996v1",
         "https://arxiv.org/abs/2610.09051v1",
         "https://arxiv.org/abs/2610.13202v1",
-        "https://github.com/LMCache/LMCache/releases/tag/v0.5.5rc7-musa"
+        "https://github.com/LMCache/LMCache/releases/tag/v0.5.5rc7-musa",
+        "https://arxiv.org/abs/2610.33501v1",
+        "https://github.com/LMCache/LMCache/releases/tag/v0.5.5rc6-rocm-torch210"
       ]
     }
   ],
@@ -627,6 +667,19 @@
         "5f259cb3ff24288516bac4f7",
         "a356fb1d228c266c8744ca41",
         "bea84b61ada9249d4d36dabc"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_83365808699de640cfac",
+      "issue_date": "2026-11-02",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "262a10b7f9c473a53e199f85",
+        "7fcabc4e54e77f51ba45316e",
+        "a29d7177782a113870992014",
+        "b4413d2ec63271e4e832211d"
       ]
     }
   ]
