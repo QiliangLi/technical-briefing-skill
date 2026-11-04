@@ -361,13 +361,13 @@ function reportStage(name: string): void {
   st.reportedNote = note;
 }
 
-function reportProgress(stageNow: string): void {
+function reportProgress(stageNow: string, running = false): void {
   const total = appliedTotal + lastPending;
   const suffix = repairedTotal > 0 ? `｜INVALID 修复 ${repairedTotal} 个` : "";
   const card: BoardItem = {
     key: "now",
     status: "执行中",
-    title: `当前：${stageNow}·第 ${waves} 批｜完成 ${appliedTotal}/${total}｜待办 ${lastPending}${suffix}`,
+    title: `当前：${stageNow}·第 ${waves} 批${running ? "（执行中）" : ""}｜完成 ${appliedTotal}/${total}｜待办 ${lastPending}${suffix}`,
   };
   report(card, "progress");
 }
@@ -458,19 +458,43 @@ while (waves < MAX_WAVES) {
     st.active = true;
     reportStage(s);
   }
-  log(`${waveStage}·第 ${waves} 批（并行 ${wave.length}/${rows.length} 待办）：${tasksText}；已完成 ${appliedTotal}`);
-  // 子代理名在 agent() 调用点内联为模板字面量（保留"·/第/波"字面片段，供运行图解析泳道名）；
-  // 去重后缀由 uniqueName 预计算进插值变量，最终名字与旧脚本逐字节一致（AmendWorkflow 按名匹配缓存）
+  log(`${waveStage}·第 ${waves} 批（并行 ${wave.length}/${rows.length} 待办）：${tasksText}；已完成 ${appliedTotal}/${appliedTotal + rows.length}`);
+  reportProgress(waveStage, true);
+  // 泳道名契约（2026-11-04，docs/history/designs/2026-11-04-workflow-lane-affix-names.md）：运行图泳道头由
+  // 静态投影解析，只读 agent() 首参模板的 head（首个 ${ 之前）与 tail（最后一个 ${ 之后）字面文本，且要求
+  // 含字母/数字——中间片段（·/第/波）不可见。因此派发调用点必须按角色分支、模板以字面功能标签开头；
+  // 运行期名字仍为 功能·对象·第N波[·之N]（mid 预计算），逐字节与旧脚本一致（AmendWorkflow 按名匹配缓存）。
   const waveTags = labels.map((label) => {
     const base = label.subject ? `${label.role}·${label.subject}·第${waves}波` : `${label.role}·第${waves}波`;
     const unique = uniqueName(base);
-    return { role: label.role, subject: label.subject, suffix: unique === base ? "" : unique.slice(base.length) };
+    return { role: label.role, mid: label.subject ? `${label.subject}·` : "", suffix: unique === base ? "" : unique.slice(base.length) };
   });
   // 一波 K 个命名子代理并行；单个失败不拖垮兄弟（allSettled），未写输出的任务仍为 PENDING，下一波重发
   const outcomes = await Promise.allSettled(
-    wave.map((t, i) => waveTags[i].subject
-      ? agent(`${waveTags[i].role}·${waveTags[i].subject}·第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions))
-      : agent(`${waveTags[i].role}·第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions))),
+    wave.map((t, i) => {
+      switch (waveTags[i].role) {
+        case "开放搜索":
+          return agent(`开放搜索·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+        case "筛选候选":
+          return agent(`筛选候选·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+        case "提取事实":
+          return agent(`提取事实·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+        case "补齐证据":
+          return agent(`补齐证据·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+        case "撰写条目":
+          return agent(`撰写条目·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+        case "核查事实":
+          return agent(`核查事实·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+        case "汇总判断":
+          return agent(`汇总判断·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+        case "读者润稿":
+          return agent(`读者润稿·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+        case "生成插画":
+          return agent(`生成插画·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+        default:
+          return agent(`执行编辑·${waveTags[i].mid}第${waves}波${waveTags[i].suffix}`).ask<TaskOutcome>(taskAsk(t.instructions));
+      }
+    }),
   );
   const rejected = outcomes.filter((o) => o.status === "rejected").length;
   if (rejected > 0) {
