@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_0cc5d88d05aa567d0a74",
+  "identity": {
+    "problem_key": "llm_serving_hbm_capacity_contention_weights_vs_kv_cache",
+    "mechanism_key": "hbm_hbf_host_kv_tiering_with_admission_buffered_scheduling",
+    "target_key": "high_throughput_llm_serving_capacity_expansion"
+  },
+  "idea_type": "solution_concept",
+  "title": "HBM–HBF–host近旁分层加缓冲式cache-aware调度扩展高吞吐LLM serving容量",
+  "problem": "高吞吐LLM serving中模型权重与KV cache争夺加速器HBM内存，容量不足限制可驻留KV与服务吞吐，成为高并发负载的瓶颈。",
+  "hypothesis": "在HBM之下引入HBF与host构成近旁分层KV存储，新KV驻HBM、容量紧张时较久缓存下沉HBF或host，调度预留10%准入缓冲抑制HBF写入churn，可在权重驻留HBM的前提下以更低完成时间与能耗支撑更高trace强度。",
+  "mechanism": "HBM–HBF–host三级KV分层加缓冲式cache-aware调度：新KV驻HBM，容量紧张时较久缓存下沉HBF或host，预留10%准入缓冲减少HBF写入churn。",
+  "target": "高吞吐、非延迟敏感LLM serving的KV cache容量扩展",
+  "expected_effect": "trace驱动仿真中总体完成时间相对HBM-only降36.1–87.7%；权重驻HBM时1× trace完成时间降46.0–60.0%、能耗降21.1–24.1%，GLM-5.2在5× trace达7.0×加速。",
+  "topic_ids": [
+    "ai_infra_horizontal"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发表记录给出问题、机制、目标与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "25d720c5db52f690707e9d31",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.39131v2"
+      ],
+      "reason": "该论文给出HBM–HBF–host分层存储与预留10%准入缓冲的cache-aware调度机制，并报告相对HBM-only完成时间降46.0–60.0%（1× trace）、能耗降21.1–24.1%、5× trace 7.0×加速的trace仿真对照。",
+      "independence_group": "arxiv:2609.39131"
+    }
+  ],
+  "evidence_item_ids": [
+    "25d720c5db52f690707e9d31"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.39131v2"
+  ],
+  "independence_groups": [
+    "arxiv:2609.39131"
+  ],
+  "unknowns": [
+    "全部结果为trace驱动仿真而非实机验证",
+    "混合配置平均TPOT高于HBM-only，不适用延迟敏感serving",
+    "HBF写入寿命与长期写入churn影响未量化",
+    "内部高吞吐负载的trace强度与模型组合适配度未知"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部高吞吐serving测试床实现HBM–HBF–host KV分层与预留10%准入缓冲的cache-aware调度，用HBF/H3设备或其延迟带宽模型承接下沉KV，并与HBM-only对照",
+    "inputs": [
+      "内部高吞吐serving trace",
+      "权重与KV容量画像",
+      "HBF/H3设备或其延迟带宽模型"
+    ],
+    "baselines": [
+      "HBM-only",
+      "无准入缓冲的朴素KV下沉"
+    ],
+    "metrics": [
+      "完成时间",
+      "能耗",
+      "平均TPOT",
+      "HBF写入量与寿命损耗"
+    ],
+    "support_criteria": [
+      "相对HBM-only完成时间与能耗同步下降且TPOT退化在高吞吐场景可接受"
+    ],
+    "reject_criteria": [
+      "写入churn或TPOT退化抵消容量扩展收益"
+    ],
+    "limitations": [
+      "trace仿真到实机的外推",
+      "HBF寿命模型为估计"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制与量化效应完整且与既有候选身份不同，但证据为单一独立来源的trace驱动仿真预印本，缺独立支持与实机验证，来源记录亦建议横向跟踪暂不新开专题，先观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_3f301b8f42d7e386002",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制与量化效应完整且与既有候选身份不同，但证据为单一独立来源的trace驱动仿真预印本，缺独立支持与实机验证，来源记录亦建议横向跟踪暂不新开专题，先观察。",
+      "evidence_item_ids": [
+        "25d720c5db52f690707e9d31"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

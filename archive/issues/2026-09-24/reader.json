@@ -1,0 +1,622 @@
+{
+  "schema_version": 1,
+  "reader_contract_version": 1,
+  "source_issue_hash": "faf1d63687c3d001253cbc29094c185b1b18cd799d6905d000c0512312828f20",
+  "issue_date": "2026-09-24",
+  "headline": "AI语义Fabric技术情报（公测版）",
+  "judgements": [
+    {
+      "title": "KV远层换更快的器件前，先核对其赚不赚",
+      "body": "北大和复旦把HBF换进Mooncake式SSD KV卸载栈的底层，四条生产trace上平均时延反升2到5.5倍。收益模型说清了原因：远层变快只在读是瓶颈、读多于写、带宽可持续时才兑换成端到端收益，瞬态KV三条全违反，热极限还先于峰值带宽到达。这给内部KV分层放置立了一个可复用的判据，TierKV在同一期把决策点从反应式逐出提前到解码前的预测式分配，正是绕开这类陷阱的做法。",
+      "evidence_item_ids": [
+        "29009b89519a53921c554fa1",
+        "78f34dd1a0ae33fecc597ac7"
+      ]
+    },
+    {
+      "title": "跨节点KV复用的代价正在被压到可忽略",
+      "body": "Seagate用K8s DRA驱动把CXL区域同时挂到多节点pod做共享KV层，跨节点前缀复用把TTFT降了最多36.6倍，跨与同节点复用的时延差只有几个百分点，复用路径上没有传输协议。对照vLLM把主机驻留分层做进主线但没给命中率数字，共享内存路线第一次有了带调度语义的量化参照，内部跨节点复用选型时应与RDMA池化同台比较。",
+      "evidence_item_ids": [
+        "3c96b2f1d82f04d87c1ef517",
+        "7fd1a0b43699e0580284b61d"
+      ]
+    },
+    {
+      "title": "Harness改进的过拟合与部署绑定，这期各有一个解法",
+      "body": "RRSI把正则化搬进harness自动进化，提案侧给退火的编辑预算，选择侧筛掉针对基准的取巧改动，八个基准上分布外仍涨4.7分，推理用的策略token反而省30%。Harness-Zero解决另一头，用独立agent在学生动作空间里修正响应再做SFT，撤掉专用harness部署后宏平均成功率44.3%，比继续挂着的还高。合起来看，harness从手艺活变成可验收的工程对象，代价也标了价，蒸馏期审查让每trial时长变成基线的2.4倍。",
+      "evidence_item_ids": [
+        "201b69d3c865954d57deab1c",
+        "9421b19bf4036860793b6c04"
+      ]
+    }
+  ],
+  "watch_next": [
+    "跟踪vLLM后续版本是否补上HiSparse与KVCR分层的命中率、TTFT量化数据",
+    "在内部编码Agent上试点终局状态断言加pass^k可靠性指标",
+    "等HBF首批样品落地后用HBFSim结论回验真机行为"
+  ],
+  "items": {
+    "29009b89519a53921c554fa1": {
+      "source_item_hash": "4ac2e94993670c74297f612fd02373a3",
+      "role": "core",
+      "topic_id": "storage_media",
+      "direction_id": "flash_nand_hbf",
+      "published_at": "2026-08-25",
+      "score": 81.5,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.11668",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-25"
+        }
+      ],
+      "title": "更快的HBF换进SSD位置，KV服务反而变慢",
+      "lead": "高带宽闪存把NAND堆进封装、读带宽接近TB/s,直觉上替掉SSD当KV远层必然更快。北大和复旦把这套替换完整建进扩展的TokenSim,用四条两小时生产trace、五个模型和H100/B200画像去测,结果平均端到端时延上升2到5.5倍,最大SLO goodput反而下降1.1到2.7倍。器件没有问题,直接替换的部署方式有问题。",
+      "body": [
+        "反直觉的根源在成本-收益模型给出的三个条件:读I/O是真瓶颈、读明显多于写、可交付带宽可持续。瞬态KV三条全违反。两层层级把复用留在近层,HBF持续接住写重流;3D-ICE热模型显示堆栈在远低于峰值带宽处就碰到热极限,TLC层比它替换的SSD池更早磨损;HBF自身读写时延几乎不重要,把它缩放3.75倍,端到端时延变化不到1%。",
+        "结论对选型很直接:HBF要赢得位置,得配复用感知放置、写预算和热协调,而不是当SSD的平替。注意全部数字来自路线图参数化的模拟,HBF实物尚不存在,真机验证要等首批样品。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "contradiction",
+          "text": "高带宽闪存把NAND堆进封装、读带宽接近TB/s,直觉上替掉SSD当KV远层必然更快。北大和复旦把这套替换完整建进扩展的TokenSim,用四条两小时生产trace、五个模型和H100/B200画像去测,结果平均端到端时延上升2到5.5倍,最大SLO goodput反而下降1.1到2.7倍。器件没有问题,直接替换的部署方式有问题。"
+        },
+        {
+          "heading_key": "mechanism",
+          "text": "反直觉的根源在成本-收益模型给出的三个条件:读I/O是真瓶颈、读明显多于写、可交付带宽可持续。瞬态KV三条全违反。两层层级把复用留在近层,HBF持续接住写重流;3D-ICE热模型显示堆栈在远低于峰值带宽处就碰到热极限,TLC层比它替换的SSD池更早磨损;HBF自身读写时延几乎不重要,把它缩放3.75倍,端到端时延变化不到1%。"
+        },
+        {
+          "heading_key": "implication",
+          "text": "结论对选型很直接:HBF要赢得位置,得配复用感知放置、写预算和热协调,而不是当SSD的平替。注意全部数字来自路线图参数化的模拟,HBF实物尚不存在,真机验证要等首批样品。"
+        }
+      ]
+    },
+    "201b69d3c865954d57deab1c": {
+      "source_item_hash": "3447854f6191d6f4d375461585ff19cb",
+      "role": "core",
+      "topic_id": "agent_acceleration",
+      "direction_id": "agent_harness",
+      "published_at": "2026-09-21T00:00:00.000Z",
+      "score": 79.15,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.24972",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-21T00:00:00.000Z"
+        }
+      ],
+      "title": "Harness自动进化容易背题，RRSI用正则化把泛化保住",
+      "lead": "让Agent反复修改自己的harness来变强，这条路线有个隐患。改动是在一小撮进化任务上挑出来的，容易长成对训练集的拟合，换到没见过的基准上收益就缩水。RRSI把正则化搬进进化过程，在提案和选择两头同时设约束。",
+      "body": [
+        "提案侧限制单轮能捆绑多少条编辑，预算随轮次退火，记账看完整进化历史而非最近一次输赢，停滞时把搜索引向没探索过的组件。选择侧先筛掉针对特定基准的取巧逻辑，再要求测得收益明显超过评估噪声和新增复杂度的代价，长期没贡献的组件直接剪掉。",
+        "八个基准上，进化侧最高涨14.1分，五个分布外基准最高仍有4.7分，推理用的策略token比不做正则化的进化少30%。范围限于冻结骨干模型，效果依赖进化集质量和几组正则化超参数。我们做自研harness进化实验时，退火预算和泄漏筛查可以直接拿来当验收门。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "让Agent反复修改自己的harness来变强，这条路线有个隐患。改动是在一小撮进化任务上挑出来的，容易长成对训练集的拟合，换到没见过的基准上收益就缩水。RRSI把正则化搬进进化过程，在提案和选择两头同时设约束。"
+        },
+        {
+          "heading_key": "mechanism",
+          "text": "提案侧限制单轮能捆绑多少条编辑，预算随轮次退火，记账看完整进化历史而非最近一次输赢，停滞时把搜索引向没探索过的组件。选择侧先筛掉针对特定基准的取巧逻辑，再要求测得收益明显超过评估噪声和新增复杂度的代价，长期没贡献的组件直接剪掉。"
+        },
+        {
+          "heading_key": "result",
+          "text": "八个基准上，进化侧最高涨14.1分，五个分布外基准最高仍有4.7分，推理用的策略token比不做正则化的进化少30%。范围限于冻结骨干模型，效果依赖进化集质量和几组正则化超参数。我们做自研harness进化实验时，退火预算和泄漏筛查可以直接拿来当验收门。"
+        }
+      ]
+    },
+    "7fd1a0b43699e0580284b61d": {
+      "source_item_hash": "a48b68e51cc3647c5abe7e672f9a8785",
+      "role": "core",
+      "topic_id": "kv_management",
+      "direction_id": "paged_management",
+      "published_at": "2026-09-22T05:20:54Z",
+      "score": 79.0,
+      "sources": [
+        {
+          "publisher": "GitHub",
+          "url": "https://github.com/vllm-project/vllm/releases/tag/v0.30.0",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-22T05:20:54Z"
+        }
+      ],
+      "title": "vLLM v0.30.0把主机驻留的KV分层做进主线",
+      "lead": "这版vLLM给稀疏MLA解码加了一个主机驻留层。GPU显存吃紧时KV页溢写到pinned host内存，每请求留一块GPU热缓冲来服务缺失，host cache跨TP共享。",
+      "body": [
+        "配套改动集中在启动和命中两条线。Fast Start把量化后的TP分片权重常驻GPU内存，重启引擎经CUDA IPC映射，省掉磁盘重载；前缀缓存保留双replay边界，EAGLE重发的块对齐提示仍能命中。",
+        "数字要分开看。Kimi K3的分组FP8 MLA缓存插入在小批量下内核提速4-6倍，KDA去掉gather/scatter带来5.2-7.7%的端到端吞吐提升，这些是模型内核的成绩；HiSparse分层本身没有命中率或时延数据。自研KV分层时，命中率与TTFT收益应当列为验收项。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "cache",
+          "text": "这版vLLM给稀疏MLA解码加了一个主机驻留层。GPU显存吃紧时KV页溢写到pinned host内存，每请求留一块GPU热缓冲来服务缺失，host cache跨TP共享。"
+        },
+        {
+          "heading_key": "engineering",
+          "text": "配套改动集中在启动和命中两条线。Fast Start把量化后的TP分片权重常驻GPU内存，重启引擎经CUDA IPC映射，省掉磁盘重载；前缀缓存保留双replay边界，EAGLE重发的块对齐提示仍能命中。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "数字要分开看。Kimi K3的分组FP8 MLA缓存插入在小批量下内核提速4-6倍，KDA去掉gather/scatter带来5.2-7.7%的端到端吞吐提升，这些是模型内核的成绩；HiSparse分层本身没有命中率或时延数据。自研KV分层时，命中率与TTFT收益应当列为验收项。"
+        }
+      ]
+    },
+    "9421b19bf4036860793b6c04": {
+      "source_item_hash": "7212323e1ab671a8cf9ea744e98e864c",
+      "role": "core",
+      "topic_id": "agent_acceleration",
+      "direction_id": "agent_harness",
+      "published_at": "2026-09-21T00:00:00.000Z",
+      "score": 78.7,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.24974",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-21T00:00:00.000Z"
+        }
+      ],
+      "title": "Harness-Zero把专用harness的本事蒸进模型权重",
+      "lead": "给Agent配专用harness能涨分，但收益绑在那套harness上，部署时要么带着它，要么维护一堆专用版本。Harness-Zero走了第三条路，把优化harness诱导出的行为蒸馏进权重，部署时只留固定harness。",
+      "body": [
+        "做法是在学生的响应边界外挂一个独立的harnessing agent。它按参考harness审查每条拟执行响应，正确的放行，有问题的在学生自己的动作空间里做最小修正，修正后的轨迹拿去做SFT。",
+        "数字值得记住。移除专用harness部署后，宏平均成功率从23.3%升到44.3%，比继续挂着这套harness的41.7%还高，28种行为模式平均恢复82.3%。代价在训练期，审查让USPTO上每trial时长达到mini-SWE-agent的2.4倍。我们若做类似实验，应先把动作空间失配问题验证清楚。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "给Agent配专用harness能涨分，但收益绑在那套harness上，部署时要么带着它，要么维护一堆专用版本。Harness-Zero走了第三条路，把优化harness诱导出的行为蒸馏进权重，部署时只留固定harness。"
+        },
+        {
+          "heading_key": "mechanism",
+          "text": "做法是在学生的响应边界外挂一个独立的harnessing agent。它按参考harness审查每条拟执行响应，正确的放行，有问题的在学生自己的动作空间里做最小修正，修正后的轨迹拿去做SFT。"
+        },
+        {
+          "heading_key": "result",
+          "text": "数字值得记住。移除专用harness部署后，宏平均成功率从23.3%升到44.3%，比继续挂着这套harness的41.7%还高，28种行为模式平均恢复82.3%。代价在训练期，审查让USPTO上每trial时长达到mini-SWE-agent的2.4倍。我们若做类似实验，应先把动作空间失配问题验证清楚。"
+        }
+      ]
+    },
+    "3c96b2f1d82f04d87c1ef517": {
+      "source_item_hash": "56ff1ffc9ae6c09f5ec30733eaa63cb8",
+      "role": "core",
+      "topic_id": "memory_dsa",
+      "direction_id": "memory_semantics",
+      "published_at": "2026-09-09",
+      "score": 75.2,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.10790",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-09"
+        }
+      ],
+      "title": "Seagate让CXL共享内存成为K8s可调度的KV层",
+      "lead": "跨节点复用KV缓存一直有个两难:GPU显存和主机DRAM都快但只归本节点,RDMA和对象层能共享却每次复用都要走传输协议和网卡。Seagate的答案是让CXL组合式内存变成Kubernetes能调度的资源,同一物理区域同时挂到多个节点的pod上。",
+      "body": [
+        "DRA驱动按需组合CXL区域,在各主机物化为DAX设备并以单一CDI名注入pod;配套的vLLM共享内存连接器把槽目录嵌进共享介质里,省掉外部元数据服务,KV块按内容哈希、以256 token粒度寻址。",
+        "双节点512GiB设备加Qwen2.5-7B上,跨节点前缀复用把TTFT降了5.5到36.6倍,外部命中率95.4%到99.5%,而节点本地tier只能全量重算。跨节点与同节点复用的时延差只有1%到4%。作者自己说这是可行性研究:单GPU、无并发负载、也没有RDMA池化基线。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "跨节点复用KV缓存一直有个两难:GPU显存和主机DRAM都快但只归本节点,RDMA和对象层能共享却每次复用都要走传输协议和网卡。Seagate的答案是让CXL组合式内存变成Kubernetes能调度的资源,同一物理区域同时挂到多个节点的pod上。"
+        },
+        {
+          "heading_key": "mechanism",
+          "text": "DRA驱动按需组合CXL区域,在各主机物化为DAX设备并以单一CDI名注入pod;配套的vLLM共享内存连接器把槽目录嵌进共享介质里,省掉外部元数据服务,KV块按内容哈希、以256 token粒度寻址。"
+        },
+        {
+          "heading_key": "result",
+          "text": "双节点512GiB设备加Qwen2.5-7B上,跨节点前缀复用把TTFT降了5.5到36.6倍,外部命中率95.4%到99.5%,而节点本地tier只能全量重算。跨节点与同节点复用的时延差只有1%到4%。作者自己说这是可行性研究:单GPU、无并发负载、也没有RDMA池化基线。"
+        }
+      ]
+    },
+    "78f34dd1a0ae33fecc597ac7": {
+      "source_item_hash": "3db0aa7338a2c52ef206d6f7cbc127f8",
+      "role": "core",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "published_at": "2026-09-17",
+      "score": 73.4,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.21172",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-17"
+        }
+      ],
+      "title": "TierKV在解码开始前就规划好三层KV放置",
+      "lead": "KV分层放置通常靠反应式逐出,看一个观察窗口打分决定丢什么。TierKV把决策点提前:解码开始前,从prefill隐藏状态预测未来缓存需求,在设备内存和精度预算下联合决定每个token放精确层、低秩层还是闪存层。",
+      "body": [
+        "八个文本视觉音频模型、三种移动SoC上,prefill吞吐最高提升17.6倍,RAM驻留KV省12.5%到34%。多轮复用测试里,75%内存下精度与FP16基线持平,比SnapKV高17.8点,因为SVD重建保留全部位置,而注意力逐出会丢掉热身窗口没关注的token。",
+        "要记住这是端侧工作,移动SoC的内存和带宽条件与服务器GPU集群不同;SVD低秩带来有界精度损失,长度预测约6%的不足会触发闪存层回退。对服务器的启发在决策点前移本身。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "KV分层放置通常靠反应式逐出,看一个观察窗口打分决定丢什么。TierKV把决策点提前:解码开始前,从prefill隐藏状态预测未来缓存需求,在设备内存和精度预算下联合决定每个token放精确层、低秩层还是闪存层。"
+        },
+        {
+          "heading_key": "result",
+          "text": "八个文本视觉音频模型、三种移动SoC上,prefill吞吐最高提升17.6倍,RAM驻留KV省12.5%到34%。多轮复用测试里,75%内存下精度与FP16基线持平,比SnapKV高17.8点,因为SVD重建保留全部位置,而注意力逐出会丢掉热身窗口没关注的token。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "要记住这是端侧工作,移动SoC的内存和带宽条件与服务器GPU集群不同;SVD低秩带来有界精度损失,长度预测约6%的不足会触发闪存层回退。对服务器的启发在决策点前移本身。"
+        }
+      ]
+    },
+    "548d40a48976597730d94b8a": {
+      "source_item_hash": "3000bf89e9f6be334bdb34cb7569adca",
+      "role": "core",
+      "topic_id": "storage_media",
+      "direction_id": "flash_nand_hbf",
+      "published_at": "2026-09-09",
+      "score": 73.1,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.09800",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-09"
+        }
+      ],
+      "title": "HBFSim:在真机GPU上模拟还不存在的HBF",
+      "lead": "HBF短期内没有样品,但系统设计不能等。HBFSim的思路是不模拟GPU,只建模HBF对程序可见的效果:真实LLM在真实GPU上跑,内核PTX被重写,注册地址段内的访问被路由进HBF时序模拟,还支持异步TMA和超出物理显存的容量。",
+      "body": [
+        "注入时延与请求值的偏差在0.152%以内,且普通内存、TMA、容量三类测试都不影响模型运行。耦合热模块把HBF、HBM和GPU放进同一封装后,Qwen3-30B实验显示封装发热、HBM-HBF分配和MoE需求三者共同约束设计空间。",
+        "时序和热模型没有实测硅片可对照,实验集中在单一模型;等HBF真机出现,这套结论需要回验。对内部的价值是提供了一套真机GPU可复现的评估设施。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "mechanism",
+          "text": "HBF短期内没有样品,但系统设计不能等。HBFSim的思路是不模拟GPU,只建模HBF对程序可见的效果:真实LLM在真实GPU上跑,内核PTX被重写,注册地址段内的访问被路由进HBF时序模拟,还支持异步TMA和超出物理显存的容量。"
+        },
+        {
+          "heading_key": "result",
+          "text": "注入时延与请求值的偏差在0.152%以内,且普通内存、TMA、容量三类测试都不影响模型运行。耦合热模块把HBF、HBM和GPU放进同一封装后,Qwen3-30B实验显示封装发热、HBM-HBF分配和MoE需求三者共同约束设计空间。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "时序和热模型没有实测硅片可对照,实验集中在单一模型;等HBF真机出现,这套结论需要回验。对内部的价值是提供了一套真机GPU可复现的评估设施。"
+        }
+      ]
+    },
+    "13d1b1e17e69fb00f2904d04": {
+      "source_item_hash": "0b1e135c5abb4ff06c091dcd69ae3248",
+      "role": "core",
+      "topic_id": "frontier_exploration",
+      "direction_id": "agent_tooling_frontier",
+      "published_at": "2026-08-20T07:37:45Z",
+      "score": 72.8,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.19739v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-20T07:37:45Z"
+        }
+      ],
+      "title": "Q-Guide先想清楚缺什么证据，再去读文档",
+      "lead": "这篇工作里最值得看的对照是，给文档问答加planner、加路由、加多agent协作并不涨分，三阶段管线反而只有35.7%。真正管用的是一个小agent，先推理问题还缺什么证据，再定向调用读取、放大或区域定位工具，模型本身不动。",
+      "body": [
+        "DocVQA2026上拿到65.0%，最强agentic基线40.0%。更实用的是那条预算曲线，感知预算加到约3.2轮就拿到90%的可达收益，之后趋平。",
+        "对我们做上下文获取的启发很直接，先画预算与精度的曲线，再判断缺什么去定向取，比堆编排层划算。要留意验证集只有80题，结论限于Claude骨干和文档漫画两类视觉域。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "contradiction",
+          "text": "这篇工作里最值得看的对照是，给文档问答加planner、加路由、加多agent协作并不涨分，三阶段管线反而只有35.7%。真正管用的是一个小agent，先推理问题还缺什么证据，再定向调用读取、放大或区域定位工具，模型本身不动。"
+        },
+        {
+          "heading_key": "result",
+          "text": "DocVQA2026上拿到65.0%，最强agentic基线40.0%。更实用的是那条预算曲线，感知预算加到约3.2轮就拿到90%的可达收益，之后趋平。"
+        },
+        {
+          "heading_key": "implication",
+          "text": "对我们做上下文获取的启发很直接，先画预算与精度的曲线，再判断缺什么去定向取，比堆编排层划算。要留意验证集只有80题，结论限于Claude骨干和文档漫画两类视觉域。"
+        }
+      ]
+    },
+    "e85aefa8f3460210f317014c": {
+      "source_item_hash": "525d9c29038f0cc01d478ba344529459",
+      "role": "core",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "published_at": "2026-08-23T01:49:04Z",
+      "score": 72.5,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.22167v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-23T01:49:04Z"
+        }
+      ],
+      "title": "MCP-Universe RL把工具等待藏进其他轨迹的生成里",
+      "lead": "Agentic RL训练有个很实际的浪费，多轮长episode等慢工具调用时GPU闲着。MCP-Universe RL把rollout组织成取环境、跑episode、打分三段重叠的流水线，一段轨迹等工具时，其他轨迹在生成。",
+      "body": [
+        "关键是按阶段分并发。取环境吃host内存，跑episode吃GPU，所以run阶段的worker数给得比acquire阶段多，GPU保持忙碌又不多占环境内存。环境层经每环境MCP网关供给隔离环境，容器后端可以替换。",
+        "软件工程负载上rollout吞吐从147提到410 tokens每秒，全异步GPU放置每步572秒，约为colocated的一半，三个域的任务奖励都有提升。作者不以基准SOTA为目标，通用工具域成功率只从约0.48升到0.55。我们建训练评测设施时可以借鉴这套三阶段重叠，新域接入只需写任务规格。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "Agentic RL训练有个很实际的浪费，多轮长episode等慢工具调用时GPU闲着。MCP-Universe RL把rollout组织成取环境、跑episode、打分三段重叠的流水线，一段轨迹等工具时，其他轨迹在生成。"
+        },
+        {
+          "heading_key": "scheduling",
+          "text": "关键是按阶段分并发。取环境吃host内存，跑episode吃GPU，所以run阶段的worker数给得比acquire阶段多，GPU保持忙碌又不多占环境内存。环境层经每环境MCP网关供给隔离环境，容器后端可以替换。"
+        },
+        {
+          "heading_key": "result",
+          "text": "软件工程负载上rollout吞吐从147提到410 tokens每秒，全异步GPU放置每步572秒，约为colocated的一半，三个域的任务奖励都有提升。作者不以基准SOTA为目标，通用工具域成功率只从约0.48升到0.55。我们建训练评测设施时可以借鉴这套三阶段重叠，新域接入只需写任务规格。"
+        }
+      ]
+    },
+    "9046280e4c0618b742d7618f": {
+      "source_item_hash": "ddeb650213883e22b8e67490097034bf",
+      "role": "core",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "published_at": "2026-08-20T07:37:57Z",
+      "score": 71.2,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.19741v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-20T07:37:57Z"
+        }
+      ],
+      "title": "Thinkingbox用数据库终局状态判断Agent是否真做完了事",
+      "lead": "怎么判断一个Agent真的完成了任务，而不是给了一份像样的回复。Thinkingbox的答案是看后端状态的终局。507个策略化工作流在隔离MCP会话里跑，模拟用户最多追问10轮，只有最终数据库状态与期望一致且没有多余副作用才算成功，系统错误一律计为失败。",
+      "body": [
+        "这个判据下，最强模型GPT-5.4的pass@1是65.36%，20次全对的pass^20只剩25.25%。失败里干净终止的很多，回复和工具调用层面的信号代表不了端到端完成。",
+        "内部验收可以引入两件东西，终局状态断言和pass^k可靠性指标，用它替代回复或调用级的通过判据。边界同样清楚，模拟用户是受限合作型，不覆盖记错、目标漂移和不合作的真实行为。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "怎么判断一个Agent真的完成了任务，而不是给了一份像样的回复。Thinkingbox的答案是看后端状态的终局。507个策略化工作流在隔离MCP会话里跑，模拟用户最多追问10轮，只有最终数据库状态与期望一致且没有多余副作用才算成功，系统错误一律计为失败。"
+        },
+        {
+          "heading_key": "result",
+          "text": "这个判据下，最强模型GPT-5.4的pass@1是65.36%，20次全对的pass^20只剩25.25%。失败里干净终止的很多，回复和工具调用层面的信号代表不了端到端完成。"
+        },
+        {
+          "heading_key": "implication",
+          "text": "内部验收可以引入两件东西，终局状态断言和pass^k可靠性指标，用它替代回复或调用级的通过判据。边界同样清楚，模拟用户是受限合作型，不覆盖记错、目标漂移和不合作的真实行为。"
+        }
+      ]
+    },
+    "05c7bc9daffb6ddfb25a5613": {
+      "source_item_hash": "d80d5398bc9cee47630d64332f7043af",
+      "role": "core",
+      "topic_id": "frontier_exploration",
+      "direction_id": "agent_tooling_frontier",
+      "published_at": "2026-08-20T09:43:47Z",
+      "score": 70.6,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.19842v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-20T09:43:47Z"
+        }
+      ],
+      "title": "SAPO让策略和价值共用一个主干，单rollout训练Agent",
+      "lead": "Agentic RL的两条主流路各有痛点。GRPO类方法靠一组rollout互相比，缺价值泛化还费采样；PPO要养一个和策略同规模的critic，显存和计算都贵。SAPO让策略、状态价值、动作价值共用同一个自回归主干。",
+      "body": [
+        "做法利用了因果结构。状态价值在动作生成前读出，动作价值额外以已生成的token为条件，同一个transformer一次反向传播更新三个目标，轨迹级GAE配批归一化估计每轮贡献，每任务只要一条rollout。",
+        "ALFWorld和WebShop上平均超过PPO与GRPO约15.1和12.1个百分点，每轮运行时间比PPO少33.2%并把critic显存整个去掉。验证还限于两个经典文本环境和7B以下模型，借鉴单rollout共享主干前值得先在内部小规模复现稳定性。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "Agentic RL的两条主流路各有痛点。GRPO类方法靠一组rollout互相比，缺价值泛化还费采样；PPO要养一个和策略同规模的critic，显存和计算都贵。SAPO让策略、状态价值、动作价值共用同一个自回归主干。"
+        },
+        {
+          "heading_key": "mechanism",
+          "text": "做法利用了因果结构。状态价值在动作生成前读出，动作价值额外以已生成的token为条件，同一个transformer一次反向传播更新三个目标，轨迹级GAE配批归一化估计每轮贡献，每任务只要一条rollout。"
+        },
+        {
+          "heading_key": "result",
+          "text": "ALFWorld和WebShop上平均超过PPO与GRPO约15.1和12.1个百分点，每轮运行时间比PPO少33.2%并把critic显存整个去掉。验证还限于两个经典文本环境和7B以下模型，借鉴单rollout共享主干前值得先在内部小规模复现稳定性。"
+        }
+      ]
+    }
+  },
+  "radar": [
+    {
+      "radar_id": "c95777fd5a5944a7e8c42581",
+      "source_signal_hash": "b06d70f7e7da3beb03af0d249f7914aa604992ad0011a8242c5c2fbbb94f8520",
+      "category": "AI Infra",
+      "signal": "transformers 支持直接加载 GGUF 量化模型，本地推理性能接近 llama.cpp",
+      "summary": "Hugging Face 宣布 transformers 支持直接运行 GGUF 量化模型，通过 from_pretrained 传入 gguf_file 即可加载 Hub 上的 GGUF checkpoint，并复用 ggml 的 Metal 内核。",
+      "source_urls": [
+        "https://huggingface.co/blog/transformers-llama-cpp-quants"
+      ]
+    },
+    {
+      "radar_id": "f5c68a595e9a26d605932176",
+      "source_signal_hash": "ba2ae763135466301b8c0fcfc8fef39d7d9c598edab8ff03e96004cd59d1ee0b",
+      "category": "AI Infra",
+      "signal": "OpenRouter 推出 Batch API，批量推理可享半价",
+      "summary": "OpenRouter 发布 Batch API，异步批量请求由供应商在 24 小时窗口内完成，通常按正常 per-token 价格的 50% 或更低收费，目前已支持 70 多个模型。",
+      "source_urls": [
+        "https://openrouter.ai/blog/announcements/batch-api"
+      ]
+    },
+    {
+      "radar_id": "6d10d7703e1146cd2100bd75",
+      "source_signal_hash": "4b0dbc0167266d7a5cf693c61d1dab481982364c934bd0a3f068144be1043318",
+      "category": "AI Infra",
+      "signal": "IEEE Spectrum 解析 OpenAI 如何用自有大语言模型加速 Jalapeño 芯片设计",
+      "summary": "OpenAI 首款 AI 加速器芯片 Jalapeño 提供 13.4 petaflops 4-bit 算力和 232 GB 高端内存，端到端延迟相比 Nvidia GB300 最多降低 3.6 倍，从架构概念到首次流片用时不到 20 个月。",
+      "source_urls": [
+        "https://spectrum.ieee.org/llms-for-chip-design"
+      ]
+    },
+    {
+      "radar_id": "f1641a4995f6edaf3fbd1bc8",
+      "source_signal_hash": "7492bd25c6dc1716e9f37ccdc6076664f2f128123a7a419edcbca4b3abfbabf0",
+      "category": "AI Infra",
+      "signal": "vLLM 谈 AMD 推理引擎质量控制",
+      "summary": "Kevin Lu 在 @vllm_project 发了一篇很棒的博客，讲推理引擎的质量控制。遗憾的是，@AnushElangovan 没有为 vLLM 提供足够稳定的 AMD QA 集群，导致 AMD 上的软件质量比 CUDA 差了一个数量级。 每个月都会发生多次 AMD CI vLLM 全集群宕机。",
+      "source_urls": [
+        "https://x.com/SemiAnalysis_/status/2100948236139712988"
+      ]
+    },
+    {
+      "radar_id": "ff5c4b6c2f96014c9dd1eb0a",
+      "source_signal_hash": "ddc0297dd478c4e3dae882c0445e6c69fc59d26808f29386512f3fe5e8bf9c73",
+      "category": "AI Infra",
+      "signal": "vLLM 在 GB300 NVL72 上 PD 部署 Qwen3.8-2.4T 的性能调优实录",
+      "summary": "vLLM 在 GB300 NVL72 集群上对 Qwen3.8-2.4T 做 PD 分离部署，8K/1K 负载下高吞吐场景达到每 GPU 5000 total token 吞吐，低延迟场景每用户 180 生成 token，并给出完整 pareto 前沿。",
+      "source_urls": [
+        "https://vllm.ai/blog/2026-09-21-qwen38-pd-serving"
+      ]
+    },
+    {
+      "radar_id": "f8a89b8f61a8a84d2605172f",
+      "source_signal_hash": "9d9fa22c13610084537e5d901f2446fbbe7679848810b5f2f407819835517f68",
+      "category": "Agent生态",
+      "signal": "Meta Muse 助手曝出严重 0-day 漏洞，Amazon 已开始封禁 Muse",
+      "summary": "Meta 的 AI 助手 Muse 存在一个 0-day 漏洞，任何本地应用或终端命令都可获取用户 Muse 账户的认证 token，获得对智能体的完全控制。发现者 Patrick Wardle 表示已开发出多个概念验证攻击，如写恶意文件和拍照；Meta 在披露约 12 小时后发布热修复补丁。此前 Amazon 以 Muse 是未授权 AI agent 为由开始封禁其购物功能。",
+      "source_urls": [
+        "https://arstechnica.com/security/2026/09/muse-metas-extraordinarily-privileged-ai-assistant-has-a-serious-0-day"
+      ]
+    },
+    {
+      "radar_id": "be70ddbcf4250e905fd8cdb2",
+      "source_signal_hash": "8df1f8140fedd1799e5b8cc448250dd19d65397dc67f4e4cc0684797767909be",
+      "category": "Agent生态",
+      "signal": "OpenRouter 解读 NVIDIA Nemotron 3.5 Lightning 如何承担 Agent 高频执行调用",
+      "summary": "OpenRouter 发文解读 NVIDIA 的 Nemotron 3.5 Lightning，这是一款 30B 总参数、约 3B 激活参数的混合专家开源权重模型，定位于工具调用、编码等高频、边界清晰的 Agent 执行步骤，与负责复杂推理的 Nemotron 3 Ultra（550B 总参数、55B 激活）形成分工。",
+      "source_urls": [
+        "https://openrouter.ai/blog/insights/nemotron-3-5-lightning"
+      ]
+    },
+    {
+      "radar_id": "3201cea082ee262782d10369",
+      "source_signal_hash": "e9bc86c37f5393ee0da724218cb9532279987186efed229ed12b8dba0380cb2f",
+      "category": "Agent生态",
+      "signal": "Unreal Labs 发布 Unreal Agent 异步工具调用 harness，实测最高省 40% 成本",
+      "summary": "Unreal Labs 发布 Unreal Agent，用全异步 harness 管理工具调用，免去模型自己处理等待、轮询和心跳的开销。",
+      "source_urls": [
+        "https://unreallabs.ai/blog/unreal-agent"
+      ]
+    },
+    {
+      "radar_id": "c9cf832e2921c9ce4ee2b0a3",
+      "source_signal_hash": "7ecdbe92f7f17379087f972d4d93c26f7c0ab3744c15aac3fa5785754fd09f66",
+      "category": "Agent生态",
+      "signal": "Databricks Genie One MCP 正式发布，让任意 AI Agent 访问受治理的业务数据",
+      "summary": "Databricks 宣布 Genie One MCP 服务器正式向所有用户开放，让任意 Agent 通过统一接口获取 Genie One 的结构化与非结构化数据、洞察和答案，并以 Genie Ontology 作为受治理的业务上下文基础。",
+      "source_urls": [
+        "https://www.databricks.com/blog/genie-one-mcp-now-generally-available"
+      ]
+    },
+    {
+      "radar_id": "ba7ace0cff27a02ef24f8dd9",
+      "source_signal_hash": "8a23b848cec57227f6fdc651c79b82bf43d91a28511387a5f0f7102291e2bbf6",
+      "category": "Agent生态",
+      "signal": "分析认为 OpenAI 具备快速跟进 TypeSafe 的 Jev 并将分类能力内嵌进模型的优势",
+      "summary": "作者分析 TypeSafe 的 Jev 本质上是基于常规 LLM 的 logprobs 做通用分类，OpenAI 多年来已在工具调用中用单个 token 充当微型分类器，具备快速复制 Jev 并把分类能力折叠进自家模型和智能体的条件。",
+      "source_urls": [
+        "https://arcturus-labs.com/blog/2026/09/21/will-openai-eat-jevs-lunch"
+      ]
+    },
+    {
+      "radar_id": "1765fc3de4a71127072f2788",
+      "source_signal_hash": "80afb94272093ea0c914cb80ba8830c72b3ac93163e3d7c79e0252aef36a4f6e",
+      "category": "其他技术前沿",
+      "signal": "Claude Code v2.1.280 发布，新增 Claude Opus 5.5 为默认 Opus 模型",
+      "summary": "Claude Code 发布 v2.1.280，新增 Claude Opus 5.5（claude-opus-5-5）为默认 Opus 模型，支持 1M 上下文，价格为 $4/$20 per Mtok、缓存读取 $0.20/Mtok；同时将 Pro 和 Team Standard 计划的默认模型从 Sonnet 改为 Opus。",
+      "source_urls": [
+        "https://github.com/anthropics/claude-code/releases/tag/v2.1.280"
+      ]
+    },
+    {
+      "radar_id": "1d3976c6a3fc37b6a73c3725",
+      "source_signal_hash": "76e62d1ec0001889c0ff8cd00ab3e1ebf5711ee57543698082aa77475dbf79a0",
+      "category": "其他技术前沿",
+      "signal": "xAI 发布 Grok 4.7：编码与知识工作能力提升，价格与 Grok 4.6 持平",
+      "summary": "xAI 发布 Grok 4.7，称其为编码与知识工作最强模型，采用更大的新基础模型并经过更长强化学习训练，定价与 Grok 4.6 相同，每百万输入 token $2、输出 token $6。",
+      "source_urls": [
+        "https://x.ai/news/grok-4-7"
+      ]
+    },
+    {
+      "radar_id": "c15a482582ff8eae0b402132",
+      "source_signal_hash": "85d384a6eeb587b213d214a4a095d239c2503d62c9dac6f3baf1ef8d7de2a2d6",
+      "category": "其他技术前沿",
+      "signal": "LiteParse 9 月更新：PDFium 提速 20-25%，新增视觉定位与 is-complex 路由 API",
+      "summary": "LlamaIndex 发布 LiteParse 2.14.6 更新，通过对自维护 PDFium fork 做内存分配优化（内置 mimalloc）等手段，将文本提取耗时降低 20-25%，平均 2.76ms/页，markdown 渲染 3.94ms/页。",
+      "source_urls": [
+        "https://www.llamaindex.ai/blog/liteparse-updates-september-2026"
+      ]
+    },
+    {
+      "radar_id": "f8139cab4a2a950dbb274660",
+      "source_signal_hash": "4df9641477b0804d87db83a9850802e7e71044d4d81a56e18e1628276a941927",
+      "category": "其他技术前沿",
+      "signal": "OpenRouter 发布 2026 年最佳嵌入模型选型指南，覆盖 37 个目录条目",
+      "summary": "OpenRouter 于 2026 年 9 月 11 日核实嵌入模型目录共 37 个条目，并通过自家 embeddings API 向 19 个模型发送批量请求、共 28 项检查，确认请求与响应行为。",
+      "source_urls": [
+        "https://openrouter.ai/blog/insights/best-embedding-models-2026"
+      ]
+    },
+    {
+      "radar_id": "265161018b5580fcdf72e096",
+      "source_signal_hash": "fba8aa2f0441b8fd2a0d2ee3528ecf75e6e74a4c7fec52030ce982aa8339eb65",
+      "category": "其他技术前沿",
+      "signal": "Qwen-Image-2.1 登顶 Arena 图像编辑与文生图开源榜第一",
+      "summary": "通义千问宣布 Qwen-Image-2.1 在 Arena 的 Image Edit Arena 和 Text-to-Image Arena 均为开源模型第一。引用内容显示其 Image Edit Arena 得分 1367，总榜第 16，距第 15 名 GPT-Image-1.5-high-fidelity 仅 3 分，官方邀请用户体验该模型。",
+      "source_urls": [
+        "https://x.com/Alibaba_Qwen/status/2102569821997346912"
+      ]
+    },
+    {
+      "radar_id": "d837f403166215454c9dd751",
+      "source_signal_hash": "4744d7fc7ad58db031d452be3114017a02506b243cb0dd3372f98241776e147d",
+      "category": "边界探索",
+      "signal": "Balyasny 资产管理如何评测和治理 Claude Fable 5",
+      "summary": "Anthropic 发布对 Balyasny（BAM）首席 AI 官 Charlie Flanagan 的访谈，介绍该管理约 380 亿美元资产的机构如何评测与治理 Claude Fable 5。",
+      "source_urls": [
+        "https://claude.com/blog/working-at-the-frontier-how-balyasny-asset-management-evaluates-and-governs-claude-fable-5"
+      ]
+    }
+  ],
+  "generated_at": "2026-09-23T10:58:22+08:00",
+  "rewrite_status": "current_run_reader_projection"
+}

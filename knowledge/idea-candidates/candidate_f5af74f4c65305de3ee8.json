@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_f5af74f4c65305de3ee8",
+  "identity": {
+    "problem_key": "node_local_nvme_isolation_checkpoint_loss",
+    "mechanism_key": "per_node_raid5_nvme_of_shared_namespace_with_gds",
+    "target_key": "gpu_cluster_shared_tier0_checkpoint_storage"
+  },
+  "idea_type": "solution_concept",
+  "title": "把孤立节点NVMe组成每节点RAID5加NVMe-oF单一命名空间的共享Tier-0，保持GDS真DMA零回退",
+  "problem": "GPU节点本地NVMe各自孤立、容量不能共享，checkpoint随节点丢失；改走共享路径后又不能凭吞吐判断是否仍走存储直达显存的DMA，存在隐性回退风险。",
+  "hypothesis": "把每节点本地NVMe组成RAID5并经NVMe-oF/RDMA汇成单一GPFS命名空间（控制面走独立以太网、数据面走400G IB）后，checkpoint进入共享命名空间不再随单节点丢失，且GPU经GPUDirect Storage访问该命名空间时I/O可全部走nvfs DMA真直连、零次兼容回退。",
+  "mechanism": "每节点5块NVMe组成一个RAID5阵列，各节点阵列经NVMe-oF/RDMA互连为GPFS的SAN直达NSD访问、汇成单一命名空间；GPFS控制走独立以太网、数据走400G IB；GPU侧经GPUDirect Storage从共享命名空间直达显存，用gds_stats计数器区分nvfs DMA与兼容回退。",
+  "target": "GPU集群由节点本地NVMe池化而成的共享Tier-0/checkpoint存储命名空间",
+  "expected_effect": "五节点聚合读达132.1 GiB/s；gds_stats计数显示124012次I/O全部走nvfs DMA、零次兼容回退；checkpoint进入单一命名空间后不再随节点丢失。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发表PoC记录同时给出问题、机制、目标与计数器验证的可检验效应，构成完整但尚缺独立支持的解决方案概念。"
+  },
+  "evidence": [
+    {
+      "item_id": "363c4ba5b9dc1ce36a6f1bec",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science"
+      ],
+      "reason": "五节点PoC给出问题（节点本地NVMe孤立、checkpoint随节点丢失）、机制（每节点RAID5经NVMe-oF/RDMA汇成单一GPFS命名空间，控制走以太网、数据走400G IB，GDS直达显存）、目标（GPU集群共享Tier-0）与可检验效应（聚合读132.1 GiB/s；gds_stats计数124012次I/O全部nvfs DMA、零回退），并附适用边界（厂商自测于单一五节点集群，未测能耗与端到端负载，收敛角色下真DMA受限）。",
+      "independence_group": "url:https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science"
+    }
+  ],
+  "evidence_item_ids": [
+    "363c4ba5b9dc1ce36a6f1bec"
+  ],
+  "source_urls": [
+    "https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science"
+  ],
+  "independence_groups": [
+    "url:https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science"
+  ],
+  "unknowns": [
+    "厂商自测于单一五节点集群，无第三方复测",
+    "未测能耗与端到端真实负载，收敛角色下真DMA受限的具体条件未给出",
+    "只报聚合读吞吐，checkpoint写入与RAID5写惩罚路径未量化",
+    "节点故障后命名空间可用性与恢复时间未测"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在2-5节点GPU集群上，每节点本地NVMe组RAID5、经NVMe-oF/RDMA汇成单一GPFS命名空间，GPU经GDS读写checkpoint，用gds_stats计数器加CPU路径A/B对照验证真DMA与共享可用性。",
+    "inputs": [
+      "节点数2-5",
+      "每节点NVMe盘数与RAID级别",
+      "checkpoint写读混合负载",
+      "读块大小扫描"
+    ],
+    "baselines": [
+      "节点本地NVMe无共享命名空间",
+      "主机POSIX路径访问共享命名空间",
+      "关闭GDS的兼容回退路径"
+    ],
+    "metrics": [
+      "聚合读吞吐GiB/s",
+      "nvfs DMA计数与兼容回退次数",
+      "checkpoint写入吞吐",
+      "节点故障后命名空间可用性与恢复时间",
+      "主机CPU占用"
+    ],
+    "support_criteria": [
+      "单一命名空间下GDS I/O全部走nvfs DMA且回退为零，checkpoint在节点故障后仍可经其余节点访问"
+    ],
+    "reject_criteria": [
+      "共享命名空间引入隐性回退，或聚合吞吐与故障恢复显著劣于节点本地基线"
+    ],
+    "limitations": [
+      "厂商自测未复测",
+      "能耗与端到端负载未覆盖",
+      "收敛角色下真DMA受限的条件未量化"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题-机制-目标-效应完整且与既有Candidate/Idea身份不同，但唯一证据是厂商在单一五节点集群的自测，缺独立支持与适用边界（能耗、端到端负载、收敛角色限制），先挂起观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_e201a2fc3d5bd226c7fe"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_4a43453aeeb606f98ac",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题-机制-目标-效应完整且与既有Candidate/Idea身份不同，但唯一证据是厂商在单一五节点集群的自测，缺独立支持与适用边界（能耗、端到端负载、收敛角色限制），先挂起观察。",
+      "evidence_item_ids": [
+        "363c4ba5b9dc1ce36a6f1bec"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

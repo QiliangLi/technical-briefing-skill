@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a1008f40dbda996d4400",
+  "identity": {
+    "problem_key": "orthogonal_qk_transform_blocks_joint_pruning",
+    "mechanism_key": "reciprocal_nonorthogonal_qk_transforms",
+    "target_key": "cross_region_transferable_kv_format"
+  },
+  "idea_type": "solution_concept",
+  "title": "互逆非正交Q/K变换让跨域传输的KV同时INT2量化与查询剪枝",
+  "problem": "旋转量化要求查询与键共用一个正交变换，削弱通道剪枝所需的能量集中，长上下文KV无法同时吃到2-bit量化与查询通道剪枝的体积缩减，需跨区搬运的缓存字节数居高不下。",
+  "hypothesis": "查询侧用可逆变换、键侧用其逆转置保持点积不变，键配合部分白化适配INT2、查询按幅值动态选通道，可在任务质量可接受下把需跨区传输的KV每元素压到约2.34位、带宽1.93位。",
+  "mechanism": "查询用可逆变换、键用其逆转置以保持点积；键部分白化适配INT2；查询对齐基集中能量并按幅值动态选通道，通道0保留BF16；接收端配套同一对互逆变换解码。",
+  "target": "跨域传输前后的长上下文KV缓存格式：发送端量化加查询剪枝，接收端配对互逆变换解码。",
+  "expected_effect": "128K上下文、40%查询稀疏下每元素存储2.34位、带宽1.93位；Qwen3-4B上HumanEval 95.0、OSCAR 33.9（长上下文检索仍低于BF16）。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-29",
+    "rationale": "单条已发表记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "c70971a97f6d522a9ddc448a",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.09827v1"
+      ],
+      "reason": "《Dual-QK：非正交Q/K变换实现可剪枝的2-bit KV缓存》给出互逆非正交变换机制与位宽、质量结果。",
+      "independence_group": "arxiv:2610.09827"
+    }
+  ],
+  "evidence_item_ids": [
+    "c70971a97f6d522a9ddc448a"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.09827v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.09827"
+  ],
+  "unknowns": [
+    "8.3倍读取减少为估计值",
+    "仅单GPU解码评估，跨域端到端时延无实测",
+    "长上下文检索（OSCAR 33.9）仍低于BF16",
+    "论文为预印本，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "Dual-QK格式KV加接收端配对互逆变换的跨域传输模拟",
+    "inputs": [
+      "Qwen3级长上下文模型",
+      "128K级负载",
+      "WAN带宽与时延矩阵"
+    ],
+    "baselines": [
+      "BF16未压缩KV传输",
+      "正交旋转量化2-bit且不剪枝"
+    ],
+    "metrics": [
+      "每元素传输位数",
+      "端到端首字时延",
+      "HumanEval与OSCAR质量"
+    ],
+    "support_criteria": [
+      "质量不塌前提下跨区传输字节约降至BF16的六点八分之一"
+    ],
+    "reject_criteria": [
+      "接收端互逆变换开销或检索退化吞噬带宽节省"
+    ],
+    "limitations": [
+      "跨域场景无实测，时延结论依赖自建WAN模拟"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且与既有跨域传输体积类候选机制正交，但证据仅为单一预印本，跨域端到端未实测且长上下文检索仍低于BF16，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_7ea64b51e3c8e3cdef6e",
+    "candidate_e5563020923e9d940d63"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-10-29",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d1035cb1dc15b6b7d9a5",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且与既有跨域传输体积类候选机制正交，但证据仅为单一预印本，跨域端到端未实测且长上下文检索仍低于BF16，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "c70971a97f6d522a9ddc448a"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

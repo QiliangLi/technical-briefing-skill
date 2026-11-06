@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_80c1ad4772073ab741c2",
+  "identity": {
+    "problem_key": "acceleration_payback_misjudged",
+    "mechanism_key": "drift_aware_amortized_adoption_gate",
+    "target_key": "agent_acceleration_mechanism_adoption"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "加速机制采纳门按后续摊销回本与负载漂移衰减联合核算",
+  "problem": "压缩、复用与缓存类加速机制按即时节省指标采纳，但收益需按后续使用摊销且随漂移衰减：25%token预算下按当前问题压缩需约6.6至11.0个后续问题回本且词级压缩无检测到的增益；skill束持久节省在负载漂移下从12.9%衰减到2.6%；按用户调用记忆的投机解码在预热覆盖全部任务时增益缩至约2%。",
+  "hypothesis": "为每类加速机制建立摊销账本：累计节省对照补读、重建与缓存成本并按预期后续问题或会话跨度折算回本horizon，同时在负载漂移下周期复测净增益；只有摊销回本且漂移后仍为正的机制才被采纳或保留，可拦下一批只在冷启动测量里好看的机制。",
+  "mechanism": "按机制埋点计数节省与代价（token、重建、重试、缓存错失），构成双门：回本门要求预期跨度内摊销净增益为正，漂移门要求负载变化后净增益不衰减转负；未过门机制自动降级或回退到无该机制的基线。",
+  "target": "Agent上下文压缩、缓存与复用类加速机制的采纳与保留决策",
+  "expected_effect": "被采纳机制在真实会话跨度内保持正净收益，即时节省虚高或漂移后失效的机制在门处被拦截或回收，长期token与时延收益显著低于冷启动测量值的差距收窄。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "将逐期公开记录按共同问题、机制和目标对象综合，并保留同源复报的单一独立分组。"
+  },
+  "evidence": [
+    {
+      "item_id": "093c3d12889159d0908bcf94",
+      "issue_date": "2026-09-03",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.30785v1"
+      ],
+      "reason": "《SkillZip Pro跨文件压缩渐进skill束》给出漂移衰减依据：跨文件压缩对生产审核skill削掉38.1%束token，但负载漂移下持久节省从12.9%衰减到2.6%，瞬态视图保持4.7%。",
+      "independence_group": "arxiv:2608.30785"
+    },
+    {
+      "item_id": "0f8f0782f43e62451d8d7661",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.31840v1"
+      ],
+      "reason": "《SPECMEM：用持续更新的按用户工具调用记忆加速Agent解码》给出预热失效依据：按用户在线更新的调用记忆解码加速最高1.74倍，而预热覆盖全部任务时增益缩至约2%，冻结存储不可依赖。",
+      "independence_group": "arxiv:2610.31840"
+    },
+    {
+      "item_id": "628dc72036c5a436fe5250e0",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.27301v1"
+      ],
+      "reason": "《评测发现按当前问题压缩上下文不能保证服务后续问题》给出回本核算依据：当前问题得分不能预测压缩对后续问题的服务，25%预算下成本需约6.6至11.0个后续问题回本，词级压缩无检测到的增益。",
+      "independence_group": "arxiv:2610.27301"
+    }
+  ],
+  "evidence_item_ids": [
+    "093c3d12889159d0908bcf94",
+    "0f8f0782f43e62451d8d7661",
+    "628dc72036c5a436fe5250e0"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2608.30785v1",
+    "https://arxiv.org/abs/2610.31840v1",
+    "https://arxiv.org/abs/2610.27301v1"
+  ],
+  "independence_groups": [
+    "arxiv:2608.30785",
+    "arxiv:2610.31840",
+    "arxiv:2610.27301"
+  ],
+  "unknowns": [
+    "内部任务的真实后续问题与会话跨度分布",
+    "漂移复测的周期与成本",
+    "回本horizon在非压缩类机制上的标定",
+    "摊销账本与KV缓存计费的换算口径"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在内部Agent工作负载上为已部署的压缩与缓存机制重建摊销账本，用历史会话回放核算回本horizon与漂移前后的净增益。",
+    "inputs": [
+      "内部会话与问题跨度日志",
+      "各机制token、重建与缓存成本计数",
+      "负载漂移时间线"
+    ],
+    "baselines": [
+      "即时节省指标（压缩率、冷启动命中率）",
+      "无门的全量采纳策略"
+    ],
+    "metrics": [
+      "摊销净增益",
+      "回本所需后续问题数",
+      "漂移后净增益保留率",
+      "被门拦截或回收的机制占比"
+    ],
+    "support_criteria": [
+      "按摊销账本保留的机制集合净收益高于全量采纳",
+      "漂移后保留机制净增益仍为正"
+    ],
+    "reject_criteria": [
+      "账本计数开销超过机制节省或漂移复测不可行"
+    ],
+    "limitations": [
+      "原压缩评测基于录制轨迹而非在线Agent且仅零售域25%预算",
+      "投机解码与skill束的漂移观察来自各自单一负载"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制完整且三组独立证据分别覆盖回本核算、漂移衰减与预热失效，但与本期刚由同一触发生成的按隐藏后续问题计分裁剪Idea（idea_8aa3d66177596baef1ac）及记忆部署门候选（candidate_1d4fd341db38763dd981）的派生与分工需人工裁定，且内部会话跨度分布未测量。",
+  "related_candidate_ids": [
+    "candidate_1d4fd341db38763dd981",
+    "candidate_9228dfef12bbe2a047d1"
+  ],
+  "related_idea_ids": [
+    "idea_8aa3d66177596baef1ac"
+  ],
+  "first_seen_issue": "2026-09-03",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_2b84f6750f04933d6a25",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制完整且三组独立证据分别覆盖回本核算、漂移衰减与预热失效，但与本期刚由同一触发生成的按隐藏后续问题计分裁剪Idea（idea_8aa3d66177596baef1ac）及记忆部署门候选（candidate_1d4fd341db38763dd981）的派生与分工需人工裁定，且内部会话跨度分布未测量。",
+      "evidence_item_ids": [
+        "093c3d12889159d0908bcf94",
+        "0f8f0782f43e62451d8d7661",
+        "628dc72036c5a436fe5250e0"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

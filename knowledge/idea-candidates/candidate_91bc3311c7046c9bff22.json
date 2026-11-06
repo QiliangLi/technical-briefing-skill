@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_91bc3311c7046c9bff22",
+  "identity": {
+    "problem_key": "shared_gpu_pool_slow_path_drag",
+    "mechanism_key": "joint_subset_path_load_aware_planning",
+    "target_key": "gpu_cluster_training_serving_scheduling"
+  },
+  "idea_type": "solution_concept",
+  "title": "把设备子集选择与通信路径调优联合成负载感知计划",
+  "problem": "共享与异构GPU池中，慢设备、拥塞链路与多租户干扰拖累整体，而自动并行假设快互连并倾向用满全部GPU，集合通信也仍按对称拓扑与默认路径执行。",
+  "hypothesis": "计划期联合搜索设备子集与阶段放置、运行期按实时负载调优通信路径与集合模式，把慢设备与拥塞路径一并排除在关键路径外，可在共享池上同时改善迭代时间与通信完成时间，且无拥塞时代价很小。",
+  "mechanism": "整数染色体模因算法在1F1B流水线成本模型上联合选择GPU子集、非均匀分层与阶段放置，适应度计入迭代时间与能耗；通信库层按信道序列与拓扑对称性为AlltoAllv在线选择传输路径；检测到拥塞时交换集合图中的节点位置并保持语义正确。",
+  "target": "异构与共享GPU集群上的流水线训练及MoE推理通信调度",
+  "expected_effect": "GeoTrain在2、4、6卡池实测迭代时间较默认Metis缩短36.3%、61.4%、50.1%且能耗低11.7%，最优计划仅用4卡中的3卡；VarioPath的AlltoAllv较FAST平均加速5.88倍、端到端推理时延最多降27.2%；REACT在拥塞下通信加速13%至38%且无拥塞代价小于4%。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "三条跨期机制记录分别贡献子集选择、路径选择与集合模式调优，联合构成任何单条记录都未陈述的慢设备与慢路径一并排除机制，另有一条跨系统表征记录支撑问题侧。"
+  },
+  "evidence": [
+    {
+      "item_id": "5d1f7b57bbf937c8ebf47e0f",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.26178v1"
+      ],
+      "reason": "GeoTrain联合决定GPU子集、分层与阶段放置并把慢设备排除在计划外，实测迭代时间最多降61.4%且最优计划仅用4卡中的3卡，构成联合机制的计划期半边。",
+      "independence_group": "arxiv:2610.26178"
+    },
+    {
+      "item_id": "6b4b2f2d2ff3541a2e876e21",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.34340v1"
+      ],
+      "reason": "VarioPath按实时负载为AlltoAllv选择传输路径序列并利用拓扑对称性，最多256 GPU上较FAST平均加速5.88倍，构成运行期路径半边。",
+      "independence_group": "arxiv:2609.34340"
+    },
+    {
+      "item_id": "f5acc1ff6ef45db250fb0805",
+      "issue_date": "2026-09-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.00817v2"
+      ],
+      "reason": "跨六套系统最多2400 GPU的表征显示多租户减速高度依赖通信模式而非均匀分布，为负载感知联合规划提供问题侧依据。",
+      "independence_group": "arxiv:2609.00817"
+    },
+    {
+      "item_id": "c081ffc031acc466228c98f8",
+      "issue_date": "2026-09-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.04417v1"
+      ],
+      "reason": "REACT在NCCL上以shim层检测拥塞并交换集合图节点位置，拥塞下通信加速13%至38%、无拥塞时代价小于4%，构成集合模式调优半边。",
+      "independence_group": "arxiv:2609.04417"
+    }
+  ],
+  "evidence_item_ids": [
+    "5d1f7b57bbf937c8ebf47e0f",
+    "6b4b2f2d2ff3541a2e876e21",
+    "f5acc1ff6ef45db250fb0805",
+    "c081ffc031acc466228c98f8"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.26178v1",
+    "https://arxiv.org/abs/2609.34340v1",
+    "https://arxiv.org/abs/2609.00817v2",
+    "https://arxiv.org/abs/2609.04417v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.26178",
+    "arxiv:2609.34340",
+    "arxiv:2609.00817",
+    "arxiv:2609.04417"
+  ],
+  "unknowns": [
+    "GeoTrain的大规模结果来自成本模型仿真且实测硬件与能耗测量方法未披露",
+    "VarioPath依赖PCIe拓扑对称性假设，端到端收益在6.1%到27.2%间波动",
+    "REACT仅当同时拥塞节点占少数时有效且测试床规模小",
+    "子集选择、路径选择与模式调优三者的联合搜索开销与相互作用未在任何记录中评估"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在共享异构GPU池上以流水线训练加AlltoAllv负载复现子集加路径联合计划，并与各自单独应用对比。",
+    "inputs": [
+      "异构GPU池画像",
+      "实时通信负载监测",
+      "流水线成本模型"
+    ],
+    "baselines": [
+      "默认全设备自动并行（如Metis）",
+      "仅子集选择",
+      "仅路径与模式调优"
+    ],
+    "metrics": [
+      "迭代时间",
+      "AlltoAllv完成时间",
+      "无拥塞时额外开销",
+      "能耗"
+    ],
+    "support_criteria": [
+      "联合计划在拥塞与异构场景同时优于两个单独机制且无拥塞时代价低于5%"
+    ],
+    "reject_criteria": [
+      "联合搜索开销抵消收益或子集收缩与路径调优相互冲突"
+    ],
+    "limitations": [
+      "结论依赖池规模与负载画像的代表性"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与效应齐备，三个独立组跨三期分别支撑联合机制的组成部分，且与功率帽调度、共驻画像等既有候选身份不同。",
+  "related_candidate_ids": [
+    "candidate_f2acadceb4759ed12598"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-09-10",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_1051b981312ef3ca1342",
+      "issue_date": "2026-10-29",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与效应齐备，三个独立组跨三期分别支撑联合机制的组成部分，且与功率帽调度、共驻画像等既有候选身份不同。",
+      "evidence_item_ids": [
+        "5d1f7b57bbf937c8ebf47e0f",
+        "6b4b2f2d2ff3541a2e876e21",
+        "f5acc1ff6ef45db250fb0805",
+        "c081ffc031acc466228c98f8"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

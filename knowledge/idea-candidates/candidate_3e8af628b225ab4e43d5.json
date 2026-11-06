@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_3e8af628b225ab4e43d5",
+  "identity": {
+    "problem_key": "expert_parallel_moe_collective_latency",
+    "mechanism_key": "innetwork_switch_collective_offload_overlap",
+    "target_key": "expert_parallel_moe_inference_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "网内计算交换机承接专家并行MoE集合通信并与专家计算重叠",
+  "problem": "专家并行MoE服务跨节点部署时，dispatch与combine两次集合通信主导该层延迟；端侧集合通信路径难以并发利用链路双向带宽，也无法与专家计算重叠。",
+  "hypothesis": "把两次集合通信改为网内计算交换机侧执行的AllGather与ReduceScatter，使其并发占用链路双向，并用持久kernel按band把通信与专家计算重叠，可在逐层输出等价的前提下显著降低TTFT并提升prefill吞吐。",
+  "mechanism": "交换机侧执行AllGather与ReduceScatter，通信并发占用链路双向；持久kernel按band调度，使集合通信与专家计算重叠。",
+  "target": "专家并行MoE推理服务的跨节点集合通信路径（以vLLM默认路径为对照）",
+  "expected_effect": "相对vLLM默认路径，TTFT降低20.2%–33.1%，每加速器prefill吞吐提升25.3%–49.5%，并发AG与RS等效带宽提升25.6%–31.8%，逐层输出余弦相似度为1.0。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "108f9f19c75e539258853563",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36339v1"
+      ],
+      "reason": "《INC-MoE将专家并行MoE推理的集合通信卸载到网内计算交换机》给出机制与对照结果：dispatch与combine改为交换机侧AllGather与ReduceScatter并并发占用链路双向，持久kernel按band重叠通信与专家计算；相对vLLM默认路径TTFT降低20.2%–33.1%、每加速器prefill吞吐提升25.3%–49.5%、并发AG与RS等效带宽提升25.6%–31.8%、逐层输出余弦相似度1.0。",
+      "independence_group": "arxiv:2610.36339"
+    }
+  ],
+  "evidence_item_ids": [
+    "108f9f19c75e539258853563"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.36339v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.36339"
+  ],
+  "unknowns": [
+    "交换机由加速器仿真而非硬件实现，可编程交换机上的实现开销与部署成本未验证",
+    "仅评估OLMoE-1B-7B的prefill，decode阶段与其他模型规模未覆盖",
+    "N=8的增益为分析值，更大规模未实测",
+    "无TPOT、尾部分位与网络利用率口径，且未与端侧ring双向复用方案对照"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在多节点MoE推理测试床上实现交换机侧AllGather/ReduceScatter卸载与持久kernel通信-计算重叠，与vLLM默认端侧路径及端侧ring双向复用方案对照。",
+    "inputs": [
+      "专家并行MoE模型（含OLMoE级与更大规模）",
+      "多节点测试床（网内计算能力由可编程交换机或高保真加速器仿真提供）",
+      "prefill与decode负载档位",
+      "band划分与重叠调度档位"
+    ],
+    "baselines": [
+      "vLLM默认端侧集合通信路径",
+      "端侧ring双向复用方案",
+      "无重叠的交换机侧卸载"
+    ],
+    "metrics": [
+      "TTFT",
+      "每加速器prefill吞吐",
+      "并发AG与RS等效带宽",
+      "逐层输出余弦相似度",
+      "decode阶段TPOT"
+    ],
+    "support_criteria": [
+      "TTFT与吞吐收益在硬件或更高保真路径保持且逐层输出余弦相似度保持1.0",
+      "相对端侧ring双向复用方案仍有净收益"
+    ],
+    "reject_criteria": [
+      "硬件交换机可编程性或数值一致性约束使收益消失",
+      "decode或更大模型规模下收益反转"
+    ],
+    "limitations": [
+      "原始证据的交换机为加速器仿真、仅评估OLMoE-1B-7B的prefill且N=8增益为分析值"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv组，交换机由加速器仿真、仅评估OLMoE-1B-7B的prefill且N=8增益为分析值，适用边界未划出；且该记录同日已进入idea_e63d79458c2079f00edf的证据链，独立成案还是并入该Idea需人工世系决定。",
+  "related_candidate_ids": [
+    "candidate_fe5ae3613b2811ae297e"
+  ],
+  "related_idea_ids": [
+    "idea_e63d79458c2079f00edf"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_00600812d12c18ad7e70",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv组，交换机由加速器仿真、仅评估OLMoE-1B-7B的prefill且N=8增益为分析值，适用边界未划出；且该记录同日已进入idea_e63d79458c2079f00edf的证据链，独立成案还是并入该Idea需人工世系决定。",
+      "evidence_item_ids": [
+        "108f9f19c75e539258853563"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

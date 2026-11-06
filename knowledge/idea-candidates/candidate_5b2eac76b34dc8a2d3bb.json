@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_5b2eac76b34dc8a2d3bb",
+  "identity": {
+    "problem_key": "transformed_kv_destination_read_path",
+    "mechanism_key": "sender_shaped_cache_query_side_receiver_reading",
+    "target_key": "cross_region_compressed_kv_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "发送端定形、接收端查询侧读取：跨域压缩KV的免重编码读取链路",
+  "problem": "跨域搬运的压缩或变换KV在目的地缺少配套读取路径：要么反量化或重建全维表示，要么重预填充，压缩格式与接收端读取路径没有联合设计。",
+  "hypothesis": "若缓存本体在发送端经变换定形（互逆非正交变换、格码本索引或原样artifact KV），接收端只在查询侧施加配套轻量变换（互逆变换、低秩适配或查找表打分）即可读取，则跨域复用可在不重编码、不重算的情况下保持质量并缩短TTFT。",
+  "mechanism": "Dual-QK的查询可逆变换加键逆转置保持点积，使INT2量化与查询通道剪枝同时成立，接收端只需配套互逆变换；E8格码本让接收端按索引加范数经预生成查找表直接打分、免反量化；ATTUNER证明冻结backbone与缓存、仅在查询投影插入低秩适配即可读取位置无关缓存并恢复接近全量prefill质量。三者共同支撑缓存定形加查询侧读取的两端解耦机制，任何单条记录未声明该完整链路。",
+  "target": "跨域KV传输链路的接收端读取路径",
+  "expected_effect": "2位级或索引化KV原样传输后，接收端经查询侧配套读取免重编码与重算：带宽可到每元素1.93位、KV约21.7KB/token且解码吞吐与fp16持平、距全量prefill质量差0.51-1.61点并获1.79-2.45倍TTFT加速。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "三个独立组在相邻三期分别给出互逆变换配套读取、索引直打分与查询侧低秩适配三种接收端读取实例，完整两端解耦机制没有任何单条记录声明。"
+  },
+  "evidence": [
+    {
+      "item_id": "c70971a97f6d522a9ddc448a",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.09827v1"
+      ],
+      "reason": "Dual-QK用互逆非正交Q/K变换使INT2键量化与查询通道剪枝同时成立，128K上下文、40%查询稀疏下每元素存储2.34位、带宽1.93位，且其项目判断明确接收端须配套互逆变换读取。",
+      "independence_group": "arxiv:2610.09827"
+    },
+    {
+      "item_id": "cce55f86f35492fc42d23442",
+      "issue_date": "2026-10-21",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.15384v1"
+      ],
+      "reason": "E8格码本把旋转后的键按8维分块量化为16位索引加范数，接收端按预生成查找表直接用索引打分、免反量化，Llama-3.1-8B的KV降至约21.7KB/token且解码吞吐与fp16持平。",
+      "independence_group": "arxiv:2610.15384"
+    },
+    {
+      "item_id": "d878a3a44186f2ef49b3ecd3",
+      "issue_date": "2026-10-12",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.36722v1"
+      ],
+      "reason": "ATTUNER把位置无关缓存的质量损失定位到注意力路由，冻结backbone与缓存KV、仅在查询投影插入不足0.05%参数的低秩适配即恢复接近全量prefill质量（差0.51-1.61点）且TTFT加速1.79-2.45倍。",
+      "independence_group": "arxiv:2609.36722"
+    }
+  ],
+  "evidence_item_ids": [
+    "c70971a97f6d522a9ddc448a",
+    "cce55f86f35492fc42d23442",
+    "d878a3a44186f2ef49b3ecd3"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.09827v1",
+    "https://arxiv.org/abs/2610.15384v1",
+    "https://arxiv.org/abs/2609.36722v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.09827",
+    "arxiv:2610.15384",
+    "arxiv:2609.36722"
+  ],
+  "unknowns": [
+    "Dual-QK的8.3倍读取减少为估计值且仅单GPU解码评估，长上下文检索仍低于BF16",
+    "ATTUNER质量口径为relevant-only、效率口径为batch 1的warm-cache TTFT而非端到端时延",
+    "E8困惑度仅测至4K上下文、128K只作显存推算，吞吐仅单卡单序列验证",
+    "无任何WAN RTT、P95或跨站点变换与适配版本一致性数据"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在可控WAN仿真链路上传输Dual-QK格式与E8索引KV，接收端分别实现互逆变换、查找表打分与查询侧低秩适配三种读取，对比全量重算与目的地重编码。",
+    "inputs": [
+      "压缩格式（INT2加剪枝、格索引、原样artifact）",
+      "WAN时延与带宽矩阵",
+      "长上下文负载"
+    ],
+    "baselines": [
+      "全量重算prefill",
+      "目的地解压重编码",
+      "FP16原样传输"
+    ],
+    "metrics": [
+      "传输字节",
+      "TTFT与P95",
+      "任务质量",
+      "接收端读取与适配开销"
+    ],
+    "support_criteria": [
+      "免重编码读取在质量约束内端到端快于全量重算与重编码"
+    ],
+    "reject_criteria": [
+      "查询侧配套计算或变换分发开销抵消传输节省"
+    ],
+    "limitations": [
+      "链路为仿真而非真实跨域部署"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，由三个独立组跨三期联合支持，与传输体积缩减、头维度折叠和跨模型映射刷新三个既有身份含义不同，等待人工晋升。",
+  "related_candidate_ids": [
+    "candidate_7ea64b51e3c8e3cdef6e"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe",
+    "idea_7d4c5b213d117cba4697"
+  ],
+  "first_seen_issue": "2026-10-12",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ed49200ae351e0044b49",
+      "issue_date": "2026-10-29",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应完整，由三个独立组跨三期联合支持，与既有身份含义不同，等待人工晋升。",
+      "evidence_item_ids": [
+        "c70971a97f6d522a9ddc448a",
+        "cce55f86f35492fc42d23442",
+        "d878a3a44186f2ef49b3ecd3"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

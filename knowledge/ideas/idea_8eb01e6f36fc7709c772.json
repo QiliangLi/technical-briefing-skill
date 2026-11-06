@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_8eb01e6f36fc7709c772",
+  "identity": {
+    "problem_key": "ssd_offload_chunk_gpu_block_misalignment",
+    "mechanism_key": "prefix_block_aligned_persistent_stripes",
+    "target_key": "hierarchical_cache_hot_hit_ttft"
+  },
+  "idea_type": "solution_concept",
+  "title": "与GPU前缀块对齐的SSD持久化条带与字节计工作引擎",
+  "problem": "KVCache 卸载到 SSD 后持久化分块与 GPU 前缀块不对齐：LMCache 前缀感知去重加 O_DIRECT 使热请求每次重读同一约 12MB 分块，热命中 TTFT 由 27 毫秒升至 93.1 毫秒、可能劣于 GPU 重算；各层按逻辑对象计固定开销，对象数 192 增至 6144 时调优 cuFile 中值 TTFT 从 2.124 秒升至 3.012 秒。",
+  "hypothesis": "把持久化条带粒度对齐 GPU 前缀块（页倍数定长条带聚合进 1GiB 级物理包）并改为按字节与物理批次计工作后，热命中 TTFT 可回到 DRAM 驻留的 1.5 倍以内且不随对象数增长劣化，同时保持去重写入收益量级。",
+  "mechanism": "KV 存入 1GiB 物理包内的页倍数定长条带；范围目录与请求票据取代逐键索引；缓冲区在槽位绑定前预取、完成栅栏控制归属，层就绪即供注意力使用。",
+  "expected_effect": "热命中 TTFT≤1.5 倍 DRAM 驻留（对照 Range 距 HBM 驻留仅 58-66 毫秒），对象数 10 倍增长时 TTFT 劣化<10%，写入量保持约 138 倍去重收益量级。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "06aa17a3520ce25143ba457a",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21249v1"
+      ],
+      "reason": "bpftrace 块层实测给出未对齐实害：新版前缀感知去重加 O_DIRECT 使热请求每次重读约 12MB 分块、TTFT 由 27 毫秒升至 93.1 毫秒，提示变化流量几乎零命中——方案要解决的问题定义。"
+    },
+    {
+      "item_id": "97e191af9de9ce6e8abdf313",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21241v1"
+      ],
+      "reason": "Range 证明 SSD 复用慢在每对象固定开销而非盘带宽：对象数 192→6144 时调优 cuFile 中值 TTFT 从 2.124 秒升至 3.012 秒，按字节与物理批次计工作后保持 1.790-1.803 秒、距 HBM 驻留 58-66 毫秒——机制与效果的正例。"
+    },
+    {
+      "item_id": "44882fac832bfa84819f3cb4",
+      "issue_date": "2026-10-21",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.15366v1"
+      ],
+      "reason": "组合式离散事件模拟器对 SGLang 端到端延迟平均误差问答 1.34%、编码 6.36%，可作放置策略预筛工具降低实测成本。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "并发多请求争用与队列交互下的预取有效性",
+    "多租户隔离与真实提示变化流量的命中率分布",
+    "阵列级带宽上限（约 22.8GiB/s）下的扩展性",
+    "两代 LMCache 快照版本、SSD 与 IO 模式混杂的可比性"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "单 GPU 节点加 NVMe（可经 cuFile），以 LMCache 现网部署作对照载体",
+    "inputs": [
+      "固定 6GiB 工作集重放（对齐 Range 设定）",
+      "条带粒度扫描 64KB-12MB（2 的幂）",
+      "对象数 192-6144",
+      "预取深度 1-8",
+      "精确重复与提示变化两类流量"
+    ],
+    "baselines": [
+      "当前 LMCache 分块（12MB 口径）",
+      "GPU 重算",
+      "DRAM 驻留"
+    ],
+    "metrics": [
+      "热命中 TTFT P50/P95",
+      "读放大与写入量",
+      "命中率（精确重复与提示变化分列）",
+      "对象数增长下的 TTFT 劣化斜率"
+    ],
+    "support_criteria": [
+      "热命中 TTFT≤GPU 重算且≤1.5 倍 DRAM 驻留",
+      "对象数 10 倍增长时 TTFT 劣化<10%"
+    ],
+    "reject_criteria": [
+      "任一粒度下热命中仍慢于 GPU 重算",
+      "TTFT 随对象数近似线性劣化且预取无法抑制"
+    ],
+    "limitations": [
+      "未覆盖并发多请求争用与多租户隔离",
+      "未覆盖真实提示变化命中率分布与阵列带宽上限",
+      "模拟器预筛仅覆盖 GPU/主机两层、L3 未验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-10-18",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_30295b6bedf0ebd7b38b",
+      "issue_date": "2026-10-29",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据已发布证据新建 Idea：与GPU前缀块对齐的SSD持久化条带与字节计工作引擎。",
+      "evidence_item_ids": [
+        "06aa17a3520ce25143ba457a",
+        "97e191af9de9ce6e8abdf313",
+        "44882fac832bfa84819f3cb4"
+      ]
+    }
+  ]
+}
