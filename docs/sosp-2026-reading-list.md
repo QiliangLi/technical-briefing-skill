@@ -7,71 +7,18 @@
 
 ## P0：优先全文精读（10 篇）
 
-### 1. Skill VM: Write Once, Run Everywhere Efficiently — `agent_acceleration`
-
-- 团队：上海交大（陈海波组）；[arXiv:2604.03088](https://arxiv.org/abs/2604.03088)
-- 机制：把 agent skill 当"代码"、LLM 当异构处理器：能力分解、按模型-harness 对做能力 profile、编译期绑定与并发抽取、运行期 JIT 代码固化与自适应重编译。
-- 证据：8 个 LLM × 3 个 harness × SkillsBench；token 至多 -40%，并行加速至多 3.2×，代码固化带来 19–50× 时延降低；基于 11.8 万个 skill 的实证研究。
-- 精读关注点：能力 profile 的度量方法能否迁移到 coding agent 的工具链评估；JIT 固化对 `agent_harness` 方向（长任务状态、验收门）的启发。
-
-### 2. Don't Let AI Agents YOLO Your Files（YoloFS）— `agent_acceleration` / agent 运行环境
-
-- 团队：UW-Madison + Microsoft Research + Iowa State；[arXiv:2604.13536](https://arxiv.org/abs/2604.13536)
-- 机制：面向 agent 的原生文件系统，把信息与控制从 agent 下移到 FS 层，兼顾安全与自主性。
-- 证据：研究 290 起公开的 agent 误用文件事件，40% 的损害不可恢复；在 11 个"隐性损害"任务中的 8 个上，agent 借助 FS 支持自行撤销了自己造成的损害。
-- 精读关注点：信息/控制下移后与现有 agent 工作流的集成成本；可否与 harness 验收门、状态 checkpoint 机制组合。
-
-### 3. StreamEP: Straggler-Tolerant MoE Decoding without Communication Barriers — `tpn`
-
-- 团队：USC + Google DeepMind + UT Austin + SNU；[arXiv:2606.26607](https://arxiv.org/abs/2606.26607)
-- 机制：MoE 解码消除同步 barrier、容忍 straggler；preprint（早期版本名为 Moebius）展示运行时在 EP/TP 间切换——利用两种并行是同一模型的不同布局，只需迁移 rank 归属变化的专家权重与 KVCache 分片，用融合 GPU-to-GPU 传输核在 decode 步间完成。
-- 证据：8×H200 上服务 Qwen3-235B-A22B，每个工作点都追平更优的静态并行，RL rollout 场景 1.16–1.25×，切换耗时 215–434 ms，显存开销仅 2.4%。
-- 精读关注点：对齐 TPN 的核心问题——通信是否感知解码阶段与 KVCache 位置；切换时 KVCache 分片迁移的真实带宽/时延成本，以及收益是否传导到端到端。
-
-### 4. Janus: Multi-LLM Serving at Production Scale — `kv_management` + `ai_infra_horizontal`
-
-- 团队：北大 + 京东 + UCAS/USTC/SJTU；[PDF](https://yangtonghome.github.io/uploads/Janus_SOSP2026.pdf)、[ACM DL](https://dl.acm.org/doi/10.1145/3830418.3843867)
-- 机制：生产级多模型 serving——单集群复用数百个异构模型，请求按模型归属为主、设备占用为次；服务层与引擎层协同设计，处理 prefill 相互干扰与跨模型资源利用率。
-- 精读关注点：多模型间显存/KVCache 放置与驱逐策略；真实生产负载下的干扰与利用率数据（`valuable_evidence`：命中率、GPU 显存利用率、端到端 P95）。
-
-### 5. SANDHI: Fine-grained Merging for Memory Efficient Multi-Model Serving — `kv_management` / `memory`
-
-- 团队：Georgia Tech + Microsoft；[ACM DL](https://dl.acm.org/doi/abs/10.1145/3830418.3843911)、[artifact](https://zenodo.org/records/22108093)
-- 机制：对多个相关/微调模型做细粒度合并，让它们共享 GPU 显存，降低多模型驻留成本。
-- 证据：吞吐至多 2.93×，并给出显著显存节省。
-- 精读关注点：合并粒度与"复用率/命中率"的量化关系；与 TensorDex 的张量级 delta 压缩互为参照——同是跨模型冗余消除，一个在显存、一个在存储。
-
-### 6. Scalable Context Orchestration for Serving LLMs Over Voice（llmovoice）— `context_building` / `ai_infra_horizontal`
-
-- 团队：上海交大 + AgenticSys（Silvery Fu）；[arXiv:2609.04288](https://arxiv.org/abs/2609.04288)
-- 机制：面向语音场景的上下文编排中间件——显式建模副语言与环境状态（语速、丢包等），每轮构造有界上下文，由 serving LLM 生成运行时指令。
-- 证据：语速对齐误差 -52.4%，丢包下误打断率 46.0%→0.9%，模型使用成本 -79.2%；长会话每轮成本至多降 24.9×，答案质量保持 98.7%。注意论文报告成本/质量指标，不含 TTFT/TPOT。
-- 精读关注点：有界上下文构建与裁剪策略——正是日报 `context_building` 方向的机制样本；成本-质量权衡曲线的形状。
-
-### 7. TensorDex: A Compact, Tensor-Centric Storage System for Modern AI Models — `accelerator_io_datapath` / 存储
-
-- 团队：UVA + Harvard；[arXiv:2604.17104](https://arxiv.org/abs/2604.17104)
-- 机制：张量级（而非模型级）无损 delta 压缩：比特级指纹预测张量对可压缩性，多中心聚类选参考基，不依赖不可靠的 lineage 元数据。
-- 证据：2,890 个 Hugging Face 模型样本上存储占用 -70.5%（比 SOTA 再好 37%），压缩 22.9 GB/s、解压 28.4 GB/s。
-- 精读关注点：模型仓库→集群分发路径上的数据量削减；对跨域权重/模型传输（`cross_region`）带宽成本的间接价值。
-
-### 8. MeshRT: Compile-Time Governed Wafer-Scale Runtime for Low-Latency High-Throughput Inference — `ai_chip_accelerator`
-
-- 团队：Edinburgh + Microsoft Research；无公开 preprint（截至整理日）
-- 机制：晶圆级加速器上的推理运行时，编译期治理资源与通信，面向低时延高吞吐推理。
-- 精读关注点：晶圆级互连拓扑如何影响 kernel 放置与通信调度；与配套编译论文 Wavel（见 P1）合读构成完整的晶圆级软件栈样本。
-
-### 9. TensorHub: Scalable and Elastic Weight Transfer for LLM RL Training — `cross_region` / `ai_infra_horizontal`
-
-- 团队：UW-Madison + ByteDance Seed；[arXiv:2604.09107](https://arxiv.org/abs/2604.09107)
-- 机制：RL 训练集群间可扩展、弹性的权重传输。
-- 精读关注点：虽是权重而非 KVCache，传输/放置/带宽问题与 `cross_region` 的 `transfer_placement` 方向同构；字节内部真实集群规模数据是稀缺证据。
-
-### 10. LLM-42: Enabling Determinism in LLM Inference with Verified Speculation — `ai_infra_horizontal`
-
-- 团队：Microsoft Research；[arXiv:2601.17768](https://arxiv.org/abs/2601.17768)
-- 机制：不放弃动态 batching、不改写 GPU kernel 的推理确定性：快路径非确定性解码 + 轻量 verify-rollback 回放（固定 shape 归约序）提交一致 token，仅为需要确定性的流量付费。
-- 精读关注点：浮点非结合性与 batching 交互的失效模型分析；verify-rollback 开销占比与对尾延迟的影响。
+| # | 论文 | 命中专题 | 团队 | 机制与证据 | 精读关注点 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | [Skill VM: Write Once, Run Everywhere Efficiently](https://arxiv.org/abs/2604.03088) | `agent_acceleration` | 上海交大（陈海波组） | 把 agent skill 当"代码"、LLM 当异构处理器：能力分解、按模型-harness 对做能力 profile、编译期绑定与并发抽取、运行期 JIT 代码固化与自适应重编译。8 个 LLM × 3 个 harness × SkillsBench：token 至多 -40%，并行加速至多 3.2×，代码固化带来 19–50× 时延降低；基于 11.8 万个 skill 的实证研究。 | 能力 profile 的度量方法能否迁移到 coding agent 的工具链评估；JIT 固化对 `agent_harness` 方向（长任务状态、验收门）的启发。 |
+| 2 | [Don't Let AI Agents YOLO Your Files（YoloFS）](https://arxiv.org/abs/2604.13536) | `agent_acceleration` / agent 运行环境 | UW-Madison + Microsoft Research + Iowa State | 面向 agent 的原生文件系统，把信息与控制从 agent 下移到 FS 层，兼顾安全与自主性。290 起公开的 agent 误用文件事件中 40% 损害不可恢复；11 个"隐性损害"任务中的 8 个上，agent 借助 FS 支持自行撤销了自己造成的损害。 | 信息/控制下移后与现有 agent 工作流的集成成本；可否与 harness 验收门、状态 checkpoint 机制组合。 |
+| 3 | [StreamEP: Straggler-Tolerant MoE Decoding without Communication Barriers](https://arxiv.org/abs/2606.26607) | `tpn` | USC + Google DeepMind + UT Austin + SNU | MoE 解码消除同步 barrier、容忍 straggler；preprint（早期版本名为 Moebius）展示运行时在 EP/TP 间切换——利用两种并行是同一模型的不同布局，只需迁移 rank 归属变化的专家权重与 KVCache 分片，用融合 GPU-to-GPU 传输核在 decode 步间完成。8×H200 上服务 Qwen3-235B-A22B：每个工作点都追平更优的静态并行，RL rollout 场景 1.16–1.25×，切换耗时 215–434 ms，显存开销仅 2.4%。 | 对齐 TPN 的核心问题——通信是否感知解码阶段与 KVCache 位置；切换时 KVCache 分片迁移的真实带宽/时延成本，以及收益是否传导到端到端。 |
+| 4 | [Janus: Multi-LLM Serving at Production Scale](https://yangtonghome.github.io/uploads/Janus_SOSP2026.pdf)（[ACM DL](https://dl.acm.org/doi/10.1145/3830418.3843867)） | `kv_management` + `ai_infra_horizontal` | 北大 + 京东 + UCAS/USTC/SJTU | 生产级多模型 serving——单集群复用数百个异构模型，请求按模型归属为主、设备占用为次；服务层与引擎层协同设计，处理 prefill 相互干扰与跨模型资源利用率。 | 多模型间显存/KVCache 放置与驱逐策略；真实生产负载下的干扰与利用率数据（`valuable_evidence`：命中率、GPU 显存利用率、端到端 P95）。 |
+| 5 | [SANDHI: Fine-grained Merging for Memory Efficient Multi-Model Serving](https://dl.acm.org/doi/abs/10.1145/3830418.3843911)（[artifact](https://zenodo.org/records/22108093)） | `kv_management` / 内存 | Georgia Tech + Microsoft | 对多个相关/微调模型做细粒度合并，让它们共享 GPU 显存，降低多模型驻留成本。吞吐至多 2.93×，并给出显著显存节省。 | 合并粒度与"复用率/命中率"的量化关系；与 TensorDex 的张量级 delta 压缩互为参照——同是跨模型冗余消除，一个在显存、一个在存储。 |
+| 6 | [Scalable Context Orchestration for Serving LLMs Over Voice（llmovoice）](https://arxiv.org/abs/2609.04288) | `context_building` / `ai_infra_horizontal` | 上海交大 + AgenticSys（Silvery Fu） | 语音场景的上下文编排中间件——显式建模副语言与环境状态（语速、丢包等），每轮构造有界上下文，由 serving LLM 生成运行时指令。语速对齐误差 -52.4%，丢包下误打断率 46.0%→0.9%，模型使用成本 -79.2%；长会话每轮成本至多降 24.9×，答案质量保持 98.7%。注意报告成本/质量指标，不含 TTFT/TPOT。 | 有界上下文构建与裁剪策略——正是日报 `context_building` 方向的机制样本；成本-质量权衡曲线的形状。 |
+| 7 | [TensorDex: A Compact, Tensor-Centric Storage System for Modern AI Models](https://arxiv.org/abs/2604.17104) | `accelerator_io_datapath` / 存储 | UVA + Harvard | 张量级（而非模型级）无损 delta 压缩：比特级指纹预测张量对可压缩性，多中心聚类选参考基，不依赖不可靠的 lineage 元数据。2,890 个 Hugging Face 模型样本上存储占用 -70.5%（比 SOTA 再好 37%），压缩 22.9 GB/s、解压 28.4 GB/s。 | 模型仓库→集群分发路径上的数据量削减；对跨域权重/模型传输（`cross_region`）带宽成本的间接价值。 |
+| 8 | MeshRT: Compile-Time Governed Wafer-Scale Runtime for Low-Latency High-Throughput Inference | `ai_chip_accelerator` | Edinburgh + Microsoft Research（无公开 preprint，截至整理日） | 晶圆级加速器上的推理运行时，编译期治理资源与通信，面向低时延高吞吐推理。 | 晶圆级互连拓扑如何影响 kernel 放置与通信调度；与配套编译论文 Wavel（见 P1）合读构成完整的晶圆级软件栈样本。 |
+| 9 | [TensorHub: Scalable and Elastic Weight Transfer for LLM RL Training](https://arxiv.org/abs/2604.09107) | `cross_region` / `ai_infra_horizontal` | UW-Madison + ByteDance Seed | RL 训练集群间可扩展、弹性的权重传输；字节内部真实集群规模数据是稀缺证据。 | 虽是权重而非 KVCache，传输/放置/带宽问题与 `cross_region` 的 `transfer_placement` 方向同构，可与 KVCache 跨域迁移机制对照。 |
+| 10 | [LLM-42: Enabling Determinism in LLM Inference with Verified Speculation](https://arxiv.org/abs/2601.17768) | `ai_infra_horizontal` | Microsoft Research | 不放弃动态 batching、不改写 GPU kernel 的推理确定性：快路径非确定性解码 + 轻量 verify-rollback 回放（固定 shape 归约序）提交一致 token，仅为需要确定性的流量付费。 | 浮点非结合性与 batching 交互的失效模型分析；verify-rollback 开销占比与对尾延迟的影响。 |
 
 ## P1：机制相关，选读核心章节
 
