@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_c8a8075c39a1af6bdc00",
+  "identity": {
+    "problem_key": "value_cache_full_volume_despite_predictability",
+    "mechanism_key": "per_head_kv_predictor_error_ranked_residuals",
+    "target_key": "test_time_kv_value_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "按头key到value预测器加误差排序残差：测试时近无损压缩KV值缓存",
+  "problem": "KV缓存随上下文与批量线性增长并限制解码吞吐：值侧缓存与key高度相关、大部分token的value可由按头预测器逼近，却仍以全量字节驻留（跨域搬运时全量传输），仅少数误差最大的token真正需要精确残差。",
+  "hypothesis": "若在测试时按头拟合key到value的两层MLP预测器、按误差排序只保留少数最大误差token的精确残差，并以元学习初始化把适配降到2次梯度更新，则可在近无损质量下把值缓存压至约四分之一，并可叠加量化与驱逐至26.9倍；跨域搬运时只传预测器与所选残差即可大幅减少传输字节。",
+  "mechanism": "按头两层MLP拟合key到value映射，按误差排序保留少量精确残差；配合跨层低秩key压缩与选择性重建，元学习初始化把适配降到2次梯度更新。",
+  "target": "解码期KV缓存值侧的测试时压缩（预测器加所选残差的驻留与可传输表示）",
+  "expected_effect": "4倍值压缩在Llama-3.1-8B保留98.2%的RULER 4K与99.3%的LongBench；Mistral-7B上叠至26.9倍仍保留94.5%。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题（值侧缓存全量驻留而大部分value可按头预测）、可解释机制（按头key到value预测器加误差排序残差与元学习适配）、目标对象与可检验效应（4倍近无损、叠加至26.9倍保留94.5%）。"
+  },
+  "evidence": [
+    {
+      "item_id": "f683940086b4f21d1066323c",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07025v1"
+      ],
+      "reason": "《LowRam测试时压缩KV缓存，4倍近无损可叠至26.9倍》给出按头key到value预测器、误差排序残差与元学习2次梯度更新的机制及压缩-质量结果；边界为未评估长生成与参数跨上下文保持，实验仅覆盖本地显存、吞吐、TTFT与精度，无跨域传输测量。",
+      "independence_group": "arxiv:2611.07025"
+    }
+  ],
+  "evidence_item_ids": [
+    "f683940086b4f21d1066323c"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.07025v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.07025"
+  ],
+  "unknowns": [
+    "未评估长生成与参数跨上下文保持",
+    "实验仅覆盖本地显存、吞吐、TTFT与精度，无跨域传输测量",
+    "上下文演化时预测器与所选残差集的一致性未解决",
+    "单一预印本，无独立复现",
+    "该记录已于2026-11-09被idea_d994d97852383184acfe以evidence_added事件吸收为残差压缩原语证据，lineage归属需人工决定"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在解码引擎中实现按头key到value预测器与误差排序残差选择，扫描残差预算度量显存、吞吐、TTFT与任务质量并叠加量化与驱逐档位；跨域相关性别以仅传输预测器加所选残差对比全量KV传输做WAN仿真核算。",
+    "inputs": [
+      "Llama-3.1-8B与Mistral-7B级模型",
+      "RULER与LongBench长上下文负载",
+      "残差预算与压缩档位",
+      "量化与驱逐叠加档位",
+      "WAN带宽与时延矩阵（跨域段）"
+    ],
+    "baselines": [
+      "全量KV缓存",
+      "仅量化（KIVI式）",
+      "仅驱逐",
+      "BF16全量KV传输（跨域段）"
+    ],
+    "metrics": [
+      "值压缩比",
+      "RULER与LongBench保留率",
+      "显存占用与解码吞吐",
+      "TTFT",
+      "跨域段传输字节与恢复质量"
+    ],
+    "support_criteria": [
+      "近无损界内复现4倍值压缩，叠加量化与驱逐后26.9倍档位仍保留94.5%左右质量",
+      "跨域仿真段仅传预测器加所选残差时，同质量下传输字节显著低于全量KV传输"
+    ],
+    "reject_criteria": [
+      "长生成或上下文演化场景质量跌破设定界",
+      "预测器适配或选择性重建开销抵消压缩收益"
+    ],
+    "limitations": [
+      "原始证据无跨域传输实测与长生成评估，跨域段为仿真而非真实WAN部署"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且身份区别于既有跨域KV压缩类候选（AlignPred为面向持久层的误差预算残差编码、DCKV为端到端学习编解码器、Dual-QK与RAQ-MLA为量化格式、BeNice为循环模型跨轮共享），但证据为单一预印本，无跨域传输实测，未评估长生成与参数跨上下文保持、上下文演化一致性未解决，缺独立支持与适用边界确认；且该记录已于2026-11-09被idea_d994d97852383184acfe以evidence_added事件吸收为残差压缩原语证据，lineage需人工决定。",
+  "related_candidate_ids": [
+    "candidate_045301052ee5f2b35358",
+    "candidate_6df55f097eece2b8f831",
+    "candidate_a1008f40dbda996d4400"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5e8c1a73b9d2f4068ac1",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且身份区别于既有跨域KV压缩类候选（误差预算残差编码、端到端学习编解码器、量化格式、跨轮共享），但证据为单一预印本，无跨域传输实测，长生成与跨上下文保持未评估、上下文演化一致性未解决，缺独立支持与适用边界；该记录已被idea_d994d97852383184acfe吸收为残差压缩原语证据，lineage需人工决定。",
+      "evidence_item_ids": [
+        "f683940086b4f21d1066323c"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

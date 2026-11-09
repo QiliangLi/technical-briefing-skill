@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_26fa5d23636135a24c51",
+  "identity": {
+    "problem_key": "hbm_capacity_long_context_serving",
+    "mechanism_key": "host_authoritative_kv_bidirectional_stage_offloading",
+    "target_key": "ascend910c_long_context_inference"
+  },
+  "idea_type": "solution_concept",
+  "title": "主机DRAM权威KV副本按阶段双向卸载使超长序列在TPOT约束下可服务",
+  "problem": "长上下文推理受HBM容量限制，512k至1M级序列在30毫秒TPOT约束下超出可服务范围，且prefill与decode对KV驻留粒度的需求不同。",
+  "hypothesis": "若主机DRAM持有权威KV副本并按阶段切换驻留粒度——prefill用四层滚动HBM缓存逐层回载并与计算重叠、decode配16k热缓存、反向稀疏索引把缺失查询并入top-k过程——则可在30毫秒TPOT约束下同时提升prefill与decode吞吐，并使512k与1M序列进入可服务区间。",
+  "mechanism": "主机DRAM持有权威KV副本；按阶段切换驻留粒度：prefill用四层滚动HBM缓存逐层回载并与计算重叠，decode用16k热缓存；反向稀疏索引把缺失查询并入top-k过程。",
+  "target": "32卡Ascend910C与GLM-5.2长上下文推理的节点内KV驻留与回载路径",
+  "expected_effect": "32卡Ascend910C与GLM-5.2上，30毫秒TPOT约束下prefill吞吐最高提升1.38倍、decode最高提升1.91倍，512k与1M序列仅在双向卸载下可服务。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的主机DRAM权威KV副本加prefill/decode按阶段双向卸载机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "7b26f3ab98225b6ba4a657f8",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07542v1"
+      ],
+      "reason": "《华为FlashOffloading以主机内存为中心全量卸载KV Cache》给出机制与对照结果：主机DRAM持有权威KV副本并按阶段切换驻留粒度，prefill用四层滚动HBM缓存逐层回载并与计算重叠、decode用16k热缓存、反向稀疏索引把缺失查询并入top-k过程；在32卡Ascend910C与GLM-5.2上30毫秒TPOT约束下prefill吞吐最高提升1.38倍、decode最高提升1.91倍，512k与1M序列仅在双向卸载下可服务。",
+      "independence_group": "arxiv:2611.07542"
+    }
+  ],
+  "evidence_item_ids": [
+    "7b26f3ab98225b6ba4a657f8"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.07542v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.07542"
+  ],
+  "unknowns": [
+    "吞吐提升以TPOT恶化为代价，TPOT恶化幅度与净收益区间未见量化",
+    "decode卸载依赖模型原生稀疏性，稀疏性弱或非稀疏模型的适用边界未知",
+    "未见跨节点KV传输指标，节点内内存侧机制对KVCache感知网络调度场景的适用边界未建立",
+    "仅单一arXiv独立组，评估限32卡Ascend910C与GLM-5.2单一硬件与模型组合"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在长上下文推理环境复现主机DRAM权威KV副本加阶段切换驻留粒度的双向卸载（prefill四层滚动缓存逐层回载与计算重叠、decode热缓存、反向稀疏索引），与全HBM驻留及朴素卸载基线对照，补测TPOT代价与吞吐的权衡曲线。",
+    "inputs": [
+      "长上下文负载（含512k与1M序列档位）",
+      "滚动HBM缓存层数与decode热缓存容量档位",
+      "TPOT约束档位（含30毫秒）",
+      "含稀疏性较弱模型的对照档（检验对模型原生稀疏性的依赖）"
+    ],
+    "baselines": [
+      "全HBM驻留（受容量上限约束的证据内基线）",
+      "无逐层回载重叠的朴素KV卸载",
+      "仅prefill单向卸载（证据内对照）"
+    ],
+    "metrics": [
+      "prefill吞吐与decode吞吐",
+      "TPOT及其恶化幅度",
+      "可服务序列长度上限",
+      "主机内存带宽占用"
+    ],
+    "support_criteria": [
+      "30毫秒TPOT约束下prefill与decode吞吐收益按证据量级复现，且512k以上序列仅在双向卸载下可服务的行为保持"
+    ],
+    "reject_criteria": [
+      "TPOT恶化吞没吞吐收益，或模型稀疏性缺失时decode卸载收益消失"
+    ],
+    "limitations": [
+      "证据仅32卡Ascend910C与GLM-5.2单一组合，无跨节点KV传输口径"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea（与HiSparse的解码侧主机分层固定足迹、UlaCache的统一逻辑寻址及传输/重算/就地交叉点Idea均不同，核心增量是主机DRAM权威副本加prefill/decode按阶段双向卸载），但证据仅单一arXiv独立组，吞吐提升以TPOT恶化为代价、decode卸载依赖模型原生稀疏性且未见跨节点KV传输指标，对TPN核心场景的适用边界未建立；且该记录同日已进入idea_f7841984fcce6a274881证据链作为主机内存侧对照策略，独立成案还是并入该Idea需人工世系决定。",
+  "related_candidate_ids": [
+    "candidate_b74aefcc6da4997763c0",
+    "candidate_dd166315cf32699a83fb"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_644dfa9713e65ae3b",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea（与HiSparse的解码侧主机分层固定足迹、UlaCache的统一逻辑寻址及传输/重算/就地交叉点Idea均不同，核心增量是主机DRAM权威副本加prefill/decode按阶段双向卸载），但证据仅单一arXiv独立组，吞吐提升以TPOT恶化为代价、decode卸载依赖模型原生稀疏性且未见跨节点KV传输指标，对TPN核心场景的适用边界未建立；且该记录同日已进入idea_f7841984fcce6a274881证据链作为主机内存侧对照策略，独立成案还是并入该Idea需人工世系决定。",
+      "evidence_item_ids": [
+        "7b26f3ab98225b6ba4a657f8"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

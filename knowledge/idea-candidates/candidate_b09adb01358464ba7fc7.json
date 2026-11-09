@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_b09adb01358464ba7fc7",
+  "identity": {
+    "problem_key": "agent_kv_residency_hbm_shortfall",
+    "mechanism_key": "segment_lifetime_predicted_tiered_placement",
+    "target_key": "agent_serving_kv_cache_storage"
+  },
+  "idea_type": "solution_concept",
+  "title": "按上下文段寿命预测在HBM与高带宽闪存间放置Agent服务KV缓存",
+  "problem": "Agent服务让会话KV缓存跨请求长期驻留，HBM容量不足时只能加卡或减会话。",
+  "hypothesis": "若在写入时读取harness固定的段类别并用线性模型预测子代理段寿命，按预测寿命把KV段分层放置到HBM与高带宽闪存，并在harness报告上下文关闭时立即释放块，可在不加装HBM的情况下把HBF写寿命延长到满载轨迹仍超保修的水平。",
+  "mechanism": "读取harness固定的段类别并用线性模型预测子代理段寿命，写入时即分层放置，harness报告上下文关闭就立即释放块，不依赖新近性判断。",
+  "target": "HBM与高带宽闪存分层中的Agent服务KV缓存放置",
+  "expected_effect": "HBF写寿命最高延长3.13倍；单代理轨迹上HBF寿命从HBM-first的2.1-6.4升至4.6-12.2设备年，多代理轨迹在24x7满载下仍超五年保修。",
+  "topic_ids": [
+    "storage_media"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "a906fb0bf73676572feb45ff",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.08378v1"
+      ],
+      "reason": "《Lachesis》给出段寿命预测分层放置机制（harness段类别加线性寿命模型、写入时分层、上下文关闭即释放）及轨迹驱动模拟下的HBF写寿命结果。",
+      "independence_group": "arxiv:2610.08378"
+    }
+  ],
+  "evidence_item_ids": [
+    "a906fb0bf73676572feb45ff"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.08378v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.08378"
+  ],
+  "unknowns": [
+    "全部结果来自轨迹驱动模拟与roofline内存定价，未在真实HBF器件上验证",
+    "写放大1.02是假设值",
+    "寿命预测依赖harness固定的段类别标注，跨harness泛化未知"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在轨迹驱动模拟中复现段寿命预测分层放置与上下文关闭即释放，待真实HBF器件参数可用后替换roofline定价与写放大假设重测。",
+    "inputs": [
+      "单代理与多代理Agent轨迹",
+      "harness段类别标注与上下文关闭事件",
+      "HBM与高带宽闪存的容量、带宽与roofline内存定价参数"
+    ],
+    "baselines": [
+      "HBM-first放置",
+      "依赖新近性判断的分层放置"
+    ],
+    "metrics": [
+      "HBF写寿命（设备年）",
+      "写寿命延长倍数",
+      "多代理满载轨迹下的剩余寿命与五年保修裕量"
+    ],
+    "support_criteria": [
+      "段寿命预测放置在两类轨迹上写寿命均优于HBM-first，且多代理满载轨迹仍超保修"
+    ],
+    "reject_criteria": [
+      "真实HBF器件写放大显著高于1.02假设，或多代理满载下寿命低于保修线"
+    ],
+    "limitations": [
+      "原始证据全部来自轨迹驱动模拟与roofline定价，无真实HBF器件验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "问题、机制、目标与可检验效应齐全，但其含义与既有Idea idea_45751e91b7abebcf4f0e（HBF作为HBM与SSD之间可部署的AI状态层级，运行时按状态属性在层级间放置）相同：Lachesis正是该Idea机制侧在KV缓存上的放置策略实例，该条目已于本期2026-11-09作为证据并入该Idea（事件idea_decision_3f7c1a90d8e4b26c5a11），且该Idea的验证计划已把Lachesis的轨迹模拟列为基线口径，无新的可推广语义。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_45751e91b7abebcf4f0e"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ff49f40abcdc19113f2a",
+      "issue_date": "2026-11-09",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "单条触发记录四要素齐全，但身份含义与既有Idea idea_45751e91b7abebcf4f0e的机制侧（运行时按状态属性把KV放置进HBF层级）相同，且该记录本期已并入该Idea证据，故记为duplicate。",
+      "evidence_item_ids": [
+        "a906fb0bf73676572feb45ff"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

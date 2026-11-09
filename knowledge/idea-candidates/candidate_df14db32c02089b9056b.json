@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_df14db32c02089b9056b",
+  "identity": {
+    "problem_key": "multi_agent_kv_handoff_load_growth",
+    "mechanism_key": "handoff_point_new_kv_compression_prefix_protection",
+    "target_key": "multi_agent_kv_handoff"
+  },
+  "idea_type": "solution_concept",
+  "title": "交接点只压缩新生成KV区并保护继承前缀的多智能体发送侧状态裁剪",
+  "problem": "多智能体间直接传递KV缓存时，交接负载随轨迹变长持续上升；混合架构除KV外还需跨智能体携带循环、卷积状态，隐状态交接成本进一步扩大。",
+  "hypothesis": "若在交接点仅对新生成的KV区做选择式压缩并保护继承前缀，混合架构让全注意力KV与GDN循环、卷积状态按固定预算跨智能体持续传递，则可在量化的精度代价内降低多智能体隐状态交接的逻辑负载与传输量。",
+  "mechanism": "SelectKV在交接点只压缩新生成的KV区并保护继承前缀，避免重复处理已继承部分；HyLaMAS以双通道状态共享让全注意力KV与GDN循环、卷积状态跨智能体持续传递。",
+  "target": "多智能体隐状态交接路径的发送侧应用层（KV与循环、卷积状态交接）",
+  "expected_effect": "SelectKV-90降KV交接负载9.7-9.9%、精度持平至最多降6分；HyLaMAS在2B模型上较文本传递少解码74-80%的token、快2.10-2.78倍。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "Direct触发项单独给出完整的问题（多智能体隐状态交接负载随轨迹增长）、可解释机制（交接点只压缩新生成KV区并保护继承前缀；混合架构双通道持续传递循环、卷积状态）、目标对象（多智能体隐状态交接的发送侧路径）与可测效应（SelectKV-90降KV负载9.7-9.9%、精度持平至最多降6分；HyLaMAS较文本传递少解码74-80% token、快2.10-2.78倍）。"
+  },
+  "evidence": [
+    {
+      "item_id": "c1d02abf4e06c53a69c9fcbd",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.37779v1"
+      ],
+      "reason": "《SelectKV与HyLaMAS降低多智能体隐状态传递成本》给出机制与量化结果：SelectKV在交接点只压缩新生成的KV区并保护继承前缀，SelectKV-90降KV负载9.7-9.9%、精度持平至最多降6分；HyLaMAS让全注意力KV与GDN循环、卷积状态跨智能体持续传递，2B模型上较文本传递少解码74-80%的token、快2.10-2.78倍。边界：每基准仅100例、置信区间宽，计时不含跨设备传输，作者明言逻辑负载减少不等于网络节省，无TTFT与TPOT数据。",
+      "independence_group": "arxiv:2610.37779"
+    }
+  ],
+  "evidence_item_ids": [
+    "c1d02abf4e06c53a69c9fcbd"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.37779v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.37779"
+  ],
+  "unknowns": [
+    "每基准仅100例且置信区间宽，9.7-9.9%负载降幅与精度代价的统计稳定性未确立",
+    "计时不含跨设备传输，作者明言逻辑负载减少不等于网络节省，无TTFT与TPOT数据，交接收益是否转化为真实传输节省未验证",
+    "该机制为发送侧应用层状态裁剪而非网络调度，对TPN方向（KVCache感知的网络与带宽调度）的适用边界未建立",
+    "混合架构交接需与KV同量级的固定循环状态预算，SelectKV压缩与循环状态传递两部分在同一记录内未联合评估",
+    "继承前缀保护取消后的精度退化曲线与压缩档位的选择依据未给出"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部多智能体协作链路上实现交接点选择性KV压缩（只压缩新生成区、保护继承前缀），并按混合架构为循环、卷积状态设定固定交接预算，跨设备真实传输计时，对照全量KV交接与文本交换。",
+    "inputs": [
+      "内部多智能体协作负载与交接频率、轨迹长度档位",
+      "KV压缩档位（含SelectKV-90级）",
+      "混合架构循环、卷积状态的固定交接预算档位",
+      "跨设备链路带宽档位"
+    ],
+    "baselines": [
+      "全量KV交接",
+      "文本逐字交换（证据内基线）",
+      "不保护继承前缀的均匀压缩"
+    ],
+    "metrics": [
+      "交接KV逻辑负载与实际跨设备传输字节数",
+      "任务精度",
+      "TTFT与TPOT（含跨设备传输计时）"
+    ],
+    "support_criteria": [
+      "KV负载与实际传输字节按证据量级下降，任务精度保持在证据降幅（最多6分）之内，且补测的TTFT/TPOT不劣化"
+    ],
+    "reject_criteria": [
+      "计入跨设备传输后交接收益消失，或取消继承前缀保护使精度退化显著超过证据降幅"
+    ],
+    "limitations": [
+      "原始证据每基准仅100例、置信区间宽且计时不含跨设备传输，无TTFT与TPOT数据"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea（candidate_12d1fbd40f0591dbe67d为接收方需求过滤传输、candidate_43f490bd18a15229bf1a为同族模型KV插值，本候选为发送侧交接点新生成区压缩加继承前缀保护），但证据仅单一arXiv独立组，每基准仅100例、置信区间宽，计时不含跨设备传输且作者明言逻辑负载减少不等于网络节省、无TTFT与TPOT数据，作为发送侧应用层裁剪对TPN网络调度场景的适用边界未建立；且该记录同日已进入idea_f7841984fcce6a274881证据链作为发送侧边界证据，独立成案还是并入该Idea需人工世系决定，先延期观察。",
+  "related_candidate_ids": [
+    "candidate_12d1fbd40f0591dbe67d",
+    "candidate_43f490bd18a15229bf1a"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a8c21624b02ab6bd3e10",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea（candidate_12d1fbd40f0591dbe67d为接收方需求过滤传输、candidate_43f490bd18a15229bf1a为同族模型KV插值，本候选为发送侧交接点新生成区压缩加继承前缀保护），但证据仅单一arXiv独立组，每基准仅100例、置信区间宽，计时不含跨设备传输且作者明言逻辑负载减少不等于网络节省、无TTFT与TPOT数据，作为发送侧应用层裁剪对TPN网络调度场景的适用边界未建立；且该记录同日已进入idea_f7841984fcce6a274881证据链作为发送侧边界证据，独立成案还是并入该Idea需人工世系决定，先延期观察。",
+      "evidence_item_ids": [
+        "c1d02abf4e06c53a69c9fcbd"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

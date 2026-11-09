@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_e048816b7955140a7f4f",
+  "identity": {
+    "problem_key": "long_context_kv_read_growth",
+    "mechanism_key": "recursive_kv_tree_per_level_selection",
+    "target_key": "long_context_serving_quality_latency"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "在KV缓存上递归建树逐层选择把每query读取集降到O(log L)并外推长上下文",
+  "problem": "长上下文稠密注意力的计算与KV读取随长度线性增长，服务长度被训练窗口锁死（32K训练模型无法直接服务1M至2M），全量KV分层放置按容量规划而每query读取带宽先成为主导约束。",
+  "hypothesis": "每16个KV条目递归归组成树、节点以pooler的key与均值value概括子树、逐层选k=256下探到精确token、RoPE按候选序号编码，可把每query读取集降到O(log L)，使32K训练模型外推至2M token且质量与解码步时延同时优于稠密基线与最佳公开基线；若并发或真实负载下增益消失、或短上下文回退扩大，则该机制只应作为超长上下文专用路径引入。",
+  "mechanism": "KV条目每16个递归归组成树，节点用pooler的key与均值value概括子树，逐层选k=256下探到精确token，RoPE按候选序号编码，使每query只读O(log L)个条目。",
+  "target": "长上下文LLM serving的每query KV读取路径与上下文外推能力（读取集约上下文1%、精确token可常驻主机内存、GPU常驻不足全量缓存7%）。",
+  "expected_effect": "RULER 1M为60.5对最佳基线40.0、2M为49.3对27.6；1M解码8.35ms对稠密177ms；524K prefill快3.2倍。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题（稠密注意力计算与KV读取随长度增长、32K训练窗口锁死服务长度）、可解释机制（KV上递归建树、pooler key加均值value概括、逐层选k=256、RoPE按候选序号编码）、目标对象（长上下文serving的每query KV读取路径）与可检验效应（RULER 1M/2M对最佳基线对照、1M解码8.35ms对177ms、524K prefill快3.2倍）。"
+  },
+  "evidence": [
+    {
+      "item_id": "82f14ff195dbea5aecc459d7",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07232v1"
+      ],
+      "reason": "RecSA给出问题（长上下文稠密注意力计算与KV读取随长度增长、32K训练模型无法服务1M至2M）、机制（每16个KV条目递归归组成树、节点以pooler的key与均值value概括子树、逐层选k=256下探到精确token、RoPE按候选序号编码，每query只读O(log L)条目）、目标（长上下文serving的每query KV读取路径，读取集约上下文1%、精确token可常驻主机内存）与可检验效应（RULER 1M为60.5对40.0、2M为49.3对27.6，1M解码8.35ms对稠密177ms，524K prefill快3.2倍）。",
+      "independence_group": "arxiv:2611.07232"
+    }
+  ],
+  "evidence_item_ids": [
+    "82f14ff195dbea5aecc459d7"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.07232v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.07232"
+  ],
+  "unknowns": [
+    "效率均为单卡H200、batch 1，无多请求并发与SSD数据",
+    "短上下文最多回退1.8分，质量-长度边界未刻画",
+    "读取集约1%下与主机分层放置（读取集×单步传输上界）的组合收益未量化",
+    "单一预印本，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在长上下文serving引擎中实现KV树索引加逐层选择读取路径，对照稠密注意力与稀疏/分层基线，并在并发与主机分层配置下测读取集与传输上界。",
+    "inputs": [
+      "RULER类1M至2M负载",
+      "归组粒度与k值扫描",
+      "主机内存驻留与GPU驻留比例配置",
+      "并发扫描"
+    ],
+    "baselines": [
+      "稠密注意力全量读取",
+      "最佳公开稀疏注意力基线",
+      "HiSparse类主机分层稀疏注意力"
+    ],
+    "metrics": [
+      "RULER长上下文分数",
+      "解码步时延与prefill时延",
+      "每query KV读取量与GPU驻留比例",
+      "短上下文质量回退"
+    ],
+    "support_criteria": [
+      "质量与解码时延增益在多并发下保持",
+      "读取集×传输带宽落在分层收益边界内且短上下文回退有界"
+    ],
+    "reject_criteria": [
+      "并发或真实负载下增益消失",
+      "短上下文回退随并发扩大"
+    ],
+    "limitations": [
+      "原始证据为单卡H200、batch 1，无多请求与SSD数据"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有稀疏KV主机驻留/召回调度候选（candidate_e6063ec3be4af707459c、candidate_0782d8cab828971b5f90，引擎侧索引卸载与调度）不同义（本候选为模型侧读取集缩减与上下文外推），但证据为单一预印本，效率全部为单卡H200 batch 1、无多请求与SSD数据、短上下文最多回退1.8分，无独立复现，先观察。",
+  "related_candidate_ids": [
+    "candidate_e6063ec3be4af707459c",
+    "candidate_0782d8cab828971b5f90"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_567edb970ca49fc7e5c7",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有稀疏KV主机驻留/召回调度候选不同义（模型侧读取集缩减vs引擎侧索引卸载调度），但证据为单一预印本、效率均为单卡H200 batch 1、无多请求与SSD数据、短上下文最多回退1.8分，无独立复现，先观察。",
+      "evidence_item_ids": [
+        "82f14ff195dbea5aecc459d7"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

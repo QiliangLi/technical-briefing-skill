@@ -3,8 +3,8 @@
   "topic_id": "cross_region",
   "topic_name": "跨域传输",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-06",
-  "summary": "本期四条Agent Cache服务侧实测把“缓存状态与重算代价是Agent服务的一阶调度变量”从单点观察推进为可复现的机理族——Penelope按重算代价在共享前缀后从头淘汰、保留昂贵后缀，把Claude Code回放平均TTFT最高降76%；Fairway实测生产trace中65%的tool-agent请求仅部分命中，用双车道调度把积压miss请求最坏TTFT从66.3-201.4秒压到22.0秒；HiState用大小与上下文无关的检查点做GPU/DRAM/SSD分层放置，在真实编码Agent轨迹上p95/p99 TTFT做到最低；LADS把受限回传链路的工具结果投递顺序变成配额租约调度，16条真实任务路径时延降50.6%——但四者全部是单机证据，尚不能校准Lightstorm给出的传输对重算交叉点（GQA-1/8为9-14Gbps）或微软M365实测的跨部署复用坍塌（跨部署复用率从88.9%跌至29.0%、会话加部署双键控后重建下限仍达20.2%）下的WAN收益；跨域KV方案仍应以部署亲和路由加按部署键控的压缩保留为第一设计变量与对照基线，任何跨域传输收益都需在真实WAN RTT、传输字节与P95下单独核算，而不是由单机压缩比（RAQ-MLA约2.5比特、DCKV 55倍以上压缩）或调度收益外推。",
+  "updated_by_issue": "2026-11-09",
+  "summary": "本期三条传输侧证据把跨域状态同步的载荷压缩继续向原语层推进但依然全部止步单机：LowRam测试时按头拟合key到value预测器、只存误差最大token残差，4倍压缩近无损（Llama-3.1-8B保留98.2%的RULER 4K与99.3%的LongBench）并叠加量化与驱逐至26.9倍仍留94.5%；LoopKV把循环层KV拆成高/低2比特平面、高位每步必读而低位按注意力阈值取回，SLO下goodput为KIVI-4的1.7-2.2倍，其先传高位、按需补传低位的读取结构明确可迁移为广域增量传输设计；DMT则以固定循环记忆把prefill后状态压到约68KB常数、从架构层消解传输问题但质量与规模差距大（OWT困惑度33.93落后Mamba的20.15、止于125M且prefill更贵）；同期GroupAssistBench证明外置群组记忆召回可胜全上下文而开放式使用明显落后（最佳EverMemOS仅0.247）、RER重组加ACB约束化注入可补4.4-7.0分，提示跨域记忆复用应传带来源锚定的约束块而非原始检索文本——当前判断不变：压缩原语只改善单机字节预算，跨域方案仍应以部署亲和路由加按部署键控的压缩保留为第一设计变量，任何WAN收益都须在真实RTT、传输字节与P95下单独核算，本期及此前尚无任何一条证据实测广域链路。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -391,6 +391,14 @@
             "https://arxiv.org/abs/2611.02082v1"
           ],
           "reason": "2026-11-06 已发布日报收录：Fairway指出带前缀缓存的服务里未缓存prefill工作量相差可达70-250倍、固定规则难以兼顾中位与尾部TTFT，以Fast/Fair双虚拟车道按负载切换复用优先与公平分配（Fast lane按缓存节省算力排序并随相对等待晋升，Fair lane按到达序服务并限制插队总量），洪泛测试中积压miss请求最坏TTFT为22.0秒而LPM等复用优先调度达66.3-201.4秒，生产trace中65%的tool-agent请求部分命中（评估在单张GPU上进行，Mooncake trace降采样至1/8会话与1/4长度，GPU与LLM未具名）；按Agent Cache分支记录缓存感知prefill调度信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "62663c8b0e802d7de3157827",
+          "issue_date": "2026-11-09",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.04867v1"
+          ],
+          "reason": "2026-11-09 已发布日报收录：GroupAssistBench 用50个真实群聊80299条消息构建2395题、区分召回与开放式使用，外置记忆召回可胜全上下文而使用明显落后（最佳EverMemOS开放式使用仅0.247），RER重组检索证据加ACB把记忆绑定为响应约束后L1升1.6-9.2分、L2升4.4-7.0分（仅中文群聊与单一助手、评分为LLM裁判、无广域网与时延数据）；按 Agent Cache 分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -441,31 +449,32 @@
         "2a8ee5e605785dd6a40fc304",
         "3c9411349fcf2380a107eead",
         "69cf2d7da82c483aa8c17b94",
-        "95cfc70179967155c577e8c5"
+        "95cfc70179967155c577e8c5",
+        "62663c8b0e802d7de3157827"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2607.19214v2",
-        "https://arxiv.org/abs/2607.20553v2",
-        "https://arxiv.org/abs/2607.23933v1",
-        "https://arxiv.org/abs/2607.26475v1",
+        "https://arxiv.org/abs/2608.03214v1",
         "https://arxiv.org/abs/2607.29678v2",
         "https://arxiv.org/abs/2608.00455v1",
-        "https://arxiv.org/abs/2608.03051v1",
-        "https://arxiv.org/abs/2608.03214v1",
-        "https://arxiv.org/abs/2608.04443v2",
-        "https://arxiv.org/abs/2608.06033v1",
         "https://arxiv.org/abs/2608.08340v1",
+        "https://arxiv.org/abs/2608.03051v1",
+        "https://arxiv.org/abs/2608.06033v1",
+        "https://arxiv.org/abs/2607.19214v2",
         "https://arxiv.org/abs/2608.14967v1",
-        "https://arxiv.org/abs/2608.16168v1",
         "https://arxiv.org/abs/2608.16357v1",
+        "https://arxiv.org/abs/2607.23933v1",
+        "https://arxiv.org/abs/2608.16168v1",
         "https://arxiv.org/abs/2608.25683v1",
-        "https://arxiv.org/abs/2608.30252v1",
         "https://arxiv.org/abs/2609.01082v1",
+        "https://arxiv.org/abs/2607.26475v1",
+        "https://arxiv.org/abs/2607.20553v2",
         "https://arxiv.org/abs/2609.03340v1",
+        "https://arxiv.org/abs/2608.04443v2",
         "https://arxiv.org/abs/2609.04748v1",
         "https://arxiv.org/abs/2609.04875v1",
-        "https://arxiv.org/abs/2609.05463v1",
+        "https://arxiv.org/abs/2608.30252v1",
         "https://arxiv.org/abs/2609.09115v1",
+        "https://arxiv.org/abs/2609.05463v1",
         "https://arxiv.org/abs/2609.18283v1",
         "https://arxiv.org/abs/2609.28870v1",
         "https://arxiv.org/abs/2609.26866v1",
@@ -489,7 +498,8 @@
         "https://arxiv.org/abs/2611.00391v1",
         "https://arxiv.org/abs/2611.00881v1",
         "https://arxiv.org/abs/2610.41508v1",
-        "https://arxiv.org/abs/2611.02082v1"
+        "https://arxiv.org/abs/2611.02082v1",
+        "https://arxiv.org/abs/2611.04867v1"
       ]
     },
     {
@@ -912,6 +922,30 @@
             "https://arxiv.org/abs/2610.34991v2"
           ],
           "reason": "2026-11-02 已发布日报收录：全双工语音模型的KV缓存随时长线性膨胀，TRC把会话切成约1秒片段、每片压成一个可学习gist token，仅约10秒局部窗口保留原始token、出窗后只留gist、久远信息经gist链传递，三个模型KV缓存增速降低91.7%至95.8%、两款上下文可增长模型的骨干时延从1到20分钟仅增12%至15%（不压缩时为141%至259%；近距离单针召回低于全分辨率基线，时延为未训练配置且不含音频模块，无跨域实测）；按压缩与放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "f683940086b4f21d1066323c",
+          "issue_date": "2026-11-09",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.07025v1"
+          ],
+          "reason": "2026-11-09 已发布日报收录：LowRam 在测试时按头拟合key到value预测器、只存误差最大token残差，4倍压缩近无损（Llama-3.1-8B保留98.2%的RULER 4K与99.3%的LongBench）并可叠加量化与驱逐至26.9倍（Mistral-7B仍保留94.5%；实验仅覆盖本地显存、吞吐与精度，无跨域传输测量、上下文演化一致性未解决）；按传输/放置分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "e5864328b0087cc65228153c",
+          "issue_date": "2026-11-09",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.41850v1"
+          ],
+          "reason": "2026-11-09 已发布日报收录：DMT 用固定记忆单元的循环状态加注意力读取替代KVCache、推理状态恒定（prefill后状态约68KB对Mamba约1000KB、单token 1.6ms最低；OWT困惑度33.93落后Mamba的20.15、规模止于125M、prefill因M²注意力更贵）；按传输/放置分支记录为根因路线参考，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "92f68e544ed13848162ab363",
+          "issue_date": "2026-11-09",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.04137v1"
+          ],
+          "reason": "2026-11-09 已发布日报收录：LoopKV 按循环层量化敏感度做背包规划分配INT4、INT2或跨循环复用，高2比特平面每步必读、低位仅在该处注意力权重超阈值时取回，Ouro-1.4B每token存储155对240KiB、SLO下goodput为KIVI-4的1.7-2.2倍（仅验证循环结构模型且全部单卡、无广域或跨机实验）；按传输/放置分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -962,33 +996,36 @@
         "36e4859d7a9ff1088788ad27",
         "ba40335bbe25e9864da31278",
         "ac7bcf0c0b42e6bffdaf4ec1",
-        "f5ffdf3396372ceb3bd0ddf9"
+        "f5ffdf3396372ceb3bd0ddf9",
+        "f683940086b4f21d1066323c",
+        "e5864328b0087cc65228153c",
+        "92f68e544ed13848162ab363"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2607.06601v1",
-        "https://arxiv.org/abs/2607.07144v2",
         "https://arxiv.org/abs/2607.17715v1",
-        "https://arxiv.org/abs/2607.22389v1",
-        "https://arxiv.org/abs/2607.23054v1",
-        "https://arxiv.org/abs/2607.29591v1",
-        "https://arxiv.org/abs/2608.00311v1",
-        "https://arxiv.org/abs/2608.01631v1",
-        "https://arxiv.org/abs/2608.02901v1",
-        "https://arxiv.org/abs/2608.03228v1",
         "https://arxiv.org/abs/2608.03276v1",
-        "https://arxiv.org/abs/2608.05863v2",
-        "https://arxiv.org/abs/2608.09412v1",
+        "https://arxiv.org/abs/2608.03228v1",
+        "https://arxiv.org/abs/2608.00311v1",
+        "https://arxiv.org/abs/2607.29591v1",
+        "https://arxiv.org/abs/2607.07144v2",
+        "https://github.com/LMCache/LMCache/releases/tag/v0.5.0",
+        "https://arxiv.org/abs/2608.02901v1",
         "https://arxiv.org/abs/2608.15797v1",
-        "https://arxiv.org/abs/2608.20927v1",
-        "https://arxiv.org/abs/2608.21693v1",
+        "https://arxiv.org/abs/2607.23054v1",
+        "https://arxiv.org/abs/2608.05863v2",
         "https://arxiv.org/abs/2608.22704v1",
-        "https://arxiv.org/abs/2608.30386v1",
+        "https://arxiv.org/abs/2608.21693v1",
+        "https://arxiv.org/abs/2608.20927v1",
         "https://arxiv.org/abs/2608.30996v1",
+        "https://arxiv.org/abs/2608.30386v1",
         "https://arxiv.org/abs/2609.02029v1",
+        "https://arxiv.org/abs/2607.06601v1",
+        "https://arxiv.org/abs/2608.01631v1",
         "https://arxiv.org/abs/2609.03430v1",
         "https://arxiv.org/abs/2609.03949v1",
         "https://arxiv.org/abs/2609.04971v1",
-        "https://github.com/LMCache/LMCache/releases/tag/v0.5.0",
+        "https://arxiv.org/abs/2607.22389v1",
+        "https://arxiv.org/abs/2608.09412v1",
         "https://arxiv.org/abs/2608.00358v1",
         "https://arxiv.org/abs/2607.28699v1",
         "https://arxiv.org/abs/2607.24331v1",
@@ -1010,7 +1047,10 @@
         "https://arxiv.org/abs/2610.31633v1",
         "https://arxiv.org/abs/2610.36950v1",
         "https://arxiv.org/abs/2610.33625v1",
-        "https://arxiv.org/abs/2610.34991v2"
+        "https://arxiv.org/abs/2610.34991v2",
+        "https://arxiv.org/abs/2611.07025v1",
+        "https://arxiv.org/abs/2610.41850v1",
+        "https://arxiv.org/abs/2611.04137v1"
       ]
     }
   ],
@@ -1329,6 +1369,19 @@
         "3c9411349fcf2380a107eead",
         "69cf2d7da82c483aa8c17b94",
         "95cfc70179967155c577e8c5"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_7bb07c9ff5509331a545",
+      "issue_date": "2026-11-09",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "62663c8b0e802d7de3157827",
+        "92f68e544ed13848162ab363",
+        "e5864328b0087cc65228153c",
+        "f683940086b4f21d1066323c"
       ]
     }
   ]

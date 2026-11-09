@@ -120,6 +120,30 @@
         "https://arxiv.org/abs/2610.41508v1"
       ],
       "reason": "HiState给出跨域Agent状态迁移的载荷选择参照：混合LLM命中只需读一个大小与上下文无关的检查点，跨域迁移传固定大小循环态远优于整段KV；为按状态类型缩减跨域传输字节提供单机证据（仅单机分层缓存与编码Agent轨迹，未涉跨域一致性与WAN实测）。"
+    },
+    {
+      "item_id": "f683940086b4f21d1066323c",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07025v1"
+      ],
+      "reason": "LowRam测试时按头拟合key到value预测器、只存误差最大token的残差，4倍值压缩在Llama-3.1-8B保留98.2%的RULER 4K、99.3%的LongBench，叠加量化与驱逐至26.9倍仍保留94.5%；传输预测器加所选残差可大幅减少需同步的字节，为残差式压缩缩减跨域状态载荷提供直接原语证据（仅本地显存、吞吐、TTFT与精度评估，无跨域传输测量，上下文演化时一致性未解决）。"
+    },
+    {
+      "item_id": "92f68e544ed13848162ab363",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04137v1"
+      ],
+      "reason": "LoopKV把KV拆为高/低2比特平面，高位每步必读、低位仅在该处注意力权重超阈值时按需取回，Ouro-1.4B每token存储155对240KiB、SLO下goodput为KIVI-4的1.7-2.2倍；其先传高位、按注意力需求补传低位的结构为跨域增量传输的按需访问侧提供机制证据（仅循环结构模型、全部单卡、H100上按需读低位不再提速，无广域跨机实验）。"
+    },
+    {
+      "item_id": "e5864328b0087cc65228153c",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.41850v1"
+      ],
+      "reason": "DMT用固定记忆单元的循环状态加注意力读取替代KVCache，prefill后状态约68KB对Mamba约1000KB、单token 1.6ms最低，从架构层把需跨域同步的序列状态压到常数，属根因路线的相邻证据而非增量/残差机制（语言建模与zero-shot落后Mamba、规模止于125M、prefill因M²注意力更贵）。"
     }
   ],
   "evidence_against": [],
@@ -160,7 +184,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-02",
-  "last_updated_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-09",
   "decision_log": [
     {
       "event_id": "idea_decision_cbe7507728f18fb83733",
@@ -273,6 +297,19 @@
       "reason": "新增HiState作为按状态类型缩减跨域传输载荷的单机相邻证据（传固定大小循环态检查点优于整段KV）；状态保持observing，WAN尾延迟与端到端收益仍无实测数据。",
       "evidence_item_ids": [
         "69cf2d7da82c483aa8c17b94"
+      ]
+    },
+    {
+      "event_id": "idea_decision_b58aca3ca718fd615db1",
+      "issue_date": "2026-11-09",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增LowRam残差压缩、LoopKV两比特平面按需读取与DMT恒定循环记忆三条已发布证据：前两者直接压缩跨域传输载荷并给出按需读取机制，DMT为架构层根因路线的相邻证据；状态保持observing，WAN尾延迟与端到端收益仍无实测数据。",
+      "evidence_item_ids": [
+        "e5864328b0087cc65228153c",
+        "92f68e544ed13848162ab363",
+        "f683940086b4f21d1066323c"
       ]
     }
   ]

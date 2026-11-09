@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6d483ee368b5e4d7ac00",
+  "identity": {
+    "problem_key": "prefix_retention_timeout_suboptimality",
+    "mechanism_key": "max_weight_closure_min_cut_timeouts",
+    "target_key": "prefix_cache_retention_policy"
+  },
+  "idea_type": "solution_concept",
+  "title": "前缀缓存留存超时按最大权闭包用一次最小割精确求解",
+  "problem": "每个前缀块组该驻留多久并不好定：按块独立优化会因忽略前置依赖高估收益，强制祖先超时不小于子孙的偏序又偏保守，网格化超时还带离散误差，留存策略长期靠手工TTL。",
+  "hypothesis": "把每个可用前缀奖励建成图节点并连接前置条件，加上增量存储成本后构成最大权闭包，用一次最小割可精确求得相干留存超时且断点定理消除网格离散误差；在真实请求回放上相干超时应逼近无约束最优并大幅降低平均驻留块数而不损低价位命中率。",
+  "mechanism": "PCR把前缀块组奖励建成图节点、按前置条件连边并计入增量存储成本，构成最大权闭包后用一次最小割精确求解全部留存超时；断点定理给出连续最优断点、消除超时网格离散误差。",
+  "target": "共享前缀缓存池（Mooncake类KVCache存储层）的块组留存/超时策略决策点。",
+  "expected_effect": "39,632条Mooncake请求回放中，相干超时在120个组合的118个达到无约束最优；低价位命中率与全局TTL相当，平均驻留块从715.97降至69.85。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题（块组留存超时两难：独立优化高估、偏序约束保守）、可解释机制（最大权闭包加一次最小割精确求解、断点定理消除离散误差）、目标对象（共享前缀缓存的留存策略）与可检验效应（118/120组合达无约束最优、平均驻留块715.97降至69.85）。"
+  },
+  "evidence": [
+    {
+      "item_id": "d51e96cd99400f8cb09ffe77",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02766v1"
+      ],
+      "reason": "该记录同时给出问题（按块独立优化高估收益、强制祖先超时不小于子孙偏保守、网格超时有离散误差）、机制（PCR把前缀奖励建成图节点连前置条件边并计增量存储成本，构成最大权闭包用一次最小割精确求解，断点定理消除离散误差）、目标（Mooncake类前缀缓存的块组留存超时策略）与可检验效应（39,632条Mooncake回放中120个组合的118个达无约束最优、低价位命中率与全局TTL相当、平均驻留块715.97降至69.85）。",
+      "independence_group": "arxiv:2610.02766"
+    }
+  ],
+  "evidence_item_ids": [
+    "d51e96cd99400f8cb09ffe77"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.02766v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.02766"
+  ],
+  "unknowns": [
+    "全部为离线回放，只计节省块数与占用时间，无TTFT或吞吐指标",
+    "低价位收益主要来自分组TTL既有思想，最小割增量收益未单独量化",
+    "在线流量下的求解频率、求解耗时与参数漂移未刻画",
+    "单一预印本，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在内部共享前缀缓存的真实请求trace上实现最大权闭包最小割留存超时求解器，对照按块独立优化、偏序约束超时与全局TTL，并以无约束最优为上限基准。",
+    "inputs": [
+      "内部多轮/Agent混合流量trace回放",
+      "存储价位与容量扫描",
+      "奖励与增量成本参数敏感性"
+    ],
+    "baselines": [
+      "按块独立优化超时",
+      "祖先不小于子孙的偏序超时",
+      "全局TTL",
+      "LRU驱逐"
+    ],
+    "metrics": [
+      "回放命中率",
+      "平均驻留块数与占用时间",
+      "与无约束最优的差距",
+      "求解耗时"
+    ],
+    "support_criteria": [
+      "相干超时达或逼近无约束最优且命中率不降",
+      "驻留块数大幅下降、求解开销可近线执行"
+    ],
+    "reject_criteria": [
+      "真实trace上收益退化为分组TTL水平",
+      "求解耗时或参数漂移使在线更新不可行"
+    ],
+    "limitations": [
+      "原始证据全部为离线回放、无TTFT与吞吐指标，低价位收益主要来自分组TTL既有思想"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有在线切换驱逐Idea idea_e8ac8cc5cd625623e8dd（影子重放在线切换，该Idea已于2026-11-09把本触发项吸收为evidence_for的oracle上限证据）及驱逐信号/放置类候选不同义（离线精确留存优化vs在线策略切换），但本候选证据为单一预印本、全部离线回放无TTFT/吞吐指标、低价位收益主要来自分组TTL既有思想，无独立支持，先观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_e8ac8cc5cd625623e8dd"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_47d2378c95bac2a67b3d",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有在线切换驱逐Idea不同义（离线精确留存优化vs在线策略切换），但证据为单一预印本、全部离线回放无TTFT/吞吐指标、低价位收益主要来自分组TTL既有思想，无独立复现，先观察。",
+      "evidence_item_ids": [
+        "d51e96cd99400f8cb09ffe77"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

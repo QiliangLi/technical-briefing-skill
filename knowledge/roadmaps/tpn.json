@@ -3,8 +3,8 @@
   "topic_id": "tpn",
   "topic_name": "状态感知网络、TPN",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-06",
-  "summary": "TPN方向本期证据把KV跨网传输的收益从裸带宽推进到路径机制、压缩执行与GPU侧基线的联合口径：ARK以纯端主机软件为KVCache大象流做spine路径预留（复制预留表、预计算源端口偏移让ECMP哈希到空闲spine、经低带宽控制信道广播），不改交换机消除ECMP冲突热点，16GPU两层spine-leaf包级仿真中平均流完成时间最多降27.3%、P95最多降34.0%（全部为仿真、收益集中于拥而未饱和区间）；FastKVComp把KV压缩的分布变换与量化融合为单个TileLang核并以可搜索LC后端替换nvCOMP，双节点200-Gb/s InfiniBand上JCT降30.2%至38.6%、输出吞吐升44.2%至62.6%，证明压缩执行过慢会抵消通信节省（每配置仅50请求、无TTFT/TPOT/P95与模型质量数字）；MOIRA在vLLM内按注意力覆盖度逐层逐头自适应保留KV页，RULER 128k、gamma=0.99时精度与稠密FA3持平、仅读约30%页、TPOT降2.2至2.5倍（仅单GPU、无跨节点数据）；HELIX的异构算子级划分在大批量时传输时延掩盖收益、多数划分退回GPU（画像估计的单步时延而非端到端）。当前判断：KV跨网优化的可行收益取决于路径机制（确定路径ZCube、光电路预留、按负载模式重构MoSE、网内卸载INC-MoE、端主机预留ARK）与执行侧代价（压缩执行、GPU侧稀疏读取）的联合权衡而非单点扩带宽；判断升级的观察点是网络侧KV调度相对MOIRA级GPU侧自适应稀疏基线给出P95/P99与TPOT口径的增量收益，目前尚无任何对照。",
+  "updated_by_issue": "2026-11-09",
+  "summary": "TPN方向本期证据把KV跨网优化的对照面从GPU侧扩展到主机内存侧与发送侧：华为FlashOffloading以主机DRAM为权威KV副本并按阶段切换驻留粒度（prefill用四层滚动HBM缓存逐层回载并与计算重叠、decode配16k热缓存与反向稀疏索引），32卡Ascend910C、GLM-5.2上30毫秒TPOT约束下prefill吞吐最高升1.38倍、decode最高1.91倍，512k与1M序列仅在双向卸载下可服务，给出跨节点调度必须先战胜的纯内存侧基线（吞吐提升以TPOT恶化为代价、依赖模型原生稀疏性、无跨节点KV传输指标）；StrataFlux按重要性从主机RAM或SSD流式补取高精度位并与计算重叠，2比特权重下恢复Llama-3.1-8B混淆度9.46到8.40并保留量化吞吐95.4%（仅单机、无TTFT/TPOT与跨节点数据）；BasisKV用共享Value低秩潜变量同时压缩Value缓存、张量并行AllGather与Key路由，8卡L40S端到端最高1.42倍于稠密、TTFT由34.6秒降至24.7秒（全部单机、通信字节数未披露）；SelectKV/HyLaMAS在多智能体交接点做发送侧状态裁剪，SelectKV-90降KV负载9.7-9.9%、HyLaMAS较文本传递快2.10-2.78倍（计时不含跨设备传输，作者明言逻辑负载减少不等于网络节省，无TTFT与TPOT数据）。当前判断：KV跨网优化的可行收益仍取决于路径机制（确定路径ZCube、光电路预留、按负载模式重构MoSE、网内卸载INC-MoE、端主机预留ARK）与非网络侧替代（GPU侧自适应稀疏MOIRA、主机内存权威副本FlashOffloading、模型侧压缩与发送侧裁剪）的联合权衡而非单点扩带宽；判断升级的观察点不变：网络侧KV调度相对上述非网络基线在P95/P99与TPOT口径下的增量收益，目前尚无任何对照。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -471,6 +471,38 @@
             "https://arxiv.org/abs/2610.04313v1"
           ],
           "reason": "2026-11-06 已发布日报收录：MOIRA在vLLM中提供免训练自适应稀疏解码，按注意力覆盖度逐层逐头保留满足gamma目标的最小KV页集并整步保持在CUDA图内，RULER 128k、gamma=0.99时精度与稠密FA3持平、仅读约30%页、TPOT降2.2至2.5倍、并发16时吞吐升45%至51%（仅单GPU评估、无跨节点KV传输、TTFT或网络数据）；按KV感知调度分支记录为GPU侧强基线信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "7b26f3ab98225b6ba4a657f8",
+          "issue_date": "2026-11-09",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.07542v1"
+          ],
+          "reason": "2026-11-09 已发布日报收录：华为FlashOffloading以主机DRAM为权威KV副本并按阶段切换驻留粒度，prefill用四层滚动HBM缓存逐层回载并与计算重叠、decode用16k热缓存、反向稀疏索引把缺失查询并入top-k过程；32卡Ascend910C与GLM-5.2上，30毫秒TPOT约束下prefill吞吐最高提升1.38倍、decode最高1.91倍，512k与1M序列仅在双向卸载下可服务（吞吐提升以TPOT恶化为代价、decode卸载依赖模型原生稀疏性、未见跨节点KV传输指标）；按KV感知调度分支记录为纯内存侧基线信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "131a5cafc84bcebccc2048c3",
+          "issue_date": "2026-11-09",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.08363v1"
+          ],
+          "reason": "2026-11-09 已发布日报收录：StrataFlux按重要性仅为关键信道与token组从主机RAM或SSD流式补取高精度位，用提前或滞后距离使传输与计算重叠、参数在给定减速预算内自动选定；2比特权重下Llama-3.1-8B混淆度9.46到8.40并保留量化吞吐95.4%，Qwen3-8B配2比特加2/2 KV的AIME从11.0%到47.1%（传输只到单机RAM或SSD、无跨节点与TTFT、TPOT数据，统一内存平台批量补位开销最高25.4%）；按KV感知调度分支记录为单机选择性精度搬运信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "bd0f1f579c8ae3920130bb62",
+          "issue_date": "2026-11-09",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.02583v1"
+          ],
+          "reason": "2026-11-09 已发布日报收录：BasisKV用单个共享Value低秩潜变量同时压缩Value缓存、张量并行通信与Key路由开销：每卡注意力输出先投影成低维潜变量再经保源AllGather通信、低秩因子对完整输出联合优化；8卡L40S上Llama-3.1-8B张量并行端到端最高1.42倍于稠密、TTFT由34.6秒降至24.7秒、LongBench平均46.91对47.02略降（实验全部单机、无跨节点KVCache传输、AllGather通信量字节数未披露）；按KV感知调度分支记录为模型侧压缩通信量信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "c1d02abf4e06c53a69c9fcbd",
+          "issue_date": "2026-11-09",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.37779v1"
+          ],
+          "reason": "2026-11-09 已发布日报收录：SelectKV在多智能体交接点只压缩新生成的KV区并保护继承前缀，HyLaMAS让全注意力KV与GDN循环、卷积状态跨智能体持续传递，分别以选择式KV压缩与双通道状态共享降低交接负载：SelectKV-90降KV负载9.7-9.9%、精度持平至最多降6分，HyLaMAS在2B上较文本传递少解码74-80%的token、快2.10-2.78倍（每基准仅100例且置信区间宽、计时不含跨设备传输、作者称逻辑负载减少不等于网络节省、无TTFT与TPOT数据）；按KV感知调度分支记录为发送侧状态裁剪信号，不据此改变阶段判断。"
         }
       ],
       "open_questions": [
@@ -534,7 +566,11 @@
         "3dd51be07a45b1e941acd36f",
         "7f0b0c6b2aa5f613daa8fe33",
         "e1f773047c893e5172859665",
-        "7a7fc63f8c40f2385b0d4aeb"
+        "7a7fc63f8c40f2385b0d4aeb",
+        "7b26f3ab98225b6ba4a657f8",
+        "131a5cafc84bcebccc2048c3",
+        "bd0f1f579c8ae3920130bb62",
+        "c1d02abf4e06c53a69c9fcbd"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.28150v1",
@@ -590,7 +626,11 @@
         "https://arxiv.org/abs/2610.28223v1",
         "https://arxiv.org/abs/2611.04382v2",
         "https://arxiv.org/abs/2610.41160v1",
-        "https://arxiv.org/abs/2610.04313v1"
+        "https://arxiv.org/abs/2610.04313v1",
+        "https://arxiv.org/abs/2611.07542v1",
+        "https://arxiv.org/abs/2611.08363v1",
+        "https://arxiv.org/abs/2611.02583v1",
+        "https://arxiv.org/abs/2610.37779v1"
       ]
     },
     {
@@ -1071,7 +1111,7 @@
   ],
   "schema_version": 1,
   "version": 3,
-  "change_type": "material_change",
+  "change_type": "no_material_change",
   "history": [
     {
       "version": 1,
@@ -1378,6 +1418,19 @@
         "7f0b0c6b2aa5f613daa8fe33",
         "e1f773047c893e5172859665",
         "f64c6bb8eabfaffd7081a26e"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_56129ba5ba25ad5fd744",
+      "issue_date": "2026-11-09",
+      "change_type": "no_material_change",
+      "version": 3,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "131a5cafc84bcebccc2048c3",
+        "7b26f3ab98225b6ba4a657f8",
+        "bd0f1f579c8ae3920130bb62",
+        "c1d02abf4e06c53a69c9fcbd"
       ]
     }
   ]

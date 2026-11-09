@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6da6568f4c0048ae6b18",
+  "identity": {
+    "problem_key": "sharded_muon_optimizer_cross_shard_communication",
+    "mechanism_key": "shard_aligned_block_diagonal_preconditioning",
+    "target_key": "fsdp_llm_training_gpu_cluster"
+  },
+  "idea_type": "solution_concept",
+  "title": "Dobb以与分片对齐的块对角预处理消除参数分片训练中Muon类优化器的跨卡通信",
+  "problem": "参数分片（FSDP）训练下，Muon类矩阵优化器的预处理需要跨分片通信：Dion在32卡H100上单次优化器调用耗时124.1毫秒，优化器专属跨卡载荷拖累分片训练，使Muon类优化器难以在大规模参数分片训练中实用。",
+  "hypothesis": "若把预处理限制在与FSDP分片重合的块对角特征基内本地执行——用对角块近似激活二阶矩并在块内维护完整基，把动量投影到基上做符号归一化后重建更新，仅每9步同步激活二阶矩——优化器专属跨卡载荷可降为零，优化器调用时延降至与AdamW持平，且块对角近似带来的验证损失差距可控。",
+  "mechanism": "用对角块近似激活二阶矩并在块内维护完整基，动量投影到基上做符号归一化后重建更新；块与FSDP分片重合时更新本地完成，优化器专属跨卡载荷降为零，仅每9步同步激活二阶矩。",
+  "target": "FSDP参数分片的LLM训练（GPT-2 XL在32卡H100上的实测口径）",
+  "expected_effect": "GPT-2 XL在32卡H100上优化器调用由Dion的124.1毫秒降至9.2毫秒、与AdamW持平；验证损失2.476，仍高于全秩Dion的2.453。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（参数分片训练下Muon类矩阵优化器需要跨分片通信、Dion优化器调用124.1毫秒）、可解释机制（预处理限制在与分片对齐的块对角特征基内本地执行：对角块近似激活二阶矩、块内完整基上符号归一化重建更新、仅每9步同步二阶矩）、目标对象（FSDP参数分片的LLM训练、32卡H100）与可检验效应（优化器调用降至9.2毫秒与AdamW持平、验证损失2.476对全秩Dion的2.453），四要素齐备且与既有候选及Idea的身份元组不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "22b7fe2ad04be537aa7205d5",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.39412v1"
+      ],
+      "reason": "Dobb记录给出问题（参数分片训练下Muon类矩阵优化器需要跨分片通信）、机制（预处理限制在与分片对齐的块对角特征基内本地执行：用对角块近似激活二阶矩并在块内维护完整基，动量投影到基上做符号归一化后重建更新，块与FSDP分片重合时更新本地完成，仅每9步同步激活二阶矩）、目标（FSDP参数分片的LLM训练，GPT-2 XL与32卡H100）与可检验效应（优化器调用由Dion的124.1毫秒降至9.2毫秒、与AdamW持平，验证损失2.476仍高于全秩Dion的2.453），并给出Qwen3实验为随机初始化计时且无质量结果与Muon基线、跨分片载荷为解析计数的边界。",
+      "independence_group": "arxiv:2610.39412"
+    }
+  ],
+  "evidence_item_ids": [
+    "22b7fe2ad04be537aa7205d5"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.39412v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.39412"
+  ],
+  "unknowns": [
+    "Qwen3实验仅为随机初始化计时，无质量结果与Muon类基线，更大规模模型上的质量影响未知",
+    "优化器调用之外的跨分片载荷结论为解析计数而非端到端实测",
+    "验证损失2.476仍高于全秩Dion的2.453，块对角近似的质量代价与通信节省的权衡边界未刻画",
+    "单一arXiv v1预印本独立分组，缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有FSDP参数分片集群上复现与分片对齐的块对角预处理（对角块近似激活二阶矩、块内符号归一化重建更新、按周期同步二阶矩），对照跨分片全基预处理与AdamW的优化器调用时延及训练质量。",
+    "inputs": [
+      "FSDP参数分片的LLM训练负载（GPT-2 XL或Qwen类）",
+      "块对角基与分片对齐配置及二阶矩同步周期",
+      "多卡GPU集群与优化器调用计时剖析"
+    ],
+    "baselines": [
+      "跨分片全基预处理的Dion",
+      "AdamW分片训练"
+    ],
+    "metrics": [
+      "优化器调用时延",
+      "验证损失",
+      "优化器跨分片通信量"
+    ],
+    "support_criteria": [
+      "优化器调用时延降至与AdamW持平的量级，且验证损失相对全秩Dion的差距可控"
+    ],
+    "reject_criteria": [
+      "块对角近似的质量损失抵消通信节省，或块与分片不对齐时跨卡载荷复现使收益消失"
+    ],
+    "limitations": [
+      "首版仅覆盖GPT-2 XL与32卡H100及每9步同步的配置，更大模型、其他分片策略与同步周期未验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且与既有候选及Idea的身份元组不同；但仅有单一arXiv预印本独立分组支撑，Qwen3实验为随机初始化计时且无质量结果与Muon基线、跨分片载荷为解析计数、验证损失仍高于全秩Dion，缺独立复现与适用边界，先观察。",
+  "related_candidate_ids": [
+    "candidate_2869e9753cbf999dc290"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_828995ac9a99882a0144",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且与既有候选及Idea的身份元组不同；但仅有单一arXiv预印本独立分组支撑，Qwen3实验为随机初始化计时且无质量结果与Muon基线、跨分片载荷为解析计数、验证损失仍高于全秩Dion，缺独立复现与适用边界，先观察。",
+      "evidence_item_ids": [
+        "22b7fe2ad04be537aa7205d5"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

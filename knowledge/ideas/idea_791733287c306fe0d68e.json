@@ -32,6 +32,14 @@
         "https://arxiv.org/abs/2608.30310v2"
       ],
       "reason": "Tail-Replay 独立实现同一机制：5%-10% 重放保留 92.8%-99.9% 质量、32K 下 TTFT 最高加速 14.32 倍，重叠传输与 FFN 跳过较串行再降 18%-42%，构成跨工作线佐证。"
+    },
+    {
+      "item_id": "223dedc5cf9f3e09f0dcd895",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.18143v1"
+      ],
+      "reason": "RadixFlow 补上混合模型页粒度前缀复用的执行层证据：命中还需匹配边界处的循环或卷积状态，分配失败终止扫描会留下空闲批位；状态就绪遍历把全局扫描屏障改为局部等待、被阻塞消费者等下轮复查、其余可行分支照常进批后，五个混合模型时延降 3%-24%、轮数降 11%-44%，复用率不变而时延下降（单节点 vLLM、每请求单 token 解码的预填主导负载）；跨条目推断(inferred)：页粒度混合前缀复用除状态重建外还需命中边界的状态就绪跟踪，调度层改进可在不提高命中率下兑现收益，与尾部重放机制互补。"
     }
   ],
   "evidence_against": [],
@@ -40,7 +48,8 @@
     "多请求并发与连续批处理下的重放路径开销",
     "PD 分离部署与 MoE 混合模型行为",
     "真实 agentic 多轮流量与长尾前缀分布",
-    "无衰减门控或门控形式不同的线性注意力骨干是否同样适用"
+    "无衰减门控或门控形式不同的线性注意力骨干是否同样适用",
+    "命中边界状态就绪跟踪与重放重建路径在连续批处理下的联合开销（RadixFlow 证据为预填主导负载，无解码侧指标）"
   ],
   "validation_plan": {
     "mode": "benchmark",
@@ -78,7 +87,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-09-30",
-  "last_updated_issue": "2026-10-29",
+  "last_updated_issue": "2026-11-09",
   "decision_log": [
     {
       "event_id": "idea_decision_28fd9622c2c3f582bc29",
@@ -90,6 +99,17 @@
       "evidence_item_ids": [
         "01cc758fee82d15570fa42a8",
         "a356fb1d228c266c8744ca41"
+      ]
+    },
+    {
+      "event_id": "idea_decision_e5e9792133bc560905a1",
+      "issue_date": "2026-11-09",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增混合模型前缀缓存执行层证据：RadixFlow 状态就绪遍历把命中边界状态匹配失败从全局扫描屏障改为局部等待，五个混合模型时延降 3%-24%、轮数降 11%-44% 且不改动缓存存储，说明页粒度复用需配套状态就绪调度，与 SuffixReplay/Tail-Replay 构成第三条独立工作线。",
+      "evidence_item_ids": [
+        "223dedc5cf9f3e09f0dcd895"
       ]
     }
   ]

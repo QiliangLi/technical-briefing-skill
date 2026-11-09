@@ -208,13 +208,45 @@
         "https://arxiv.org/abs/2611.06513v1"
       ],
       "reason": "HELIX以编译期动态规划为异构加速器的算子划分选宿主，注意力/FFN切分下Bamba 9B单步解码约1.7-3.2倍，但大批量时传输时延掩盖收益、多数划分退回GPU；作为相邻证据支持传输代价存在随批量增长的阈值结构（结果为画像估计的单步解码时延而非端到端指标、3DCIM与DRAM-PIM多为仿真、不涉KVCache与网络侧机制）。"
+    },
+    {
+      "item_id": "7b26f3ab98225b6ba4a657f8",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07542v1"
+      ],
+      "reason": "华为FlashOffloading以主机DRAM为权威KV副本并按阶段切换驻留粒度，prefill四层滚动HBM缓存逐层回载并与计算重叠、decode配16k热缓存、反向稀疏索引把缺失查询并入top-k过程；32卡Ascend910C与GLM-5.2上30毫秒TPOT约束下prefill吞吐最高升1.38倍、decode最高1.91倍，512k与1M序列仅在双向卸载下可服务；把主机内存侧全量卸载加入传输/重算/就地交叉点假设的对照策略族（吞吐提升以TPOT恶化为代价、依赖模型原生稀疏性、未见跨节点KV传输指标）。"
+    },
+    {
+      "item_id": "131a5cafc84bcebccc2048c3",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08363v1"
+      ],
+      "reason": "StrataFlux按重要性只为关键信道与token组从主机RAM或SSD流式补取高精度位、以提前或滞后距离使传输与计算重叠并在减速预算内自动选参，2比特权重下Llama-3.1-8B混淆度9.46到8.40并保留量化吞吐95.4%、Qwen3-8B配2比特加2/2 KV的AIME从11.0%到47.1%；支持按重要性选择传输粒度的机制前提（仅单机RAM/SSD、无跨节点与TTFT/TPOT数据，统一内存平台批量补位开销最高25.4%）。"
+    },
+    {
+      "item_id": "bd0f1f579c8ae3920130bb62",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02583v1"
+      ],
+      "reason": "BasisKV用单个共享Value低秩潜变量同时压缩Value缓存、张量并行AllGather通信与Key路由开销，8卡L40S上Llama-3.1-8B端到端最高1.42倍于稠密、TTFT由34.6秒降至24.7秒、LongBench平均46.91对47.02；进一步支持传输字节量可在模型侧预先压缩的判断（实验全部单机、无跨节点KVCache传输、AllGather通信量字节数未披露）。"
+    },
+    {
+      "item_id": "c1d02abf4e06c53a69c9fcbd",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.37779v1"
+      ],
+      "reason": "SelectKV在多智能体交接点只压缩新生成的KV区并保护继承前缀（SelectKV-90降KV负载9.7-9.9%、精度持平至最多降6分），HyLaMAS让全注意力KV与GDN循环、卷积状态跨智能体持续传递（2B上较文本传递少解码74-80%的token、快2.10-2.78倍）；作为发送侧状态裁剪的边界证据（每基准仅100例、置信区间宽、计时不含跨设备传输，作者明言逻辑负载减少不等于网络节省，无TTFT与TPOT数据）。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
     "多租户 P95/P99 下的交叉点是否稳定。",
     "代价预测错误与画像漂移会造成多大回退。",
-    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）的增量收益尚无对照数据。"
+    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）与主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）的增量收益尚无对照数据。"
   ],
   "validation_plan": {
     "mode": "simulation",
@@ -248,7 +280,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-02",
-  "last_updated_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-09",
   "decision_log": [
     {
       "event_id": "idea_decision_4f7da6ed9342bd9a8339",
@@ -422,6 +454,20 @@
         "7f0b0c6b2aa5f613daa8fe33",
         "7a7fc63f8c40f2385b0d4aeb",
         "f64c6bb8eabfaffd7081a26e"
+      ]
+    },
+    {
+      "event_id": "idea_decision_52e041e0490059c8d057",
+      "issue_date": "2026-11-09",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增主机内存权威副本全量卸载、按重要性流式补精度位、共享低秩潜变量压缩与发送侧状态裁剪四条证据：传输/重算/就地交叉点假设的对照面从GPU侧扩展到主机内存侧与发送侧，且SelectKV计时不含跨设备传输、逻辑负载减少不等于网络节省；状态保持observing，三策略在统一负载下的完整对照仍缺失。",
+      "evidence_item_ids": [
+        "7b26f3ab98225b6ba4a657f8",
+        "131a5cafc84bcebccc2048c3",
+        "bd0f1f579c8ae3920130bb62",
+        "c1d02abf4e06c53a69c9fcbd"
       ]
     }
   ]

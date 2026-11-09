@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6e314e59bef42062ba3c",
+  "identity": {
+    "problem_key": "hybrid_prefix_state_mismatch_idle_batch_slots",
+    "mechanism_key": "state_ready_traversal_local_wait_scheduling",
+    "target_key": "hybrid_llm_radix_prefix_cache_scheduler"
+  },
+  "idea_type": "solution_concept",
+  "title": "状态就绪遍历调度填补混合LLM前缀缓存命中边界的状态等待空泡",
+  "problem": "混合LLM的前缀缓存命中还需匹配命中边界处的循环或卷积状态；原生Radix调度在状态分配失败时终止整轮扫描，留下空闲批位（执行空泡），前缀命中不等于可立即执行，复用收益无法在不提高命中率的情况下兑现。",
+  "hypothesis": "把全局扫描屏障改为局部等待——状态未就绪的消费者只等下一轮复查，调度器继续扫描并用可行的独立分支填充空闲行，不改动缓存存储与原生状态检查——可在前缀复用率不变的情况下降低混合模型服务时延与调度轮数。",
+  "mechanism": "状态就绪遍历把全局扫描屏障改为局部等待；被阻塞消费者等到下轮复查；调度器继续扫描并用可行的独立分支填充空闲批位；不改动缓存存储与原生状态检查。",
+  "target": "混合LLM服务引擎（vLLM类RadixTree前缀缓存调度器）的批调度路径",
+  "expected_effect": "五个混合模型较原生Radix时延降3%至24%、轮数降11%至44%，复用率不变；Qwen3.5-27B轮数降44%而时延仅降2.8%至3.5%。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题（前缀命中还需匹配边界循环或卷积状态、分配失败终止扫描留下空闲批位）、可解释机制（状态就绪遍历改全局扫描屏障为局部等待、可行分支填充空闲行）、目标对象（vLLM类混合模型前缀缓存调度器）与可检验效应（五个混合模型时延降3%-24%、轮数降11%-44%且复用率不变的对照）。"
+  },
+  "evidence": [
+    {
+      "item_id": "223dedc5cf9f3e09f0dcd895",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.18143v1"
+      ],
+      "reason": "RadixFlow给出问题（混合LLM前缀缓存命中还需匹配边界处的循环或卷积状态，分配失败终止扫描留下空闲批位）、机制（状态就绪遍历把全局扫描屏障改为局部等待，被阻塞消费者等下轮复查，其余可行分支照常进批，不改动缓存存储与原生状态检查）、目标（单节点vLLM上的混合模型前缀缓存调度）与可检验效应（五个混合模型较原生Radix时延降3%-24%、轮数降11%-44%且复用率不变；边界为每请求只解码一个token的预填主导负载、无TTFT或TPOT类解码指标）。",
+      "independence_group": "arxiv:2610.18143"
+    }
+  ],
+  "evidence_item_ids": [
+    "223dedc5cf9f3e09f0dcd895"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.18143v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.18143"
+  ],
+  "unknowns": [
+    "评测为单节点vLLM上每请求只解码一个token的预填主导负载，无TTFT或TPOT类解码指标",
+    "时延收益因模型而异（Qwen3.5-27B轮数降44%而时延仅降2.8%-3.5%），收益不均的归因未给出",
+    "单一预印本，无独立工作线复现",
+    "状态就绪等待与状态重建类机制（如尾部重放）在同一引擎下的联合开销未评估"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在vLLM类radix前缀缓存调度器中实现状态就绪遍历（局部等待加可行分支填充空闲批位），对照原生Radix全局扫描屏障调度。",
+    "inputs": [
+      "多个混合架构模型的服务负载（含共享前缀与命中边界状态不就绪场景）",
+      "状态不就绪比例与请求到达率扫描",
+      "批规模与缓存容量扫描",
+      "解码侧TTFT/TPOT指标插桩（原始评测缺失）"
+    ],
+    "baselines": [
+      "原生Radix调度（分配失败终止扫描）",
+      "无前缀缓存全量重算"
+    ],
+    "metrics": [
+      "请求时延与调度轮数",
+      "前缀复用率",
+      "空闲批位占比",
+      "TTFT与TPOT（解码侧）"
+    ],
+    "support_criteria": [
+      "复用率不变下时延与轮数下降在多个混合模型上复现且解码侧指标不劣化"
+    ],
+    "reject_criteria": [
+      "下轮复查的等待在低到达率或可行分支不足时抵消收益",
+      "可行分支填充加剧缓存碎片使复用率下降"
+    ],
+    "limitations": [
+      "原始评测限单节点vLLM预填主导（每请求单token解码）负载"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有候选/Idea身份不同（尾部重放与检查点方案解决状态重建与复用粒度，本项解决命中后的调度就绪），但证据为单一预印本，评测限单节点vLLM预填主导（每请求单token解码）负载且无TTFT/TPOT解码指标，无独立支持；且该证据已于本期（2026-11-09 evidence_added）并入idea_791733287c306fe0d68e作为互补证据线，调度机制是否单列谱系待人工决策。",
+  "related_candidate_ids": [
+    "candidate_7706ef7dd120bbd9856f"
+  ],
+  "related_idea_ids": [
+    "idea_791733287c306fe0d68e"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_f62be7e98bc59c912239",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有候选/Idea身份不同（尾部重放与检查点方案解决状态重建与复用粒度，本项解决命中后的调度就绪），但证据为单一预印本，评测限单节点vLLM预填主导（每请求单token解码）负载且无TTFT/TPOT解码指标，无独立支持；且该证据已于本期（2026-11-09 evidence_added）并入idea_791733287c306fe0d68e作为互补证据线，调度机制是否单列谱系待人工决策。",
+      "evidence_item_ids": [
+        "223dedc5cf9f3e09f0dcd895"
+      ],
+      "actor": "agent"
+    }
+  ]
+}
