@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_94a4ef184e831e5cec4e",
+  "identity": {
+    "problem_key": "agent_verbatim_tool_call_loops",
+    "mechanism_key": "self_mined_loop_break_action_pair_dpo",
+    "target_key": "agent_tool_call_policy_model"
+  },
+  "idea_type": "solution_concept",
+  "title": "自挖掘循环—破环动作偏好对DPO抑制长时程Agent重复工具调用",
+  "problem": "长时程Agent会原样重发先前工具调用形成循环，浪费步数与token；历史压缩还会放大该行为，使Qwen3-8B在CodeGym的循环率由29.0%升至57.3%。",
+  "hypothesis": "从Agent自身轨迹自监督挖出循环动作与其后首个破环动作构成偏好对做DPO训练，挖掘只用动作与观测、不用奖励状态或裁判，可在成功率不降的前提下大幅降低循环率、步数与token消耗。",
+  "mechanism": "循环检测定位原样重发的循环动作作负例，取其后首个打破循环的动作作正例构成偏好对供DPO训练；挖掘仅依赖动作与观测序列，不使用奖励、状态或外部裁判。",
+  "target": "长时程工具调用Agent的策略模型后训练（抑制重复工具调用的偏好优化）",
+  "expected_effect": "Qwen3-8B在CodeGym循环率由57.3%降至6.1%，步数降至4.67、token降47%，成功率25.9%对25.1%持平；混入跨域对后成功率30.3%。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "c0a45071e1dd5bc405236eb9",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.19376v1"
+      ],
+      "reason": "《DeLoop》给出问题（长时程Agent原样重发先前工具调用，历史压缩使Qwen3-8B循环率由29.0%升至57.3%）、机制（循环动作作负例、其后首个破环动作作正例的偏好对，自监督挖掘只用动作与观测，不用奖励、状态或裁判，供DPO训练）与可检验效应（CodeGym循环率57.3%降至6.1%、步数降至4.67、token降47%、成功率25.9%对25.1%持平、混入跨域对后30.3%）。",
+      "independence_group": "arxiv:2610.19376"
+    }
+  ],
+  "evidence_item_ids": [
+    "c0a45071e1dd5bc405236eb9"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.19376v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.19376"
+  ],
+  "unknowns": [
+    "仅在Qwen3-8B单一规模与CodeGym单一环境实测，跨规模与跨环境迁移未验证（跨域对仅作为混入数据把成功率提到30.3%）",
+    "修复以降循环为主：修复后成功率30.3%仍低于全历史基线31.7%，成功率的收益边界未量化",
+    "仅针对完全重复的原样重发调用，参数微变的近似循环与语义级重复不覆盖",
+    "机制需训练策略而非改Harness，对仅API访问的模型不可用",
+    "内部轨迹的循环率基线与压缩选型的循环风险未经内部量化"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部长时程工具Agent上实现循环—破环动作对自监督挖掘与DPO训练，与不训练基线及仅循环检测的Harness侧处置对比。",
+    "inputs": [
+      "内部长时程Agent任务轨迹",
+      "循环检测与破环动作配对挖掘器",
+      "DPO训练管线与跨域偏好对来源"
+    ],
+    "baselines": [
+      "不做循环偏好训练的基线模型",
+      "仅循环检测告警或截断的Harness侧处置"
+    ],
+    "metrics": [
+      "循环率",
+      "任务成功率",
+      "平均步数",
+      "token消耗"
+    ],
+    "support_criteria": [
+      "循环率显著下降且成功率不降，步数与token同时下降"
+    ],
+    "reject_criteria": [
+      "循环率下降以成功率显著下降为代价，或挖掘出的循环对在内部轨迹中覆盖率不足"
+    ],
+    "limitations": [
+      "原始证据仅覆盖Qwen3-8B与CodeGym单一环境，且修复后成功率仍低于全历史基线"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份三元组区别于既有候选与Idea（问题域与已晋升的调用前状态监督Idea idea_a90d71c35ea8a0f208da 相邻但机制为策略模型侧自挖掘偏好对DPO训练而非Harness侧分派前监督，与轨迹对比规则挖掘候选 candidate_ef98e7486df1248c196e 的成败对比对象也不同），但证据仅一个独立来源组，原边界为仅Qwen3-8B与CodeGym实测、修复后成功率30.3%仍低于全历史31.7%、仅覆盖完全重复调用且需可训练策略而非改Harness；且同一证据本期已被 idea_11ed656a018dc7b2c2d3（前缀可观测失败信号）与 idea_8aa3d66177596baef1ac（压缩回本核算的重复调用维度）吸收为相邻/问题侧证据，是否单列候选待人工谱系决定。",
+  "related_candidate_ids": [
+    "candidate_a90d71c35ea8a0f208da",
+    "candidate_ef98e7486df1248c196e"
+  ],
+  "related_idea_ids": [
+    "idea_a90d71c35ea8a0f208da",
+    "idea_11ed656a018dc7b2c2d3",
+    "idea_8aa3d66177596baef1ac"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_3738287edb0e7a609c7b",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份三元组区别于既有候选与Idea（问题域与已晋升的调用前状态监督Idea idea_a90d71c35ea8a0f208da 相邻但机制为策略模型侧自挖掘偏好对DPO训练而非Harness侧分派前监督，与轨迹对比规则挖掘候选 candidate_ef98e7486df1248c196e 的成败对比对象也不同），但证据仅一个独立来源组，原边界为仅Qwen3-8B与CodeGym实测、修复后成功率30.3%仍低于全历史31.7%、仅覆盖完全重复调用且需可训练策略而非改Harness；且同一证据本期已被 idea_11ed656a018dc7b2c2d3（前缀可观测失败信号）与 idea_8aa3d66177596baef1ac（压缩回本核算的重复调用维度）吸收为相邻/问题侧证据，是否单列候选待人工谱系决定。",
+      "evidence_item_ids": [
+        "c0a45071e1dd5bc405236eb9"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

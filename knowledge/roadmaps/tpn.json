@@ -3,8 +3,8 @@
   "topic_id": "tpn",
   "topic_name": "状态感知网络、TPN",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-02",
-  "summary": "TPN方向本期证据首次把网络元件侧机制连成证据链：INC-MoE将专家并行MoE的dispatch/combine集合通信卸载到网内计算交换机并以链路双向复用，TTFT降低20.2%–33.1%、每加速器prefill吞吐提升25.3%–49.5%、并发AG与RS等效带宽提升25.6%–31.8%（交换机由加速器仿真而非硬件实现，仅评估OLMoE-1B-7B的prefill，N=8增益为分析值）；ThunderEP在PCIe消费级GPU上以单步DMA把MoE激活通信流量减40%、prefill最高加速1.66倍（仅单节点、不涉KVCache与多节点）；异构GPU流水线的精确完成时间界证明异步传输下逐次通信时延低于计算松弛量时只进常数项、不改变稳态吞吐斜率，评估网络侧收益应先比对这一阈值再谈扩带宽；DolphinRouting在H20集群vLLM加Mooncake真实部署中把PD路由从固定长度阈值升级为按请求簇查表，P90 TTFT降5.7–7.9%、P90 TPOT降2.6–10.1%（基线仅Dynamo长度规则，吞吐与KV传输量未报告）。当前判断：结构化推理流量的收益来自路径与交换机机制及调度时序而非裸带宽，确定路径（ZCube）、按负载模式重构（MoSE）、光电路预留与网内卸载已构成可检验的机制族，但均未在多租户生产网与TPOT尾部分位口径下验证；跨节点KV放置与带宽调度空位仍在，这是把TPN从证据时间线升级为阶段判断的关键观察点。",
+  "updated_by_issue": "2026-11-06",
+  "summary": "TPN方向本期证据把KV跨网传输的收益从裸带宽推进到路径机制、压缩执行与GPU侧基线的联合口径：ARK以纯端主机软件为KVCache大象流做spine路径预留（复制预留表、预计算源端口偏移让ECMP哈希到空闲spine、经低带宽控制信道广播），不改交换机消除ECMP冲突热点，16GPU两层spine-leaf包级仿真中平均流完成时间最多降27.3%、P95最多降34.0%（全部为仿真、收益集中于拥而未饱和区间）；FastKVComp把KV压缩的分布变换与量化融合为单个TileLang核并以可搜索LC后端替换nvCOMP，双节点200-Gb/s InfiniBand上JCT降30.2%至38.6%、输出吞吐升44.2%至62.6%，证明压缩执行过慢会抵消通信节省（每配置仅50请求、无TTFT/TPOT/P95与模型质量数字）；MOIRA在vLLM内按注意力覆盖度逐层逐头自适应保留KV页，RULER 128k、gamma=0.99时精度与稠密FA3持平、仅读约30%页、TPOT降2.2至2.5倍（仅单GPU、无跨节点数据）；HELIX的异构算子级划分在大批量时传输时延掩盖收益、多数划分退回GPU（画像估计的单步时延而非端到端）。当前判断：KV跨网优化的可行收益取决于路径机制（确定路径ZCube、光电路预留、按负载模式重构MoSE、网内卸载INC-MoE、端主机预留ARK）与执行侧代价（压缩执行、GPU侧稀疏读取）的联合权衡而非单点扩带宽；判断升级的观察点是网络侧KV调度相对MOIRA级GPU侧自适应稀疏基线给出P95/P99与TPOT口径的增量收益，目前尚无任何对照。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -447,9 +447,36 @@
             "https://arxiv.org/abs/2610.28223v1"
           ],
           "reason": "2026-10-29 已发布日报收录：内核级剖析三代GPU上长上下文本地推理的解码过程，自注意力主导运行时间却未耗尽带宽与算力，注意力内核在所有上下文长度均未达带宽或算力roofline上限，GPT-2最大上下文时线性投影占用70-80%带宽而注意力仅约15%（仅研究解码阶段，无端到端TTFT或吞吐数据，单卡本地剖析不含任何跨节点KV传输证据）；按KV感知调度分支记录为单卡对照信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "7f0b0c6b2aa5f613daa8fe33",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.04382v2"
+          ],
+          "reason": "2026-11-06 已发布日报收录：FastKVComp 面向分离式推理优化KV压缩数据路径的执行而非压缩比，把分布变换与量化融合为单个TileLang核、以可搜索LC无损压缩后端替换nvCOMP，双节点200-Gb/s InfiniBand上JCT较原始传输降30.2%至38.6%、输出吞吐升44.2%至62.6%（每配置仅50请求、无TTFT、TPOT、P95与模型质量数字）；按KV感知调度分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "e1f773047c893e5172859665",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.41160v1"
+          ],
+          "reason": "2026-11-06 已发布日报收录：ARK以纯端主机软件为KVCache大象流做spine路径预留，每台主机维护复制的预留表、控制器选空闲spine并用预计算源端口偏移让ECMP哈希到该spine、经低带宽控制信道广播预留，不改交换机消除ECMP冲突热点，16GPU两层spine-leaf包级仿真中平均流完成时间最多降27.3%、P95最多降34.0%、平均TTFT最多降12.9%（全部为仿真且规模仅16GPU、收益集中于拥而未饱和区间、端到端TTFT为建模值）；按KV感知调度分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "7a7fc63f8c40f2385b0d4aeb",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.04313v1"
+          ],
+          "reason": "2026-11-06 已发布日报收录：MOIRA在vLLM中提供免训练自适应稀疏解码，按注意力覆盖度逐层逐头保留满足gamma目标的最小KV页集并整步保持在CUDA图内，RULER 128k、gamma=0.99时精度与稠密FA3持平、仅读约30%页、TPOT降2.2至2.5倍、并发16时吞吐升45%至51%（仅单GPU评估、无跨节点KV传输、TTFT或网络数据）；按KV感知调度分支记录为GPU侧强基线信号，不据此改变阶段判断。"
         }
       ],
-      "open_questions": [],
+      "open_questions": [
+        "网络侧KV传输与带宽调度的增量收益尚无相对GPU侧自适应稀疏解码基线的对照数据（MOIRA单卡128k解码仅读约30%页、TPOT降2.2至2.5倍）。",
+        "KV压缩执行开销尚未进入KV调度代价模型（FastKVComp证明压缩执行过慢会抵消200-Gb/s链路上的通信节省）。"
+      ],
       "evidence_item_ids": [
         "081c683d89c0a8496e81e918",
         "b3f2652bd5d7b29c134a3ae5",
@@ -504,34 +531,37 @@
         "4b5ef51f782ab2b0cd6102cd",
         "ed4d6f4a29231c530ddb5255",
         "bd2513bdc6f22c272246d5e0",
-        "3dd51be07a45b1e941acd36f"
+        "3dd51be07a45b1e941acd36f",
+        "7f0b0c6b2aa5f613daa8fe33",
+        "e1f773047c893e5172859665",
+        "7a7fc63f8c40f2385b0d4aeb"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2607.07207v1",
-        "https://arxiv.org/abs/2607.10987v1",
-        "https://arxiv.org/abs/2607.11211v1",
-        "https://arxiv.org/abs/2607.21893v1",
-        "https://arxiv.org/abs/2607.22648v1",
-        "https://arxiv.org/abs/2607.27735v1",
         "https://arxiv.org/abs/2607.28150v1",
-        "https://arxiv.org/abs/2608.01526v1",
+        "https://arxiv.org/abs/2607.21893v1",
         "https://arxiv.org/abs/2608.06007v1",
-        "https://arxiv.org/abs/2608.07009v1",
-        "https://arxiv.org/abs/2608.10545v1",
-        "https://arxiv.org/abs/2608.11701v1",
-        "https://arxiv.org/abs/2608.15473v2",
-        "https://arxiv.org/abs/2608.19677v1",
-        "https://arxiv.org/abs/2608.20617v1",
-        "https://arxiv.org/abs/2608.23599v1",
-        "https://arxiv.org/abs/2608.23962v1",
+        "https://arxiv.org/abs/2607.10987v1",
+        "https://arxiv.org/abs/2608.01526v1",
+        "https://arxiv.org/abs/2607.22648v1",
+        "https://arxiv.org/abs/2607.07207v1",
+        "https://arxiv.org/abs/2607.11211v1",
         "https://arxiv.org/abs/2608.26523v1",
+        "https://arxiv.org/abs/2608.20617v1",
+        "https://arxiv.org/abs/2608.23962v1",
+        "https://arxiv.org/abs/2608.23599v1",
         "https://arxiv.org/abs/2608.27513v1",
+        "https://arxiv.org/abs/2608.19677v1",
+        "https://arxiv.org/abs/2608.07009v1",
         "https://arxiv.org/abs/2609.02027v1",
+        "https://arxiv.org/abs/2608.10545v1",
+        "https://arxiv.org/abs/2608.15473v2",
         "https://arxiv.org/abs/2609.04098v1",
-        "https://arxiv.org/abs/2609.05565v1",
-        "https://arxiv.org/abs/2609.05760v1",
         "https://arxiv.org/abs/2609.06940v1",
+        "https://arxiv.org/abs/2609.05565v1",
         "https://arxiv.org/abs/2609.08131v1",
+        "https://arxiv.org/abs/2607.27735v1",
+        "https://arxiv.org/abs/2609.05760v1",
+        "https://arxiv.org/abs/2608.11701v1",
         "https://arxiv.org/abs/2608.05483v1",
         "https://arxiv.org/abs/2609.11744v1",
         "https://arxiv.org/abs/2609.19207v1",
@@ -557,7 +587,10 @@
         "https://arxiv.org/abs/2610.31169v1",
         "https://arxiv.org/abs/2610.21390v1",
         "https://arxiv.org/abs/2610.02732v1",
-        "https://arxiv.org/abs/2610.28223v1"
+        "https://arxiv.org/abs/2610.28223v1",
+        "https://arxiv.org/abs/2611.04382v2",
+        "https://arxiv.org/abs/2610.41160v1",
+        "https://arxiv.org/abs/2610.04313v1"
       ]
     },
     {
@@ -727,16 +760,16 @@
         "ec1ea177b0a399d941b6ce94"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2607.02043v1",
-        "https://arxiv.org/abs/2607.09153v1",
-        "https://arxiv.org/abs/2608.03893v1",
-        "https://arxiv.org/abs/2608.16477v1",
-        "https://arxiv.org/abs/2609.00891v1",
-        "https://github.com/LMCache/LMCache/releases/tag/nightly",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.2",
-        "https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc2",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc2-cu129",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc4-rocm",
+        "https://github.com/LMCache/LMCache/releases/tag/nightly",
+        "https://arxiv.org/abs/2607.02043v1",
+        "https://github.com/LMCache/LMCache/releases/tag/v0.5.3rc2",
+        "https://arxiv.org/abs/2608.03893v1",
+        "https://arxiv.org/abs/2607.09153v1",
+        "https://arxiv.org/abs/2609.00891v1",
+        "https://arxiv.org/abs/2608.16477v1",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.5",
         "https://github.com/LMCache/LMCache/releases/tag/v0.5.4",
         "https://arxiv.org/abs/2609.32259v1",
@@ -897,6 +930,14 @@
             "https://arxiv.org/abs/2610.40292v1"
           ],
           "reason": "2026-11-02 已发布日报收录：DolphinRouting把PD分离路由从固定长度阈值升级为按请求簇离线学习聚合或分离prefill的二值决策：以原始长度、两侧缓存折算ISL与输出长度四个特征聚类，离线为每个簇学一个动作、在线仅查表，SLO奖励为满足端到端时限的请求占比；H20集群、vLLM加Mooncake真实部署中相对Dynamo长度规则P90 TTFT降5.7-7.9%、P90 TPOT降2.6-10.1%（验证只报告P90 TTFT与TPOT，基线仅Dynamo长度规则，吞吐与KV传输量未报告，绝对数值在证据外）；按P/D解耦通信分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "f64c6bb8eabfaffd7081a26e",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.06513v1"
+          ],
+          "reason": "2026-11-06 已发布日报收录：HELIX在编译期以计算图动态规划为每个算子选定宿主，在异构加速器间做算子级LLM推理划分，对注意力/FFN切分Bamba 9B单步解码约1.7-3.2倍、Llama 8B约2.2-1.1倍，大批量时传输时延掩盖收益、多数划分退回GPU（结果为画像估计的单步解码时延而非端到端指标、3DCIM与DRAM-PIM多为仿真、未给出网络侧机制）；按PD解耦通信分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -918,14 +959,15 @@
         "14f554896a5602f09d452905",
         "d113056eb7031993bac2c113",
         "d2349c5d97fce5e346d06f86",
-        "d2334e0d811f04c7dd7eaee4"
+        "d2334e0d811f04c7dd7eaee4",
+        "f64c6bb8eabfaffd7081a26e"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.18002v2",
-        "https://arxiv.org/abs/2608.03741v1",
-        "https://arxiv.org/abs/2609.00993v1",
-        "https://github.com/vllm-project/vllm/releases/tag/v0.24.0",
         "https://github.com/vllm-project/vllm/releases/tag/v0.25.0",
+        "https://arxiv.org/abs/2608.03741v1",
+        "https://github.com/vllm-project/vllm/releases/tag/v0.24.0",
+        "https://arxiv.org/abs/2609.00993v1",
         "https://github.com/vllm-project/vllm/releases/tag/v0.29.0",
         "https://github.com/vllm-project/vllm/releases/tag/v0.26.0",
         "https://arxiv.org/abs/2609.27085v1",
@@ -938,7 +980,8 @@
         "https://arxiv.org/abs/2610.29873v1",
         "https://arxiv.org/abs/2610.32638v1",
         "https://arxiv.org/abs/2610.21815v1",
-        "https://arxiv.org/abs/2610.40292v1"
+        "https://arxiv.org/abs/2610.40292v1",
+        "https://arxiv.org/abs/2611.06513v1"
       ]
     },
     {
@@ -982,9 +1025,9 @@
         "d4a3a688d5c7879541acbb95"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2607.20220v1",
+        "https://www.alibabagroup.com/document-2016703577908576256",
         "https://arxiv.org/abs/2608.28726v1",
-        "https://www.alibabagroup.com/document-2016703577908576256"
+        "https://arxiv.org/abs/2607.20220v1"
       ]
     },
     {
@@ -995,9 +1038,6 @@
       ],
       "status": "emerging",
       "stages": [],
-      "open_questions": [
-        "频率与并行重配置的毫秒到秒级开销在真实多租户网络下对 TTFT/TPOT 的影响尚未量化。"
-      ],
       "evidence_timeline": [
         {
           "item_id": "75e9e9ceb7cc8c00327f122c",
@@ -1016,6 +1056,9 @@
           "reason": "2026-11-02 已发布日报收录：INC-MoE把专家并行MoE推理的dispatch与combine集合通信卸载到网内计算交换机：两次集合通信改为交换机侧AllGather与ReduceScatter、可并发占用链路双向，持久kernel按band重叠通信与专家计算，逐层输出余弦相似度1.0；相对vLLM默认路径TTFT降低20.2%-33.1%、每加速器prefill吞吐提升25.3%-49.5%、并发AG与RS等效带宽提升25.6%-31.8%（交换机由加速器仿真而非硬件实现，仅评估OLMoE-1B-7B的prefill，N=8增益为分析值）；作为面向Token指标的网络优化方向的第二例记录，不据此划分阶段。"
         }
       ],
+      "open_questions": [
+        "频率与并行重配置的毫秒到秒级开销在真实多租户网络下对 TTFT/TPOT 的影响尚未量化。"
+      ],
       "evidence_item_ids": [
         "75e9e9ceb7cc8c00327f122c",
         "108f9f19c75e539258853563"
@@ -1027,8 +1070,8 @@
     }
   ],
   "schema_version": 1,
-  "version": 2,
-  "change_type": "no_material_change",
+  "version": 3,
+  "change_type": "material_change",
   "history": [
     {
       "version": 1,
@@ -1041,6 +1084,12 @@
       "issue_date": "2026-08-23",
       "change_type": "material_change",
       "path": "knowledge/history/roadmaps/tpn/v2.json"
+    },
+    {
+      "version": 3,
+      "issue_date": "2026-11-06",
+      "change_type": "material_change",
+      "path": "knowledge/history/roadmaps/tpn/v3.json"
     }
   ],
   "change_log": [
@@ -1316,6 +1365,19 @@
         "d2334e0d811f04c7dd7eaee4",
         "d2349c5d97fce5e346d06f86",
         "ec1ea177b0a399d941b6ce94"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_2d7f713c3f65977f2aee",
+      "issue_date": "2026-11-06",
+      "change_type": "material_change",
+      "version": 3,
+      "summary": "本期证据改变了分支、阶段、状态或开放问题。",
+      "evidence_item_ids": [
+        "7a7fc63f8c40f2385b0d4aeb",
+        "7f0b0c6b2aa5f613daa8fe33",
+        "e1f773047c893e5172859665",
+        "f64c6bb8eabfaffd7081a26e"
       ]
     }
   ]

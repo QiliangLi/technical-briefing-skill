@@ -3,8 +3,8 @@
   "topic_id": "accelerator_io_datapath",
   "topic_name": "加速器直连I/O与存储数据路径",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-02",
-  "summary": "加速器直连I/O数据路径的主线仍是把发起与控制权推向加速器侧、数据经DMA直达显存：uGDS把NVMe命令生命周期移入用户空间，A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型）；本期五节点PoC以gds_stats计数器证实124012次I/O全部走nvfs DMA、零次兼容回退、聚合读132.1 GiB/s（厂商自测、未测能耗与端到端负载），AWS以GDS把KV缓存分层单客户端吞吐上限由ENA 100 Gbps、EFA 700 Gbps提到1200 Gbps（架构文规格口径、仅限NVIDIA实例且需同可用区），AMD ROCm 10.1为hipFILE补上异步直连快路径但全为定性声明，SCADA/cuObject标准化与Kioxia GP1介质侧持续推进；当前判断：GDS系数据面直连正从厂商宣称进入计数器可验证的工程验证期，控制面出内核（uGDS）可试点KV缓存或向量检索外置但须先评估错误恢复语义并补齐POSIX适配，FlatCake等主源缺失条目与全部无基线厂商数字维持待复核、不作为架构决策依据；第三方复测与时延/能耗/尾时延口径，或uGDS错误恢复与多盘扩展证据出现，即应上调直连路径成熟度判断。",
+  "updated_by_issue": "2026-11-06",
+  "summary": "加速器直连I/O数据路径的主线仍是把发起与控制权推向加速器侧、数据经DMA直达显存：uGDS用户态NVMe路径在A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型），五节点PoC以gds_stats计数器证实124012次I/O全部走nvfs DMA、零次兼容回退、聚合读132.1 GiB/s（厂商自测、未测能耗与端到端负载），AWS以GDS把KV缓存分层单客户端吞吐上限提到1200 Gbps（架构文规格口径、仅限NVIDIA实例且需同可用区）；本期美光AI级NAND路线图把GPU发起小块访问写入头部介质厂商优先级、下一代SSD目标25M-100M IOPS与512TB（纯前瞻无实测、控制器与接口设计未公开），KIOXIA演示512字节随机读20+ MIOPS的近GPU SSD（仅为无测试条件的器件演示），VDURA V12 GA并经Supermicro认证是RDMA直连路径的产品化信号（8-10万GPU与约20 PB均为无基线宣称），NVIDIA官方教程确立用cuFile nvfs/posix计数器审计真实路径的方法（H100上256次1 GiB读全走加速路径、未注册缓冲仍多一次GPU内复制）；当前判断：直连数据路径处于计数器可自证、供给侧（介质、平台、标准化）全面跟进但量化口径仍以厂商宣称为主的工程验证期，uGDS类控制面出内核可试点KV缓存或向量检索外置但须先评估错误恢复语义并补齐POSIX适配，无基线厂商数字与FlatCake等主源缺失条目维持待复核、不作为架构决策依据；第三方复测、时延/能耗/尾时延口径、uGDS错误恢复与多盘扩展证据，或美光/KIOXIA细粒度器件实测交付出现，即应上调直连路径与细粒度介质层的成熟度判断。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -95,6 +95,14 @@
             "https://arxiv.org/abs/2610.06622"
           ],
           "reason": "arXiv预印本2610.06622提出以GPU发起方式处理离散模拟分岔中的低延迟请求与稠密耦合流式传输；证据包只抓到题录页，发现摘要提及的DOCA GPUNetIO与GPU工作队列设计均未经原文核实，可见信息不含存储、NVMe或持久化访问，暂不纳入存储路径观察清单，待摘要或全文出现再确认。"
+        },
+        {
+          "item_id": "17eb246304de167a8bbcdc2a",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://americas.kioxia.com/en-us/business/news/2026/ssd-20261008-1.html"
+          ],
+          "reason": "KIOXIA在OCP 2026演示基于XL-FLASH第三代的增强GP系列NVMe SSD，定位为面向近GPU负载的超高IOPS设备，展台演示宣称512字节随机读20+ MIOPS（技术演示而非宣布量产，无队列深度、盘数、时延、功耗或主机与GPU配置，通稿未描述I/O发起者、控制路径或数据路径的任何变化，近GPU定位在路径层面无依据）；按加速器发起I/O分支记录近GPU介质层器件能力信号，与GP1同族跟踪，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -108,7 +116,8 @@
         "155916e55ef052afb120e3fe",
         "98cb17ffbcfd13c8f4e58ea4",
         "fcc0c18d8d6e0695d8d52b2d",
-        "7185271b4bf979dfc1fcc43c"
+        "7185271b4bf979dfc1fcc43c",
+        "17eb246304de167a8bbcdc2a"
       ],
       "source_urls": [
         "https://blogs.nvidia.com/blog/ai-storage-fms",
@@ -120,7 +129,8 @@
         "https://developer.nvidia.com/blog/expanding-ai-storage-access-with-nvidia-cuobject-and-the-nvidia-scada-server-sdk",
         "https://arxiv.org/abs/2610.24328",
         "https://www.hotstorage.org/2026/program.html",
-        "https://arxiv.org/abs/2610.06622"
+        "https://arxiv.org/abs/2610.06622",
+        "https://americas.kioxia.com/en-us/business/news/2026/ssd-20261008-1.html"
       ]
     },
     {
@@ -212,6 +222,22 @@
             "https://arxiv.org/abs/2610.38355"
           ],
           "reason": "2026-11-02 已发布日报收录：FlatCake预印本面向LLM服务的KV cache存储架构并主张扁平化设计，但抓取仅得arXiv页面框架，地址空间布局、SSD到GPU传输路径与队列设计在可见证据中完全缺失，发现摘要中的命中率与时延数字未被主源证实、不计为事实；标记待复核，待摘要或正文可见后再评估其与GPUDirect Storage直连路径的相关性，本期不据此支撑任何路径判断。"
+        },
+        {
+          "item_id": "6f00f72aa1d087f4c9132647",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://www.vdura.com/2026/09/30/vdura-data-platform-v12-now-generally-available-the-hyperscaler-storage-playbook-to-ai-factories-and-neoclouds-on-supermicro"
+          ],
+          "reason": "VDURA发布V12存储平台并经Supermicro三款产品认证，宣称RDMA数据路径让CPU退出GPU到存储的传输、GPU侧DirectFlow客户端仅占约191 MB内存与零CPU核、单软件栈支撑8到10万个GPU与约20 PB可用容量（全部性能与规模数字无测量基线、工作负载与独立验证，RDMA路径的复制次数与错误恢复机制亦未说明）；计入RDMA直连路径的部署成熟度信号（GA与平台认证），按加速器存储栈分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "d59c4f170f90422f4b1de849",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://developer.nvidia.com/blog/how-to-read-data-into-gpu-memory-in-python-with-nvidia-gpudirect-storage"
+          ],
+          "reason": "NVIDIA官方教程证实KvikIO调用GPUDirect Storage时存在两层回退（按兼容模式与16KiB阈值决定走cuFile还是POSIX主机暂存，cuFile再选nvidia-fs内核路径或CPU暂存路径），返回值无法说明数据是否绕经主机内存，需用cuFile统计计数核实真实路径；H100上执行1 GiB读取256次操作全部走nvidia-fs加速路径、零次CPU暂存，强制兼容模式后操作改计入posix计数器（教程只验证路径选择，未报告吞吐、时延或CPU与GPU利用率，依赖H100、ext4与关闭IOMMU等条件，未注册缓冲仍多一次GPU内复制）；按加速器存储栈分支记录路径审计方法，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -225,7 +251,9 @@
         "363c4ba5b9dc1ce36a6f1bec",
         "c9a391c1a7a6260629294381",
         "74f57e627ff3e61c3d6c26a1",
-        "4c68d8cf2adfe933d7dd7040"
+        "4c68d8cf2adfe933d7dd7040",
+        "6f00f72aa1d087f4c9132647",
+        "d59c4f170f90422f4b1de849"
       ],
       "source_urls": [
         "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide",
@@ -238,19 +266,56 @@
         "https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science",
         "https://rocm.blogs.amd.com/ecosystems-and-partners/rocm-10.1-blog/README.html",
         "https://aws.amazon.com/blogs/storage/accelerate-inference-with-kv-cache-tiering-on-aws",
-        "https://arxiv.org/abs/2610.38355"
+        "https://arxiv.org/abs/2610.38355",
+        "https://www.vdura.com/2026/09/30/vdura-data-platform-v12-now-generally-available-the-hyperscaler-storage-playbook-to-ai-factories-and-neoclouds-on-supermicro",
+        "https://developer.nvidia.com/blog/how-to-read-data-into-gpu-memory-in-python-with-nvidia-gpudirect-storage"
+      ]
+    },
+    {
+      "branch_id": "accelerator_storage_controller",
+      "name": "细粒度I/O与存储控制器协同",
+      "direction_ids": [
+        "accelerator_storage_controller"
+      ],
+      "status": "emerging",
+      "stages": [],
+      "evidence_timeline": [
+        {
+          "item_id": "e39d7c409d0069a974468b8c",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://s25.q4cdn.com/621799436/files/doc_downloads/2026/10/MU-TP-Webinar.pdf"
+          ],
+          "reason": "美光在技术研讨会发布AI级NAND路线图：高IOPS SLC NAND服务GPU发起的小块访问、TSV堆叠NAND作近算力带宽层，并给出下一代SSD目标：小块访问25M-100M IOPS、容量至512TB（全部存储主张为附免责声明的前瞻路线图，无产品规格与时间表，IOPS目标缺基线、块大小与队列条件，控制器、队列、ECC或接口设计未见，仅有AI辅助研发使控制器流片时间减半的内部数据）；GPU发起小块访问首次进入头部NAND厂商优先路线，按细粒度I/O与存储控制器协同新分支记录其出现，不据此强行划分阶段。"
+        }
+      ],
+      "open_questions": [
+        "美光25M-100M IOPS小块访问目标缺基线、块大小与队列条件，需产品规格或实测补证",
+        "高IOPS SLC NAND与TSV堆叠NAND在GPU发起路径下的控制器、队列与接口设计均未公开"
+      ],
+      "evidence_item_ids": [
+        "e39d7c409d0069a974468b8c"
+      ],
+      "source_urls": [
+        "https://s25.q4cdn.com/621799436/files/doc_downloads/2026/10/MU-TP-Webinar.pdf"
       ]
     }
   ],
   "schema_version": 1,
-  "version": 1,
-  "change_type": "no_material_change",
+  "version": 2,
+  "change_type": "material_change",
   "history": [
     {
       "version": 1,
       "issue_date": "2026-09-04",
       "change_type": "material_change",
       "path": "knowledge/history/roadmaps/accelerator_io_datapath/v1.json"
+    },
+    {
+      "version": 2,
+      "issue_date": "2026-11-06",
+      "change_type": "material_change",
+      "path": "knowledge/history/roadmaps/accelerator_io_datapath/v2.json"
     }
   ],
   "change_log": [
@@ -362,6 +427,19 @@
         "4c68d8cf2adfe933d7dd7040",
         "74f57e627ff3e61c3d6c26a1",
         "c9a391c1a7a6260629294381"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_ca4297be1296e0172770",
+      "issue_date": "2026-11-06",
+      "change_type": "material_change",
+      "version": 2,
+      "summary": "本期证据改变了分支、阶段、状态或开放问题。",
+      "evidence_item_ids": [
+        "17eb246304de167a8bbcdc2a",
+        "6f00f72aa1d087f4c9132647",
+        "d59c4f170f90422f4b1de849",
+        "e39d7c409d0069a974468b8c"
       ]
     }
   ]

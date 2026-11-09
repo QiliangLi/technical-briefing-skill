@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_46f7dbdd677133518d37",
+  "identity": {
+    "problem_key": "moe_communication_compute_sm_contention",
+    "mechanism_key": "explicit_sm_partitioning_runtime_tuning",
+    "target_key": "moe_serving_throughput_latency"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "MoE解码通信-计算SM争用的显式分区与运行时调优",
+  "problem": "MoE推理与训练中token分发、AlltoAll/AllReduce等集合通信与分组GEMM争用同一组SM驻留资源：H800上通信SM占用峰值达16个（约12%）直接侵蚀Tensor Core算力，静态或库默认的资源划分在波状执行下无法自适应，有效算力被通信侧吃掉。",
+  "hypothesis": "在带宽与SM驻留受限的MoE serving中，把通信与计算划分为显式执行资源分区并按负载解析或在线调优分区比例，是否能在精度不变（余弦相似度约等于1）的前提下，于H20/B300/H800等跨代硬件上取得一致且可复现的解码吞吐与时延收益？分区比例偏离最优的代价是否如mKernel报告般陡峭（最差划分比最优慢约25倍）？",
+  "mechanism": "三条互补路径：驱动层用Green Context把SM切成小通信与大计算分区（B300上20/148）并独立调优，CUDA Graph并发启动两类内核、令牌环按块握手使计算随数据到达即启动；launch时以波量化解析模型推导通信CTA数与资源分割（约0.16微秒、免逐形状profiling）；或把集合通信卸载到DMA引擎实现零SM通信并以流管理器保持算子级时序。",
+  "expected_effect": "MoE解码时延下降（8卡H20平均约1.19倍量级）、MoE层吞吐提升（解析划分下1.77倍量级），释放的SM直接转化为计算算力（Megatron端到端最多升5%量级），输出精度不变。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "4ba27c1c833f3f45057da309",
+      "issue_date": "2026-09-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.07536v1"
+      ],
+      "reason": "该工作证明细粒度计算通信重叠中计算与通信CTA在SM驻留容量上争用形成波状执行、固定资源划分无法自适应，并用波量化解析模型在内核启动前推导资源划分（约0.16微秒、免逐形状profiling），对COMET完整MoE层几何平均加速1.771倍、平均regret仅3.22%（仅A100评估且只覆盖prefill）；是该Idea『显式分区加解析调优』机理的最早已发布实证。"
+    },
+    {
+      "item_id": "d45218a56ce319d903fb8291",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.34334v1"
+      ],
+      "reason": "HOCCL实测32台H800上集合通信SM占用峰值达16个（约12%）直接侵蚀Tensor Core算力，把集合通信卸载到DMA引擎实现零SM通信后平均带宽保持在SOTA的3%以内并释放近10%的SM、Megatron-LM端到端吞吐较NCCL最多升5%（大消息节点间CPU启动开销显著增长、SM充足时NCCL-8SM带宽仍高17%）；直接量化了该Idea所述争用的代价与零SM路径的收益上界。"
+    },
+    {
+      "item_id": "cde299eee2cdf91e887aa338",
+      "issue_date": "2026-10-14",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.13585v1"
+      ],
+      "reason": "mKernel把SM分为计算与通信角色并做运行时调优，两个16-GPU H200集群上GEMM+AllReduce最高加速1.72倍、Ring Attention 1.88倍，而最差SM划分比最优慢约25倍（自适应划分仅单节点验证）；证明分区比例是收益的一阶变量、静态选择不可靠。"
+    },
+    {
+      "item_id": "e72addc6b58204ae181aa091",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04222v1"
+      ],
+      "reason": "GC-MoE以CUDA Green Context在驱动层划分通信与计算SM分区并独立调优（B300上仅留20/148个SM分发），8卡H20与B300共54个测点全部快于DeepGEMM基线、8卡H20解码平均快1.1881倍且精度最小余弦0.99999976（仅测解码、每卡256 token时收窄至1.01-1.13倍、无分区消融）；是该Idea机制在多代硬件上的最新直接实测。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "分区比例敏感曲线在自有负载与硬件代际上的形态（GC-MoE未做分区消融，mKernel最差划分慢约25倍）",
+    "prefill与decode两相位收益不对称：解析划分与GC-MoE证据分别集中于prefill与decode",
+    "与同步消除（flash-comm）或DMA卸载（HOCCL）路径的叠加收益未测",
+    "大规模token（每卡256以上）与多租户下增益收窄的边界未刻画"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单节点8卡H20或B300上用vLLM/SGLang运行开源MoE模型（DeepSeek/Qwen类），实现Green Context通信/计算SM分区与CUDA Graph并发启动，扫描每卡token数（64至256以上）与分区比例。",
+    "inputs": [
+      "开源MoE模型checkpoint与推理配置",
+      "Green Context驱动级SM分区实现",
+      "每卡token数与分区比例扫描范围"
+    ],
+    "baselines": [
+      "DeepGEMM/DeepEP默认SM配比",
+      "NCCL默认集合通信",
+      "静态固定分区（无运行时调优）"
+    ],
+    "metrics": [
+      "解码时延（TPOT）与MoE层吞吐",
+      "通信SM占用与释放比例",
+      "输出精度（余弦相似度）",
+      "分区调优决策开销"
+    ],
+    "support_criteria": [
+      "跨至少两代硬件TPOT一致下降且精度余弦相似度不低于0.9999",
+      "收益随每卡token数增大而收窄的趋势与GC-MoE报告一致"
+    ],
+    "reject_criteria": [
+      "收益仅在单一硬件或单一batch档成立，或分区调优开销抵消收益"
+    ],
+    "limitations": [
+      "首版限单NVLink域与解码相位，不含功耗与多租户场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-10",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_4a8bb71b81d3e3c63bc1",
+      "issue_date": "2026-11-06",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "跨期已发布证据（launch时解析CTA划分、HOCCL DMA卸载、mKernel运行时SM划分）与本期GC-MoE收敛于同一机理：MoE集合通信与分组GEMM争用SM驻留资源，显式分区加解析或运行时调优可兑现吞吐与时延收益；按problem+mechanism+target身份创建为正式Idea并保持observing；跨证据聚合判断属跨记录推断(inferred)。",
+      "evidence_item_ids": [
+        "4ba27c1c833f3f45057da309",
+        "d45218a56ce319d903fb8291",
+        "cde299eee2cdf91e887aa338",
+        "e72addc6b58204ae181aa091"
+      ]
+    }
+  ]
+}

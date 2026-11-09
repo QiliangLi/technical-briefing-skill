@@ -3,8 +3,8 @@
   "topic_id": "ai_chip_accelerator",
   "topic_name": "AI芯片与加速器",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-02",
-  "summary": "AI芯片本期证据把可用算力由软件栈与执行映射决定的判断扩展到端侧与异构集群两侧：边缘NPU实测显示softmax与张量重排使注意力kernel占计算密集kernel时延最高89.4%并令矩阵单元空转、GDN线性注意力较Adreno GPU慢30%-71%而同NPU上matmul/conv快6.3-11.4倍，GPU与WSE异构组合中只有P/D分离超过两类设备独立吞吐之和且7B/70B模型集群级KV-cache带宽下界为209.6与150.4GB/s，S3R把INT8训练随机数生成移出逐元素向量单元后TPU v5p全训练步达BF16的1.24至1.32倍，MCCL让10GbE下M4 Max集群以95.9%并行效率训练、5.5台约抵一台A100的TF32吞吐；当前判断：决定算力兑现的仍是算子到执行单元的映射与软件栈成熟度而非峰值硬件——端侧应优先适配softmax与张量重排而非堆峰值算力、集群侧按通信范式选择硬件组合，引用任何加速比前必须核对执行路径、batch与能耗口径。",
+  "updated_by_issue": "2026-11-06",
+  "summary": "AI芯片本期证据把『可用算力由软件栈与执行资源映射决定』的判断推进到稀疏内核、通信资源分区与运行时能耗三个位置：昇腾解耦Cube/Vector架构上Ascend-SpMM以密度感知双路映射加单标志位环形缓冲隐式同步，820个SuiteSparse矩阵内核几何均值较最强NPU基线提速12.70至20.55倍、两层GCN训练较PyG快3.5至6.8倍（两个基线为作者复现、9.9%至22.2%矩阵仍慢于cuSPARSE）；GC-MoE用Green Context把MoE解码的通信切成小SM分区独立调优，8卡H20与B300共54个测点全部快于DeepGEMM基线、8卡H20解码平均快1.19倍（每卡256 token时收窄至1.01-1.13倍）；flash-comm把就绪同步并入数据移动，8卡B300 all-reduce中位降28.8%而端到端TPOT仅降1.7%至6.8%，说明微秒级同步开销已超过小消息传输本身；EE-RL按RL生成/训练两阶段在线选频，H100上每有效token节能4.56%至22.44%（单种子、仅H100）。当前判断：决定算力兑现的仍是算子到执行单元与互连资源的映射而非峰值硬件——MoE解码的近期杠杆是SM与同步等执行资源的显式划分及调优，解耦Cube/Vector类NPU须按数据密度与同步资源约束重排内核，解码通信与后训练能耗的优化对象正从带宽转向微秒级固定开销；引用任何加速比前必须核对执行路径、batch与能耗口径。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -583,6 +583,30 @@
             "https://arxiv.org/abs/2610.39029v1"
           ],
           "reason": "2026-11-02 已发布日报收录：MCCL为苹果MPS开源PyTorch分布式训练后端，梯度按约25MB桶在统一内存原地归约、Metal共享事件协调网络线程与异步GPU流的顺序、大桶走环形all-reduce，10GbE交换网络下M4 Max集群实现95.9%并行效率，113.5M参数ViT从单机198样本/秒扩展到24台4568样本/秒、5.5台M4 Max约等于一台A100 80GB的TF32吞吐（收益依赖反向计算长于梯度通信量，小消息受10GbE往返时延限制，实测止于单交换机24节点）；按架构分支记录为软件栈决定可用算力证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "f79c4d41b0c9252603b482ac",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.01936v1"
+          ],
+          "reason": "2026-11-06 已发布日报收录：Ascend-SpMM针对昇腾NPU解耦Cube/Vector通路受显式同步与层级搬运制约的问题，以内存成本模型与密度感知映射把稠密区域分给Cube通路、稀疏残留留给Vector，AIV侧用单标志位协调环形缓冲隐式同步摆脱8个硬件同步标志上限；820个SuiteSparse矩阵内核几何均值较最强NPU基线提速12.70至20.55倍、两层GCN训练较PyG快3.5至6.8倍（三个NPU基线中两个为作者复现，对比A100属跨平台，9.9%至22.2%矩阵慢于cuSPARSE）；按架构分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "e72addc6b58204ae181aa091",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.04222v1"
+          ],
+          "reason": "2026-11-06 已发布日报收录：GC-MoE以CUDA Green Context在驱动层把SM切成小通信与大计算分区（B300上仅留20/148个SM分发）并独立调优，CUDA Graph并发启动两类内核、令牌环按块握手使计算随数据到达即启动；8卡H20与B300共54个测点全部快于DeepGEMM基线，8卡H20解码平均快1.1881倍、峰值1.2957倍，精度最小余弦0.99999976（仅测解码、每卡256 token时增益收窄至1.01-1.13倍，无分区消融与功耗数据）；按架构分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "132d6af3479d10384becf2ac",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.05748v1"
+          ],
+          "reason": "2026-11-06 已发布日报收录：NVIDIA预印本EE-RL指出LLM强化学习后训练在生成与训练阶段间交替而默认调速器让两阶段都近峰值频率运行、访存受限阶段多耗能量而无吞吐收益；控制器以每有效训练token能耗为指标做短时频率试验，只保留吞吐不低于预测98%的最低能耗设置，H100上八个锁定后对比每有效token能耗节省4.56%至22.44%、吞吐-1.70%至+4.99%（全部对比仅单一种子且无组件消融，摘要28.2%与16.9%配置未找到，实测仅覆盖H100）；按架构分支记录为运行时能效证据而非芯片架构进展，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -657,7 +681,10 @@
         "1ce17ac6120740f77513a2da",
         "0c8654ce4782289447c9d885",
         "d51b69856020fad8f76aef29",
-        "b4358b173083f366f17fc9d8"
+        "b4358b173083f366f17fc9d8",
+        "f79c4d41b0c9252603b482ac",
+        "e72addc6b58204ae181aa091",
+        "132d6af3479d10384becf2ac"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.09385v1",
@@ -729,7 +756,10 @@
         "https://arxiv.org/abs/2610.36587v1",
         "https://arxiv.org/abs/2610.39029v1",
         "https://arxiv.org/abs/2610.39222v1",
-        "https://arxiv.org/abs/2610.40039v1"
+        "https://arxiv.org/abs/2610.40039v1",
+        "https://arxiv.org/abs/2611.01936v1",
+        "https://arxiv.org/abs/2611.04222v1",
+        "https://arxiv.org/abs/2611.05748v1"
       ]
     },
     {
@@ -892,6 +922,14 @@
             "https://arxiv.org/abs/2610.32695v1"
           ],
           "reason": "2026-10-29 已发布日报收录：Proteus把瓦片解压做成查询编译引擎的一等算子、解码值留在片上不写回HBM并把占用率当作可调权衡，相对未压缩省54%至60%显存但开销8%至45%、对HeavyDB省46%到53%（专用内核仍快2.7至4.7倍，共享内存暂存量随投影列数增长，摘要的4倍与6倍缺少可见出处）；按内存接口与协同分支记录为显存墙的软件侧证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "02d505da249588037229d17d",
+          "issue_date": "2026-11-06",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.06634v1"
+          ],
+          "reason": "2026-11-06 已发布日报收录：flash-comm把就绪同步并入数据移动——数据块自带就绪证据（哨兵值或块序号）、接收端直接校验，稳态集合通信零跨卡屏障，代价模型按消息大小与卡数选择编码及一跳或分片两跳路径；8卡B300上all-reduce较SGLang custom AR v2中位降28.8%、最高43.7%，端到端TPOT降1.7%至6.8%（限单NVLink域2至8卡、bf16/fp32对齐张量、需Hopper以上GPU，端到端模型配置未公开）；按内存接口与协同分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -914,7 +952,8 @@
         "cde299eee2cdf91e887aa338",
         "f031d6b143ff02ee1bba0fc8",
         "cda619f1f98933dd41e737d0",
-        "5c8313fdb9163c2a11ea5240"
+        "5c8313fdb9163c2a11ea5240",
+        "02d505da249588037229d17d"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2606.15535v1",
@@ -935,7 +974,8 @@
         "https://arxiv.org/abs/2609.21264v1",
         "https://arxiv.org/abs/2609.24089v1",
         "https://arxiv.org/abs/2610.14244v1",
-        "https://arxiv.org/abs/2610.32695v1"
+        "https://arxiv.org/abs/2610.32695v1",
+        "https://arxiv.org/abs/2611.06634v1"
       ]
     },
     {
@@ -1316,6 +1356,19 @@
         "1ce17ac6120740f77513a2da",
         "b4358b173083f366f17fc9d8",
         "d51b69856020fad8f76aef29"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_d63ddaa9e1bdcb5da1f9",
+      "issue_date": "2026-11-06",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "02d505da249588037229d17d",
+        "132d6af3479d10384becf2ac",
+        "e72addc6b58204ae181aa091",
+        "f79c4d41b0c9252603b482ac"
       ]
     }
   ]

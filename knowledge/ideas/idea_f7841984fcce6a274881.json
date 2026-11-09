@@ -10,7 +10,7 @@
   "title": "KV 传输、重算与就地计算存在随带宽和命中率变化的交叉点",
   "problem": "PD 解耦推理并非总该完整传输 KV；链路带宽、KV 重要性和请求放置会改变最优选择。",
   "hypothesis": "在统一负载下，必要 KV 优先传输、带宽感知重算和解码节点就地 Prefill 会在不同网络条件下各自占优。",
-  "mechanism": "按请求估算 KV 传输、局部重算和就地计算代价，再选择执行位置与传输粒度。",
+  "mechanism": "按请求估算 KV 传输（含GPU侧压缩执行开销）、局部重算和就地计算代价，再选择执行位置与传输粒度。",
   "expected_effect": "在不牺牲输出正确性的前提下降低尾部 TTFT，并减少无效 KV 搬移。",
   "topic_ids": [
     "tpn"
@@ -184,12 +184,37 @@
         "https://arxiv.org/abs/2610.40292v1"
       ],
       "reason": "DolphinRouting按请求簇离线学习聚合或分离prefill的二值决策并在真实集群同时降低P90 TTFT与TPOT，支持按请求簇选择执行位置的机制前提；决策特征含两侧缓存折算ISL，但未与带宽感知重算或就地Prefill策略对照。"
+    },
+    {
+      "item_id": "7f0b0c6b2aa5f613daa8fe33",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04382v2"
+      ],
+      "reason": "FastKVComp证明KV压缩执行过慢会抵消跨节点传输的通信节省：在KVServe之上把分布变换与量化融合为单个TileLang核、以可搜索LC无损压缩后端替换nvCOMP后，双节点200-Gb/s InfiniBand上JCT较原始传输降30.2%至38.6%、输出吞吐升44.2%至62.6%；直接支持传输代价估算须把GPU侧压缩执行开销与网络带宽一并计入（每配置仅50请求、无TTFT/TPOT/P95与模型质量数字）。"
+    },
+    {
+      "item_id": "7a7fc63f8c40f2385b0d4aeb",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.04313v1"
+      ],
+      "reason": "MOIRA按注意力覆盖度逐层逐头保留满足gamma目标的最小KV页集并整步保持在CUDA图内，RULER 128k、gamma=0.99时精度与稠密FA3持平、仅读约30%页、TPOT降2.2至2.5倍、并发16时吞吐升45%至51%；支持必要KV优先/重要性选择前提，并把该分支的GPU侧基线抬高到免训练自适应稀疏解码（仅单GPU评估、无跨节点KV传输、TTFT或网络数据）。"
+    },
+    {
+      "item_id": "f64c6bb8eabfaffd7081a26e",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06513v1"
+      ],
+      "reason": "HELIX以编译期动态规划为异构加速器的算子划分选宿主，注意力/FFN切分下Bamba 9B单步解码约1.7-3.2倍，但大批量时传输时延掩盖收益、多数划分退回GPU；作为相邻证据支持传输代价存在随批量增长的阈值结构（结果为画像估计的单步解码时延而非端到端指标、3DCIM与DRAM-PIM多为仿真、不涉KVCache与网络侧机制）。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
     "多租户 P95/P99 下的交叉点是否稳定。",
-    "代价预测错误与画像漂移会造成多大回退。"
+    "代价预测错误与画像漂移会造成多大回退。",
+    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）的增量收益尚无对照数据。"
   ],
   "validation_plan": {
     "mode": "simulation",
@@ -223,7 +248,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-02",
-  "last_updated_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-06",
   "decision_log": [
     {
       "event_id": "idea_decision_4f7da6ed9342bd9a8339",
@@ -384,6 +409,19 @@
         "d2349c5d97fce5e346d06f86",
         "ec1ea177b0a399d941b6ce94",
         "d2334e0d811f04c7dd7eaee4"
+      ]
+    },
+    {
+      "event_id": "idea_decision_47a790f7303a95b5caeb",
+      "issue_date": "2026-11-06",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增压缩执行效率、GPU侧覆盖度自适应稀疏解码与异构算子划分的传输时延边界三条证据：传输代价估算应计入GPU侧压缩执行开销、网络侧增量收益须对照GPU侧稀疏基线；状态保持observing，仍缺传输、重算与就地Prefill三策略在统一负载下的完整对照。",
+      "evidence_item_ids": [
+        "7f0b0c6b2aa5f613daa8fe33",
+        "7a7fc63f8c40f2385b0d4aeb",
+        "f64c6bb8eabfaffd7081a26e"
       ]
     }
   ]

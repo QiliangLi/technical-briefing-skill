@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_651d47f987336450582e",
+  "identity": {
+    "problem_key": "bounded_return_assumption_false_completion",
+    "mechanism_key": "open_input_kernel_process_state_report",
+    "target_key": "agent_tool_call_harness"
+  },
+  "idea_type": "solution_concept",
+  "title": "保持输入打开并回传经模型检验的进程状态以修复工具调用返回假设",
+  "problem": "运维与终端Agent的harness假设工具调用有界返回且动作已完成，实测7/8的harness关闭输入，而命令常先提问再行动，11.5%的提示型调用未执行动作即返回0，形成虚假完成；未获回答的提问使任务token增至2.9倍。",
+  "hypothesis": "保持标准输入打开、从内核系统调用读出各线程在等什么、把输入与报告顺序建成经模型检验的自动机性质并随调用返回进程状态，可在不换模型的情况下消除假返回，显著降低虚假完成次数并减少token开销。",
+  "mechanism": "RECEIPT：输入连接保持打开而非关闭；从内核系统调用读取各线程等待状态以判断进程真实处境；输入与报告顺序建模为自动机性质并经模型检验；把进程状态回传给Agent作为返回内容的一部分。",
+  "target": "LLM Agent工具调用执行链（终端/命令执行harness的输入连接与返回报告）。",
+  "expected_effect": "mini-SWE-agent跨5个LLM虚假完成从34次降至9次；token较普通终端少24.4%；提示型调用未执行动作即返回0的假返回与未回答提问导致的2.9倍token膨胀被消除。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "2d005b011494273654015461",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.01930v1"
+      ],
+      "reason": "RECEIPT量化返回假设问题（7/8的harness关闭输入、11.5%提示型调用未执行动作即返回0、未回答提问使任务token增至2.9倍），给出保持输入打开、内核系统调用读取各线程等待状态、输入与报告顺序经模型检验并回传进程状态的完整机制，并在mini-SWE-agent跨5个LLM实测虚假完成从34次降至9次、token较普通终端少24.4%。",
+      "independence_group": "arxiv:2611.01930"
+    }
+  ],
+  "evidence_item_ids": [
+    "2d005b011494273654015461"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.01930v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.01930"
+  ],
+  "unknowns": [
+    "作者自述结论未必适用于其他harness与LLM，跨harness迁移未验证。",
+    "token数字出自Tripwire基准，跨基准可迁移性未验证。",
+    "输入与报告顺序的自动机建模在其他命令集上的维护成本未报告。",
+    "closed input假返回被点名为并行与投机执行的风险，但未在并行与投机执行下实测。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部Agent终端harness上实现保持输入打开、内核等待状态读取与进程状态回传，与关闭输入的普通终端在相同任务集上对照。",
+    "inputs": [
+      "内部运维/终端工具调用任务集",
+      "保持输入打开并回传进程状态的执行harness",
+      "内核系统调用等待状态读取器与输入/报告顺序自动机检验"
+    ],
+    "baselines": [
+      "关闭输入的普通终端harness",
+      "仅检查退出码与超时的现状执行链"
+    ],
+    "metrics": [
+      "虚假完成次数",
+      "提示型调用未执行动作即返回0的占比",
+      "任务token开销",
+      "任务成功率"
+    ],
+    "support_criteria": [
+      "虚假完成与假返回显著下降且任务成功率不降，token开销低于普通终端基线。"
+    ],
+    "reject_criteria": [
+      "保持输入打开引入挂起等待使时延失控，或进程状态回传在其他harness栈不可复现。"
+    ],
+    "limitations": [
+      "原始token数字出自Tripwire基准且作者自述未必适用于其他harness与LLM。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份区别于既有候选与Idea（交付链守卫候选针对网关静默丢调用后伪造结果、监督层Idea针对分派前检查，本候选针对harness关闭输入造成的假返回并以打开输入加进程状态回传修复），但证据仅一个独立来源组，作者自述未必适用于其他harness与LLM、token数字出自Tripwire基准；且同一证据本期已被 idea_a90d71c35ea8a0f208da（监督层扩展到进程状态回传维度）与 idea_11ed656a018dc7b2c2d3（判定信号信任前提）吸收，是否单列候选待人工谱系决定。",
+  "related_candidate_ids": [
+    "candidate_efdd15613ab672bfe173",
+    "candidate_8b23e9e906055216f9fc"
+  ],
+  "related_idea_ids": [
+    "idea_a90d71c35ea8a0f208da",
+    "idea_11ed656a018dc7b2c2d3"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_30dde20474cf647ea14c",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份区别于既有候选与Idea（交付链守卫候选针对网关静默丢调用后伪造结果、监督层Idea针对分派前检查，本候选针对harness关闭输入造成的假返回并以打开输入加进程状态回传修复），但证据仅一个独立来源组，作者自述未必适用于其他harness与LLM、token数字出自Tripwire基准；且同一证据本期已被 idea_a90d71c35ea8a0f208da（监督层扩展到进程状态回传维度）与 idea_11ed656a018dc7b2c2d3（判定信号信任前提）吸收，是否单列候选待人工谱系决定。",
+      "evidence_item_ids": [
+        "2d005b011494273654015461"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

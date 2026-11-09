@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6d4e0b92fba3433de649",
+  "identity": {
+    "problem_key": "slow_kv_compression_negates_transfer_savings",
+    "mechanism_key": "fused_transform_quant_kernel_searchable_lc_backend",
+    "target_key": "disaggregated_kv_transfer_compression_datapath"
+  },
+  "idea_type": "solution_concept",
+  "title": "融合变换量化单核加可搜索LC无损后端兑现高带宽互连下分离式推理的KV压缩收益",
+  "problem": "分离式LLM serving中KV cache是主要跨节点通信对象，但压缩管线执行过慢会抵消通信节省：高带宽互连下KV压缩省下的带宽收益被GPU侧压缩执行开销吞没，使跨节点KV传输优化只追求压缩比无法兑现端到端收益。",
+  "hypothesis": "若在分离式KV传输路径上把分布变换与量化融合为单个TileLang核以消除中间张量物化，并以可搜索的LC无损压缩后端替换nvCOMP，则高带宽互连下压缩执行不再主导传输代价，跨节点KV传输的JCT与输出吞吐相对原始传输显著改善。",
+  "mechanism": "在KVServe之上把分布变换与量化融合为单个TileLang核，消除中间张量物化；压缩后端以可搜索的LC无损压缩替换nvCOMP。优化对象是压缩管线的执行速度而非压缩比。",
+  "target": "分离式推理跨节点KV传输的GPU侧压缩数据路径（KVServe之上）",
+  "expected_effect": "双节点200-Gb/s InfiniBand上，较原始传输JCT降低30.2%至38.6%，输出吞吐提升44.2%至62.6%（生成至多64 token）。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的融合变换量化单核加可搜索LC无损后端的压缩数据路径机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "7f0b0c6b2aa5f613daa8fe33",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04382v2"
+      ],
+      "reason": "《FastKVComp：面向分离式推理的高吞吐KV压缩数据路径》给出机制与对照结果：在KVServe之上把分布变换与量化融合为单个TileLang核消除中间张量物化、以可搜索LC无损压缩后端替换nvCOMP，双节点200-Gb/s InfiniBand上较原始传输JCT降30.2%至38.6%、输出吞吐升44.2%至62.6%（生成至多64 token）；端到端仅报告JCT与吞吐，未见TTFT、TPOT或P95，每配置仅50请求且无模型质量数字。",
+      "independence_group": "arxiv:2611.04382"
+    }
+  ],
+  "evidence_item_ids": [
+    "7f0b0c6b2aa5f613daa8fe33"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.04382v2"
+  ],
+  "independence_groups": [
+    "arxiv:2611.04382"
+  ],
+  "unknowns": [
+    "端到端性能仅报告JCT与吞吐，未见TTFT、TPOT或P95，生成期指标不可见",
+    "每配置仅50请求且无模型质量数字，无损压缩的正确性与统计稳定性未展示",
+    "生成至多64 token，长解码与多轮负载下收益是否保持未知",
+    "仅双节点200-Gb/s InfiniBand环境，其他互连带宽、更大集群与真实负载未验证",
+    "证据仅单一arXiv独立组，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在双节点200-Gb/s级InfiniBand测试床的KVServe类分离式serving栈上复现融合TileLang压缩数据路径（分布变换与量化单核、可搜索LC无损后端），与原始KV传输及nvCOMP管线对照，并补测TTFT/TPOT/P95、扩大请求集与模型质量。",
+    "inputs": [
+      "双节点200-Gb/s级InfiniBand测试床与KVServe类分离式serving栈",
+      "压缩档位扫描（量化位宽与LC后端搜索空间）",
+      "扩大且含长生成档的请求集（超过50请求、长于64 token）",
+      "互连带宽档位扫描"
+    ],
+    "baselines": [
+      "原始KV传输（无压缩）",
+      "nvCOMP后端压缩管线（证据内基线）",
+      "未融合的分离分布变换与量化核"
+    ],
+    "metrics": [
+      "JCT",
+      "输出吞吐",
+      "TTFT/TPOT/P95",
+      "GPU侧压缩执行时延占比",
+      "压缩后传输字节数与模型质量"
+    ],
+    "support_criteria": [
+      "融合数据路径在补测的TTFT/TPOT/P95与模型质量不劣化的前提下保持JCT与吞吐收益，且收益随互连带宽升高保持或扩大"
+    ],
+    "reject_criteria": [
+      "长解码或更大请求集下压缩执行重新成为瓶颈，或收益仅在50请求、64 token的窄负载段出现"
+    ],
+    "limitations": [
+      "原始证据仅双节点、每配置50请求、生成至多64 token且无模型质量数字"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv独立组，评估只报告JCT与吞吐（无TTFT/TPOT/P95、每配置仅50请求、生成至多64 token且无模型质量数字），适用边界未划出；且该记录同日已进入idea_f7841984fcce6a274881的证据链，独立成案还是并入该Idea需人工世系决定，先延期观察。",
+  "related_candidate_ids": [
+    "candidate_4712cdbe2d8960143688"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_3479c963ca4a9d48d1db",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv独立组，评估只报告JCT与吞吐（无TTFT/TPOT/P95、每配置仅50请求、生成至多64 token且无模型质量数字），适用边界未划出；且该记录同日已进入idea_f7841984fcce6a274881的证据链，独立成案还是并入该Idea需人工世系决定，先延期观察。",
+      "evidence_item_ids": [
+        "7f0b0c6b2aa5f613daa8fe33"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

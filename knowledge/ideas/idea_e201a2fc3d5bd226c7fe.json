@@ -49,13 +49,22 @@
         "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide"
       ],
       "reason": "MinIO三层GPU存储栈指出推理KV重算税缺少共享上下文层，并给出容量规划方法（预留约稳态工作集2-3倍、按p95恢复并发配带宽），为本Idea外置KV的容量与带宽预算提供参照（无量化基准，微秒时延为厂商宣称）。"
+    },
+    {
+      "item_id": "d59c4f170f90422f4b1de849",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://developer.nvidia.com/blog/how-to-read-data-into-gpu-memory-in-python-with-nvidia-gpudirect-storage"
+      ],
+      "reason": "NVIDIA官方教程证实KvikIO调用GDS存在两层回退、返回值不能说明数据是否绕经主机内存，并示范用cuFile nvfs/posix统计计数核实真实路径（H100上256次1 GiB读全部走nvidia-fs加速路径、强制兼容模式后改计入posix计数器），为本Idea验证计划中nvfs DMA计数与兼容回退次数指标提供官方可复用的审计方法；教程同时指出未注册缓冲仍多一次GPU内复制（只验证路径选择，无吞吐时延数据，依赖H100、ext4与关闭IOMMU条件）。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
     "设备脱离内核栈后的错误恢复与多租户隔离语义（uGDS自身证据薄弱）",
     "每句柄仅支持一块本地NVMe，多盘与NVMe-oF扩展路径未证",
-    "裸块设备语义下POSIX文件接口与一致性如何补齐"
+    "裸块设备语义下POSIX文件接口与一致性如何补齐",
+    "未注册缓冲路径下GPU内额外一次复制的开销未量化（官方教程仅指出存在，未给出数字）"
   ],
   "validation_plan": {
     "mode": "prototype",
@@ -96,7 +105,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-09-04",
-  "last_updated_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-06",
   "decision_log": [
     {
       "event_id": "idea_decision_e1fa52e7da0668c9864d",
@@ -110,6 +119,17 @@
         "74f57e627ff3e61c3d6c26a1",
         "363c4ba5b9dc1ce36a6f1bec",
         "dda95f5f23dfe81db0904c32"
+      ]
+    },
+    {
+      "event_id": "idea_decision_6f150fb889f5c76d8838",
+      "issue_date": "2026-11-06",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "NVIDIA官方教程给出cuFile nvfs/posix计数器审计真实数据路径的可复用方法并证实KvikIO两层回退行为，直接支撑本Idea验证计划中的路径计数指标；无新的性能结果，机制与身份不变，维持observing。",
+      "evidence_item_ids": [
+        "d59c4f170f90422f4b1de849"
       ]
     }
   ]

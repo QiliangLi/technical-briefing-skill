@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ca18f83fd1802da517c3",
+  "identity": {
+    "problem_key": "llm_decode_collective_sync_overhead",
+    "mechanism_key": "readiness_sync_folded_into_data_movement",
+    "target_key": "nvlink_domain_llm_decode_collectives"
+  },
+  "idea_type": "solution_concept",
+  "title": "就绪同步并入数据移动以消除LLM解码集合通信的稳态跨卡屏障",
+  "problem": "LLM自回归解码中集合通信每层每token执行一次，微秒级固定协调（就绪同步）开销在B300上已超过小消息传输本身，成为解码阶段集合通信时延的主导项，而非带宽。",
+  "hypothesis": "若数据块自带就绪证据（哨兵值或块序号）由接收端直接校验、稳态集合通信零跨卡屏障，并由代价模型按消息大小与卡数选择编码及一跳或分片两跳路径，单NVLink域内2至8卡解码阶段的all-reduce时延可较SGLang custom AR v2显著下降，并带动端到端TPOT改善。",
+  "mechanism": "数据块自带就绪证据（哨兵值或块序号），接收端直接校验，把就绪同步并入数据移动，稳态集合通信零跨卡屏障；代价模型按消息大小与卡数选择编码及一跳或分片两跳路径。",
+  "target": "单NVLink域内2至8卡、Hopper以上GPU上的LLM解码阶段集合通信（bf16或fp32对齐张量）",
+  "expected_effect": "8卡B300上all-reduce较SGLang custom AR v2中位降28.8%、最高43.7%；端到端TPOT降1.7%至6.8%。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发表记录同时给出问题（解码集合通信的微秒级固定协调开销在B300上已超过小消息传输本身）、可解释机制（就绪证据随数据块移动加代价模型选编码与路径）、目标对象（单NVLink域2至8卡Hopper以上GPU的LLM解码集合通信）与可检验效应（all-reduce较SGLang custom AR v2中位降28.8%最高43.7%、端到端TPOT降1.7%至6.8%）。"
+  },
+  "evidence": [
+    {
+      "item_id": "02d505da249588037229d17d",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06634v1"
+      ],
+      "reason": "flash-comm记录给出问题（自回归解码每层每token一次集合通信，微秒级固定协调开销在B300上已超过小消息传输本身）、机制（数据块自带哨兵值或块序号的就绪证据、接收端直接校验、稳态零跨卡屏障；代价模型按消息大小与卡数选编码及一跳或分片两跳路径）、目标（单NVLink域2至8卡、Hopper以上GPU、bf16或fp32对齐张量）与可检验效应（8卡B300上all-reduce较SGLang custom AR v2中位降28.8%最高43.7%、TPOT降1.7%至6.8%），并给出仅限单NVLink域2至8卡与对齐张量、需Hopper以上GPU、端到端模型配置未公开的边界。",
+      "independence_group": "arxiv:2611.06634"
+    }
+  ],
+  "evidence_item_ids": [
+    "02d505da249588037229d17d"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.06634v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.06634"
+  ],
+  "unknowns": [
+    "仅限单NVLink域内2至8卡与bf16或fp32对齐张量，跨节点域与其他数据类型未验证",
+    "需Hopper以上GPU，编码与路径的代价模型须按自有GPU代际重标定，不可照搬论文策略表",
+    "端到端TPOT收益所依赖的模型配置未公开",
+    "单一arXiv v1预印本，缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有Hopper以上GPU的单NVLink域2至8卡环境，先量化解码集合通信中固定同步开销相对传输的占比，再复现就绪同步并入数据移动的零屏障all-reduce，并按自有GPU代际重标定编码与路径的代价模型。",
+    "inputs": [
+      "单NVLink域2至8卡GPU环境（Hopper以上）",
+      "LLM解码负载与消息大小档位",
+      "就绪编码方式与一跳或分片两跳路径配置"
+    ],
+    "baselines": [
+      "SGLang custom AR v2",
+      "NCCL默认all-reduce"
+    ],
+    "metrics": [
+      "all-reduce时延（中位与最优）",
+      "端到端TPOT",
+      "同步开销相对传输的占比"
+    ],
+    "support_criteria": [
+      "all-reduce时延较基线显著下降且TPOT改善在自有负载复现"
+    ],
+    "reject_criteria": [
+      "同步开销在小消息场景占比不足，或就绪编码与接收端校验的开销抵消屏障消除收益"
+    ],
+    "limitations": [
+      "首版限单NVLink域与解码相位，代价模型需按GPU代际重标定"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，身份与既有通信路径调优、设备子集规划、MoE通信SM分区等候选及Idea均不同；但仅有单一arXiv预印本独立分组支撑，收益边界明确——仅单NVLink域2至8卡与bf16或fp32对齐张量、需Hopper以上GPU、端到端模型配置未公开，缺独立复现，先观察。",
+  "related_candidate_ids": [
+    "candidate_91bc3311c7046c9bff22"
+  ],
+  "related_idea_ids": [
+    "idea_46f7dbdd677133518d37"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_7d2af1cdcef97ea38e59",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，身份与既有通信路径调优、设备子集规划、MoE通信SM分区等候选及Idea均不同；但仅有单一arXiv预印本独立分组支撑，收益边界明确——仅单NVLink域2至8卡与bf16或fp32对齐张量、需Hopper以上GPU、端到端模型配置未公开，缺独立复现，先观察。",
+      "evidence_item_ids": [
+        "02d505da249588037229d17d"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

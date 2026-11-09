@@ -488,8 +488,8 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     index = read_json(REPO_ROOT / "knowledge" / "index.json")
     assert index["schema_version"] == 1
     assert len(index["roadmaps"]) == 11
-    assert len(index["ideas"]) == 25
-    assert len(index["idea_candidates"]) == 151
+    assert len(index["ideas"]) == 29
+    assert len(index["idea_candidates"]) == 182
     # The store has been re-materialized issue by issue through the bounded
     # task queue (2026-08-23/26/29 backfill, the 2026-09-03 issue that added
     # the optical_network roadmap, the 2026-09-04/06/10/14 backfill that
@@ -499,9 +499,10 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     # 2026-10-18/21 backfill that each added fifteen more deferred
     # candidates, the per-issue stages for 2026-10-23 and 2026-10-27
     # that added thirteen and eleven, the 2026-10-29 stage that
-    # added five ideas and twenty-six candidates, and the 2026-11-02
-    # stage that added nine ideas and thirty-two candidates), so four
-    # more category clusters joined the five seed clusters; all of
+    # added five ideas and twenty-six candidates, the 2026-11-02
+    # stage that added nine ideas and thirty-two candidates, and the
+    # 2026-11-06 stage that added four ideas and thirty-one candidates),
+    # so four more category clusters joined the five seed clusters; all of
     # them remain temporary.
     assert len(index["frontier_clusters"]) == 9
     assert all(cluster["status"] == "temporary" for cluster in index["frontier_clusters"])

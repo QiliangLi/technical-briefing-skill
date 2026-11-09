@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6c8bedf82d69e0a9e8a2",
+  "identity": {
+    "problem_key": "constrained_backhaul_tool_result_delivery_order",
+    "mechanism_key": "lease_aware_delivery_order_scheduling",
+    "target_key": "web_agent_tool_result_delivery"
+  },
+  "idea_type": "solution_concept",
+  "title": "以租约感知的投递调度压低受限回传链路上Web代理的工具结果时延",
+  "problem": "并发Web代理的工具结果以突发形式到达32–48 kbit/s的受限回传链路，FIFO等常规投递顺序忽略早投递可让请求提前恢复并释放缓存配额，导致工作流时延被放大。",
+  "hypothesis": "若把投递排序与有界前缀租约耦合——投递顺序以缓存命中优先、压力下按独占配额与预估交接时间之比选覆盖对象、前缀租约用原生块引用实现且恢复后归还配额可转投其他历史——则可在受限回传路径上显著压低完整工作流时延。",
+  "mechanism": "投递顺序以缓存命中优先；保护压力下按独占配额与预估交接时间之比选择覆盖对象；前缀租约用原生块引用实现，恢复后归还的配额可转投其他历史。",
+  "target": "受限回传链路上Web代理工作流的工具结果投递调度器",
+  "expected_effect": "受控并发负载的平均完整工作流时延从FIFO的196.6秒降至108.9秒；16条真实任务路径上降50.6%；48次配对比较全部更低。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发布记录同时给出问题（受限回传链路上投递顺序未被调度）、可解释机制（缓存命中优先投递与有界前缀租约耦合）、目标对象与可检验效应（196.6秒降至108.9秒、48次配对比较全部更低）。"
+  },
+  "evidence": [
+    {
+      "item_id": "3c9411349fcf2380a107eead",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.00881v1"
+      ],
+      "reason": "《LADS以租约感知的工具结果投递调度将Web代理工作流时延最多降50.6%》给出问题、机制、目标与可检验效应；其边界为仅单机localhost限速链路与单一7B模型，租约时长未给出，也无命中率与传输字节结果。",
+      "independence_group": "arxiv:2611.00881"
+    }
+  ],
+  "evidence_item_ids": [
+    "3c9411349fcf2380a107eead"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.00881v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.00881"
+  ],
+  "unknowns": [
+    "仅单机localhost限速链路与单一7B模型",
+    "租约时长未给出",
+    "无命中率与传输字节结果",
+    "非跨域证据，WAN场景需单独验证",
+    "单一预印本，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在vLLM类服务引擎上实现租约感知的工具结果投递调度（缓存命中优先排序、按独占配额与预估交接时间之比选覆盖对象、原生块引用前缀租约与恢复后配额归还），以限速回传链路回放并发Web代理的工具调用突发负载，对比FIFO等常规投递。",
+    "inputs": [
+      "并发Web代理工具调用trace",
+      "回传链路带宽档位（32–48 kbit/s量级上下扫描）",
+      "租约时长与配额档位"
+    ],
+    "baselines": [
+      "FIFO投递",
+      "其他常规投递顺序"
+    ],
+    "metrics": [
+      "平均完整工作流时延",
+      "配对比较胜率",
+      "缓存配额占用与命中率",
+      "传输字节数"
+    ],
+    "support_criteria": [
+      "各带宽档位下工作流时延显著低于FIFO且配额占用有界"
+    ],
+    "reject_criteria": [
+      "租约维护开销或压力下的覆盖选择使早恢复收益被抵消"
+    ],
+    "limitations": [
+      "原始评估为单机localhost限速链路与单一7B模型，补测命中率与传输字节前结论有限"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且身份区别于既有候选与Idea（idea_984fec4fcf65a75a6b1f以本记录为跨域缓存配额与租约调度的相邻证据吸收，但其身份为部署亲和路由加双键控压缩保留；JointServe为单卡显存统一预算），但证据为单一预印本、仅单机localhost限速链路与单一7B模型验证，租约时长未给出且无命中率与传输字节结果，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_984fec4fcf65a75a6b1f",
+    "candidate_5393564e98d6d52d688e"
+  ],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d307e715cf166628f0db",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且身份区别于既有候选与Idea，但单一预印本仅单机localhost限速链路与单一7B模型验证、租约时长与命中率及传输字节缺失，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "3c9411349fcf2380a107eead"
+      ],
+      "actor": "agent"
+    }
+  ]
+}
