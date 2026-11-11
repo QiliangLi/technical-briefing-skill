@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_9a70db30658aacd6364a",
+  "identity": {
+    "problem_key": "local_agent_moe_post_tool_first_token_wait",
+    "mechanism_key": "routing_stability_hot_expert_residency_pool",
+    "target_key": "local_agent_moe_inference_engine"
+  },
+  "idea_type": "solution_concept",
+  "title": "跨层共享热专家GPU驻留池：借Agent路由稳定偏斜降低本地MoE工具调用后首token等待",
+  "problem": "本地工作站跑大MoE时部分专家只能留在主机内存，现有CPU-GPU推理引擎难以兼顾prefill与decode，本地Agent工具输出后首token等待长。",
+  "hypothesis": "若利用Agent负载路由的跨会话稳定偏斜（44%专家承接84%路由），在每GPU建立跨层共享的热专家驻留池并按代价模型选取成员，短prefill热路由在GPU算、冷路由留CPU，长prefill冷专家只上传一次，则本地Agent MoE推理的工具调用后首token等待与请求总时间可显著低于现有CPU-GPU引擎。",
+  "mechanism": "每GPU建跨层共享热专家驻留池，由成本模型选取成员；Agent路由的跨会话稳定偏斜（44%专家承接84%路由）保证驻留集跨会话有效；短prefill热路由在GPU计算、冷路由留CPU，长prefill冷专家仅上传一次参与前向计算。",
+  "target": "本地Agent的CPU-GPU MoE推理引擎（4×RTX 4090D重放DeepSeek-V4-Flash会话验证）",
+  "expected_effect": "工具输出后首token中位等待0.98–1.26秒，较六个基线至少节省12.4%请求时间。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录（supplement）同时给出问题、可解释机制、目标对象与可检验效应；44%专家承接84%路由的跨会话稳定偏斜可作可复用状态放置依据，但系统不出单机，与跨域主题仅弱相关。"
+  },
+  "evidence": [
+    {
+      "item_id": "932d269a23aa0445402a0678",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.11533v1"
+      ],
+      "reason": "《Ostinato让本地Agent的MoE推理热专家常驻GPU》给出问题（本地大MoE部分专家留主机内存、现有CPU-GPU引擎难兼顾prefill与decode）、机制（每GPU跨层共享热专家驻留池、成本模型选取、短prefill热路由在GPU/冷路由留CPU、长prefill冷专家只上传一次，依据44%专家承接84%路由的跨会话稳定偏斜）、目标（本地Agent的CPU-GPU MoE推理引擎）与可检验效应（4×RTX 4090D重放DeepSeek-V4-Flash会话，工具输出后首token中位等待0.98–1.26秒、较六个基线至少省12.4%请求时间）；边界为重放轨迹评估、强制记录输出token、未测真实任务成功率且完整方法仅验证一款模型。",
+      "independence_group": "arxiv:2611.11533"
+    }
+  ],
+  "evidence_item_ids": [
+    "932d269a23aa0445402a0678"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.11533v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.11533"
+  ],
+  "unknowns": [
+    "真实Agent任务成功率未测：评估基于重放轨迹且强制记录输出token。",
+    "完整方法仅在一款模型（DeepSeek-V4-Flash重放）上验证，跨模型可迁移性未知。",
+    "44%专家承接84%路由的跨会话稳定偏斜是否在其他MoE模型、其他Agent负载与会话内热集漂移下保持未知，驻留失配时的重取开销未报告。",
+    "与跨域主题的关联止于可复用状态放置依据：系统不出单机，跨域放置决策未验证。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在开源CPU-GPU MoE推理引擎中实现跨层共享热专家驻留池（成本模型选取、短prefill热/冷路由分置、长prefill冷专家单次上传），先复现原重放设定，再接入真实Agent任务与第二款MoE模型。",
+    "inputs": [
+      "DeepSeek-V4-Flash会话重放轨迹（复现原设定）",
+      "第二款MoE模型的路由统计与Agent会话轨迹",
+      "真实Agent任务负载（不强制记录输出token）",
+      "每卡显存预算与各专家权重规模"
+    ],
+    "baselines": [
+      "原研究的六个CPU-GPU MoE服务基线（重放设定复现）",
+      "无热专家驻留池的常规专家offload引擎",
+      "仅按全局路由频率静态驻留的消融变体"
+    ],
+    "metrics": [
+      "工具输出后首token中位等待",
+      "请求总时间与相对节省百分比",
+      "真实Agent任务成功率",
+      "驻留池显存开销与热集路由覆盖率"
+    ],
+    "support_criteria": [
+      "复现设定下保持至少12.4%请求时间节省且首token中位等待不劣于原报告区间",
+      "第二款模型上请求时间节省与首token等待收益方向一致",
+      "真实Agent任务成功率不因驻留池替换而下降"
+    ],
+    "reject_criteria": [
+      "收益仅在强制记录输出token的重放中成立、真实任务负载下消失",
+      "会话内热集漂移导致驻留失配，收益被冷专家重取开销抵消",
+      "跨模型迁移后成本模型选取失效或驻留池显存开销超出预算"
+    ],
+    "limitations": [
+      "验证计划为建议、尚未执行，任何条目不构成已执行结果",
+      "跨域放置外推未纳入本计划（原系统不出单机）"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，身份区别于既有候选与Idea（最接近的MoE服务候选candidate_936c6af54caa152d963c为注意力模式/专家集/KV位宽的逐token联合预算路由，不做专家权重驻留放置；GPU-CPU统一逻辑缓存类候选candidate_7d29b5c11609f8edbf6e面向KV淘汰而非专家权重，多模型显存统一候选candidate_5393564e98d6d52d688e为权重分片与KV共享预算）；但证据为单一预印本，重放轨迹评估且强制记录输出token、未测真实任务成功率，完整方法仅验证一款模型，缺独立支持与跨负载适用边界，先延期观察。",
+  "related_candidate_ids": [
+    "candidate_936c6af54caa152d963c"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_183a0e622194ea9c4ea5",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应完整，身份区别于既有候选与Idea（最接近的MoE服务候选candidate_936c6af54caa152d963c为注意力模式/专家集/KV位宽的逐token联合预算路由，不做专家权重驻留放置；GPU-CPU统一逻辑缓存类候选candidate_7d29b5c11609f8edbf6e面向KV淘汰而非专家权重，多模型显存统一候选candidate_5393564e98d6d52d688e为权重分片与KV共享预算）；但证据为单一预印本，重放轨迹评估且强制记录输出token、未测真实任务成功率，完整方法仅验证一款模型，缺独立支持与跨负载适用边界，先延期观察。",
+      "evidence_item_ids": [
+        "932d269a23aa0445402a0678"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

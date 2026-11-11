@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_0913234c3dcf2f38e1f5",
+  "identity": {
+    "problem_key": "tool_observation_context_bloat",
+    "mechanism_key": "latent_token_observation_channel",
+    "target_key": "agent_token_cost_task_quality"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "隐token观测通道能否在终端与文件代理任务上大幅降低token而不损任务质量",
+  "problem": "ReAct式代理把原始工具观测追加进上下文，长观测迅速挤占预算（原始论文测得第四步即占上下文96.7%）；终端与文件类编码代理的观测体积尤其成为长链任务的约束。",
+  "hypothesis": "把工具观测压缩为隐token注入输入嵌入空间、并对齐下一步动作分布而非重建原文，能在终端与文件观测类代理任务上把总token较完整观测基线降低50%以上，同时任务指标（EM/F1或成功率）下降不超过2个百分点。",
+  "mechanism": "上下文感知编码器以任务指令与推理轨迹为条件，把观测压缩为连续隐token映射进代理输入空间；训练目标对齐全观测与压缩观测的下一步动作分布，而非观测内容重建。",
+  "expected_effect": "总token成本下降50%以上且任务指标基本保持，代理在同预算下可承载更长观测链与更多工具步数。",
+  "topic_ids": [
+    "frontier_exploration"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "f083c9fb0bddf4f1f2ebc43e",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06500v1"
+      ],
+      "reason": "该论文在web搜索代理、四个问答基准与Qwen、GLM两族模型上实测总token较完整观测基线降70.01%—89.24%且八个设置的EM与F1均上升，同时明示向其他工具类型迁移无实验，正是本假设要检验的未覆盖场景。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "隐token通道在终端与文件观测上的压缩率与任务质量权衡未经原论文验证（工具迁移无实验）",
+    "编码器训练成本未报告",
+    "超过20步的长时程任务与多模态观测未测"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "Qwen与GLM两族中各选一个7B—32B级开源模型，配一个执行终端命令与读文件观测的编码代理。",
+    "inputs": [
+      "终端命令输出与文件内容两类观测构成任务集，各不少于50例且与原论文web搜索问答场景不重叠",
+      "每个观测压缩为4/8/16/32个隐token四档扫描"
+    ],
+    "baselines": [
+      "完整观测直接放入上下文（原论文基线）",
+      "观测截断",
+      "观测文本摘要"
+    ],
+    "metrics": [
+      "总token数",
+      "EM/F1或任务成功率",
+      "端到端延迟",
+      "编码器训练成本"
+    ],
+    "support_criteria": [
+      "总token降幅不低于50%，且任务指标相对完整观测基线下降不超过2个百分点",
+      "收益方向在两族模型上一致"
+    ],
+    "reject_criteria": [
+      "任务指标下降超过5个百分点",
+      "总token降幅低于30%",
+      "收益只出现在编码器训练分布内的任务"
+    ],
+    "limitations": [
+      "原论文仅在web搜索问答与Qwen、GLM两族模型上评估",
+      "编码器训练成本未计入原报告",
+      "长时程多步任务未覆盖"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "idea_0913234c3dcf2f38e1f5_created_2026-11-11",
+      "issue_date": "2026-11-11",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "f083c9fb0bddf4f1f2ebc43e证明隐token观测压缩在web搜索问答上token降七成以上且指标不降反升，但其boundary明示工具迁移无实验；终端与文件观测是自有编码代理的主要观测形态，故立此假设检验该机制在未覆盖场景的收益边界。",
+      "evidence_item_ids": [
+        "f083c9fb0bddf4f1f2ebc43e"
+      ]
+    }
+  ]
+}

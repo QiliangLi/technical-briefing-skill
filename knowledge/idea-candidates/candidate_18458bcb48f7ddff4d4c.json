@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_18458bcb48f7ddff4d4c",
+  "identity": {
+    "problem_key": "irreversible_kv_eviction_breaks_verbatim_tasks",
+    "mechanism_key": "quantized_recallable_cold_tier_with_temporal_prefetch",
+    "target_key": "tight_budget_quality_with_bounded_overhead"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "驱逐即降级：内容得分式驱逐改为可召回4比特量化冷层加读指针时序预取",
+  "problem": "内容得分式KV驱逐不可逆删除被逐条目，使逐字复制类任务中途断裂——该类任务占最强基线剩余差距的86%，RULER-16K、20%保留率下Qwen2.5-7B该类任务得分仅0.8，且现有驱逐路径没有召回通道。",
+  "hypothesis": "在KV驱逐/压缩路径中把低可预测性字面片段经准入降入4比特量化可召回冷层而非删除，读指针检测到逐字复制时预取位置后继换入恒定容量热层（单次预取开销与上下文长度无关），可在紧保留预算下把逐字复制类任务从近0恢复到78.4量级、整体均值较等预算不可逆驱逐对照高约8分且LongBench无回归，存储开销约0.36%、复制期时延开销约4.8%；若增益不跨模型迁移（Mistral-7B口径仅1.66）、冷层量化宽度塌陷（2比特已有塌陷先例）或预取误触发污染热层，则可召回冷层只应作为逐字密集负载的可选驱逐路径而非默认行为。",
+  "mechanism": "驱逐改为准入降级：低可预测性字面片段经准入降入4比特量化冷层而非删除；压缩器增加时序预取通道，读指针检测到逐字复制时预取位置后继换入热层，热层容量恒定使单次预取开销与上下文长度无关。",
+  "target": "自研推理栈KVCache驱逐/压缩路径的降级与预取通道（紧保留预算下的驱逐决策点）。",
+  "expected_effect": "RULER-16K、20%保留率下Qwen2.5-7B逐字任务从0.8升至78.4、均值较等预算对照高8.4分、LongBench无回归；代价约0.36%存储与复制期4.8%时延。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录同时给出问题（内容得分式驱逐不可逆删除使逐字复制任务中途断裂、该类任务占最强基线剩余差距的86%）、可解释机制（准入降级入4比特量化冷层而非删除、读指针检测逐字复制时预取位置后继换入恒定容量热层、单次开销与上下文长度无关）、目标对象（KVCache驱逐/压缩路径）与可检验效应（逐字任务0.8升至78.4、均值较等预算对照高8.4分、LongBench无回归、存储约0.36%与复制期4.8%时延的有界开销）；但其身份与含义已在本期被既有Idea吸收，比对后按重复处置。"
+  },
+  "evidence": [
+    {
+      "item_id": "56b69243c1dcf4c051e4d398",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.08811v1"
+      ],
+      "reason": "KVFetch给出问题（内容得分式KV驱逐使逐字复制任务中途断裂、该类任务占最强基线剩余差距的86%）、机制（低可预测性字面片段经准入降入4比特量化冷层而非删除，读指针检测到逐字复制时预取位置后继换入热层，热层容量恒定、单次开销与上下文长度无关）、目标（KV缓存压缩/驱逐路径）与可检验效应（RULER-16K、20%保留率下Qwen2.5-7B逐字任务从0.8升至78.4、均值较等预算对照高8.4分、LongBench无回归）；边界为只修复续写不修复定位、Mistral-7B增益仅1.66、2比特冷层塌陷、单作者在审且代码未公开。",
+      "independence_group": "arxiv:2610.08811"
+    }
+  ],
+  "evidence_item_ids": [
+    "56b69243c1dcf4c051e4d398"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.08811v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.08811"
+  ],
+  "unknowns": [
+    "只修复续写不修复定位类任务，定位类残余质量缺口未刻画",
+    "跨模型与跨预算的增益稳定性：Mistral-7B增益仅1.66，30B以上与MoE模型行为未知",
+    "冷层量化宽度的塌陷边界：2比特已塌陷、4比特可行、3比特未测",
+    "单作者在审预印本且代码未公开，无独立工作线复现",
+    "无serving级吞吐、并发与显存占用数据，与前缀缓存命中路径及GPU/CPU/SSD分层放置的叠加未评估",
+    "预取误触发（非逐字负载）下的热层污染与开销未报告"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在统一KV驱逐框架（Qwen2.5-7B复现口径加Mistral-7B弱增益边界）中实现准入降级入4比特量化冷层与读指针时序预取通道，对照等预算不可逆驱逐；先以全量注意力探针确认逐字复制轨迹再开启预取。",
+    "inputs": [
+      "RULER-16K逐字复制与定位类任务对照",
+      "保留预算5%/10%/20%扫描",
+      "冷层量化宽度4/3/2比特",
+      "预取深度1-8并混入非逐字负载测误触发"
+    ],
+    "baselines": [
+      "等预算不可逆驱逐（内容得分式）",
+      "全量注意力（质量上界）",
+      "驱逐直删无冷层对照"
+    ],
+    "metrics": [
+      "逐字任务得分与全量注意力比值",
+      "RULER/LongBench均值",
+      "冷层存储开销占比",
+      "复制期时延开销占比"
+    ],
+    "support_criteria": [
+      "逐字任务恢复到78.4量级且整体均值不低于等预算不可逆对照",
+      "LongBench无回归且存储开销≤1%、复制期时延开销≤10%"
+    ],
+    "reject_criteria": [
+      "任一模型整体均值低于等预算不可逆对照或预取误触发污染热层",
+      "存储或时延开销随上下文长度超线性增长或4比特冷层质量塌陷"
+    ],
+    "limitations": [
+      "原证据为单作者在审、代码未公开的单模型试点",
+      "未覆盖多请求并发与分层放置组合"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "与既有Idea idea_18458bcb48f7ddff4d4c（驱逐即降级：可召回4比特量化冷层加读指针预取的KV驱逐假设）身份与含义相同：该Idea的problem/hypothesis/mechanism已包含本触发项的『驱逐改为准入降入4比特量化可召回冷层而非删除、读指针检测逐字复制时预取位置后继换入恒定容量热层、逐字任务从0.8升至78.4、均值较等预算对照高8.4分、LongBench无回归、存储约0.36%、复制期约4.8%时延』语义，且该Idea于本期（2026-11-11 created）把本触发项56b69243c1dcf4c051e4d398吸收为首条evidence_for证据（另含SGLang 0.5.21驱逐降级先例），按重复处置并指向该Idea。",
+  "related_candidate_ids": [
+    "candidate_d4ad44954f43a2562f13",
+    "candidate_80a11fa68bdf30c34571"
+  ],
+  "related_idea_ids": [
+    "idea_18458bcb48f7ddff4d4c"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_8675628d1a32e68434d5",
+      "issue_date": "2026-11-11",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "触发项同时具备问题、机制、目标与可检验效应，但其『驱逐即降级为可召回4比特量化冷层加读指针时序预取』的语义已被既有Idea idea_18458bcb48f7ddff4d4c吸收（该Idea于2026-11-11把本触发项吸收为首条evidence_for证据），按重复处置并指向该Idea。",
+      "evidence_item_ids": [
+        "56b69243c1dcf4c051e4d398"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

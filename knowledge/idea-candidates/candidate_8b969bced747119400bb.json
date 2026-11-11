@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8b969bced747119400bb",
+  "identity": {
+    "problem_key": "agent_message_lifecycle_blind_lru_kv_tiering",
+    "mechanism_key": "harness_lifecycle_export_driven_three_tier_placement",
+    "target_key": "agent_serving_kv_tiered_eviction_engine"
+  },
+  "idea_type": "solution_concept",
+  "title": "Harness导出消息生命周期驱动Agent服务KVCache三级放置与驱逐",
+  "problem": "ReAct智能体的消息有保留、废弃与暂存之分，但服务层只看到KV访问：纯LRU既不回收已废弃消息的死KV，又误逐即将复用的暂存KV，Agent流量下分层KVCache的命中率与端到端时延受限。",
+  "hypothesis": "让Harness侧记录八个消息级原语并异步导出，服务端把消息生命周期翻译为KV状态并驱动三级放置（废弃KV直接回收、暂存KV按最久等待优先保留），可在生产轨迹回放中较LMCache式纯LRU分层把端到端时延最高降26.3%量级、任务成本平均降40.0%量级，高缓存压力下命中率从约10%量级升至约50%量级；若生命周期导出的侵入性或异步开销超过收益、或收益仅在匹配token长度的随机提示回放下成立，则该机制只应作为能导出生命周期元数据的Agent框架的可选路径而非默认驱逐行为。",
+  "mechanism": "Harness侧记录八个消息级原语并异步导出；服务端把消息生命周期翻译为KV状态；分层引擎据此直接回收废弃KV，暂存KV按最久等待优先保留，以生命周期状态替代纯LRU驱动准入与驱逐。",
+  "target": "Agent服务的KVCache分层存储/驱逐引擎（LMCache类分层管理）的准入与驱逐决策点",
+  "expected_effect": "生产轨迹重放中较LMCache端到端时延最高降26.3%、任务成本平均降40.0%；高缓存压力下命中率49.5%对LMCache LRU的10.2%。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录同时给出问题（服务层只看到KV访问，LRU既不回收死KV也误逐即将复用的暂存KV）、可解释机制（八个消息级原语异步导出、生命周期翻译为KV状态驱动三级放置）、目标对象（Agent服务KVCache分层引擎的准入与驱逐）与可检验效应（较LMCache的端到端时延、任务成本与高缓存压力命中率对照）。"
+  },
+  "evidence": [
+    {
+      "item_id": "8f9c78115b218621b855fc32",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.39819v1"
+      ],
+      "reason": "KVTether给出问题（ReAct智能体消息有保留/废弃/暂存之分而服务层只看到KV访问，LRU既不回收死KV也误逐即将复用项）、机制（Harness侧记录八个消息级原语并异步导出，服务端把消息生命周期翻译为KV状态，分层引擎直接回收废弃KV、暂存KV按最久等待优先保留）、目标（Agent服务KVCache分层管理）与可检验效应（生产轨迹重放较LMCache端到端时延最高降26.3%、任务成本平均降40.0%、高缓存压力下命中率49.5%对10.2%）；边界为重放用匹配token长度的随机提示、任务成本为估算值、未见分负载明细。",
+      "independence_group": "arxiv:2609.39819"
+    }
+  ],
+  "evidence_item_ids": [
+    "8f9c78115b218621b855fc32"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.39819v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.39819"
+  ],
+  "unknowns": [
+    "重放用匹配token长度的随机提示而非真实内容流量，命中率与时延收益是否随真实提示分布变化未知",
+    "任务成本为估算值，且证据包未见分负载明细",
+    "八个消息级原语的Harness侧插桩开销与异步导出延迟未量化，跨框架适配成本仅有项目相关性判断（每框架至多216行代码）支撑",
+    "单一预印本，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部Agent服务栈实现Harness侧消息生命周期原语导出与服务端KV状态翻译的三级放置（废弃KV直接回收、暂存KV按最久等待优先保留），对照LMCache式纯LRU分层基线。",
+    "inputs": [
+      "内部ReAct智能体生产轨迹回放（真实提示内容，对齐并修正随机提示口径）",
+      "缓存压力多档扫描（含高缓存压力档）",
+      "生命周期驱动与纯LRU准入/驱逐的开关对照",
+      "分负载明细插桩（各任务类型的命中率、时延与实测任务成本）"
+    ],
+    "baselines": [
+      "LMCache式纯LRU分层管理",
+      "全量GPU驻留（容量与时延上界参照）"
+    ],
+    "metrics": [
+      "端到端时延P50/P99",
+      "高缓存压力下命中率",
+      "实测任务成本（非估算）",
+      "废弃KV回收量与暂存KV误逐率",
+      "Harness插桩与异步导出开销占比"
+    ],
+    "support_criteria": [
+      "真实内容回放下命中率与时延收益复现49.5%对10.2%与最高降26.3%的量级",
+      "实测任务成本确认平均降40.0%量级且插桩开销占比小"
+    ],
+    "reject_criteria": [
+      "生命周期导出的侵入性或异步延迟吞噬收益",
+      "真实提示内容下收益消失，说明随机提示回放高估"
+    ],
+    "limitations": [
+      "原始证据重放用匹配token长度的随机提示且任务成本为估算值",
+      "无分负载明细与独立复现"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有候选/Idea身份不同（影子重放在线切换idea_e8ac8cc5cd625623e8dd为无元数据的命中率工程，本候选为Harness生命周期元数据驱动的分层准入与驱逐；亦不同于反应式分层决策、跨轮压缩保留与操作历史版本化各线），但证据为单一预印本，重放用匹配token长度的随机提示、任务成本为估算值且无分负载明细，无独立支持；且本触发项已于本期（2026-11-11 evidence_added）并入idea_e8ac8cc5cd625623e8dd作为语义信号驱逐传导的佐证证据，生命周期驱动分层是否单列谱系待人工决策。",
+  "related_candidate_ids": [
+    "candidate_827f27dbafeac04e8d94",
+    "candidate_90e9417774bee4c97457",
+    "candidate_8fc8416fea27e4c4cbd9"
+  ],
+  "related_idea_ids": [
+    "idea_e8ac8cc5cd625623e8dd"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_72972777eca9322d491e",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有候选/Idea身份不同，但证据为单一预印本且重放为匹配token长度的随机提示口径、任务成本为估算值、无分负载明细，无独立支持；触发项已并入idea_e8ac8cc5cd625623e8dd作语义驱逐传导佐证，是否单列谱系待人工决策。",
+      "evidence_item_ids": [
+        "8f9c78115b218621b855fc32"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

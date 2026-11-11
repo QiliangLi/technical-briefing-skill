@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a6529d84169abb41624b",
+  "identity": {
+    "problem_key": "analog_cim_full_datapath_adaptation_gap",
+    "mechanism_key": "composed_weight_reparam_and_analog_activation",
+    "target_key": "analog_cim_pretrained_inference_deployment"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "权重侧离线重参数化与激活侧ACAM外围能否组合成免重训练的全模拟存内计算推理路径",
+  "problem": "模拟CIM的部署适配只被分片证明：触发项证明权重映射可用离线重参数化适配器件噪声与低精度ADC（ReRAM、6-bit ADC、编程后一天条件下ViT-B/16从37.4%恢复到82.9%、Phi-4从27.0%到72.2%），NIFA证明非线性激活与模数转换可在模拟域由ACAM承担并替代占超七成面积功耗的ADC（同22nm节点TOPS 16.4-32.8对基线0.91）；但没有单条记录在同一条模拟数据通路上同时覆盖权重侧与激活/转换侧，组合后的相互作用（权重侧变换按ADC误差结构校准，而ACAM阈值误差结构不同）完全未检验。",
+  "hypothesis": "若把针对器件噪声与ADC位数校准的离线重参数化（计算中心化加Hadamard输出旋转与tile内输入旋转）与ACAM式模拟激活/转换外围组合到同一模拟数据通路，预训练模型可在全模拟路径上保持距浮点约3个百分点内的精度，同时保留外围替换带来的面积/能效收益；若把ADC误差模型换为ACAM阈值误差模型后精度恢复消失或大幅退化，则说明两侧适配不可加、必须联合校准。",
+  "mechanism": "组合机制：权重侧由计算中心化把模拟路径上可静态预计算的部分移入数字域，等距变换（Hadamard输出旋转与tile内输入旋转）重塑权重分布以匹配模拟阵列误差结构，推理时在数字域执行匹配变换；激活/转换侧由ACAM编为分段决策树阈值在模拟域原生完成非线性激活并承担模数转换（每权重4个ReRAM单元支持带符号MAC）。二者作用于模拟数据通路的不相交段（线性映射与激活/转换），两条记录分别证明各自段在仿真中可行，均未覆盖对方段，也未检验组合。",
+  "target": "预训练模型在模拟存内计算（ReRAM/PCM阵列加ACAM式模拟激活与转换外围）上的端到端推理部署路径",
+  "expected_effect": "组合路径在ViT-B/16级模型上距浮点精度差距保持约3个百分点内（触发项单独口径为2.2个百分点），同时面积效率与能效保持NIFA对ADC外围的报告量级（面积效率4.1倍、能效1.9倍、同节点TOPS 16.4-32.8对0.91）；ACAM阈值误差替换ADC误差后的精度退化幅度即为组合性代价的直接观测量。",
+  "topic_ids": [
+    "storage_media"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "触发项（2026-11-11，权重侧离线适配）与NIFA（2026-08-17，激活/转换侧模拟外围）分属两个期次、两个独立组，分别覆盖同一条模拟数据通路的不相交段；全模拟通路的组合适配机制是任何单条记录都未陈述的联合命题，满足跨期综合条件。"
+  },
+  "evidence": [
+    {
+      "item_id": "e54be663fc81b351d0a9570b",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08693v1"
+      ],
+      "reason": "《模拟存内计算免重训练精度恢复》证明权重侧离线适配可行：计算中心化加等距变换使ReRAM、6-bit ADC、编程后一天条件下ViT-B/16从37.4%恢复到82.9%、距浮点2.2个百分点内；其变换按器件噪声与ADC精度校准，未涉及模拟域激活与转换外围替换。",
+      "independence_group": "arxiv:2611.08693"
+    },
+    {
+      "item_id": "317ccebca4f647a12810f191",
+      "issue_date": "2026-08-17",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.15123v1"
+      ],
+      "reason": "《NIFA用ACAM替代ADC增强FPGA存内计算》证明激活/转换侧可行：ACAM以分段决策树阈值在模拟域原生完成非线性激活并替代占超七成面积功耗的ADC，能效较CPU基准40倍；其验证仅到BERT-Tiny级小模型，未与任何权重侧适配组合。",
+      "independence_group": "arxiv:2607.15123"
+    }
+  ],
+  "evidence_item_ids": [
+    "e54be663fc81b351d0a9570b",
+    "317ccebca4f647a12810f191"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.08693v1",
+    "https://arxiv.org/abs/2607.15123v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.08693",
+    "arxiv:2607.15123"
+  ],
+  "unknowns": [
+    "两条证据均为仿真口径（AIHWKit；VTR与解析模拟器），无流片或真实阵列验证",
+    "组合机制无任何直接实验：没有记录在把ADC换为ACAM阈值转换后检验权重侧等距变换是否仍成立，两种误差结构不同",
+    "规模错配：触发项验证ViT-B/16与Phi-4但硬件感知训练对比仅覆盖CNN，NIFA仅测BERT-Tiny，未在同级模型上同时覆盖两侧",
+    "触发项校准只覆盖编程后一天的漂移，ACAM阈值自身的漂移与变异性未纳入"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在AIHWKit类模拟CIM仿真中为激活/转换段加入ACAM阈值误差模型（按NIFA分段决策树阈值与每权重4个ReRAM单元配置），把ViT-B/16级预训练模型经离线重参数化后映射到全模拟数据通路，端到端测任务精度与面积/能效。",
+    "inputs": [
+      "预训练ViT-B/16与Phi-4级检查点",
+      "ADC位数4-8bit与ACAM阈值误差参数扫描",
+      "PCM与ReRAM器件噪声参数",
+      "tile划分与每权重单元数配置"
+    ],
+    "baselines": [
+      "ADC数字外围加重参数化（触发项口径）",
+      "ACAM外围不加权重侧适配（NIFA口径）",
+      "浮点全精度模型",
+      "CNN级硬件感知重训练参照"
+    ],
+    "metrics": [
+      "距浮点任务精度差距（百分点）",
+      "相对ADC外围的面积效率与能效比",
+      "对ACAM阈值漂移与tile划分的敏感性"
+    ],
+    "support_criteria": [
+      "组合路径距浮点不超过约3个百分点，同时保持NIFA口径对ADC外围的面积/能效优势量级"
+    ],
+    "reject_criteria": [
+      "把ADC误差模型换为ACAM阈值误差模型后精度恢复消失或大幅退化，说明两侧适配不可加、需联合校准"
+    ],
+    "limitations": [
+      "全部为仿真口径，ACAM阈值误差模型跨框架移植且无实测对照",
+      "无真实PCM/ReRAM芯片与介质参数"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，且身份与既有对象不同：idea_dbbb14247e3ff517cfa2只覆盖权重侧离线重参数化的精度恢复，candidate_8130e4f66431352482cb只覆盖设计期介质选型签名，本候选主张二者都未陈述的全模拟通路组合适配机制；但组合机制无任何独立验证，两条证据均为仿真级，且与本期刚建立的idea_dbbb14247e3ff517cfa2存在谱系重叠，独立晋升还是并入该Idea需要人工谱系决定。",
+  "related_candidate_ids": [
+    "candidate_8130e4f66431352482cb"
+  ],
+  "related_idea_ids": [
+    "idea_dbbb14247e3ff517cfa2"
+  ],
+  "first_seen_issue": "2026-08-17",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_487519d810aabf4efafe",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "跨期综合（触发项权重侧+NIFA激活/转换侧）四要素齐全且身份独立于既有候选与Idea，但组合机制无独立验证、两侧证据均为仿真级，且与本期刚建立的Idea存在谱系重叠，需人工决定晋升路径。",
+      "evidence_item_ids": [
+        "e54be663fc81b351d0a9570b",
+        "317ccebca4f647a12810f191"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -72,6 +72,14 @@
         "https://americas.kioxia.com/en-us/business/news/2026/ssd-20261008-1.html"
       ],
       "reason": "KIOXIA在OCP 2026演示基于XL-FLASH第三代的增强GP系列近GPU SSD，512字节随机读宣称20+ MIOPS，与GP1同族，为512B级细粒度介质层能力再添器件信号（技术演示而非量产，无队列深度、盘数、时延、功耗与主机/GPU配置，通稿未描述I/O发起者、控制路径或数据路径变化，不能作路径层证据）。"
+    },
+    {
+      "item_id": "9277255f427b131d07864051",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://www.hotstorage.org/2026/slides/plink_slide.pdf"
+      ],
+      "reason": "三星HotStorage '26幻灯片PLINK量化了GPU发起细粒度NVMe读的GPU侧队列处理开销：BaM式同步路径93.1%的I/O周转时间耗在CQ轮询与门铃上，专用SQ warp持续提交加专用CQ warp处理完成、按槽位等待与warp级门铃合并后，4KB随机读队列深度1024微基准中以136个I/O warp使SSD饱和、较基线238个少43%（只做SQ/CQ解耦反而需246个），为本Idea机制层的GPU侧客户端库设计新增首个带实测数字的队列处理开销与改进证据（幻灯片只报告warp数量、无时延与端到端负载结果，基准不计完成通知开销）。"
     }
   ],
   "evidence_against": [],
@@ -79,7 +87,8 @@
     "GP1写IOPS与尾时延分布缺失，评测样品2026年底才交付",
     "GPU侧发起路径的错误恢复与多进程隔离语义未公开",
     "512B粒度在真实KV与权重访问模式下的有效命中率未知",
-    "美光25M-100M IOPS与KIOXIA 20+ MIOPS均为无条件宣称或路线图目标，器件实测与产品规格未交付"
+    "美光25M-100M IOPS与KIOXIA 20+ MIOPS均为无条件宣称或路线图目标，器件实测与产品规格未交付",
+    "PLINK幻灯片只报告warp数量（136对238），队列重构对时延分布与端到端推理负载的收益未测，基准也不计完成通知开销"
   ],
   "validation_plan": {
     "mode": "benchmark",
@@ -100,7 +109,8 @@
       "细粒度随机读IOPS与时延P50/P99",
       "每I/O功耗",
       "TTFT与吞吐",
-      "HBM替代比例与每GB成本"
+      "HBM替代比例与每GB成本",
+      "使SSD饱和所需I/O warp数（GPU侧队列处理资源成本，参照PLINK的136对238口径）"
     ],
     "support_criteria": [
       "在P99时延预算内以更低每GB成本承接热工作集溢出，端到端TTFT优于重算基线"
@@ -113,12 +123,13 @@
       "GP1为厂商规格，无第三方评测与写IOPS数据",
       "SCADA服务器生态与错误恢复语义未公开",
       "未覆盖多节点共享与RDMA远程层",
-      "美光与KIOXIA的新IOPS目标缺基线与测试条件，器件实测交付前验证只能以现有低延迟NVMe近似"
+      "美光与KIOXIA的新IOPS目标缺基线与测试条件，器件实测交付前验证只能以现有低延迟NVMe近似",
+      "PLINK结果为幻灯片微基准口径，仅warp数量、无时延与端到端负载，warp占用指标的迁移性未验证"
     ],
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-09-04",
-  "last_updated_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-11",
   "decision_log": [
     {
       "event_id": "idea_decision_ec4d10d0cb04192e966e",
@@ -145,6 +156,17 @@
       "evidence_item_ids": [
         "e39d7c409d0069a974468b8c",
         "17eb246304de167a8bbcdc2a"
+      ]
+    },
+    {
+      "event_id": "idea_decision_4a9c1e77b30d2f5a08e2",
+      "issue_date": "2026-11-11",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "PLINK把GPU发起细粒度NVMe读的GPU侧队列处理开销量化为BaM式同步路径93.1%周转时间耗在CQ轮询与门铃，并给出专用SQ/CQ warp分工加槽位等待与warp级门铃合并后warp占用少43%的微基准（136对238，4KB随机读队列深度1024），为机制层新增首个带实测数字的队列处理证据，warp占用应入验证指标；幻灯片无时延与端到端结果，量化口径未变，维持observing。",
+      "evidence_item_ids": [
+        "9277255f427b131d07864051"
       ]
     }
   ]

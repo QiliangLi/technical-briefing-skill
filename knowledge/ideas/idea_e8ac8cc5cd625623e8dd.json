@@ -56,11 +56,27 @@
         "https://arxiv.org/abs/2610.02766v1"
       ],
       "reason": "PCR 把前缀块组留存超时化为最大权闭包、一次最小割精确求解，39,632 条 Mooncake 请求回放中相干超时在 120 个组合的 118 个达无约束最优，低价位命中率与全局 TTL 相当、平均驻留块从 715.97 降至 69.85（全部离线回放、无 TTFT/吞吐指标）；跨条目推断(inferred)：留存/驱逐维度的离线精确最优解可直接充当在线切换策略评估的 oracle 上限，重放式比选方法论与影子重放在线切换同构。"
+    },
+    {
+      "item_id": "954a38c6f86e6cf1050cee83",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09715v1"
+      ],
+      "reason": "IAC 实测意图感知驱逐把 SGLang 上 ShareChat 命中率从 LRU 的 12.2% 提到 34.6%（140K 容量）、Qwen-1.5-110B 在 5 请求/秒下 TTFT 从 6.98 秒降至 3.76 秒（回放公开对话轨迹、单一 4xA100 测试床、非在线生产验证），首次量化驱逐策略选择的命中率增益向 TTFT 的传导；跨条目推断(inferred)：支持『驱逐策略需匹配流量形态且收益可传导端到端』，但其依赖意图元数据，不能直接证明无元数据影子切换路径的传导效率。"
+    },
+    {
+      "item_id": "8f9c78115b218621b855fc32",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.39819v1"
+      ],
+      "reason": "KVTether 把消息生命周期映射为 KV 状态驱动三级放置（Harness 侧八个消息级原语异步导出、废弃 KV 直接回收、暂存 KV 按最久等待优先保留），生产轨迹重放中较 LMCache 端到端时延最高降 26.3%、任务成本平均降 40.0%、高缓存压力下命中率 49.5% 对 LRU 的 10.2%（重放用匹配 token 长度的随机提示、任务成本为估算值）；跨条目推断(inferred)：与 IAC 同读为语义信号驱逐可同时改善命中率与时延的证据，但同样依赖 Harness 导出的生命周期元数据。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
-    "命中率增益向 TTFT/吞吐传导的幅度（WAKMan 未报告任何端到端指标）",
+    "命中率增益向 TTFT/吞吐传导在无元数据影子切换路径上仍无直接证据（IAC/KVTether 已给出有语义元数据驱逐的传导：命中率 12.2%→34.6% 伴随 TTFT 6.98→3.76 秒、49.5% 对 10.2% 伴随时延最高降 26.3%，但均为回放口径）",
     "真实生产混合流量与作者自建合成轨迹的策略排序是否一致",
     "影子副本内存与重放 CPU 开销在高吞吐集群上的占比",
     "策略切换瞬间的缓存部分失效与命中率抖动",
@@ -108,7 +124,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-09-16",
-  "last_updated_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-11",
   "decision_log": [
     {
       "event_id": "idea_decision_deb314fd873b06821be3",
@@ -133,6 +149,28 @@
       "reason": "新增留存超时最优解证据：PCR 用最大权闭包加一次最小割在前缀留存问题上求得精确最优，Mooncake 39,632 条请求回放 118/120 组合达无约束最优、平均驻留块 715.97 降至 69.85，为在线驱逐/留存策略切换补上离线 oracle 上限基准。",
       "evidence_item_ids": [
         "d51e96cd99400f8cb09ffe77"
+      ]
+    },
+    {
+      "event_id": "idea_decision_c3daac938b42b395ad73",
+      "issue_date": "2026-11-11",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增意图感知驱逐证据：IAC 在 SGLang 上按意图学习每状态回访概率与对数正态轮间延迟、按中位复用窗口/复用概率/规模字典序驱逐 RadixTree 叶子，ShareChat 命中率 34.6% 对 LRU 的 12.2%、Qwen-1.5-110B 在 5 请求/秒下 TTFT 从 6.98 秒降至 3.76 秒——首次给出驱逐策略选择的命中率增益向 TTFT 兑现的量化传导（回放口径、单一 4xA100 测试床），部分收窄本假设『命中率增益能否传导端到端』的关键未知。",
+      "evidence_item_ids": [
+        "954a38c6f86e6cf1050cee83"
+      ]
+    },
+    {
+      "event_id": "idea_decision_5c317d74751f2ebb3a09",
+      "issue_date": "2026-11-11",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增消息生命周期驱动分层证据：KVTether 把 Harness 侧八个消息级原语异步导出并翻译为 KV 状态驱动三级放置，生产轨迹重放中较 LMCache 端到端时延最高降 26.3%、高缓存压力下命中率 49.5% 对 LRU 的 10.2%，证明语义信号驱逐的命中率与时延可同时改善（重放用匹配 token 长度的随机提示、任务成本为估算值），与 IAC 互为有元数据语义驱逐的传导佐证。",
+      "evidence_item_ids": [
+        "8f9c78115b218621b855fc32"
       ]
     }
   ]

@@ -3,8 +3,8 @@
   "topic_id": "tpn",
   "topic_name": "状态感知网络、TPN",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-09",
-  "summary": "TPN方向本期证据把KV跨网优化的对照面从GPU侧扩展到主机内存侧与发送侧：华为FlashOffloading以主机DRAM为权威KV副本并按阶段切换驻留粒度（prefill用四层滚动HBM缓存逐层回载并与计算重叠、decode配16k热缓存与反向稀疏索引），32卡Ascend910C、GLM-5.2上30毫秒TPOT约束下prefill吞吐最高升1.38倍、decode最高1.91倍，512k与1M序列仅在双向卸载下可服务，给出跨节点调度必须先战胜的纯内存侧基线（吞吐提升以TPOT恶化为代价、依赖模型原生稀疏性、无跨节点KV传输指标）；StrataFlux按重要性从主机RAM或SSD流式补取高精度位并与计算重叠，2比特权重下恢复Llama-3.1-8B混淆度9.46到8.40并保留量化吞吐95.4%（仅单机、无TTFT/TPOT与跨节点数据）；BasisKV用共享Value低秩潜变量同时压缩Value缓存、张量并行AllGather与Key路由，8卡L40S端到端最高1.42倍于稠密、TTFT由34.6秒降至24.7秒（全部单机、通信字节数未披露）；SelectKV/HyLaMAS在多智能体交接点做发送侧状态裁剪，SelectKV-90降KV负载9.7-9.9%、HyLaMAS较文本传递快2.10-2.78倍（计时不含跨设备传输，作者明言逻辑负载减少不等于网络节省，无TTFT与TPOT数据）。当前判断：KV跨网优化的可行收益仍取决于路径机制（确定路径ZCube、光电路预留、按负载模式重构MoSE、网内卸载INC-MoE、端主机预留ARK）与非网络侧替代（GPU侧自适应稀疏MOIRA、主机内存权威副本FlashOffloading、模型侧压缩与发送侧裁剪）的联合权衡而非单点扩带宽；判断升级的观察点不变：网络侧KV调度相对上述非网络基线在P95/P99与TPOT口径下的增量收益，目前尚无任何对照。",
+  "updated_by_issue": "2026-11-11",
+  "summary": "TPN方向本期证据把“KV传输成本是否进入调度决策”的验证推进到请求级与交接级：Nebula让路由器记录预期缓存位置与负载、经节点事件纠正并以幽灵命中反馈自调前缀与位置无关缓存的容量配比，把排队、计算与KV传输成本并入预填完成时间估计来调度跨节点取用与并行预填充，四模型RAG/代理负载中位TTFT较最强基线平均降61.4%、找回前缀缓存漏失token的76.1%（每请求仅一个输出token，TPOT、吞吐与网络利用率未报告，最强基线未点名）；ReKV把KV交接做成带宽感知的分层精度选择——预填侧先发BF16边界隐状态、解码侧重算后缀层、量化前缀KV在途传输，8K交接中位时延较全量BF16传输快2.36-3.65倍且最优动作随长度与带宽翻转（单交接点，计时不含prefill与后续decode，无并发端到端TTFT/TPOT/P95）；Evolving Infra则证明纯服务层自适应（在线重指派PD阶段、KV驻留主机内存共享池、排队期RDMA异步取回）已把Claude Code负载平均端到端时延由54.4秒降至13.2秒、P95 TTFT由142秒降至10.2秒，成为网络侧机制必须先战胜的服务层基线（聚合KV传输量与网络利用率未报告，未报告重复与方差）；邻接trace研究给出工作负载/会话/会话结束三信号接口支撑多级存储保留决策但无网络与延迟指标。当前判断：KV跨网优化的可行收益仍是路径机制（ZCube确定路径、光电路预留、MoSE按模式重构、INC-MoE网内卸载、ARK端主机预留）、非网络侧替代（MOIRA GPU侧自适应稀疏解码、FlashOffloading主机内存权威副本、BasisKV模型侧压缩、发送侧状态裁剪）与服务层成本感知编排（Nebula、Evolving Infra）的三方权衡而非单点扩带宽；判断升级的观察点收紧为：网络侧KV调度相对服务层编排在并发P95/P99 TTFT、TPOT与网络利用率口径下的增量收益，目前仍无对照。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -503,11 +503,28 @@
             "https://arxiv.org/abs/2610.37779v1"
           ],
           "reason": "2026-11-09 已发布日报收录：SelectKV在多智能体交接点只压缩新生成的KV区并保护继承前缀，HyLaMAS让全注意力KV与GDN循环、卷积状态跨智能体持续传递，分别以选择式KV压缩与双通道状态共享降低交接负载：SelectKV-90降KV负载9.7-9.9%、精度持平至最多降6分，HyLaMAS在2B上较文本传递少解码74-80%的token、快2.10-2.78倍（每基准仅100例且置信区间宽、计时不含跨设备传输、作者称逻辑负载减少不等于网络节省、无TTFT与TPOT数据）；按KV感知调度分支记录为发送侧状态裁剪信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "e196a92a7cf23d4c8fdd2524",
+          "issue_date": "2026-11-11",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.09474v1"
+          ],
+          "reason": "2026-11-11 已发布日报收录：Nebula针对RAG与代理长提示频繁未命中前缀缓存、既有位置无关缓存只能单节点内复用片段的问题，把此类片段升级为集群级可调度对象：路由器记录预期缓存位置与负载并经节点事件纠正、以幽灵命中反馈自调前缀与位置无关缓存的容量配比，并把排队、计算与KV传输成本并入预填充完成时间估计，调度跨节点取用与并行预填充；四模型四类RAG/代理负载上中位TTFT较最强基线平均降61.4%、找回前缀缓存漏失token的76.1%（每请求限定一个输出token，TPOT、吞吐与网络利用率未报告，最强基线对应哪个对比系统未点名）；按KV感知调度分支记录为传输成本入调度器的请求级信号，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "106c093ccfdf3a7b18974a2e",
+          "issue_date": "2026-11-11",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.10178v1"
+          ],
+          "reason": "2026-11-11 已发布日报收录：UT Austin与IBM用11条trace把KV缓存访问归一化为带时间戳与执行元数据的块访问流，区分单会话与跨会话复用后提出工作负载、会话、会话结束三信号接口供存储层决定保留与回收：按负载定制的空闲TTL比全局p90（253秒）最多多保留22%会话内命中、少留40%死状态，会话ID计数比请求级少标4至700倍状态、41%至99%被复用（全部结论来自trace驱动模拟，未见TTFT、TPOT等网络与延迟指标，放置决策未量化）；按KV感知调度分支记录为多级存储保留策略的邻接信号：本文无网络侧机制，不能回答网络调度相对内存调度的增值，不据此改变阶段判断。"
         }
       ],
       "open_questions": [
         "网络侧KV传输与带宽调度的增量收益尚无相对GPU侧自适应稀疏解码基线的对照数据（MOIRA单卡128k解码仅读约30%页、TPOT降2.2至2.5倍）。",
-        "KV压缩执行开销尚未进入KV调度代价模型（FastKVComp证明压缩执行过慢会抵消200-Gb/s链路上的通信节省）。"
+        "KV压缩执行开销尚未进入KV调度代价模型（FastKVComp证明压缩执行过慢会抵消200-Gb/s链路上的通信节省）。",
+        "服务层成本感知编排成为网络侧机制必须先战胜的新对照基线：Evolving Infra仅靠在线重指派PD阶段加排队期RDMA异步取回（无任何网络侧机制）就把Claude Code负载P95 TTFT由142秒降至10.2秒，但聚合KV传输量与网络利用率未报告；网络侧KV调度相对服务层编排的增量收益尚无数据。"
       ],
       "evidence_item_ids": [
         "081c683d89c0a8496e81e918",
@@ -570,7 +587,9 @@
         "7b26f3ab98225b6ba4a657f8",
         "131a5cafc84bcebccc2048c3",
         "bd0f1f579c8ae3920130bb62",
-        "c1d02abf4e06c53a69c9fcbd"
+        "c1d02abf4e06c53a69c9fcbd",
+        "e196a92a7cf23d4c8fdd2524",
+        "106c093ccfdf3a7b18974a2e"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.28150v1",
@@ -630,7 +649,9 @@
         "https://arxiv.org/abs/2611.07542v1",
         "https://arxiv.org/abs/2611.08363v1",
         "https://arxiv.org/abs/2611.02583v1",
-        "https://arxiv.org/abs/2610.37779v1"
+        "https://arxiv.org/abs/2610.37779v1",
+        "https://arxiv.org/abs/2611.09474v1",
+        "https://arxiv.org/abs/2611.10178v1"
       ]
     },
     {
@@ -978,9 +999,27 @@
             "https://arxiv.org/abs/2611.06513v1"
           ],
           "reason": "2026-11-06 已发布日报收录：HELIX在编译期以计算图动态规划为每个算子选定宿主，在异构加速器间做算子级LLM推理划分，对注意力/FFN切分Bamba 9B单步解码约1.7-3.2倍、Llama 8B约2.2-1.1倍，大批量时传输时延掩盖收益、多数划分退回GPU（结果为画像估计的单步解码时延而非端到端指标、3DCIM与DRAM-PIM多为仿真、未给出网络侧机制）；按PD解耦通信分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "6a40c55e6e13c84e9e723e82",
+          "issue_date": "2026-11-11",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.12304v1"
+          ],
+          "reason": "2026-11-11 已发布日报收录：Evolving Infra针对代理负载在预填重与解码重间动态摆动、主流系统切换阶段须重启并丢KV缓存的问题，把节点阶段与KV存储解耦并在线切换：节点均可跑预填与解码，规划器在线学习迭代用时模型并重指派阶段，KV驻留主机内存共享池、集群目录计数分支引用，排队期间经RDMA异步取回远端KV；Claude Code负载与GLM-5.2上平均端到端时延由54.4秒降至13.2秒、P95 TTFT由142秒降至10.2秒（均以Dynamo为基线）（各实验未报告重复与方差，聚合KV传输量与网络利用率亦未报告）；按PD解耦通信分支记录为服务层自适应基线：全部自适应在服务层、网络仅作RDMA传输，可作为论证网络侧TPN价值的服务层对照，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "1c1a7069e13c4d967fb84030",
+          "issue_date": "2026-11-11",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.08770v1"
+          ],
+          "reason": "2026-11-11 已发布日报收录：ReKV把P/D解耦下长prompt的KV交接当作分层可调精度的网络负载做带宽感知编排：预填侧先发BF16边界隐状态、解码侧重算后缀层，量化前缀KV在途传输并恢复，动作先过质量门槛再取中位时延最小；合成基准、跨节点H100上过质量门槛的Joint Q8在8K交接中位时延较全量BF16传输快2.36-3.65倍并快于更快的单机制动作，带宽是关键编排变量（计时不含prefill与后续decode，无并发端到端TTFT/TPOT/P95，最优动作随长度与带宽翻转）；按PD解耦通信分支记录为单次交接点优化信号——不是并发网络层调度器，不据此改变阶段判断。"
         }
       ],
-      "open_questions": [],
+      "open_questions": [
+        "KV交接优化与在线阶段重指派均缺并发端到端口径：ReKV只测单次8K交接中位时延（计时不含prefill与后续decode，最优动作随长度与带宽翻转），Evolving Infra未报告重复方差、聚合KV传输量与网络利用率；两者在并发TTFT/TPOT与网络利用率下的收益尚未量化。"
+      ],
       "evidence_item_ids": [
         "fc790b2ea52635d113cc9124",
         "5d05392e17b913c68726c991",
@@ -1000,7 +1039,9 @@
         "d113056eb7031993bac2c113",
         "d2349c5d97fce5e346d06f86",
         "d2334e0d811f04c7dd7eaee4",
-        "f64c6bb8eabfaffd7081a26e"
+        "f64c6bb8eabfaffd7081a26e",
+        "6a40c55e6e13c84e9e723e82",
+        "1c1a7069e13c4d967fb84030"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.18002v2",
@@ -1021,7 +1062,9 @@
         "https://arxiv.org/abs/2610.32638v1",
         "https://arxiv.org/abs/2610.21815v1",
         "https://arxiv.org/abs/2610.40292v1",
-        "https://arxiv.org/abs/2611.06513v1"
+        "https://arxiv.org/abs/2611.06513v1",
+        "https://arxiv.org/abs/2611.12304v1",
+        "https://arxiv.org/abs/2611.08770v1"
       ]
     },
     {
@@ -1110,8 +1153,8 @@
     }
   ],
   "schema_version": 1,
-  "version": 3,
-  "change_type": "no_material_change",
+  "version": 4,
+  "change_type": "material_change",
   "history": [
     {
       "version": 1,
@@ -1130,6 +1173,12 @@
       "issue_date": "2026-11-06",
       "change_type": "material_change",
       "path": "knowledge/history/roadmaps/tpn/v3.json"
+    },
+    {
+      "version": 4,
+      "issue_date": "2026-11-11",
+      "change_type": "material_change",
+      "path": "knowledge/history/roadmaps/tpn/v4.json"
     }
   ],
   "change_log": [
@@ -1431,6 +1480,19 @@
         "7b26f3ab98225b6ba4a657f8",
         "bd0f1f579c8ae3920130bb62",
         "c1d02abf4e06c53a69c9fcbd"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_3173e77511afe6324374",
+      "issue_date": "2026-11-11",
+      "change_type": "material_change",
+      "version": 4,
+      "summary": "本期证据改变了分支、阶段、状态或开放问题。",
+      "evidence_item_ids": [
+        "106c093ccfdf3a7b18974a2e",
+        "1c1a7069e13c4d967fb84030",
+        "6a40c55e6e13c84e9e723e82",
+        "e196a92a7cf23d4c8fdd2524"
       ]
     }
   ]

@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_34a0b22aa601e95f2348",
+  "identity": {
+    "problem_key": "restored_kv_position_distance_retrieval_decay",
+    "mechanism_key": "segment_translation_plus_bounded_position_renumbering",
+    "target_key": "cross_model_session_handoff_restore_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "只修格式不够：跨模型会话交接的恢复路径需组合潜变量翻译与有界位置重编号",
+  "problem": "会话跨模型交接的现有方案只修复格式差异：翻译器把源KV缓存改写为目标自有格式后照搬全部位置索引，其机制与边界均未涉及位置轴。PACE实测表明这是正交失效轴——长程Agent会话所需token即使99.6%驻留、准确率仍随rotary位置距离从93%跌至64%，即迁移/驻留完整不等于可检索。多轮交接只翻译新增分段使会话位置持续增长，接收方查询与被迁移token间的位置距离随之拉大，而交接恢复路径没有任何位置修复环节，“搬得过去”与“查得出来”被默认为同一件事。",
+  "hypothesis": "若把交接恢复路径实现为分段潜变量翻译加有界位置重编号的组合——迁移段先翻译为目标格式，再按目标会话的位置预算重编号并精确重旋转key、以参考存储保存规范副本避免多次交接的误差累积——则长程多轮会话在接收方的检索准确率不随位置距离与交接次数衰减，恢复时延仍比冷重读低一个量级（参照机内84毫秒/4.2GB、host 2.3毫秒对remote约2.7秒的锚点）；只翻译不重编号、或只重编号不翻译，均不足以维持交接后的检索质量。",
+  "mechanism": "格式轴沿用跨模型KV翻译：只训练翻译器、源与目标冻结，MLA潜变量逐词元线性映射，并从源第0层潜变量解码词元id以保住精确召回，多轮交接只翻译新增分段。位置轴沿用PACE：把规划器依赖图转为按span的前瞻加分叠加在注意力分数上做保留选择，位置接近上限时对token重编号并精确重旋转key，参考存储避免误差累积。组合点在于：重编号与精确重旋转作用于翻译器输出的目标侧key/value段，参考存储保存“翻译后加重编号后”的规范副本，使交接-续答-再交接链路上的位置修复不引入累积漂移。“翻译加位置重编号”的完整恢复机制没有任何单条记录声明。",
+  "target": "跨模型/跨站点会话交接（handoff）的KV恢复路径，面向同分词器混合注意力（MLA类）模型对上的长程多轮Agent会话。",
+  "expected_effect": "在64K级、多轮交接负载上：组合恢复路径的检索准确率不随位置距离从93%量级跌向64%量级、不随交接次数衰减，隐藏测试通过率接近原生连续会话（PACE参照：97%，H2O为42%、SnapKV为3%）；首token时延仍显著低于冷重读（翻译参照：快18.7与46.8倍、追赶时间约1/6；机内传4.2GB KV加148MiB状态耗84毫秒；分层恢复锚点host 2.3毫秒对remote约2.7秒）；仅翻译不重编号的对照应复现位置距离衰减。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "同一期两个独立组分别给出交接恢复路径的正交两半：翻译器管格式（MLA潜变量线性映射、分段增量、机内84毫秒/4.2GB实测），PACE管位置（99.6%驻留仍随rotary距离93%→64%衰减、有界重编号加精确重旋转修复）；翻译加位置重编号的组合恢复机制没有任何单条记录声明。"
+  },
+  "evidence": [
+    {
+      "item_id": "b49c6bccc286b5c961ad8d18",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.12062v1"
+      ],
+      "reason": "KV缓存跨模型翻译证明格式轴可修复且代价可观：只训练翻译器、源与目标冻结，MLA潜变量逐词元线性映射并从源第0层潜变量解码词元id以保住精确召回，多轮交接只翻译新增分段；64K切换较冷重读快18.7与46.8倍、经PCIe传4.2GB KV加148MiB状态耗84毫秒，同构对上分段翻译多轮与原生重读持平、追赶时间约为其1/6。其机制与边界均未涉及位置轴：传输全在机内GPU/PCIe测得、无WAN数据，仅限同分词器模型对，多轮单种子，个别方向低于原生。",
+      "independence_group": "arxiv:2611.12062"
+    },
+    {
+      "item_id": "36ac42ebb196e035b9c576c0",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10240v1"
+      ],
+      "reason": "PACE把位置距离变成实测失效轴并给出修复机制：AWS实测长程Agent会话所需token即使99.6%驻留、准确率仍随rotary位置距离从93%跌至64%；计划感知保留（规划器依赖图转为按span前瞻加分叠加注意力分数）加有界位置重编号（接近上限时重编号token并精确重旋转key、参考存储避免误差累积）在Qwen3-8B、100K会话、2048-token预算下通过97%隐藏测试（H2O为42%、SnapKV为3%），并给出host 2.3毫秒对remote约2.7秒的恢复成本锚点；但仅在单模型内验证、仅适用有规划器负载（无规划时100K降至63%），跨域RTT与恢复字节数未报告。",
+      "independence_group": "arxiv:2611.10240"
+    }
+  ],
+  "evidence_item_ids": [
+    "b49c6bccc286b5c961ad8d18",
+    "36ac42ebb196e035b9c576c0"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.12062v1",
+    "https://arxiv.org/abs/2611.10240v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.12062",
+    "arxiv:2611.10240"
+  ],
+  "unknowns": [
+    "两条证据均为机内实测（GPU/PCIe、单模型内重编号），无任何WAN RTT、跨机房传输字节或P95数据",
+    "翻译的线性潜变量映射与重编号的精确重旋转都改写key，两者复合误差及多次交接下的累积（参考存储只在单模型内验证过）未经测量",
+    "翻译仅限同分词器模型对、多轮单种子、个别方向低于原生；PACE的保留侧依赖规划器（无规划时100K降至63%），组合后在无规划负载上的边界未知",
+    "MLA潜变量映射后的目标侧key能否仍做精确重旋转、位置编码在翻译前后的交互未经验证"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在一对同分词器混合注意力模型上实现交接恢复路径：翻译器把源KV分段改写为目标格式后，接有界位置重编号与精确重旋转（含参考存储）；对比仅翻译、仅重编号、完整组合与冷重读四种恢复方式。",
+    "inputs": [
+      "长程多轮Agent会话轨迹（64K以上、含多次交接）",
+      "同分词器MLA类模型对与训练冻结的翻译器",
+      "可调位置距离与交接次数的合成负载",
+      "机内PCIe与可控WAN仿真链路两档传输环境"
+    ],
+    "baselines": [
+      "冷重读（接收方完整重新prefill）",
+      "仅翻译、不重编号的交接",
+      "仅重编号（单模型内、无交接）",
+      "H2O/SnapKV类保留基线"
+    ],
+    "metrics": [
+      "检索/隐藏测试通过率随位置距离与交接次数的曲线",
+      "首token时延与恢复时延",
+      "传输字节与参考存储开销",
+      "多次交接后的误差累积量"
+    ],
+    "support_criteria": [
+      "组合路径准确率不随位置距离与交接次数显著衰减，且优于仅翻译对照",
+      "恢复时延在质量约束内仍比冷重读低至少一个量级"
+    ],
+    "reject_criteria": [
+      "翻译后重旋转的复合误差或参考存储开销抵消恢复收益",
+      "仅翻译对照在实验位置范围内无可测衰减（位置轴在该规模不成立）"
+    ],
+    "limitations": [
+      "两条支撑证据均为机内实测，跨域段为仿真链路而非真实WAN部署",
+      "仅在同分词器模型对与有规划器负载内验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，由同一期两个独立组的互补实测（翻译修复格式、重编号修复位置）联合支持；与cross_model_kv_recomputation（映射误差与刷新频率联合调度）、transformed_kv_destination_read_path（接收端查询侧免重编码读取）、cross_deployment_kv_reuse_collapse（亲和路由与按部署键控保留，PACE在其中只作为命中率之外的失效轴证据）等既有身份含义不同：本候选的身份是交接恢复路径内位置修复与格式修复的组合，等待人工晋升。",
+  "related_candidate_ids": [
+    "candidate_7d4c5b213d117cba4697",
+    "candidate_5b2eac76b34dc8a2d3bb"
+  ],
+  "related_idea_ids": [
+    "idea_7d4c5b213d117cba4697",
+    "idea_984fec4fcf65a75a6b1f"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_b124ec087d24579afc8f",
+      "issue_date": "2026-11-11",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应完整，由同一期两个独立组的互补实测（翻译修复格式、重编号修复位置）联合支持，与既有身份含义不同，等待人工晋升。",
+      "evidence_item_ids": [
+        "b49c6bccc286b5c961ad8d18",
+        "36ac42ebb196e035b9c576c0"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_1938f7be7a00f26dd3a8",
+  "identity": {
+    "problem_key": "serial_short_decode_serving_mismatch",
+    "mechanism_key": "stepwise_execution_shape_matched_operators",
+    "target_key": "chained_decode_orchestration_p99"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "步骤化执行加形状匹配算子能否改善链式短解码编排负载的P99",
+  "problem": "生成式推荐的串行语义ID解码与通用大模型服务栈的同构prefill+decode循环结构不匹配；链式短解码的Agent编排负载面临同样的服务错配。",
+  "hypothesis": "对链式短解码的Agent编排负载，把执行拆成按步骤的规划并为各步骤匹配形状专用算子（行块注意力、基数树剪枝等），能在同构解码循环基线上把P99延迟降低30%以上且吞吐不降。",
+  "mechanism": "按语义ID步骤分别约束束宽与键长，配行块注意力与基数树剪枝算子；执行引擎按步骤规划与验证新引擎，替代每步全量同构解码循环。",
+  "expected_effect": "同等批大小下P99延迟显著下降、吞吐提升，链式短解码负载获得可热更新的专用服务路径。",
+  "topic_ids": [
+    "frontier_exploration"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "58094799e85900bbb0848eb6",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.12296v1"
+      ],
+      "reason": "RecoGEM在快手4亿DAU生产运行逾9个月，OneModel批32下P99为30.8毫秒对基线89.0毫秒、1053QPS对366QPS（吞吐2.88倍）；其project_relevance明确指出该机制值得在链式短解码的Agent编排负载上验证。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "原结果仅覆盖快手两类SID模型且未披露GPU型号",
+    "注意力加速为微基准而非端到端数据",
+    "与通用LLM serving栈混部时的干扰未测",
+    "Agent编排trace与SID生成的负载形状差异未量化"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "一个7B—32B模型，负载用真实Agent编排trace回放或语义ID式串行短解码模拟。",
+    "inputs": [
+      "批大小1—32",
+      "链长2—10步",
+      "束宽8—64、键长按步骤上限扫描"
+    ],
+    "baselines": [
+      "同构解码循环：每步统一prefill+decode的通用serving路径"
+    ],
+    "metrics": [
+      "P99延迟",
+      "P95延迟",
+      "QPS",
+      "每请求GPU秒"
+    ],
+    "support_criteria": [
+      "同等批大小下P99降低不低于30%且吞吐不下降"
+    ],
+    "reject_criteria": [
+      "P99改善不足10%",
+      "吞吐下降超过10%",
+      "收益仅出现在微基准算子上、端到端无改善"
+    ],
+    "limitations": [
+      "原结果仅覆盖两类SID模型且未披露GPU型号",
+      "微基准算子加速不等于端到端收益",
+      "与通用serving栈混部的干扰未测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "idea_1938f7be7a00f26dd3a8_created_2026-11-11",
+      "issue_date": "2026-11-11",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "58094799e85900bbb0848eb6给出步骤化执行引擎在生产生成式推荐负载上的P99与吞吐证据，并把链式短解码的Agent编排列为值得验证的迁移方向；立此假设检验该机制能否迁移出SID场景。",
+      "evidence_item_ids": [
+        "58094799e85900bbb0848eb6"
+      ]
+    }
+  ]
+}
