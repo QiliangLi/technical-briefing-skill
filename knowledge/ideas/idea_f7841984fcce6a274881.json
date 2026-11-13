@@ -1,0 +1,557 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_f7841984fcce6a274881",
+  "identity": {
+    "problem_key": "kv_transfer_tail_latency",
+    "mechanism_key": "transfer_recompute_locality_selection",
+    "target_key": "pd_disaggregated_inference"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "KV 传输、重算与就地计算存在随带宽和命中率变化的交叉点",
+  "problem": "PD 解耦推理并非总该完整传输 KV；链路带宽、KV 重要性和请求放置会改变最优选择。",
+  "hypothesis": "在统一负载下，必要 KV 优先传输、带宽感知重算和解码节点就地 Prefill 会在不同网络条件下各自占优。",
+  "mechanism": "按请求估算 KV 传输（含GPU侧压缩执行开销）、局部重算和就地计算代价，再选择执行位置与传输粒度。",
+  "expected_effect": "在不牺牲输出正确性的前提下降低尾部 TTFT，并减少无效 KV 搬移。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "081c683d89c0a8496e81e918",
+      "issue_date": "2026-08-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.28150v1"
+      ],
+      "reason": "SmartGen 展示了必要 KV 先行和后台补全在受限带宽下的收益。"
+    },
+    {
+      "item_id": "d68187e106469502469bd400",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.02043v1"
+      ],
+      "reason": "Kairos 通过 Decode 节点就地 Prefill 删除一类跨节点 KV 传输。"
+    },
+    {
+      "item_id": "ee715d6b89c2722b10eafa3e",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.10987v1"
+      ],
+      "reason": "AAFLOW+ 将传输或重算作为带宽感知选择。"
+    },
+    {
+      "item_id": "aea2c5f288fa3cb1f1c150fd",
+      "issue_date": "2026-08-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.03893v1"
+      ],
+      "reason": "同家族闭式线性映射显示 KV 复用可在 42%–98% 保真下替代重复 Prefill，支持复用与重算之间的代价权衡假设；但仅测同家族匹配配置，交叉点位置仍未验证。"
+    },
+    {
+      "item_id": "22d0d703f86160611799f358",
+      "issue_date": "2026-08-26",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.09153v1"
+      ],
+      "reason": "KV-PRM 直接复用生成期已有 KV 做过程奖励打分、较重编码省约千倍 FLOPs，再次支持复用优于重算的一侧权衡；收益绑定同轨迹部署形态，交叉点位置仍未被多负载验证。"
+    },
+    {
+      "item_id": "1b3e8fdd6e2e4f89ba13f40f",
+      "issue_date": "2026-08-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.23962v1"
+      ],
+      "reason": "统一成本轴比较给出第一条定量边界：匹配内存缓解下压缩始终便宜 1.20–2.00 倍、无成本等价交叉点；其比较轴是架构并行 vs 压缩而非传输 vs 重算，交叉点问题本身仍未闭合，故作为支持性边界而非完整验证。"
+    },
+    {
+      "item_id": "a0be0e8d118cebe5b815529b",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.16477v1"
+      ],
+      "reason": "《Pallas 在切换前主动迁移 KV cache 缩短中断》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "4882c0b452abae6d423f4a05",
+      "issue_date": "2026-09-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.10545v1"
+      ],
+      "reason": "《ImpactHO：重要性感知的多用户KV cache传输》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "622db7a6607fca74b57f8c55",
+      "issue_date": "2026-09-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.11744v1"
+      ],
+      "reason": "py-kvcache 给出外部 KV 缓存的部署级准入边界：H100 上平均请求低于 break-even 时外部缓存无益，收益来自更少更大的异步传输而非更高带宽；直接支持传输/重算交叉点随负载规模变化的判断（仅两类硬件与 FP16 单输出 token）。"
+    },
+    {
+      "item_id": "56d021594c5f17e77fffbe1c",
+      "issue_date": "2026-09-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.05483v1"
+      ],
+      "reason": "PLoRA 显示池化内存场景下链路带宽 32 至 64GB/s 即饱和、长上下文追平近存计算需 12.2 至 18.6TB/s，加带宽无法替代就地计算；支持带宽与命中率交叉点判断（结论多来自模拟与校准模型）。"
+    },
+    {
+      "item_id": "75fa2a254dd5b44c93b3e47e",
+      "issue_date": "2026-10-12",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.33889v1"
+      ],
+      "reason": "activation 与 KV 稀疏化的加速交叉点被显式建模为可预测的字节账，两块 GPU 实测交叉点预测偏差至多 4.1K token、组合分支 128K 达 1.91 倍；支撑该 Idea 的核心主张——KV 相关加速选择存在随条件可预测的交叉点，且可以用统一字节账刻画（主计时为 batch 1、大 batch 下投影分支优势基本消失）。"
+    },
+    {
+      "item_id": "1ceb0cf410f4b2ad046fdf37",
+      "issue_date": "2026-10-14",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.30854v1"
+      ],
+      "reason": "SoK 用闭式算术强度给出 KV 优化投入的交叉点解析地图：低于交叉点时 KV 压缩端到端收益可忽略、超过后以可测质量差换接近 roofline 的带宽节省；直接支撑该 Idea 的核心主张——KV 相关路线存在随条件变化的交叉点且可以解析刻画（统一评测在 128k 单一上下文、绑定特定硬件代际）。"
+    },
+    {
+      "item_id": "14f554896a5602f09d452905",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.29873v1"
+      ],
+      "reason": "HAWK在GPU到NPU的P/D解耦中把布局变换并入RDMA直传路径、NPU端预留布局感知缓冲，1280MB传输延迟约为主机中转的14.7%且与GPU直连差不到1%，支持必要KV优先直传在异构P/D下占优的分支；单实例且不感知推理状态，未与带宽感知重算或就地Prefill对照。"
+    },
+    {
+      "item_id": "c184313e0ada70903e6ca530",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.22172v1"
+      ],
+      "reason": "EdgeFlow按链路带宽逐层决定KV直接传输与激活重算的比例并让计算与通信重叠，500Mbps下迁移时间最多降约45%，直接支持带宽感知的传输与重算选择这一分支；缺TTFT/TPOT端到端指标且100Mbps下优势消失，边界条件明确。"
+    },
+    {
+      "item_id": "d113056eb7031993bac2c113",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.32638v1"
+      ],
+      "reason": "InferSlice广域网实测把PD解耦的TTFT惩罚定位到每请求KV交接的固定开销而非RTT，支持必要KV优先传输与交接批量化在跨网解耦下占优的前提；仅短生命周期无状态请求与同构GPU池。"
+    },
+    {
+      "item_id": "ed4d6f4a29231c530ddb5255",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21390v1"
+      ],
+      "reason": "PriorityFEC在有损窄带边缘链路上按KV清零效用画像排定发送顺序、以GF(2^8)流式FEC与Double-DQN修复包调度支撑截止期内传输部分KV，紧截止期（约8.4%丢包、只容八成KV串行传输）下六组任务平均token F1约43%对最强基线约8%；把必要KV优先传输分支扩展到有损链路与纠错维度（可见指标是任务F1而非TTFT或TPOT，宽截止期下FLEC-RT多项反超，回放规模小）。"
+    },
+    {
+      "item_id": "139b36854d37dc64123fb27d",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.26763v1"
+      ],
+      "reason": "SARA把预填充、KV传输与解码分别建为M/G/k、M/G/1与广义生灭过程，按边际成本相等在分位SLO约束下分配各阶段延迟预算，回放七天Azure推理轨迹时goodput与穷举搜索最大差距3.8%；为按阶段代价估算决定KV传输带宽与资源规模提供解析机制前提（26.6%的goodput提升仅为摘要级声明，传输模型未见硬件实测）。"
+    },
+    {
+      "item_id": "bd2513bdc6f22c272246d5e0",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02732v1"
+      ],
+      "reason": "ServeTwin以规格驱动闭环模拟把分布式serving架构验证误差压至10%以内并让模拟时间反馈调度决策，成本账本显示并发2048时三倍带宽吞吐停滞、调度运行时开销减40%反增60%吞吐；为该假设validation计划中的离散事件模拟提供已验证误差量级的设施参照（设计扫描均为模拟而非集群实测，GB200为迁移预测）。"
+    },
+    {
+      "item_id": "d2349c5d97fce5e346d06f86",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21815v1"
+      ],
+      "reason": "异构GPU流水线的精确完成时间界证明异步传输下逐次通信时延低于计算松弛量时只进常数项、不改变稳态吞吐斜率，阻塞传输仅当超过计算松弛量才改变斜率；为传输代价的阈值结构提供解析判据，直接支撑交叉点假设中传输存在可计算占优区间的判断（假设逐次时延恒定、未覆盖带宽受限共享链路与prefill/decode交错）。"
+    },
+    {
+      "item_id": "ec1ea177b0a399d941b6ce94",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.40093v1"
+      ],
+      "reason": "ThunderEP在PCIe消费级GPU上以单步DMA把MoE激活通信从NCCL环形路径改为单步All-Gather、流量减40%，证明小消息下同步开销主导而带宽非瓶颈；支撑传输代价建模中固定与同步开销项的量级论证（单节点、不涉KVCache与多节点，仅作相邻证据）。"
+    },
+    {
+      "item_id": "d2334e0d811f04c7dd7eaee4",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.40292v1"
+      ],
+      "reason": "DolphinRouting按请求簇离线学习聚合或分离prefill的二值决策并在真实集群同时降低P90 TTFT与TPOT，支持按请求簇选择执行位置的机制前提；决策特征含两侧缓存折算ISL，但未与带宽感知重算或就地Prefill策略对照。"
+    },
+    {
+      "item_id": "7f0b0c6b2aa5f613daa8fe33",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04382v2"
+      ],
+      "reason": "FastKVComp证明KV压缩执行过慢会抵消跨节点传输的通信节省：在KVServe之上把分布变换与量化融合为单个TileLang核、以可搜索LC无损压缩后端替换nvCOMP后，双节点200-Gb/s InfiniBand上JCT较原始传输降30.2%至38.6%、输出吞吐升44.2%至62.6%；直接支持传输代价估算须把GPU侧压缩执行开销与网络带宽一并计入（每配置仅50请求、无TTFT/TPOT/P95与模型质量数字）。"
+    },
+    {
+      "item_id": "7a7fc63f8c40f2385b0d4aeb",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.04313v1"
+      ],
+      "reason": "MOIRA按注意力覆盖度逐层逐头保留满足gamma目标的最小KV页集并整步保持在CUDA图内，RULER 128k、gamma=0.99时精度与稠密FA3持平、仅读约30%页、TPOT降2.2至2.5倍、并发16时吞吐升45%至51%；支持必要KV优先/重要性选择前提，并把该分支的GPU侧基线抬高到免训练自适应稀疏解码（仅单GPU评估、无跨节点KV传输、TTFT或网络数据）。"
+    },
+    {
+      "item_id": "f64c6bb8eabfaffd7081a26e",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06513v1"
+      ],
+      "reason": "HELIX以编译期动态规划为异构加速器的算子划分选宿主，注意力/FFN切分下Bamba 9B单步解码约1.7-3.2倍，但大批量时传输时延掩盖收益、多数划分退回GPU；作为相邻证据支持传输代价存在随批量增长的阈值结构（结果为画像估计的单步解码时延而非端到端指标、3DCIM与DRAM-PIM多为仿真、不涉KVCache与网络侧机制）。"
+    },
+    {
+      "item_id": "7b26f3ab98225b6ba4a657f8",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07542v1"
+      ],
+      "reason": "华为FlashOffloading以主机DRAM为权威KV副本并按阶段切换驻留粒度，prefill四层滚动HBM缓存逐层回载并与计算重叠、decode配16k热缓存、反向稀疏索引把缺失查询并入top-k过程；32卡Ascend910C与GLM-5.2上30毫秒TPOT约束下prefill吞吐最高升1.38倍、decode最高1.91倍，512k与1M序列仅在双向卸载下可服务；把主机内存侧全量卸载加入传输/重算/就地交叉点假设的对照策略族（吞吐提升以TPOT恶化为代价、依赖模型原生稀疏性、未见跨节点KV传输指标）。"
+    },
+    {
+      "item_id": "131a5cafc84bcebccc2048c3",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08363v1"
+      ],
+      "reason": "StrataFlux按重要性只为关键信道与token组从主机RAM或SSD流式补取高精度位、以提前或滞后距离使传输与计算重叠并在减速预算内自动选参，2比特权重下Llama-3.1-8B混淆度9.46到8.40并保留量化吞吐95.4%、Qwen3-8B配2比特加2/2 KV的AIME从11.0%到47.1%；支持按重要性选择传输粒度的机制前提（仅单机RAM/SSD、无跨节点与TTFT/TPOT数据，统一内存平台批量补位开销最高25.4%）。"
+    },
+    {
+      "item_id": "bd0f1f579c8ae3920130bb62",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02583v1"
+      ],
+      "reason": "BasisKV用单个共享Value低秩潜变量同时压缩Value缓存、张量并行AllGather通信与Key路由开销，8卡L40S上Llama-3.1-8B端到端最高1.42倍于稠密、TTFT由34.6秒降至24.7秒、LongBench平均46.91对47.02；进一步支持传输字节量可在模型侧预先压缩的判断（实验全部单机、无跨节点KVCache传输、AllGather通信量字节数未披露）。"
+    },
+    {
+      "item_id": "c1d02abf4e06c53a69c9fcbd",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.37779v1"
+      ],
+      "reason": "SelectKV在多智能体交接点只压缩新生成的KV区并保护继承前缀（SelectKV-90降KV负载9.7-9.9%、精度持平至最多降6分），HyLaMAS让全注意力KV与GDN循环、卷积状态跨智能体持续传递（2B上较文本传递少解码74-80%的token、快2.10-2.78倍）；作为发送侧状态裁剪的边界证据（每基准仅100例、置信区间宽、计时不含跨设备传输，作者明言逻辑负载减少不等于网络节省，无TTFT与TPOT数据）。"
+    },
+    {
+      "item_id": "e196a92a7cf23d4c8fdd2524",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09474v1"
+      ],
+      "reason": "Nebula在请求级显式权衡跨节点取用与并行预填充：把排队、计算与KV传输成本并入预填完成时间估计，四模型RAG/代理负载中位TTFT较最强基线平均降61.4%、找回前缀缓存漏失token的76.1%；支持传输成本进调度器可降TTFT的前提（每请求仅一个输出token，TPOT与吞吐未报告）。"
+    },
+    {
+      "item_id": "6a40c55e6e13c84e9e723e82",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.12304v1"
+      ],
+      "reason": "Evolving Infra把KV驻留主机内存共享池、集群目录计数分支引用并在排队期间经RDMA异步取回远端KV，与在线阶段重指派一起把Claude Code负载平均端到端时延由54.4秒降至13.2秒、P95 TTFT由142秒降至10.2秒（基线Dynamo）；给出传输与就地驻留在服务层组合的形态，但聚合KV传输量与网络利用率未报告、未报告重复与方差，不能据此区分网络带宽贡献。"
+    },
+    {
+      "item_id": "1c1a7069e13c4d967fb84030",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08770v1"
+      ],
+      "reason": "ReKV把KV交接做成传输与重算的联合选择：预填侧先发BF16边界隐状态、解码侧重算后缀层，量化前缀KV在途传输并恢复，动作先过质量门槛再取中位时延最小；跨节点H100上Joint Q8的8K交接中位时延较全量BF16传输快2.36-3.65倍、带宽是关键编排变量（计时不含prefill与后续decode，无并发端到端TTFT/TPOT/P95，最优动作随长度与带宽翻转）；直接支持切分层与传输精度随带宽联动的交叉点假设。"
+    },
+    {
+      "item_id": "6beac1cd9683eedadf8d01e4",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13293v1"
+      ],
+      "reason": "TKNP把权重放置与KV归属解耦：各节点仅对自己请求的本地KV算attention、跨节点只剩scatter/gather，八节点可用KV容量约为DP的5倍，405B与32K上下文下较DP吞吐最高2.06倍、较DCP 1.53倍（加双活root微批1.7倍）；以放置架构形态支持'就地计算在长上下文高并发解码下占优'的分支，是传输/重算/就地交叉点必须纳入的架构侧对照（评估仅InfiniBand互连H100、小batch或短上下文时通信开销可能超过收益）。"
+    },
+    {
+      "item_id": "9a355876a02b1d84ace7b6fb",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04807v1"
+      ],
+      "reason": "KV缓存内存约束下cμ规则经流体模型证明渐近最优：按代价乘以有效服务率排序请求并以准入检查保证未来各步KV占用不超限，压缩To-B生产轨迹上cμ-backfill平均时延9.47秒、TTFT 2.56秒对vLLM默认35.49秒与28.77秒且输出吞吐基本持平；为交叉点假设补上纯GPU内存调度基线——网络侧传输与调度策略的增量收益应在其上量化（对比策略均假设输出长度精确已知、预测误差未测、单GPU无网络机制）。"
+    },
+    {
+      "item_id": "65dfa7dbca4d6e1b86242b08",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.11319v1"
+      ],
+      "reason": "VERKV以PoissonComp按基础压缩器得分泊松抽样选GPU驻留token、KVFetch评估注意力(ε,δ)证书满足容差不访主机否则补取，每token仅取回缓存2-23%、vLLM解码提速1.6倍（较全量offload最高3.1倍）、主机传输少47倍；直接支持'必要KV优先/按证书选择性传输'分支，证书门控可作为跨节点KV传输调度原语（单卡PCIe卸载、ε0=0.5时比稠密驻留慢约6倍、2位草图在严格容差下违反δ）。"
+    },
+    {
+      "item_id": "cf5fb762ffca196ee029781b",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09825v1"
+      ],
+      "reason": "BitDecoding-FP4以双FP4残差查询、欠流感知概率缩放与离群感知键量化实现原生FP4 KV解码并在FP4张量核全程运行注意力，Qwen3-4B上NVFP4精度67.27对BF16 KV的67.69几乎无损，256K上下文TPOT快1.81倍、64并发单卡峰值吞吐为BF16的2.4-3.0倍；把模型侧压缩这条对照路线的解码吞吐基线抬到原生FP4（全部单节点Blackwell实验、无TTFT、P95或跨节点KV传输评估）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "多租户 P95/P99 下的交叉点是否稳定。",
+    "代价预测错误与画像漂移会造成多大回退。",
+    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）、主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）、放置架构基线（TKNP八节点KV容量约为DP的5倍、较DCP 1.53倍）与单卡KV内存调度基线（cμ-backfill平均时延9.47秒对vLLM默认35.49秒）的增量收益尚无对照数据。"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "离散事件模型覆盖 Prefill、KV 传输、Decode 排队和可选重算。",
+    "inputs": [
+      "RTT 与带宽扫描",
+      "KV 大小与可选比例",
+      "缓存命中率",
+      "Prefill/Decode 到达率"
+    ],
+    "baselines": [
+      "完整 KV 传输",
+      "始终重算",
+      "固定请求放置"
+    ],
+    "metrics": [
+      "P50/P95/P99 TTFT",
+      "TPOT",
+      "传输字节",
+      "GPU 与网络利用率"
+    ],
+    "support_criteria": [
+      "联合选择策略在一段可解释参数区间内同时改善尾 TTFT 和传输量。"
+    ],
+    "reject_criteria": [
+      "策略只在极窄参数点获益，或预测开销使尾延迟不优于固定基线。"
+    ],
+    "limitations": [
+      "模拟不能覆盖真实通信栈抖动、GPU 内核干扰和调度实现开销。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-02",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_4f7da6ed9342bd9a8339",
+      "issue_date": "2026-08-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "已发布证据给出了明确问题和可检验机制，因此建立 Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "081c683d89c0a8496e81e918"
+      ]
+    },
+    {
+      "event_id": "idea_decision_978ab100396b02c699e9",
+      "issue_date": "2026-08-10",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "d68187e106469502469bd400",
+        "ee715d6b89c2722b10eafa3e"
+      ]
+    },
+    {
+      "event_id": "idea_decision_70281ec039876b2f0207",
+      "issue_date": "2026-08-23",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题与机制身份（复用替代重算的一侧权衡）；Idea 状态暂不改变，交叉点是否稳定仍待多负载验证。",
+      "evidence_item_ids": [
+        "aea2c5f288fa3cb1f1c150fd"
+      ]
+    },
+    {
+      "event_id": "idea_decision_e169c263624a009a1cd5",
+      "issue_date": "2026-08-26",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题与机制身份（复用替代重算的权衡）；Idea 状态暂不改变，等待跨形态复现。",
+      "evidence_item_ids": [
+        "22d0d703f86160611799f358"
+      ]
+    },
+    {
+      "event_id": "idea_decision_0a15c7c9b0b33914b3ff",
+      "issue_date": "2026-08-29",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据为权衡假设提供成本轴量化的第一块基线；Idea 状态保持 observing，等待传输/重算轴上的同口径数据。",
+      "evidence_item_ids": [
+        "1b3e8fdd6e2e4f89ba13f40f"
+      ]
+    },
+    {
+      "event_id": "idea_decision_4c6917ad1d81185eefcc",
+      "issue_date": "2026-09-04",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "a0be0e8d118cebe5b815529b"
+      ]
+    },
+    {
+      "event_id": "idea_decision_f9474ca22707a13804e4",
+      "issue_date": "2026-09-06",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "4882c0b452abae6d423f4a05"
+      ]
+    },
+    {
+      "event_id": "idea_decision_e015d3acac1bc255051",
+      "issue_date": "2026-09-16",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据从准入边界与带宽饱和两侧支持传输、重算与就地计算的交叉点判断；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "622db7a6607fca74b57f8c55",
+        "56d021594c5f17e77fffbe1c"
+      ]
+    },
+    {
+      "event_id": "idea_decision_a376283de596dcdc0a7",
+      "issue_date": "2026-10-12",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据给出稀疏化路线交叉点的可预测模型与实测；Idea状态暂不改变。",
+      "evidence_item_ids": [
+        "75fa2a254dd5b44c93b3e47e"
+      ]
+    },
+    {
+      "event_id": "idea_decision_def231fd2590601cc7a",
+      "issue_date": "2026-10-14",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据给出KV优化交叉点的解析判据；Idea状态暂不改变。",
+      "evidence_item_ids": [
+        "1ceb0cf410f4b2ad046fdf37"
+      ]
+    },
+    {
+      "event_id": "idea_decision_bb8bd0d1a2787cd2dff",
+      "issue_date": "2026-10-23",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增HAWK作为异构P/D直传路径优势的实证，状态保持observing，仍缺传输、重算与就地Prefill三策略在统一负载下的对照。",
+      "evidence_item_ids": [
+        "14f554896a5602f09d452905"
+      ]
+    },
+    {
+      "event_id": "idea_decision_a78006e801098322a52",
+      "issue_date": "2026-10-27",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增带宽感知传输-重算拆分与广域PD交接固定开销两条实测，状态保持observing，仍缺传输、重算与就地Prefill三策略在统一负载下的完整对照。",
+      "evidence_item_ids": [
+        "c184313e0ada70903e6ca530",
+        "d113056eb7031993bac2c113"
+      ]
+    },
+    {
+      "event_id": "idea_decision_c0a7ab0c5c9b96e41feb",
+      "issue_date": "2026-10-29",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增重要性排序部分传输在有损链路的截止期实例、三阶段排队论解析分配与闭环模拟设施参照，状态保持observing，仍缺传输、重算与就地Prefill三策略在统一负载下的完整对照。",
+      "evidence_item_ids": [
+        "ed4d6f4a29231c530ddb5255",
+        "139b36854d37dc64123fb27d",
+        "bd2513bdc6f22c272246d5e0"
+      ]
+    },
+    {
+      "event_id": "idea_decision_a0a990ff29dff5d10c5c",
+      "issue_date": "2026-11-02",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增传输时延低于计算松弛量不改稳态吞吐斜率的解析界、小消息同步开销主导的单节点DMA实例与按簇学习的真实集群PD路由实证，状态保持observing，仍缺传输、重算与就地Prefill三策略在统一负载下的完整对照。",
+      "evidence_item_ids": [
+        "d2349c5d97fce5e346d06f86",
+        "ec1ea177b0a399d941b6ce94",
+        "d2334e0d811f04c7dd7eaee4"
+      ]
+    },
+    {
+      "event_id": "idea_decision_47a790f7303a95b5caeb",
+      "issue_date": "2026-11-06",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增压缩执行效率、GPU侧覆盖度自适应稀疏解码与异构算子划分的传输时延边界三条证据：传输代价估算应计入GPU侧压缩执行开销、网络侧增量收益须对照GPU侧稀疏基线；状态保持observing，仍缺传输、重算与就地Prefill三策略在统一负载下的完整对照。",
+      "evidence_item_ids": [
+        "7f0b0c6b2aa5f613daa8fe33",
+        "7a7fc63f8c40f2385b0d4aeb",
+        "f64c6bb8eabfaffd7081a26e"
+      ]
+    },
+    {
+      "event_id": "idea_decision_52e041e0490059c8d057",
+      "issue_date": "2026-11-09",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增主机内存权威副本全量卸载、按重要性流式补精度位、共享低秩潜变量压缩与发送侧状态裁剪四条证据：传输/重算/就地交叉点假设的对照面从GPU侧扩展到主机内存侧与发送侧，且SelectKV计时不含跨设备传输、逻辑负载减少不等于网络节省；状态保持observing，三策略在统一负载下的完整对照仍缺失。",
+      "evidence_item_ids": [
+        "7b26f3ab98225b6ba4a657f8",
+        "131a5cafc84bcebccc2048c3",
+        "bd0f1f579c8ae3920130bb62",
+        "c1d02abf4e06c53a69c9fcbd"
+      ]
+    },
+    {
+      "event_id": "idea_decision_e216aeb6e0a96a39023b",
+      "issue_date": "2026-11-11",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增请求级传输成本入估计、服务层异步取回加在线阶段重指派、交接级量化传输与重算联合选择三条证据：交叉点假设从静态策略对比推进到带宽感知动作选择与服务层组合形态；状态保持observing，传输、重算与就地策略在并发端到端TTFT/TPOT与网络利用率口径下的统一对照仍缺失。",
+      "evidence_item_ids": [
+        "e196a92a7cf23d4c8fdd2524",
+        "6a40c55e6e13c84e9e723e82",
+        "1c1a7069e13c4d967fb84030"
+      ]
+    },
+    {
+      "event_id": "idea_decision_44cf0b566c37e7f3cfd3",
+      "issue_date": "2026-11-13",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增放置架构解耦、单卡KV内存约束调度、误差证书门控选择性取回与原生FP4解码四条证据：交叉点假设的对照面扩展到架构侧与GPU内存调度侧，证书门控选择性取回可直接借鉴为跨节点传输调度原语；状态保持observing，传输、重算与就地策略在并发端到端TTFT/TPOT与网络利用率口径下的统一对照仍缺失。",
+      "evidence_item_ids": [
+        "6beac1cd9683eedadf8d01e4",
+        "9a355876a02b1d84ace7b6fb",
+        "65dfa7dbca4d6e1b86242b08",
+        "cf5fb762ffca196ee029781b"
+      ]
+    }
+  ]
+}

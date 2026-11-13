@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_e8ac8cc5cd625623e8dd",
+  "identity": {
+    "problem_key": "mixed_traffic_no_static_eviction_winner",
+    "mechanism_key": "shadow_replay_online_policy_switching",
+    "target_key": "shared_prefix_cache_hit_rate_and_ttft"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "混合流量下按影子重放在线切换前缀缓存驱逐策略",
+  "problem": "单轮、多轮与Agent请求混合到达时没有静态驱逐策略始终占优，vLLM默认LRU最多落后最优策略22.4个百分点，而按流量形态选语义驱逐又依赖请求元数据，缺少元数据的共享推理集群无从选择驱逐策略。",
+  "hypothesis": "仅凭缓存观测在线切换驱逐策略——在引擎旁运行LRU与S3FIFO影子副本、周期性用块哈希重放近期流量并把在线驱逐切到模拟命中率更高的策略——可在混合流量下把命中率维持在接近逐段最优的水平并稳定高于默认LRU，且不依赖请求类型或提示内容元数据。",
+  "mechanism": "在vLLM旁运行LRU与S3FIFO影子副本，每15分钟只用块哈希重放近期流量，比较各策略的模拟命中率后把在线驱逐切到模拟更优的策略；选择信号全部来自缓存观测，不依赖请求类型或提示内容。",
+  "target": "缺少请求元数据的共享推理集群中vLLM类前缀缓存的驱逐策略层",
+  "expected_effect": "在20个合成混合负载上与最优策略的平均命中率差距为2.04个百分点（LRU为7.09、S3FIFO为2.53），最差情况下的差距也最小，平均命中率比LRU高5个百分点。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应；但其身份与本期已创建的正式Idea完全相同，按重复处置。"
+  },
+  "evidence": [
+    {
+      "item_id": "262a10b7f9c473a53e199f85",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36355v1"
+      ],
+      "reason": "WAKMan实测混合流量下没有静态驱逐策略占优（vLLM默认LRU最多落后最优22.4个百分点），旁路LRU/S3FIFO影子副本加每15分钟块哈希重放的在线切换把与最优策略的平均命中率差距压到2.04个百分点、平均命中率比LRU高5个百分点——问题、机制、目标与可检验效应同条记录齐备。",
+      "independence_group": "arxiv:2610.36355"
+    }
+  ],
+  "evidence_item_ids": [
+    "262a10b7f9c473a53e199f85"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.36355v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.36355"
+  ],
+  "unknowns": [
+    "证据全部来自作者自建的合成轨迹，真实生产混合流量下的策略排序是否一致未知",
+    "全文只报告命中率，没有TTFT、吞吐或成本数据，命中率增益能否兑现为端到端收益未知",
+    "影子副本内存占用与每15分钟重放的CPU开销在高吞吐集群上的占比未量化",
+    "策略切换瞬间的缓存部分失效与命中率抖动未报告"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "单节点vLLM（或SGLang）加旁路LRU与S3FIFO影子副本，7-8B级模型起步，并以自采真实混合流量回放对照WAKMan合成轨迹。",
+    "inputs": [
+      "自采真实混合流量回放（单轮/多轮/Agent混合）与20个合成轨迹对照",
+      "缓存容量相对工作集多档扫描",
+      "重放与切换间隔扫描（含15分钟口径）"
+    ],
+    "baselines": [
+      "vLLM默认LRU",
+      "静态S3FIFO",
+      "离线逐段最优策略（上界口径）"
+    ],
+    "metrics": [
+      "命中率",
+      "TTFT P50/P95",
+      "吞吐与TPOT",
+      "影子副本内存与重放CPU开销占比"
+    ],
+    "support_criteria": [
+      "真实混合流量下命中率距逐段最优差距与合成轨迹同量级且增益兑现为端到端改善"
+    ],
+    "reject_criteria": [
+      "真实流量下策略排序与合成轨迹不一致，或重放与切换开销抵消命中收益"
+    ],
+    "limitations": [
+      "原始证据全部来自作者自建合成轨迹且只报告命中率"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "身份与本期（2026-11-02）已创建的正式Idea idea_e8ac8cc5cd625623e8dd完全相同——问题键、机制键、目标键一一对应，且该Idea的首条证据即本触发项，按重复处置并指向该Idea。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_e8ac8cc5cd625623e8dd"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_09fea1a9714b15cbf31c",
+      "issue_date": "2026-11-02",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "身份与本期（2026-11-02）已创建的正式Idea idea_e8ac8cc5cd625623e8dd完全相同——问题键、机制键、目标键一一对应，且该Idea的首条证据即本触发项，按重复处置并指向该Idea。",
+      "evidence_item_ids": [
+        "262a10b7f9c473a53e199f85"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

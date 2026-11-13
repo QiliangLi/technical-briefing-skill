@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8130e4f66431352482cb",
+  "identity": {
+    "problem_key": "onchip_media_selection_ignores_peripheral_budget_coupling",
+    "mechanism_key": "peripheral_augmented_media_signature_regression",
+    "target_key": "dnn_accelerator_onchip_media_selection"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "把转换外围耦合进连续介质签名，按面积预算选片上存储介质",
+  "problem": "DNN加速器片上存储介质选型通常把介质固定为前提或做单点对比：NIFA证明ReRAM模拟IMC中ADC占超七成面积功耗（介质收益被转换外围主导），TADA证明EDP最优介质随面积预算移动（1mm²为eDRAM、5mm²为PCM、16mm²为SRAM），忽略外围-预算耦合的选型会系统性误判新兴NVM收益。",
+  "hypothesis": "若在读写能量与容量构成的连续技术签名中加入转换外围（ADC/ACAM）的面积能耗耦合项，并用冻结预测器在预算-负载网格上选型，EDP最优介质排序将发生可解释移动且与全量仿真一致，从而消除单点介质对比的误导。",
+  "mechanism": "以连续技术签名（读能量、写能量、容量）编码候选介质并加入转换外围耦合项，连同负载与加速器配置输入共享冻结回归预测器，在面积预算网格上预测未见介质的能耗与时延并输出EDP最优介质。",
+  "target": "DNN加速器（含DCIM/IMC）的片上存储介质选型流程",
+  "expected_effect": "加入外围耦合项后，介质选择复现率与平均EDP损失保持TADA同级（98.7%-100%、不超过0.21%），且EDP最优介质随预算的排序发生可解释移动；若排序不变则说明耦合项可忽略。",
+  "topic_ids": [
+    "storage_media"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-06",
+    "rationale": "触发项TADA与2026-08-17的NIFA分属两个期次、两个独立来源：NIFA给出介质收益被转换外围主导的问题侧依据，TADA给出连续签名加冻结预测器可行且选型须绑定预算的方法侧依据，二者联合支持任何单条记录都未陈述的机制。"
+  },
+  "evidence": [
+    {
+      "item_id": "317ccebca4f647a12810f191",
+      "issue_date": "2026-08-17",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.15123v1"
+      ],
+      "reason": "《NIFA用ACAM替代ADC增强FPGA存内计算》证明ADC占ReRAM模拟IMC超七成面积功耗、ACAM可在模拟域同时承担激活与转换，为'签名缺转换外围耦合项会误判介质收益'提供问题侧依据。",
+      "independence_group": "arxiv:2607.15123"
+    },
+    {
+      "item_id": "25aab19be62655b8655acc41",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.00292v1"
+      ],
+      "reason": "《TADA把片上存储介质作为连续变量纳入DNN加速器设计空间探索》证明以读写能量与容量的连续技术签名加冻结回归即可预测未见介质能耗时延（MAPE 1.5-4.4%），且EDP最优介质随面积预算移动，为预算绑定选型机制提供方法侧依据；其签名不含耐久、保持与转换外围耦合。",
+      "independence_group": "arxiv:2611.00292"
+    }
+  ],
+  "evidence_item_ids": [
+    "317ccebca4f647a12810f191",
+    "25aab19be62655b8655acc41"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2607.15123v1",
+    "https://arxiv.org/abs/2611.00292v1"
+  ],
+  "independence_groups": [
+    "arxiv:2607.15123",
+    "arxiv:2611.00292"
+  ],
+  "unknowns": [
+    "TADA验证基于ZigZag解析仿真而非实测，技术签名不含NVM耐久与保持，仅实例化于DCIM设计",
+    "NIFA为VTR与解析模拟器结果未流片，Transformer仅测BERT-Tiny小模型",
+    "加入转换外围耦合项后的选型复现率与EDP损失无任何记录验证"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在TADA式连续介质签名中加入转换外围（ADC/ACAM）面积能耗耦合项，在NIFA式ReRAM IMC设计点上重跑预算-负载网格选型，对比加项前后的EDP最优介质排序。",
+    "inputs": [
+      "读写能量与容量技术签名",
+      "ADC/ACAM外围面积能耗模型",
+      "面积预算与负载网格"
+    ],
+    "baselines": [
+      "TADA原始签名（无外围项）",
+      "逐介质全量仿真选型"
+    ],
+    "metrics": [
+      "介质选择复现率",
+      "平均EDP损失",
+      "能耗与时延MAPE"
+    ],
+    "support_criteria": [
+      "加入外围项后选型复现率与EDP损失保持TADA同级且EDP最优介质排序发生可解释移动"
+    ],
+    "reject_criteria": [
+      "外围项使预测误差显著恶化或选型排序不变，说明耦合项可忽略"
+    ],
+    "limitations": [
+      "两侧原始证据均为解析仿真，无实测器件"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐全且与既有候选和Idea身份不同，但联合机制尚无任何独立验证，两侧证据均为解析仿真且适用边界（DCIM、ReRAM IMC、BERT-Tiny规模）未扩展。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-08-17",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_74b95ed532f7b3d11f",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "跨期综合（NIFA问题侧+TADA方法侧）机制完整且身份独立，但联合机制无独立验证且两侧均为解析仿真。",
+      "evidence_item_ids": [
+        "317ccebca4f647a12810f191",
+        "25aab19be62655b8655acc41"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

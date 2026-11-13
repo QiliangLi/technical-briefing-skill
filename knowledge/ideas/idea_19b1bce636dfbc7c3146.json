@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_19b1bce636dfbc7c3146",
+  "identity": {
+    "problem_key": "static_ocs_decode_gains_untested_under_realistic_serving_and_faults",
+    "mechanism_key": "per_deployment_static_lightpath_with_idle_port_conversion",
+    "target_key": "llm_inference_interactivity_and_energy_efficiency"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "按部署静态OCS光路在真实服务动态与故障下的推理收益保持性",
+  "problem": "Workload-Static OCS提出LLM解码通信结构按部署固定,可一次配置静态光路、全部署期复用,把重配时延从摊销改为避免,GXNET仿真中较4:1收敛EPS把类GPT-OSS模型交互性至多提升65%、能效至多提升119%(Megatron 5T为52%与102%);但数字来自仿真与微基准标定、无物理集群验证,收益集中于低batch高交互区间,容错完全未讨论,静态光路在真实服务动态与故障下是否仍优于可重构方案未知。",
+  "hypothesis": "在纳入高batch区间、多租户或时变负载混布与链路或光路故障注入的服务仿真中,按部署静态光路相对4:1收敛EPS仍保留其报告交互性与能效收益的一半以上,且一次故障的重新规划与恢复代价摊销后不吞噬部署期稳态收益;若高batch或混布区间收益消失、或静态拓扑劣于带重配的基线、或单次故障恢复代价超过部署期累计收益,则假设被证伪。",
+  "mechanism": "复现其基于Cayley图的元构造候选规划器(联合探索网格轴划分、降低通信深度的捷径与并行电路,解析模型选优,空闲端口换更少通信相位或更高带宽),在GXNET式仿真上扩展负载面:batch与到达强度扫描、多模型混布、链路或光路故障注入及一次重新规划恢复策略对比。",
+  "expected_effect": "得到静态光路推理收益随batch区间、负载混布与故障率的边界曲线与适用区间,以及故障恢复代价的摊销判据,为推理集群是否采用按部署静态OCS拓扑提供可检验依据。",
+  "topic_ids": [
+    "optical_network"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "6052aa6a604b042b958b27de",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.05104v1"
+      ],
+      "reason": "Workload-Static OCS论证解码通信结构按部署固定、OCS重配置跟不上token循环,故用一次配置全程复用的静态光路把重配时延从摊销改为避免;GXNET仿真中全OCS较4:1收敛EPS把类GPT-OSS模型交互性至多提升65%、能效至多提升119%、Megatron 5T为52%与102%;论文自述数字来自仿真与微基准标定、无物理集群验证、收益集中于低batch高交互区间且容错未讨论,直接给出本假设要检验的全部边界。"
+    },
+    {
+      "item_id": "0a8409ebc23aa6da5b434b7f",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.38004v1"
+      ],
+      "reason": "OOLS显示有界度数拓扑下大量OCS端口闲置、空闲端口可作为额外光路资源激活并换取makespan 66%-85%与通信成本70%-91%的收益,与静态规划器把空闲端口换成更少通信相位或更高带宽的空闲端口资源观一致;该关联为跨条目推断,且OOLS结论基于以抽象轮次计重配开销的纯仿真。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "真实推理服务的batch混布、到达时变与多模型共置动态与GXNET仿真假设的差距未量化",
+    "静态光路的故障域影响与一次重新规划的恢复代价未在任何已发布证据中评估",
+    "模型代际更替或多代混部下通信结构按部署固定的假设何时失效未知"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在GXNET式推理集群仿真中复现Cayley图静态光路规划器与4:1收敛EPS基线,并加入服务层动态:batch与到达强度扫描、多模型混布、链路或光路故障注入与一次重新规划恢复",
+    "inputs": [
+      "论文口径的类GPT-OSS与Megatron 5T两类负载及其微基准标定参数",
+      "batch从低batch高交互区间到高batch区间的扫描",
+      "多模型混布与到达时变场景(含突发到达)",
+      "链路与OCS光路故障率扫描及重新规划时延档位"
+    ],
+    "baselines": [
+      "4:1收敛EPS基线(论文口径,用于对齐复现)",
+      "带周期或按需重配的可重构OCS服务基线",
+      "不把空闲端口换成更少通信相位或更高带宽的静态拓扑消融"
+    ],
+    "metrics": [
+      "解码交互性(每token步进时延)提升比例",
+      "能效提升比例",
+      "收益保留率(相对论文报告值)随batch与混布的变化曲线",
+      "故障后恢复时间与部署期累计净收益"
+    ],
+    "support_criteria": [
+      "高batch与混布区间仍保留报告交互性收益的一半以上",
+      "至少一种多模型混布场景下静态光路仍优于4:1收敛EPS",
+      "故障恢复代价摊销后部署期净收益仍为正"
+    ],
+    "reject_criteria": [
+      "收益只在低batch高交互窄区间成立,高batch区间消失或转负",
+      "混布或时变负载下静态拓扑劣于带重配基线",
+      "单次故障的重新规划代价超过部署期累计收益"
+    ],
+    "limitations": [
+      "仿真与微基准标定口径,无真实光层插损、串扰与控制平面时延",
+      "服务负载与故障场景为构造假设,无生产推理trace",
+      "结论不能外推到未实测的OCS硬件与模型代际更替场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_4e3bdb6c1a666e8f10cc",
+      "issue_date": "2026-11-06",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据2026-11-06期Workload-Static OCS的静态光路交互性与能效仿真收益及其自述边界(仿真与微基准标定、收益集中于低batch高交互区间、容错未讨论)创建该假设,检验真实服务动态与故障下收益是否保持;OOLS的空闲端口资源观为跨条目推断的支持信号,未做任何验证。",
+      "evidence_item_ids": [
+        "6052aa6a604b042b958b27de",
+        "0a8409ebc23aa6da5b434b7f"
+      ]
+    }
+  ]
+}

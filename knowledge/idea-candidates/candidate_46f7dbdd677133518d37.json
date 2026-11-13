@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_46f7dbdd677133518d37",
+  "identity": {
+    "problem_key": "moe_communication_compute_sm_contention",
+    "mechanism_key": "explicit_sm_partitioning_runtime_tuning",
+    "target_key": "moe_serving_throughput_latency"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "GC-MoE以Green Context划分通信与计算SM分区实现MoE解码通信计算重叠",
+  "problem": "MoE解码中token分发与分组GEMM争用同一组SM驻留资源，带宽受限的MoE解码服务缺少把通信与计算内核显式划分到独立SM分区的执行方式，有效算力被通信侧侵蚀。",
+  "hypothesis": "若在驱动层以CUDA Green Context把SM切成小通信与大计算分区并独立调优（B300上仅留20/148个SM做token分发），以CUDA Graph并发启动两类内核、令牌环按块握手使计算随数据到达即启动，MoE解码时延可在精度不变（最小余弦0.99999976）的前提下稳定快于DeepGEMM基线。",
+  "mechanism": "驱动层用Green Context切成小通信与大计算分区并独立调优，B300上仅留20/148个SM分发；CUDA Graph并发启动通信与计算两类内核；令牌环按块握手使计算随数据到达即启动。",
+  "target": "8卡H20与8卡B300上的MoE解码推理（带宽受限的MoE解码服务）",
+  "expected_effect": "8卡H20与B300共54个测点全部快于DeepGEMM基线；解码时延8卡H20平均快1.1881倍、峰值1.2957倍；8卡B300平均1.1059倍、融合共享专家1.1230倍；精度最小余弦相似度0.99999976。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（MoE解码中token分发与分组GEMM争用同一组SM）、可解释机制（Green Context驱动层SM分区加CUDA Graph并发启动与令牌环按块握手）、目标对象（8卡H20与B300的MoE解码）与可检验效应（54个测点全部快于DeepGEMM基线、8卡H20平均1.1881倍、精度最小余弦0.99999976）；但其问题+机制+目标身份与既有正式Idea idea_46f7dbdd677133518d37一致，该Idea的evidence_for已收录本条。"
+  },
+  "evidence": [
+    {
+      "item_id": "e72addc6b58204ae181aa091",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04222v1"
+      ],
+      "reason": "GC-MoE给出问题（MoE解码中token分发与分组GEMM争用同一组SM）、机制（驱动层Green Context切分通信与计算分区、B300上仅留20/148个SM分发、CUDA Graph并发启动两类内核、令牌环按块握手使计算随数据到达即启动）、目标（8卡H20与B300的MoE解码）与可检验效应（54个测点全部快于DeepGEMM基线、8卡H20平均快1.1881倍峰值1.2957倍、8卡B300平均1.1059倍融合共享专家1.1230倍、精度最小余弦0.99999976），并给出仅测解码、每卡256 token时增益收窄至1.01-1.13倍、无分区消融与功耗数据的边界。",
+      "independence_group": "arxiv:2611.04222"
+    }
+  ],
+  "evidence_item_ids": [
+    "e72addc6b58204ae181aa091"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.04222v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.04222"
+  ],
+  "unknowns": [
+    "仅测解码，prefill相位未评估",
+    "每卡256 token时增益收窄至1.01-1.13倍，大token规模与多租户下增益边界未刻画",
+    "无分区比例消融与功耗数据",
+    "迁移前须核对I、H等硬形状约束",
+    "单一arXiv v1预印本，缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单节点8卡H20或B300上复现Green Context通信/计算SM分区加CUDA Graph并发启动的MoE解码，扫描每卡token数（64至256以上）与分区比例，对照DeepGEMM基线并核验I、H等硬形状约束。",
+    "inputs": [
+      "开源MoE模型与解码负载",
+      "Green Context驱动级SM分区实现",
+      "每卡token数与分区比例扫描范围"
+    ],
+    "baselines": [
+      "DeepGEMM/DeepEP默认SM配比",
+      "无分区的默认执行"
+    ],
+    "metrics": [
+      "解码时延（TPOT）",
+      "相对基线加速比",
+      "输出精度（余弦相似度）",
+      "分区比例敏感性"
+    ],
+    "support_criteria": [
+      "跨H20与B300两类硬件解码时延一致快于基线且余弦相似度不低于0.9999"
+    ],
+    "reject_criteria": [
+      "收益仅在小token档成立，或分区调优开销与形状约束抵消收益"
+    ],
+    "limitations": [
+      "首版限解码相位与单NVLink域，不含功耗"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "触发记录四要素齐备，但其问题+机制+目标身份元组与正式Idea idea_46f7dbdd677133518d37（2026-11-06由跨期已发布证据创建，其evidence_for已收录本条e72addc6b58204ae181aa091）完全一致：同为MoE集合通信与分组GEMM争用SM驻留资源的显式分区与调优机理，本条系同身份复报、无新语义，按duplicate指向该Idea，不重复立项。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_46f7dbdd677133518d37"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5ef6de6388584e5d26be",
+      "issue_date": "2026-11-06",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "Direct任务审阅触发证据，问题、机制、目标与可检验效应四要素齐备，但身份与既有正式Idea idea_46f7dbdd677133518d37相同且该Idea证据已收录本条，按duplicate处置并指向该Idea。",
+      "evidence_item_ids": [
+        "e72addc6b58204ae181aa091"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

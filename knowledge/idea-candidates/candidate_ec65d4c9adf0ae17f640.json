@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ec65d4c9adf0ae17f640",
+  "identity": {
+    "problem_key": "generic_lru_eviction_multiturn_prefix_reuse_waste",
+    "mechanism_key": "intent_learned_revisit_stats_lexicographic_eviction",
+    "target_key": "sglang_multiturn_radix_prefix_cache_eviction"
+  },
+  "idea_type": "solution_concept",
+  "title": "意图感知回访统计驱逐SGLang RadixTree前缀缓存",
+  "problem": "多轮对话服务中SGLang前缀缓存用通用LRU驱逐，不区分请求意图，忽视各状态在回访概率与轮间延迟上的差异，大量前缀复用被提前驱逐浪费，命中率与TTFT同时受损。",
+  "hypothesis": "在SGLang上为请求分类意图，从日志学习每个状态的后续轮次概率与对数正态轮间延迟，驱逐时按中位复用窗口、复用概率与规模的字典序比较RadixTree叶子、低者优先驱逐，可在相同缓存容量下把多轮对话命中率从LRU的12.2%量级提升到34.6%量级，并直接转化为TTFT下降与显存节省；若回访统计在真实在线流量漂移下失稳或意图分类信号不可得，则该机制只应在可获取意图信号的负载上部署。",
+  "mechanism": "SGLang上为请求分类意图，从日志学习后续轮次概率与对数正态轮间延迟；驱逐时按中位复用窗口、复用概率与规模的字典序比较RadixTree叶子，低者优先驱逐。",
+  "target": "SGLang多轮对话服务RadixTree前缀缓存的驱逐策略决策点",
+  "expected_effect": "140K容量下ShareChat命中率34.6%对LRU的12.2%；Qwen-1.5-110B在5请求/秒下TTFT从6.98秒降至3.76秒。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录同时给出问题（多轮对话服务通用LRU驱逐浪费大量前缀复用）、可解释机制（意图分类、从日志学习每状态回访概率与对数正态轮间延迟、按中位复用窗口/复用概率/规模字典序比较RadixTree叶子低者先驱逐）、目标对象（SGLang RadixTree前缀缓存驱逐）与可检验效应（ShareChat命中率34.6%对LRU的12.2%、TTFT 6.98秒降至3.76秒）。"
+  },
+  "evidence": [
+    {
+      "item_id": "954a38c6f86e6cf1050cee83",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09715v1"
+      ],
+      "reason": "IAC给出问题（多轮对话服务中通用LRU驱逐浪费大量前缀复用）、机制（SGLang上为请求分类意图，从日志学习后续轮次概率与对数正态轮间延迟，按中位复用窗口、复用概率与规模字典序比较RadixTree叶子，低者优先驱逐）、目标（SGLang多轮对话服务的RadixTree前缀缓存驱逐）与可检验效应（140K容量下ShareChat命中率34.6%对LRU的12.2%，Qwen-1.5-110B在5请求/秒下TTFT从6.98秒降至3.76秒）；边界为结果基于回放的公开对话轨迹与单一4xA100测试床、非在线生产验证，与离线上界的差距未知。",
+      "independence_group": "arxiv:2611.09715"
+    }
+  ],
+  "evidence_item_ids": [
+    "954a38c6f86e6cf1050cee83"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.09715v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.09715"
+  ],
+  "unknowns": [
+    "结果基于回放的公开对话轨迹与单一4xA100测试床，非在线生产验证",
+    "与离线上界的差距未知",
+    "意图分类器质量、类别数与分类开销对收益的影响未报告",
+    "学习到的回访统计在流量漂移下的时效性与重学习频率未刻画",
+    "单一预印本，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自建SGLang多轮对话服务上实现意图分类、每状态后续轮次概率与对数正态轮间延迟的日志学习，以及按中位复用窗口/复用概率/规模字典序的RadixTree叶子驱逐，对照默认LRU驱逐。",
+    "inputs": [
+      "多轮对话回放轨迹（含ShareChat口径）",
+      "缓存容量扫描（含140K档）",
+      "意图分类质量与类别数扫描",
+      "回访统计重学习间隔与流量漂移窗口"
+    ],
+    "baselines": [
+      "SGLang默认LRU驱逐（论文对照口径）"
+    ],
+    "metrics": [
+      "前缀缓存命中率",
+      "TTFT（含5请求/秒并发口径）",
+      "显存节省",
+      "意图分类与统计学习开销"
+    ],
+    "support_criteria": [
+      "相同容量下命中率显著高于LRU且命中率增益兑现为TTFT下降",
+      "收益在在线流量或漂移回放下保持"
+    ],
+    "reject_criteria": [
+      "回访统计漂移使命中率回落到LRU水平",
+      "意图分类开销或错误吞噬命中收益"
+    ],
+    "limitations": [
+      "原始证据为回放公开对话轨迹与单一4xA100测试床，非在线生产验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有驱逐谱系不同义（idea_e8ac8cc5cd625623e8dd为无请求元数据的影子重放在线策略切换、candidate_ee1f3df5fa5d97498a5f为离线最大权闭包留存超时精确求解，本候选为意图元数据驱动的学习型在线驱逐），但证据为单一预印本，结果基于回放公开对话轨迹与单一4xA100测试床、非在线生产验证，与离线上界差距未知，无独立支持；且该触发项已于本期（2026-11-11 evidence_added）并入idea_e8ac8cc5cd625623e8dd作为驱逐命中率增益向TTFT传导的量化证据，单列谱系待人工决策，先观察。",
+  "related_candidate_ids": [
+    "candidate_e8ac8cc5cd625623e8dd",
+    "candidate_ee1f3df5fa5d97498a5f"
+  ],
+  "related_idea_ids": [
+    "idea_e8ac8cc5cd625623e8dd"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_1eb0c8574c30799b90c",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有驱逐谱系不同义（无元数据影子切换与离线精确留存求解之外的新机制：意图元数据驱动的学习型在线驱逐），但证据为单一预印本，结果基于回放公开对话轨迹与单一4xA100测试床、非在线生产验证，与离线上界差距未知，无独立支持；且该触发项已于本期（2026-11-11 evidence_added）并入idea_e8ac8cc5cd625623e8dd作为驱逐命中率增益向TTFT传导的证据，单列谱系待人工决策，先观察。",
+      "evidence_item_ids": [
+        "954a38c6f86e6cf1050cee83"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

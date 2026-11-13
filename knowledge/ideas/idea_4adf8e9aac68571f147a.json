@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_4adf8e9aac68571f147a",
+  "identity": {
+    "problem_key": "heterogeneous_mainmem_placement",
+    "mechanism_key": "llc_fit_score_signal",
+    "target_key": "os_page_placement"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "硬件页级介质亲和信号能否兑现异构主存的分层收益",
+  "problem": "主存加入压缩内存、CXL 与 PCM 后，操作系统缺少低开销的页级介质亲和信号，默认放置的质量差距直接决定新介质容量能否转化为系统收益。",
+  "hypothesis": "若在 LLC 后监视访存流、为每页产出对各内存可比较的 fit 分数并交给 OS 做放置决策，异构主存可在约大核预算 2-3% 的硬件开销下回收大部分最优-最差放置差距。",
+  "mechanism": "每页访问迹线与各内存离线学习的好迹线模型匹配，产出至多四个 8 位 fit 分数，按 PFN 存表并经通知环交给 OS；硬件只计算信号，放置策略仍归 OS。",
+  "expected_effect": "在 GUPS/TPP/Redis 类负载上显著缩小最优-最差放置差距并提升容量回收率，同时保持低硬件开销；该效果目前仅在周期级原型中得到支持，须实测复现。",
+  "topic_ids": [
+    "storage_media"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "118b1e0bbc2942ec8ee53e98",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07506v1"
+      ],
+      "reason": "Memory Fit 在 FireSim 周期级原型上实现 LLC 后访存监视与每页 fit 分数：扩展 GUPS 回收最优-最差差距 72.4%/71.9%、TPP 为 19.2%/33.3%、Redis 三档容量回收 37.1-90.4% 对 7.9-31.8%，硬件开销约大核预算 2-3%；直接支持该假设的机制与效果（无绝对吞吐与 PCM 器件参数，CXL 为加时延仿真）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "FireSim 之外无绝对吞吐数据与真实 PCM 器件参数。",
+    "CXL 时延为加时延仿真而非实测。",
+    "fit 分数模型在长周期负载相位漂移下的稳定性未知。"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在周期级模拟器（FireSim 级）或带 CXL/仿真 PCM 时延的真实服务器上复现页放置对比，信号生成与放置策略解耦评估。",
+    "inputs": [
+      "扩展 GUPS 与 TPP 访问迹线",
+      "Redis 三档容量负载",
+      "各候选内存的容量、带宽、读时延与功耗参数",
+      "fit 分数表硬件开销预算（大核预算百分比）"
+    ],
+    "baselines": [
+      "默认 NUMA 平衡 / TPP 放置",
+      "基于采样 profiling 的页放置器",
+      "oracle 最优放置（差距上界）"
+    ],
+    "metrics": [
+      "最优-最差放置差距回收比例",
+      "容量回收率",
+      "端到端吞吐与时延（P95）",
+      "信号硬件面积与功耗开销"
+    ],
+    "support_criteria": [
+      "在不少于两类负载上以不超过大核预算 3% 的开销回收超过一半放置差距，且良性负载无回退。"
+    ],
+    "reject_criteria": [
+      "真实平台复测中收益消失，或开销超出预算一个数量级、通知环带宽成为新瓶颈。"
+    ],
+    "limitations": [
+      "当前证据仅来自 FireSim 周期级原型；CXL 为加时延仿真，无真实 PCM 器件参数；未覆盖多租户干扰与长周期相位漂移。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_5b2e8c74d1a9f03e6c22",
+      "issue_date": "2026-11-09",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "已发布证据给出明确问题、可检验机制与量化效果信号，因此建立研究假设 Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "118b1e0bbc2942ec8ee53e98"
+      ]
+    }
+  ]
+}

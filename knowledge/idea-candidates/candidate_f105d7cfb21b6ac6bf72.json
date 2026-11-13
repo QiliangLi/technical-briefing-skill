@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_f105d7cfb21b6ac6bf72",
+  "identity": {
+    "problem_key": "host_relay_bottleneck_in_accelerator_storage_datapath",
+    "mechanism_key": "hip_stream_async_io_bypassing_host_relay",
+    "target_key": "amd_hipfile_storage_fast_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "AMD hipFILE异步直连快路径：加速器侧发起I/O跳过主机内存中转的出货实例",
+  "problem": "存储到加速器的数据搬运经主机内存多余中转，成为checkpoint引擎与KV缓存卸载数据路径的瓶颈（AMD ROCm平台）。",
+  "hypothesis": "在HIP stream上异步执行读写并跳过主机内存中转的快路径，配合批量I/O一次提交多请求与NUMA感知的主机内存分配，可在AMD平台上降低存储到加速器的访问时延并提高checkpoint与KV缓存卸载的持续吞吐；该机制语义与既有候选candidate_47cb76376a9afb422662（加速器发起I/O移除主机数据路径环节）同义，本条为厂商出货侧实例，不构成新机制。",
+  "mechanism": "hipFILE异步快路径使读写在HIP stream执行、跳过主机内存中转；Batch I/O一次提交多请求并由主机线程池分发；另增按NUMA节点分配主机内存。",
+  "target": "AMD ROCm/hipFILE存储快路径上的checkpoint引擎与KV缓存卸载数据路径",
+  "expected_effect": "厂商定性宣称可降低时延、提高checkpoint引擎与KV缓存卸载的持续吞吐并改善设备利用率；全部为定性声明，无IOPS或时延数字，效果需自测验证。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发表记录同时给出问题（存储到加速器搬运经主机内存多余中转）、机制（HIP stream异步快路径加批量I/O加NUMA分配）、目标（hipFILE存储快路径）与可检验的效应方向（时延、持续吞吐、设备利用率），四要素齐备故立Candidate；但其机制语义与既有加速器发起I/O候选同义，仅新增AMD平台出货成熟度。"
+  },
+  "evidence": [
+    {
+      "item_id": "c9a391c1a7a6260629294381",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://rocm.blogs.amd.com/ecosystems-and-partners/rocm-10.1-blog/README.html"
+      ],
+      "reason": "AMD ROCm 10.1厂商博客给出hipFILE异步快路径（读写在HIP stream执行、跳过主机内存中转）、批量I/O与按NUMA节点分配主机内存的机制，并定性宣称时延、持续吞吐与设备利用率收益；无基线与测试配置，也无任何量化数据。",
+      "independence_group": "url:https://rocm.blogs.amd.com/ecosystems-and-partners/rocm-10.1-blog/README.html"
+    }
+  ],
+  "evidence_item_ids": [
+    "c9a391c1a7a6260629294381"
+  ],
+  "source_urls": [
+    "https://rocm.blogs.amd.com/ecosystems-and-partners/rocm-10.1-blog/README.html"
+  ],
+  "independence_groups": [
+    "url:https://rocm.blogs.amd.com/ecosystems-and-partners/rocm-10.1-blog/README.html"
+  ],
+  "unknowns": [
+    "全部收益为厂商定性口径，无IOPS或时延数字",
+    "厂商博客无基线与测试配置，收益判断需自测",
+    "批量I/O经主机线程池分发，主机仍留在请求路径",
+    "错误恢复与软件成熟度未说明"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在AMD GPU节点上以hipFILE异步快路径对照经主机内存中转的缓冲路径，跑checkpoint写入与KV缓存卸载负载，量化收益方向。",
+    "inputs": [
+      "同步与批量两种提交模式",
+      "HIP stream并发数扫描",
+      "NUMA本地与远端主机内存对照",
+      "checkpoint与KV缓存卸载两种负载"
+    ],
+    "baselines": [
+      "hipFILE经主机内存中转路径",
+      "POSIX缓存I/O路径"
+    ],
+    "metrics": [
+      "读/写时延P50/P99",
+      "持续吞吐与每GPU有效IOPS",
+      "设备利用率",
+      "主机CPU占用与NUMA远端流量"
+    ],
+    "support_criteria": [
+      "时延与持续吞吐同时优于主机中转基线且设备利用率提升"
+    ],
+    "reject_criteria": [
+      "定性收益不可复现，或批量路径的主机线程池分发成为新瓶颈"
+    ],
+    "limitations": [
+      "厂商宣称为定性口径且未复测",
+      "仅覆盖AMD平台与hipFILE接口",
+      "错误恢复与成熟度未评估"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "机制语义与既有候选相同：加速器侧发起I/O、跳过主机内存中转、面向推理存储数据路径（KV缓存卸载与checkpoint）；本条为AMD ROCm 10.1出货侧实例，未提出新机制或新问题语义，属对既有方向的平台成熟度补充，指向candidate_47cb76376a9afb422662。",
+  "related_candidate_ids": [
+    "candidate_47cb76376a9afb422662"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_4cf4599dbb218b16700f",
+      "issue_date": "2026-11-02",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "hipFILE异步快路径与既有候选同义：加速器侧发起I/O跳过主机内存中转、面向推理存储数据路径；本条仅新增AMD平台出货成熟度信号，无新机制语义，判定为duplicate并指向candidate_47cb76376a9afb422662。",
+      "evidence_item_ids": [
+        "c9a391c1a7a6260629294381"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

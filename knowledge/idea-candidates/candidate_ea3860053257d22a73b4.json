@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ea3860053257d22a73b4",
+  "identity": {
+    "problem_key": "low_bit_quant_accuracy_throughput_tradeoff",
+    "mechanism_key": "importance_gated_precision_bit_streaming",
+    "target_key": "memory_hierarchy_quantized_inference"
+  },
+  "idea_type": "solution_concept",
+  "title": "按重要性从主机内存层级流式补取精度位恢复2-4比特量化推理",
+  "problem": "2-4比特权重与KV cache量化省内存但伤精度；为保精度把高精度表示退到主机慢层又拖慢解码，量化推理缺少精度与吞吐兼得的数据路径。",
+  "hypothesis": "若只为重要信道与token组从主机RAM或SSD流式补取高精度位、以提前或滞后距离使补位传输与计算重叠、并在给定减速预算内自动选定参数，则可在保留大部分量化吞吐的同时恢复2-4比特量化的精度。",
+  "mechanism": "重要性门控的精度位流式补取：仅重要信道与token组触发补位传输；提前或滞后距离调度使传输与计算重叠；参数在减速预算内自动选定。",
+  "target": "单机内存层级（主机RAM/SSD到GPU）上的2-4比特量化LLM推理数据路径",
+  "expected_effect": "2比特权重下Llama-3.1-8B混淆度由9.46降至8.40、保留量化吞吐95.4%；Qwen3-8B配2比特权重加2/2比特KV的AIME由11.0%升至47.1%。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的按重要性流式补精度位机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "131a5cafc84bcebccc2048c3",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08363v1"
+      ],
+      "reason": "《StrataFlux：从内存层级流式补精度位恢复2-4比特量化推理》给出机制与对照结果：2-4比特权重与KV cache量化省内存但伤精度、退到慢层保精度又拖慢解码；框架只为重要信道和token组从主机RAM或SSD流式补取高精度位、用提前或滞后距离使传输与计算重叠、参数在给定减速预算内自动选定；2比特权重下Llama-3.1-8B混淆度9.46到8.40、保留量化吞吐95.4%，Qwen3-8B配2比特+2/2 KV的AIME从11.0%到47.1%；边界为传输仅到单机RAM或SSD、无跨节点与TTFT、TPOT数据，统一内存平台批量补位开销最高25.4%。",
+      "independence_group": "arxiv:2611.08363"
+    }
+  ],
+  "evidence_item_ids": [
+    "131a5cafc84bcebccc2048c3"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.08363v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.08363"
+  ],
+  "unknowns": [
+    "证据仅单一arXiv独立组，无独立复现",
+    "传输只到单机RAM或SSD，无跨节点数据，也无TTFT、TPOT等服务态指标",
+    "统一内存平台批量补位开销最高25.4%，开销随批量与负载档位的分布未拆解",
+    "重要性判定与提前或滞后参数在负载漂移、长解码与多轮会话下的稳定性未知",
+    "证据内未见与其他精度恢复路线的对照，相对收益边界不明"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单机GPU加主机RAM/SSD分级环境复现按重要性流式补精度位与传输-计算重叠，对照纯2-4比特量化与高精度退层两种基线，并补记TTFT、TPOT与服务态吞吐。",
+    "inputs": [
+      "Llama-3.1-8B与Qwen3-8B级模型及2比特权重加2/2 KV量化档位",
+      "重要信道与token组判定及提前或滞后距离档位",
+      "减速预算档位",
+      "RAM与SSD两级存储及批量补位负载档位"
+    ],
+    "baselines": [
+      "纯2-4比特量化推理（证据内基线）",
+      "高精度表示驻留主机慢层的退层推理",
+      "无重要性筛选的全量补位"
+    ],
+    "metrics": [
+      "混淆度与AIME等工作精度",
+      "相对量化基线的吞吐保留率",
+      "TTFT与TPOT",
+      "补位传输字节与批量补位开销"
+    ],
+    "support_criteria": [
+      "精度恢复按证据量级复现且吞吐保留率与减速预算约束一致，批量补位开销不随负载失控"
+    ],
+    "reject_criteria": [
+      "负载漂移使重要性判定失效、精度回落，或补位开销吞没量化吞吐收益"
+    ],
+    "limitations": [
+      "原始证据仅单机RAM/SSD环境，无跨节点与TTFT、TPOT口径"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv独立组，评估限单机RAM/SSD、无跨节点与TTFT、TPOT数据，统一内存平台批量补位开销最高25.4%，适用边界未划出；且该记录同日已进入idea_f7841984fcce6a274881证据链，独立成案还是并入该Idea需人工世系决定，先延期观察。",
+  "related_candidate_ids": [
+    "candidate_b74aefcc6da4997763c0",
+    "candidate_c8e42d5d6235afa242f5",
+    "candidate_ac114558ae64d984a62f"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_dc8e9915d2800baf0b42",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv独立组，评估限单机RAM/SSD、无跨节点与TTFT、TPOT数据，统一内存平台批量补位开销最高25.4%，适用边界未划出；且该记录同日已进入idea_f7841984fcce6a274881证据链，独立成案还是并入该Idea需人工世系决定，先延期观察。",
+      "evidence_item_ids": [
+        "131a5cafc84bcebccc2048c3"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

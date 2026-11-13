@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_d1a94da7ed02e4533537",
+  "identity": {
+    "problem_key": "real_ocs_reconfig_latency_erodes_idle_port_scheduling_gain",
+    "mechanism_key": "latency_aware_opportunistic_idle_port_lightpath_activation",
+    "target_key": "llm_training_makespan_and_communication_cost"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "空闲OCS端口机会式复用在真实重配时延下的收益保持性",
+  "problem": "OOLS在有界度数拓扑上机会式启用空闲OCS端口,在以抽象轮次计的重配开销下较SAN基线缩短makespan 66%-85%、较DSN降低总通信成本至少70%-91%,但其重配置开销以抽象轮次计,无真实毫秒级OCS时延、GPU/AI负载与故障恢复数据,该收益在真实重配时延下是否保持未知。",
+  "hypothesis": "在毫秒级OCS重配时延(如MEMS约10ms量级)与真实训练通信负载下,时延感知的空闲端口机会式激活仍能较不激活的DSN/CBN基线显著缩短makespan并降低总通信成本,且收益随时延的退化斜率可量化;若激活带来的重配等待抵消额外光路收益、使makespan劣于不激活基线,则假设被证伪。",
+  "mechanism": "复现OOLS的一跳/两跳空闲端口激活与LRU/LFU换链,把激活与换链决策改为时延感知触发(仅在摊销重配时延后净收益为正时激活),在含显式重配时延模型的离散事件仿真中扫描时延档位与端口预算p。",
+  "expected_effect": "得到机会式空闲端口复用收益随真实重配时延的退化曲线与仍成立的设计区间,为AI集群OCS调度是否纳入空闲端口机会式复用提供可检验判据。",
+  "topic_ids": [
+    "optical_network"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "0a8409ebc23aa6da5b434b7f",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.38004v1"
+      ],
+      "reason": "OOLS纯仿真结果显示:p=⌈n/16⌉时两跳OOLS较SAN基线缩短makespan 66%-85%、总通信成本较DSN降低至少70%-91%,p越小收益越大而激活率越低;论文自述重配置开销以抽象轮次计、用于AI集群前须补真实重配置时延与训练负载验证,直接构成本假设要检验的边界。"
+    },
+    {
+      "item_id": "5208436edd2a9b448d709b32",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.25949v1"
+      ],
+      "reason": "Flux证明OCS重配置时延不可忽略、忽略计算时间线的重配置会阻塞通信,并把重配摊销到计算与通信之后才取得迭代时间与NIC缓冲收益,说明按抽象轮次计的调度收益在真实时延下存在被侵蚀的风险,是本假设的前提证据。"
+    },
+    {
+      "item_id": "3298b23c61f47a7dfae38437",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.14253v1"
+      ],
+      "reason": "LACE以通道级而非端口对级的资源分配在16×400Gb/s端口仿真取得1.21-2.04倍通信加速(实物验证限于三服务器),支持资源供给粒度细化是调度收益来源这一前提;该条与本假设的关联为跨条目推断。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "真实MEMS/硅光OCS重配时延分布与控制平面开销未在任何已发布证据中量化",
+    "空闲端口机会式激活在多租户与故障恢复场景下的稳定性未测",
+    "收益是否随端口预算p与集群规模的变化保持稳定未知"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在OOLS的有界度数拓扑(DSN/CBN)离散事件仿真中加入显式OCS重配时延模型(毫秒级MEMS与微秒级硅光两档),空闲端口激活/换链决策改为摊销时延后净收益为正才触发的时延感知策略",
+    "inputs": [
+      "OOLS论文口径的端口预算扫描(p=⌈n/16⌉附近及更小p)",
+      "毫秒级与微秒级两档重配时延参数及重配排队模型",
+      "合成collective负载加至少一条公开LLM训练通信trace(如Flux使用的Llama 3 8B轨迹口径)"
+    ],
+    "baselines": [
+      "SAN自调整网络基线(抽象轮次口径,用于对齐复现)",
+      "不启用空闲端口的DSN/CBN基线",
+      "固定电路加周期重配置调度器"
+    ],
+    "metrics": [
+      "makespan缩短比例",
+      "总通信成本",
+      "空闲端口激活率与重配次数",
+      "重配等待时间占比"
+    ],
+    "support_criteria": [
+      "在毫秒级重配时延档下两跳OOLS仍较不激活基线缩短makespan至少30%",
+      "总通信成本相对DSN保持至少50%降幅",
+      "收益随时延档位的退化斜率被量化且单调可解释"
+    ],
+    "reject_criteria": [
+      "毫秒级时延档下激活收益归零或makespan劣于不激活基线",
+      "重配等待时间占比超过额外光路带来的时间节省"
+    ],
+    "limitations": [
+      "仿真仍以抽象链路容量为主,不含真实光层插损、串扰与控制平面时延",
+      "无生产故障恢复与多租户干扰场景",
+      "结论不能外推到未实测的OCS硬件"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-28",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_e11e43c1dddbdecc6714",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据2026-11-02期OOLS的makespan 66%-85%与通信成本70%-91%收益及其纯仿真、抽象轮次重配开销的边界创建该假设,以检验真实毫秒级OCS重配时延下收益是否保持;Flux与LACE分别提供重配时延前提与粒度收益前提。",
+      "evidence_item_ids": [
+        "0a8409ebc23aa6da5b434b7f",
+        "5208436edd2a9b448d709b32",
+        "3298b23c61f47a7dfae38437"
+      ]
+    }
+  ]
+}

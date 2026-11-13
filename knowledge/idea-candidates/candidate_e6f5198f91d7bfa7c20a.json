@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_e6f5198f91d7bfa7c20a",
+  "identity": {
+    "problem_key": "harness_fixed_prefix_truncation_silent_loss",
+    "mechanism_key": "segment_wise_loss_accounting_line_aware_truncation",
+    "target_key": "agent_harness_tool_result_pipeline"
+  },
+  "idea_type": "solution_concept",
+  "title": "按段计量harness工具结果截断损耗并改用按行感知截断修复静默丢失",
+  "problem": "工具结果在送达模型前要经过harness的多级处理，固定前缀截断会静默删数据：720次实测中34%的工具结果被截断成坏JSON，而最大提示仅占窗口5.75%，即窗口近空时截断仍在发生，模型与框架侧均无感知。",
+  "hypothesis": "审计并埋点harness的工具结果处理链，以五段边界逐段计数丢失并按发现产出比定位损耗，再用按行感知的截断替换定长前缀切片，可在等正确率下消除送达前静默丢失并降低工作量：证据中重新引入该截断使工具调用由53增至68、计算由18增至32而正确率持平，即修复反向降低工作量。",
+  "mechanism": "把工具结果流水线建模为五段边界，逐段记录丢失计数与发现产出比以定位损耗点；修复方案用按行感知的截断替换定长前缀切片；验证用录制回放做无模型的确定性复现。",
+  "target": "编码与工具Agent的harness工具结果处理与投递流水线（工具执行到模型输入之间的上下文流水线）。",
+  "expected_effect": "埋点后因静默截断变成坏JSON的工具结果占比趋零；移除定长截断后在等正确率下工作量下降（证据显示重新引入截断使工具调用由53增至68、计算由18增至32）；录制回放可在无模型参与下确定性复现逐段丢失。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "d090837fb16d1e6c93ad88d5",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36114v1"
+      ],
+      "reason": "该记录在720次实测中量化34%的工具结果被固定前缀截断成坏JSON而最大提示仅占窗口5.75%，给出五段边界逐段丢失计数与发现产出比的计量模型、按行感知截断的修复与录制回放的无模型确定性验证，并显示重新引入截断使工具调用由53增至68、计算由18增至32而正确率持平；同时给出截断对答案的因果占比仍是开放问题、生产级复跑6次中3次仍错、模型与框架身份未披露的边界。",
+      "independence_group": "arxiv:2610.36114"
+    }
+  ],
+  "evidence_item_ids": [
+    "d090837fb16d1e6c93ad88d5"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.36114v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.36114"
+  ],
+  "unknowns": [
+    "作者明确截断对答案的因果占比仍是开放问题。",
+    "生产级复跑6次中3次仍错，修复后的残余失败来源未定位。",
+    "所用模型与框架身份在可见证据中未出现，损耗分布对其他harness栈的迁移未验证。",
+    "逐段计量与录制回放的埋点及维护成本未报告。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "审计自有Agent harness的工具结果处理与截断规则，复现五段边界逐段丢失计数，再以按行感知截断替换定长前缀切片，用录制回放做无模型确定性验证。",
+    "inputs": [
+      "自有harness的工具结果处理与截断规则代码",
+      "数百次量级的真实工具调用记录",
+      "五段边界逐段丢失计数埋点",
+      "录制回放环境"
+    ],
+    "baselines": [
+      "保留定长前缀截断的现状harness",
+      "窗口上限内无截断直传"
+    ],
+    "metrics": [
+      "被截断成坏JSON的工具结果占比",
+      "逐段丢失计数与发现产出比",
+      "工具调用次数与计算量",
+      "正确率",
+      "最大提示占窗口比例"
+    ],
+    "support_criteria": [
+      "截断致坏JSON降至零或近零，且等正确率下工具调用与计算量不高于无截断基线。"
+    ],
+    "reject_criteria": [
+      "逐段计量埋点开销过大，或按行感知截断在窗口压力下仍产生静默丢失。"
+    ],
+    "limitations": [
+      "原始证据的模型与框架身份未知、截断因果占比开放，且生产级复跑仍有半数失败，迁移前不可外推。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份区别于既有候选与Idea（既有交付链守卫候选针对网关静默丢工具调用后模型伪造结果，本候选针对harness定长截断对工具结果的静默丢失及其逐段计量修复），但证据仅一个独立来源组，作者明言截断对答案的因果占比仍是开放问题、生产级复跑6次中3次仍错、模型与框架身份未披露；且同一证据本期已被 idea_8aa3d66177596baef1ac 吸收为交付链静默损失的问题侧证据，是否单列候选待人工谱系决定。",
+  "related_candidate_ids": [
+    "candidate_efdd15613ab672bfe173",
+    "candidate_37ee5187fb038d614a90"
+  ],
+  "related_idea_ids": [
+    "idea_8aa3d66177596baef1ac"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_68365e192cd6e76c21bc",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份区别于既有候选与Idea（既有交付链守卫候选针对网关静默丢工具调用后模型伪造结果，本候选针对harness定长截断对工具结果的静默丢失及其逐段计量修复），但证据仅一个独立来源组，作者明言截断对答案的因果占比仍是开放问题、生产级复跑6次中3次仍错、模型与框架身份未披露；且同一证据本期已被 idea_8aa3d66177596baef1ac 吸收为交付链静默损失的问题侧证据，是否单列候选待人工谱系决定。",
+      "evidence_item_ids": [
+        "d090837fb16d1e6c93ad88d5"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

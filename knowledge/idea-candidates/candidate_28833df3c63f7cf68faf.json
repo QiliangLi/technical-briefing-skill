@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_28833df3c63f7cf68faf",
+  "identity": {
+    "problem_key": "kv_elephant_flow_ecmp_collision",
+    "mechanism_key": "host_replicated_spine_path_reservation",
+    "target_key": "spine_leaf_ecmp_kv_transfer_fabric"
+  },
+  "idea_type": "solution_concept",
+  "title": "ARK以端主机spine路径预留消除KVCache大象流的ECMP冲突",
+  "problem": "解耦推理的KVCache跨网传输是持续数百毫秒至数秒的大象流，ECMP哈希冲突会把并发大象流压到同一spine链路形成冲突热点，拖累流完成时间与TTFT。",
+  "hypothesis": "若解耦推理集群的每台主机维护复制的spine预留表、控制器为新流选择空闲spine并用预计算的源端口偏移把ECMP哈希引导到该spine、再经低带宽控制信道广播预留，则可在不改交换机的前提下消除KVCache大象流的ECMP冲突热点，降低流完成时间与TTFT。",
+  "mechanism": "每台主机维护复制的spine预留表；新流到达时控制器选择空闲spine，用预计算的源端口偏移让ECMP哈希到该spine，并经低带宽控制信道向各主机广播预留；纯端主机软件实现，不改交换机。",
+  "target": "解耦推理KVCache跨网传输的spine-leaf ECMP网络路径层",
+  "expected_effect": "16GPU两层spine-leaf包级仿真中，相对ECMP平均流完成时间最多降27.3%、P95最多降34.0%、平均TTFT最多降12.9%。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，但其身份与含义与现有Idea idea_e63d79458c2079f00edf相同：该Idea的机制族已显式包含以端主机软件做spine路径预留、不改交换机消除ECMP冲突热点的变体，且本条记录已于同期进入该Idea证据链，故按duplicate处置并指向该Idea。"
+  },
+  "evidence": [
+    {
+      "item_id": "e1f773047c893e5172859665",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.41160v1"
+      ],
+      "reason": "《ARK用端主机路径预留消除KVCache传输的ECMP冲突》给出问题、机制与仿真对照：KVCache跨网传输为持续数百毫秒至数秒的大象流，ECMP哈希冲突把并发流压到同一spine链路；ARK以每台主机复制的spine预留表、控制器选空闲spine、预计算源端口偏移引导ECMP哈希并经低带宽控制信道广播预留，不改交换机；16GPU两层spine-leaf包级仿真中相对ECMP平均流完成时间最多降27.3%、P95最多降34.0%、平均TTFT最多降12.9%。",
+      "independence_group": "arxiv:2610.41160"
+    }
+  ],
+  "evidence_item_ids": [
+    "e1f773047c893e5172859665"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.41160v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.41160"
+  ],
+  "unknowns": [
+    "全部为包级仿真且规模仅16GPU，无真实集群与更大规模验证",
+    "收益集中于拥而未饱和区间，饱和与轻载区间的适用边界未知",
+    "端到端TTFT为建模值而非实测",
+    "多主机高并发下预留表复制一致性与控制信道广播开销未验证"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在两层spine-leaf包级仿真或测试床中复现端主机spine路径预留（复制预留表、预计算源端口偏移、低带宽控制信道广播），承载解耦推理KVCache大象流负载，与ECMP及idea_e63d79458c2079f00edf机制族其他成员对照。",
+    "inputs": [
+      "16GPU级两层spine-leaf拓扑与KVCache大象流负载",
+      "并发流数与链路拥塞档位扫描（含拥而未饱和区间）",
+      "spine预留表与控制信道参数档位"
+    ],
+    "baselines": [
+      "ECMP哈希（证据内基线）",
+      "确定路径拓扑（ZCube式，idea机制族成员）",
+      "按单次传输预留光电路（idea机制族成员）"
+    ],
+    "metrics": [
+      "平均与P95流完成时间",
+      "平均TTFT",
+      "spine链路最大/平均负载不均衡度",
+      "预留表与控制信道开销"
+    ],
+    "support_criteria": [
+      "拥而未饱和区间流完成时间与TTFT显著优于ECMP，且控制平面开销不吞没收益"
+    ],
+    "reject_criteria": [
+      "多主机高并发下预留表一致性或控制信道广播开销吞没收益，或饱和与轻载区间无收益"
+    ],
+    "limitations": [
+      "原始证据为16GPU包级仿真，端到端TTFT为建模值",
+      "仿真无法覆盖真实RDMA栈抖动与交换机微突发"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "与现有Idea idea_e63d79458c2079f00edf同身份同含义：该Idea的问题即结构化推理大流在通用ECMP网络下的结构性热点并叠加进TTFT，其机制族已显式包含以端主机软件做spine路径预留、不改交换机消除ECMP冲突热点的变体，且本条记录e1f773047c893e5172859665已于2026-11-06进入该Idea证据链；触发项不构成区别于该Idea的独立身份，按duplicate指向该Idea，不另立案。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_e63d79458c2079f00edf"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_fd63c615ad7caef08b26",
+      "issue_date": "2026-11-06",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "与现有Idea idea_e63d79458c2079f00edf同身份同含义：该Idea的问题即结构化推理大流在通用ECMP网络下的结构性热点并叠加进TTFT，其机制族已显式包含以端主机软件做spine路径预留、不改交换机消除ECMP冲突热点的变体，且本条记录e1f773047c893e5172859665已于2026-11-06进入该Idea证据链；触发项不构成区别于该Idea的独立身份，按duplicate指向该Idea，不另立案。",
+      "evidence_item_ids": [
+        "e1f773047c893e5172859665"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

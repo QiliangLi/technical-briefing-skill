@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_30e35e81d5172a1e7747",
+  "identity": {
+    "problem_key": "capability_gain_stack_retention",
+    "mechanism_key": "execution_context_conditioned_evaluation",
+    "target_key": "quantization_sparse_kernel_adoption"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "硬件能力增益的栈内保留率可由执行上下文条件预测",
+  "problem": "厂商按峰值指令率宣传FP8、2:4稀疏与FP4等新能力，但用户经库、应用与共享设备触达硬件：MI300A逐层实测显示库层FP8保留率0.580至1.01、2:4应用层仅0.376至0.554，未融合的FP8整层甚至只有0.862倍；跨三代GPU约22万个实测配置同样显示2:4在量化地板之上精度与速度全面落败、仅叠加FP8地板格式后线性层核才加速1.33至1.65倍。能力采用决策缺少可提前计算的兑现率判据，按峰值宣传选型带来纸面加速与实际落空。",
+  "hypothesis": "硬件能力增益在库与应用层的保留率由可枚举的执行上下文特征决定——量化是否与计算融合进单内核、设备独占还是多进程共享、是否落在精度地板格式之上、稀疏支撑是否与量化值经协同重参数化联合优化；若这些条件可枚举并逐层测量，则可在采用前预测该能力在真实栈中的兑现率，且不满足条件的路径（未融合FP8、独立开启的2:4）在应用层不产生净收益。",
+  "mechanism": "把能力增益定义为指令级提速在更高层级保留的比例，从单指令微基准经库（如hipBLASLt）、推理服务到共享设备逐层测量；对照协同样例：4:8稀疏支撑选择经重参数化与NVFP4量化值在路由加权重构目标下联合可微优化并配原生稀疏GEMM内核后，单卡B200内核较稠密NVFP4提速1.11至1.76倍——能力兑现需要格式-内核-算法协同设计而非单独开启。",
+  "expected_effect": "形成按执行上下文条件查表的能力采用判据：满足融合、独占与精度地板条件的能力按逐层实测保留率折算收益，不满足条件的直接否决，把选型从峰值宣传口径切换到栈内兑现口径，减少纸面加速。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "0bc0413579c8b51e6e000a2b",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.28947v1"
+      ],
+      "reason": "约22万个实测配置的三代GPU对比以等比特与等档两种口径评估2:4稀疏：量化地板之上精度与速度全面落败、108个等档计算格仅胜6个，只有叠加在FP8地板格式上线性层核才加速1.33至1.65倍、H100 vLLM端到端prefill 74.6对58.9千token每秒且GSM8K持平；是该Idea『精度地板条件决定能力兑现』前提的最早已发布跨代实测（单作者预印本、增益限于计算受限的prefill、vLLM已移除2:4支持）。"
+    },
+    {
+      "item_id": "7135a64400c9d38f2c5b28cb",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02241v1"
+      ],
+      "reason": "MoESQ证明稀疏与FP4能力须经协同重参数化才兑现：4:8稀疏支撑选择与NVFP4量化值在路由加权重构目标下联合可微优化、定制内核在第五代稀疏张量核上执行变长专家分组稀疏GEMM，单卡B200较稠密NVFP4提速1.11至1.76倍、8卡B200预填充快1.18至1.25倍、Kimi-K2.5精度保留96.09%；支撑『格式-内核-算法协同设计而非单独开启』的机理（预印本、4.03倍端到端对比的是较慢INT4基线）。"
+    },
+    {
+      "item_id": "d62314a68ee1003784752567",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07198v1"
+      ],
+      "reason": "MI300A逐层实测首次把保留率做成口径：从单指令微基准经hipBLASLt等库、LLM推理服务到共享设备逐层测量，FP8库层保留0.580至1.01、2:4仅0.376至0.554；FP8未融合时Llama整层0.862倍、vLLM融合后独占吞吐1.13至1.44倍、六进程共享服务时与FP16持平——融合与设备独占两条上下文条件被直接量化（MI250X无FP8与2:4硬件路径、基线为FP16或BF16、预印本实测）。"
+    },
+    {
+      "item_id": "9b9afbfc9fc00c971761f38c",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09225v1"
+      ],
+      "reason": "MI355X实测给『量化能力兑现需融合进单内核』的条件集再添一项——softmax是否折叠进矩阵核：留在慢于矩阵核的向量单元时量化注意力受限，Fused-Softmax免训练折叠后MXFP8/6/4内核吞吐达BF16的2.07至3.2倍，且保留率随序列长度变化（峰值s=32768、短序列明显下降、MXFP4改变画面内容、Wan2.2端到端2.05倍而VBench略高于BF16）；直接扩展执行上下文条件枚举（仅单块MI355X）。"
+    },
+    {
+      "item_id": "5f0b3a320c99019dca435bac",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09722v1"
+      ],
+      "reason": "FOSCAR给出低比特KV的栈内保留率条件：压缩KV省下的HBM流量被逐值反量化的指令发射吃掉，仿射折叠把尺度与偏移移出热路径后INT2内核才较FlashInfer BF16几何平均快3.36倍（H100）与2.67倍（B200）、INT4有效KV吞吐达峰值带宽91.3%；说明保留率条件除融合、独占、精度地板外还包括标量重建是否折入矩阵数据流（未评审预印本、+341%服务端吞吐声明缺细节、2比特KV端到端精度未验证）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "保留率能否跨硬件代际与厂商迁移（现有实测覆盖三代NVIDIA GPU与单颗MI300A）",
+    "共享设备与多租户条件下保留率的退化曲线未刻画",
+    "精度地板格式与稀疏支撑叠加时收益边界（Blackwell 4:8精度在预算内未恢复）"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在至少一款NVIDIA与一款AMD加速器上，对FP8、2:4与FP4路径按单指令微基准、库层、推理服务层与多进程共享设备四层测量保留率，并扫描量化-计算融合开关与精度地板格式组合。",
+    "inputs": [
+      "FP8/2:4/FP4内核实现及其未融合基线",
+      "微基准、库调用与推理服务三层测量脚本",
+      "独占与多进程共享的设备调度配置",
+      "精度地板格式组合（FP16/FP8/NVFP4）与稀疏支撑开关"
+    ],
+    "baselines": [
+      "FP16/BF16原生路径",
+      "未融合量化路径",
+      "厂商峰值指令率标称值"
+    ],
+    "metrics": [
+      "逐层保留率（高层提速除以指令级提速）",
+      "端到端吞吐与时延",
+      "精度或困惑度变化",
+      "并发共享进程数"
+    ],
+    "support_criteria": [
+      "保留率可由执行上下文条件（融合、独占、精度地板、协同重参数化）解释且跨设备方向一致",
+      "不满足条件的路径在应用层无净收益的结论可复现"
+    ],
+    "reject_criteria": [
+      "同一上下文条件下保留率跨设备或跨代际大幅无规律波动，执行上下文特征无解释力"
+    ],
+    "limitations": [
+      "首版仅覆盖少数能力路径与两款设备，不含训练相位与功耗口径"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-10-23",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_9d9eb4b6fafbd99d3472",
+      "issue_date": "2026-11-09",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "跨期已发布证据（三代GPU 2:4等比特/等档评估、MoESQ稀疏-量化协同重参数化）与本期MI300A逐层保留率实测收敛于同一机理：硬件能力增益的兑现率由执行上下文条件决定，采用决策应按逐层实测保留率而非峰值宣传；按problem+mechanism+target身份创建为正式Idea并保持observing；三证据指向同一机理的聚合判断属跨记录推断(inferred)。",
+      "evidence_item_ids": [
+        "0bc0413579c8b51e6e000a2b",
+        "7135a64400c9d38f2c5b28cb",
+        "d62314a68ee1003784752567"
+      ]
+    },
+    {
+      "event_id": "idea_decision_064078f008b5992d2b57",
+      "issue_date": "2026-11-11",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增MI355X softmax折叠与FOSCAR仿射折叠两项实测证据，把能力保留率的执行上下文条件从量化-计算融合扩展到softmax与反量化标量重建是否折叠进矩阵数据流；Idea状态保持observing，跨厂商跨代际迁移与共享设备退化曲线仍未验证。",
+      "evidence_item_ids": [
+        "9b9afbfc9fc00c971761f38c",
+        "5f0b3a320c99019dca435bac"
+      ]
+    }
+  ]
+}

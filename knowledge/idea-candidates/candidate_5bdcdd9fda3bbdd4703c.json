@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_5bdcdd9fda3bbdd4703c",
+  "identity": {
+    "problem_key": "coupled_perf_search_no_single_point_fix",
+    "mechanism_key": "five_stage_invariant_gated_optimization_harness",
+    "target_key": "agent_perf_modification_harness"
+  },
+  "idea_type": "solution_concept",
+  "title": "用契约锁定范围、不变量验证与审计提交的五阶段Harness约束Agent性能修改，经验按硬件兼容门控复用",
+  "problem": "让Agent改代码换性能时，启动参数、算子与通信调度相互耦合，难以单点优化：无范围锁定的修改无法验收，未验证补丁直接提交有回归风险，跨环境复用经验会因收益压缩或反号静默失效。触发记录实测分布式训练吞吐即受此耦合约束，难以单点优化。",
+  "hypothesis": "把Agent性能修改装入五阶段harness——init锁定可改范围与任务契约、doctor标定噪声、run组合搜索启动参数并生成AST校验补丁、apply审计提交、经验按硬件兼容过滤后复用——可在不破坏分层不变量的前提下取得显著吞吐提升，且不兼容环境的经验复用在门处被拦截。",
+  "mechanism": "init锁定可改范围与任务契约；doctor标定运行噪声；run组合搜索启动参数并生成经AST校验的补丁；apply审计后提交；沉淀经验按硬件兼容过滤后才跨集群复用。",
+  "target": "让Agent改代码换性能的harness验收门（源记录为分布式训练优化的五阶段harness）",
+  "expected_effect": "源记录实测四个负载几何平均加速1.83倍、平均MFU由17.4%升至30.0%、Gemma-4-26B-A4B最高2.75倍、均优于OptiCo等基线；迁移到Agent性能修改harness后可检验为过门修改提升性能且不变量违反率为零、反号经验复用被兼容门拦截。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "adc13b575963f065a951118a",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.11558v1"
+      ],
+      "reason": "《InfraRSI用五阶段harness优化分布式训练吞吐》给出问题（吞吐受启动参数、算子与通信调度耦合，难以单点优化）、机制（init锁范围与契约、doctor标定噪声、run组合搜索加AST校验补丁、apply审计提交、经验按硬件兼容过滤复用）、目标（五阶段训练优化harness，项目相关性指出可迁移为Agent改代码换性能的验收门）与可检验效应（四负载几何平均1.83倍、MFU 17.4%升至30.0%、最高2.75倍、优于OptiCo等基线），边界为搜索GPU小时与token总成本未报告、跨GPU代际重放配置因收益压缩或反号失效。",
+      "independence_group": "arxiv:2611.11558"
+    }
+  ],
+  "evidence_item_ids": [
+    "adc13b575963f065a951118a"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.11558v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.11558"
+  ],
+  "unknowns": [
+    "搜索循环消耗的GPU小时与token总成本未报告",
+    "跨GPU代际重放配置会因收益压缩或反号失效，硬件兼容过滤的判定边界未给出",
+    "机制仅在分布式训练四负载上验证，向编码Agent改代码换性能场景的迁移未验证",
+    "16项不变量的制定与维护成本未知"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部性能修改Agent harness上实现五阶段流程（范围契约、噪声标定、组合搜索加AST校验补丁、审计提交、硬件与环境兼容门控的经验库），在性能优化任务集上与无门搜索对照。",
+    "inputs": [
+      "性能优化任务集（配置与代码补丁）",
+      "分层不变量集",
+      "环境与硬件兼容性元数据",
+      "审计日志与经验库"
+    ],
+    "baselines": [
+      "无契约锁定的自由搜索修改",
+      "仅单点参数调优（无补丁）",
+      "不过滤的直接经验复用"
+    ],
+    "metrics": [
+      "吞吐或延迟改进幅度",
+      "不变量违反率",
+      "被兼容门拦截的反号经验复用数",
+      "搜索与验证总成本（GPU小时与token）"
+    ],
+    "support_criteria": [
+      "过门修改在提升性能的同时不变量违反率为零或显著低于无门基线",
+      "兼容门在不兼容环境上拦截反号复用且不误拦有效经验"
+    ],
+    "reject_criteria": [
+      "验证与审计开销吞噬性能收益，或兼容过滤漏放反号经验"
+    ],
+    "limitations": [
+      "原结果来自分布式训练四负载与单一harness，未覆盖编码Agent改代码场景，且原搜索成本未报告"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整且与既有候选及Idea身份不同，但证据仅来自分布式训练单一负载族的单一独立组，向Agent改代码换性能harness的适用边界未验证，且搜索GPU小时与token总成本未报告，先观察。",
+  "related_candidate_ids": [
+    "candidate_30000ab57d8d17fb38df",
+    "candidate_ae6aa6ff84cfc80cba76",
+    "candidate_80c1ad4772073ab741c2"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_dc647923bb29acefc9",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应完整且与既有候选及Idea身份不同，但证据仅来自分布式训练单一负载族的单一独立组，向Agent改代码换性能harness的适用边界未验证，且搜索GPU小时与token总成本未报告，先观察。",
+      "evidence_item_ids": [
+        "adc13b575963f065a951118a"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6c12a27f1bd22b05003a",
+  "identity": {
+    "problem_key": "unverified_repeat_call_semantics",
+    "mechanism_key": "identity_receipt_reuse_loop_gate",
+    "target_key": "agent_tool_call_reuse_gating"
+  },
+  "idea_type": "solution_concept",
+  "title": "原样重发的工具调用须经身份承诺与完成回执的复用门，区分可复用决策与退化循环",
+  "problem": "Agent工具执行链把原样重发的调用当作已定事实复用：参数键控缓存把它当缓存命中，回放把它当已执行步骤，终止判定把它当进展。但重发的三重语义都未经验证——Pollard测得参数键控缓存产生930个祖先不安全别名；RECEIPT测得7/8的harness关闭输入、11.5%的提示型调用未执行动作即返回0，自报完成不可信；DeLoop测得历史压缩使Qwen3-8B循环率由29.0%升至57.3%，重发大多不是可复用决策而是退化循环。",
+  "hypothesis": "把重发判定改为以调用身份为键的复用门：身份由规范化输入、种类、尝试次数与父身份承诺并过祖先安全检查，完成以内核态进程状态回执为准，无新回执进展的原样重发按退化循环终止；三段判定都通过才把该调用确认为可复用的已定决策。如此可在消除祖先不安全别名与虚假完成误复用的同时降低token成本且成功率不降。",
+  "mechanism": "复用门对每个再次出现的调用做三段判定：先按承诺身份查父链，未过祖先安全检查的命中拒绝复用（Pollard的严格回放与祖先检查设计）；再看进程状态回执，动作未完成时挂起等待而不入缓存（RECEIPT保持输入打开、从内核系统调用读出各线程在等什么并回传进程状态）；最后对无进展的原样重发按循环计数并触发终止或破环（DeLoop证明循环与破环动作可仅凭动作与观测识别）。",
+  "target": "Agent工具执行链中的调用复用层（harness的缓存、回放与决策复用组件）",
+  "expected_effect": "相对参数键控缓存：祖先不安全别名与虚假完成误复用降为零或近零；相对每次回执后重新推理：可复用调用的token与调用次数显著下降；相对无循环判定：退化循环被提前终止（对照DeLoop测得的57.3%循环率量级基线）；任务成功率不降。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-06",
+    "rationale": "同一期三组独立来源记录按共同问题、机制和目标对象综合：Pollard给出身份承诺的复用安全机制，RECEIPT给出进程状态完成信任前提，DeLoop给出重发在复用与循环间的歧义量化，任何单条记录未陈述三段联合的复用门语义。"
+  },
+  "evidence": [
+    {
+      "item_id": "9622fa206adfa23ce416cef3",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.16145v1"
+      ],
+      "reason": "Pollard给出复用安全机制：步骤身份由规范化输入、种类、尝试次数与父身份共同承诺，严格回放155次零次进入被包装操作，对照的参数键控缓存产生930个祖先不安全别名，720棵树全过验证；边界为只测治理与完整性，E5明确不作效用等价声明，不报告时延与token收益。",
+      "independence_group": "arxiv:2610.16145"
+    },
+    {
+      "item_id": "2d005b011494273654015461",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.01930v1"
+      ],
+      "reason": "RECEIPT给出完成信任前提：7/8的harness关闭输入、11.5%的提示型调用未执行动作即返回0，自报完成不可信；保持输入打开并从内核系统调用读出线程等待状态后回传进程状态，虚假完成从34次降至9次、token较普通终端少24.4%（数字出自Tripwire基准，作者自述未必适用于其他harness与LLM）。",
+      "independence_group": "arxiv:2611.01930"
+    },
+    {
+      "item_id": "c0a45071e1dd5bc405236eb9",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.19376v1"
+      ],
+      "reason": "DeLoop给出重发歧义证据：历史压缩使Qwen3-8B循环率由29.0%升至57.3%，原样重发大多不是可复用的稳定决策而是退化循环；循环动作与其后首个破环动作可仅凭动作与观测自监督挖掘，无需奖励、状态或裁判（仅8B模型与CodeGym实测，其修复走DPO训练而非harness）。",
+      "independence_group": "arxiv:2610.19376"
+    }
+  ],
+  "evidence_item_ids": [
+    "9622fa206adfa23ce416cef3",
+    "2d005b011494273654015461",
+    "c0a45071e1dd5bc405236eb9"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.16145v1",
+    "https://arxiv.org/abs/2611.01930v1",
+    "https://arxiv.org/abs/2610.19376v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.16145",
+    "arxiv:2611.01930",
+    "arxiv:2610.19376"
+  ],
+  "unknowns": [
+    "Pollard只测治理与完整性且E5不作效用等价声明，复用门的净加速收益没有任何记录联合测量。",
+    "循环与可复用决策的区分阈值仅在DeLoop的8B模型与CodeGym域验证，跨域稳定性未知。",
+    "RECEIPT的token数字出自Tripwire基准，作者自述结论未必适用于其他harness与LLM。",
+    "身份承诺与父链维护在长轨迹上的计算开销未测。"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在内部Agent harness上实现以调用身份为键的三段复用门（祖先安全检查、进程状态回执等待、无进展循环终止），对工具调用复用行为做配对对照评测。",
+    "inputs": [
+      "内部多轮工具调用轨迹集",
+      "带输入连接保持与进程状态回执的harness",
+      "循环率与虚假完成率的基线测量",
+      "复用命中、挂起等待与循环终止三段判定的阈值配置"
+    ],
+    "baselines": [
+      "参数键控缓存（无祖先安全检查）",
+      "每次回执后重新推理且不缓存",
+      "仅循环检测终止（无复用）"
+    ],
+    "metrics": [
+      "祖先不安全别名数",
+      "虚假完成误复用次数",
+      "循环率",
+      "总token与每正确答案成本",
+      "任务成功率pass@1"
+    ],
+    "support_criteria": [
+      "祖先不安全别名与虚假完成误复用降为零或近零，且token较不缓存基线降至少两成、成功率降幅不超过1个百分点。"
+    ],
+    "reject_criteria": [
+      "身份承诺与回执等待的开销抵消复用收益，或循环误终止把可复用决策中断导致成功率显著下降。"
+    ],
+    "limitations": [
+      "三条证据来自不同harness与模型，复用门的联合净收益无直接测量。",
+      "循环区分阈值仅在一个域验证过。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "身份承诺的祖先安全（Pollard）、进程状态完成回执（RECEIPT）与循环退化量化（DeLoop）三组独立记录互补，联合支撑“重发调用须经身份与回执双前提的复用门区分可复用决策与退化循环”这一任何单条记录未陈述的机制；与既有回执激活决策图复用候选的免审议执行、前缀终止奖励预测Idea的成败判定前移语义均不同，等待人工晋升。",
+  "related_candidate_ids": [
+    "candidate_60d0a7b86b01d6a58334",
+    "candidate_d07fef8532bb5bcc7c10"
+  ],
+  "related_idea_ids": [
+    "idea_11ed656a018dc7b2c2d3",
+    "idea_a90d71c35ea8a0f208da"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_7b351a587893549eadaa",
+      "issue_date": "2026-11-06",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "同一期三组独立已发布记录按共同问题、机制与目标综合，形成任何单条记录未陈述的复用门语义；证据与既有对象比对后身份与含义均不同，立为proposed等待人工晋升。",
+      "evidence_item_ids": [
+        "9622fa206adfa23ce416cef3",
+        "2d005b011494273654015461",
+        "c0a45071e1dd5bc405236eb9"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

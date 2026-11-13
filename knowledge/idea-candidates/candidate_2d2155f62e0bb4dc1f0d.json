@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_2d2155f62e0bb4dc1f0d",
+  "identity": {
+    "problem_key": "per_turn_tool_round_trips",
+    "mechanism_key": "coroutine_bridged_persistent_worker",
+    "target_key": "dependent_tool_chain_latency"
+  },
+  "idea_type": "solution_concept",
+  "title": "用持久worker承载依赖工具链以解耦模型调用",
+  "problem": "常规agent的依赖调用链每轮工具结果都消耗一次模型调用，快速推理无法转化为低时延，多轮往返成为时延下限。",
+  "hypothesis": "让模型只发出一个程序、由持久worker承载整段依赖工具链，可将每轮模型调用折成单次并大幅降低任务时延。",
+  "mechanism": "协程桥接harness：模型单次输出程序，持久worker顺序执行依赖工具链并只在边界返回。",
+  "target": "依赖工具链密集的agent任务执行",
+  "expected_effect": "CAR-bench官方隐藏集Pass^3达60.0%、为主办方baseline的4.5倍，同一harness在GPT-5.5赛道复现且中位任务时延最低。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-12",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "0fdb8a8563f92ed8ed8eacd0",
+      "issue_date": "2026-10-12",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.29251v1"
+      ],
+      "reason": "《协程桥接harness把工具往返与模型调用解耦》给出机制与对照结果。",
+      "independence_group": "arxiv:2609.29251"
+    }
+  ],
+  "evidence_item_ids": [
+    "0fdb8a8563f92ed8ed8eacd0"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.29251v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.29251"
+  ],
+  "unknowns": [
+    "隐藏集仍有40%任务至少一次trial失败",
+    "worker状态仅存内存且重启不可恢复",
+    "验证域限于车载助手任务"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部依赖工具链任务上实现单程序加持久worker执行，与逐轮工具往返基线对比。",
+    "inputs": [
+      "内部依赖工具链任务集",
+      "协程桥接harness",
+      "持久worker运行时"
+    ],
+    "baselines": [
+      "逐轮工具往返",
+      "并行工具调用"
+    ],
+    "metrics": [
+      "Pass^3",
+      "中位任务时延",
+      "模型调用次数"
+    ],
+    "support_criteria": [
+      "通过率不降且时延与调用次数显著下降"
+    ],
+    "reject_criteria": [
+      "程序化输出使通过率下降或worker故障不可恢复"
+    ],
+    "limitations": [
+      "原始验证域限车载助手任务"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整，但worker状态仅存内存重启不可恢复且验证域限车载助手，内部任务域迁移与容错待验证。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-12",
+  "last_updated_issue": "2026-10-12",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ec5d15a7ddd2e3e1186",
+      "issue_date": "2026-10-12",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整，但worker状态仅存内存重启不可恢复且验证域限车载助手，内部任务域迁移与容错待验证。",
+      "evidence_item_ids": [
+        "0fdb8a8563f92ed8ed8eacd0"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

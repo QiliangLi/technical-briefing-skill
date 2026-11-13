@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_5793492d38cc44d3e3bd",
+  "identity": {
+    "problem_key": "gds_control_path_kernel_traversal_cost",
+    "mechanism_key": "userspace_nvme_command_lifecycle_p2p_dma",
+    "target_key": "gpu_external_kv_and_vector_storage"
+  },
+  "idea_type": "solution_concept",
+  "title": "NVMe控制路径出内核：uGDS式用户态直通用于KV外置",
+  "problem": "GDS免除了主机内存中转，但控制路径仍逐次穿越内核，小IO时延大头在逐次穿内核的控制路径。",
+  "hypothesis": "把NVMe命令构建、PRP、门铃直写与完成轮询移入用户空间库、内核只做一次性特权初始化，数据经P2P DMA直传显存，可在外置KV或向量检索路径上同时降低小IO时延并提升命中时吞吐。",
+  "mechanism": "用户态NVMe命令生命周期加BAR0门铃直写与完成队列轮询；P2P DMA直达显存；代价是裸块设备语义与脱离内核栈。",
+  "target": "GPU外置KV缓存与向量检索的本地NVMe快路径",
+  "expected_effect": "A100上4KiB同步写时延较GDS低84.1%，LMCache命中时TTFT降62.7%，并发256下KV吞吐50.2对约19 kTokens/s。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-27",
+    "rationale": "单条已发表记录给出问题、机制、目标与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "ada8f3547af65d6b8dfc29be",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.30868v2",
+        "https://arxiv.org/abs/2610.30868"
+      ],
+      "reason": "uGDS给出用户态NVMe命令生命周期加P2P DMA机制及较GDS低84.1%时延、TTFT降62.7%的结果。",
+      "independence_group": "arxiv:2610.30868"
+    }
+  ],
+  "evidence_item_ids": [
+    "ada8f3547af65d6b8dfc29be"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.30868v2",
+    "https://arxiv.org/abs/2610.30868"
+  ],
+  "independence_groups": [
+    "arxiv:2610.30868"
+  ],
+  "unknowns": [
+    "每句柄仅支持一块本地NVMe",
+    "错误恢复与隔离证据薄弱",
+    "12.12倍批量增益含GDS首批惩罚，尚属原型"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在A100级GPU加本地NVMe复现uGDS用户态直通并接KV缓存引擎",
+    "inputs": [
+      "KV缓存外置负载",
+      "向量检索负载",
+      "错误恢复测试集"
+    ],
+    "baselines": [
+      "GDS路径",
+      "内核缓冲路径"
+    ],
+    "metrics": [
+      "小IO时延",
+      "命中时TTFT",
+      "并发KV吞吐",
+      "错误恢复成功率"
+    ],
+    "support_criteria": [
+      "时延与吞吐同时优于GDS且错误可恢复"
+    ],
+    "reject_criteria": [
+      "错误恢复语义无法补齐或仅支持单盘"
+    ],
+    "limitations": [
+      "原型级验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "时延与吞吐证据完整且方向与既有GPU发起I/O候选互补，但错误恢复语义薄弱且为原型，先观察。",
+  "related_candidate_ids": [
+    "candidate_47cb76376a9afb422662"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-27",
+  "last_updated_issue": "2026-10-27",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_9c431ac5b1bc841a266",
+      "issue_date": "2026-10-27",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "时延与吞吐证据完整且方向与既有GPU发起I/O候选互补，但错误恢复语义薄弱且为原型，先观察。",
+      "evidence_item_ids": [
+        "ada8f3547af65d6b8dfc29be"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

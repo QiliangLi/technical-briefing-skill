@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_e201a2fc3d5bd226c7fe",
+  "identity": {
+    "problem_key": "kv_cache_offload_path_latency",
+    "mechanism_key": "userspace_nvme_command_path",
+    "target_key": "llm_inference_serving_ttft"
+  },
+  "idea_type": "solution_concept",
+  "title": "把NVMe控制路径移入用户空间，为外置KV缓存构建低于内核GDS时延的直连试点",
+  "problem": "LLM服务把KV缓存外置到存储时，内核GDS虽免除主机内存中转，但每次I/O的控制路径仍逐次穿越内核，小IO同步时延与CPU占用限制命中路径收益；分层KV架构给出的时延预算要求存储层访问低到可与重算竞争。",
+  "hypothesis": "在KV命中为主的负载下，把NVMe命令构建、PRP、BAR0门铃直写与完成队列轮询移入用户空间（内核只做一次性特权初始化），可以在同等命中率下把同步小IO时延与TTFT降到内核GDS之下，且错误恢复语义可被服务层接受。",
+  "mechanism": "采用uGDS式用户态NVMe库直写设备门铃并轮询完成队列，数据经P2P DMA直达显存；上层配LMCache式命中层组织KV块，容量按稳态工作集2-3倍预留，POSIX语义由外部元数据层补齐。",
+  "expected_effect": "4KiB级同步读写时延相对内核GDS进一步下降（uGDS原型口径为低84.1%），KV命中时TTFT与并发KV吞吐改善（原型为50.2对约19 kTokens/s），主机CPU退出数据路径；风险边界是每句柄单盘与设备脱离内核栈后的错误恢复语义。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "ada8f3547af65d6b8dfc29be",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.30868v2",
+        "https://arxiv.org/abs/2610.30868"
+      ],
+      "reason": "uGDS把NVMe命令生命周期移入用户空间、数据经P2P DMA直传显存，A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%、并发256下KV吞吐50.2对约19 kTokens/s，为本Idea的核心机制与量化先验；边界为每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、12.12倍批量增益含GDS首批惩罚、尚属原型。"
+    },
+    {
+      "item_id": "74f57e627ff3e61c3d6c26a1",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://aws.amazon.com/blogs/storage/accelerate-inference-with-kv-cache-tiering-on-aws"
+      ],
+      "reason": "AWS的KV缓存四级分层用GDS在显存与FSx for Lustre间直接DMA、绕过CPU与主机内存中转，T3提升约数百微秒、5万token以上通常快于重算，为本Idea的目标场景（外置KV直连显存）提供架构层时延预算参照（架构文无实测、吞吐为规格上限，GDS仅限NVIDIA实例且需同可用区）。"
+    },
+    {
+      "item_id": "363c4ba5b9dc1ce36a6f1bec",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science"
+      ],
+      "reason": "五节点PoC用gds_stats计数器验证124012次I/O全部走nvfs DMA、零次兼容回退，并给出计数器加CPU路径A/B的验证方法，可直接用于本Idea试点时区分真直连与隐性回退（厂商自测于单一五节点集群，未测能耗与端到端负载）。"
+    },
+    {
+      "item_id": "dda95f5f23dfe81db0904c32",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide"
+      ],
+      "reason": "MinIO三层GPU存储栈指出推理KV重算税缺少共享上下文层，并给出容量规划方法（预留约稳态工作集2-3倍、按p95恢复并发配带宽），为本Idea外置KV的容量与带宽预算提供参照（无量化基准，微秒时延为厂商宣称）。"
+    },
+    {
+      "item_id": "d59c4f170f90422f4b1de849",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://developer.nvidia.com/blog/how-to-read-data-into-gpu-memory-in-python-with-nvidia-gpudirect-storage"
+      ],
+      "reason": "NVIDIA官方教程证实KvikIO调用GDS存在两层回退、返回值不能说明数据是否绕经主机内存，并示范用cuFile nvfs/posix统计计数核实真实路径（H100上256次1 GiB读全部走nvidia-fs加速路径、强制兼容模式后改计入posix计数器），为本Idea验证计划中nvfs DMA计数与兼容回退次数指标提供官方可复用的审计方法；教程同时指出未注册缓冲仍多一次GPU内复制（只验证路径选择，无吞吐时延数据，依赖H100、ext4与关闭IOMMU条件）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "设备脱离内核栈后的错误恢复与多租户隔离语义（uGDS自身证据薄弱）",
+    "每句柄仅支持一块本地NVMe，多盘与NVMe-oF扩展路径未证",
+    "裸块设备语义下POSIX文件接口与一致性如何补齐",
+    "未注册缓冲路径下GPU内额外一次复制的开销未量化（官方教程仅指出存在，未给出数字）"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "单节点A100/H100加一块本地NVMe：实现或复用uGDS式用户态NVMe路径，对照内核GDS与POSIX回退，跑LMCache式KV命中负载并叠加错误注入。",
+    "inputs": [
+      "KV块大小512B-64KiB扫描",
+      "命中率0.5-0.95",
+      "并发1-256",
+      "外置容量取稳态工作集2-3倍",
+      "同步与批量两种提交模式",
+      "拔盘、超时与读错误注入"
+    ],
+    "baselines": [
+      "内核GDS（cuFile加nvidia-fs）",
+      "POSIX回退路径",
+      "主机内存中转读"
+    ],
+    "metrics": [
+      "4KiB同步写时延与P99",
+      "并发KV吞吐kTokens/s",
+      "TTFT P95/P99",
+      "nvfs DMA计数与兼容回退次数",
+      "主机CPU占用"
+    ],
+    "support_criteria": [
+      "相对内核GDS保持显著同步小IO时延与TTFT收益，且计数器显示全部I/O走DMA、零隐性回退",
+      "错误注入下服务层可在不重启整机的情况下恢复或降级"
+    ],
+    "reject_criteria": [
+      "错误恢复不可用或需整机重启",
+      "批量收益除GDS首批惩罚外在端到端负载上消失"
+    ],
+    "limitations": [
+      "每句柄单NVMe限制，未覆盖多盘与远程NVMe-oF层",
+      "未覆盖RDMA共享KV池与多节点一致性",
+      "能耗与故障长尾未覆盖"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-04",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_e1fa52e7da0668c9864d",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "uGDS给出带数字的原型结果、AWS给出外置KV分层时延预算、五节点PoC给出真DMA计数器验证方法、MinIO给出容量规划法，问题-机制-目标身份成立；因错误恢复语义与单盘限制未解，状态置observing。",
+      "evidence_item_ids": [
+        "ada8f3547af65d6b8dfc29be",
+        "74f57e627ff3e61c3d6c26a1",
+        "363c4ba5b9dc1ce36a6f1bec",
+        "dda95f5f23dfe81db0904c32"
+      ]
+    },
+    {
+      "event_id": "idea_decision_6f150fb889f5c76d8838",
+      "issue_date": "2026-11-06",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "NVIDIA官方教程给出cuFile nvfs/posix计数器审计真实数据路径的可复用方法并证实KvikIO两层回退行为，直接支撑本Idea验证计划中的路径计数指标；无新的性能结果，机制与身份不变，维持observing。",
+      "evidence_item_ids": [
+        "d59c4f170f90422f4b1de849"
+      ]
+    }
+  ]
+}

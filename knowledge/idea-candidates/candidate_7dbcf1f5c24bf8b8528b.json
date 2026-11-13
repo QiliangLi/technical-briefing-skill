@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_7dbcf1f5c24bf8b8528b",
+  "identity": {
+    "problem_key": "heuristic_pd_resource_allocation",
+    "mechanism_key": "queueing_quantile_slo_delay_budget_split",
+    "target_key": "pd_disaggregated_serving_resources"
+  },
+  "idea_type": "solution_concept",
+  "title": "用排队论按分位SLO为解耦推理三阶段切分延迟预算并分配资源",
+  "problem": "解耦LLM服务的预填充、KV传输与解码资源配置依赖硬件画像与启发式调度，缺少解析模型指导，难以在成本约束下按分位SLO稳定最大化goodput。",
+  "hypothesis": "把预填充、KV传输与解码分别建模为M/G/k、M/G/1队列与广义生灭过程，导出重尾负载的分位SLO约束，并按边际成本相等切分延迟预算，可在成本约束下以逼近穷举搜索的goodput完成资源分配，避免Splitwise与同置方案在峰值负载的退化。",
+  "mechanism": "三阶段分别用M/G/k、M/G/1与广义生灭过程排队建模；由模型导出重尾负载下的分位SLO约束；按各阶段边际成本相等分配延迟预算，据此确定预填充算力、KV传输带宽与解码资源配比。",
+  "target": "解耦推理服务中预填充、KV传输与解码三阶段的资源配置层",
+  "expected_effect": "回放七天Azure推理轨迹时goodput与穷举搜索最大差距3.8%；Splitwise与同置方案在峰值负载最多退化21.5%与45.6%。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-29",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "139b36854d37dc64123fb27d",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.26763v1"
+      ],
+      "reason": "SARA给出预填充/KV传输/解码的排队论建模、重尾负载下的分位SLO约束与边际成本相等的延迟预算分配，并用七天Azure推理轨迹回放报告与穷举搜索的goodput差距及Splitwise/同置基线退化幅度。",
+      "independence_group": "arxiv:2609.26763"
+    }
+  ],
+  "evidence_item_ids": [
+    "139b36854d37dc64123fb27d"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.26763v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.26763"
+  ],
+  "unknowns": [
+    "26.6%的goodput提升仅为摘要级声明",
+    "5%内建模误差仅在解码阶段经硬件验证",
+    "KV传输阶段排队模型未见实测"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在内部解耦推理集群的请求迹上拟合三阶段排队模型，离线评估分位SLO延迟预算分配相对穷举搜索与静态配比的goodput。",
+    "inputs": [
+      "内部推理请求迹（到达序列、序列长度分布、重尾特性）",
+      "预填充算力、KV传输带宽与解码资源的单位成本档位",
+      "分位SLO目标（如P99 TTFT/TPOT）"
+    ],
+    "baselines": [
+      "穷举搜索分配",
+      "Splitwise式静态配比",
+      "同置部署"
+    ],
+    "metrics": [
+      "满足分位SLO的goodput",
+      "与穷举搜索的goodput差距",
+      "峰值负载下的退化幅度"
+    ],
+    "support_criteria": [
+      "goodput与穷举搜索差距在数个百分点内且显著优于静态配比与同置基线"
+    ],
+    "reject_criteria": [
+      "排队模型在内部负载上误差过大，导出的分配劣于静态配比"
+    ],
+    "limitations": [
+      "原始证据的传输阶段模型未经实测验证，内部负载特性可能偏离Azure轨迹"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整，但证据仅单一arXiv组，且KV传输阶段排队模型未见实测、26.6%提升仅为摘要级声明，独立支持与适用边界待验证。",
+  "related_candidate_ids": [
+    "candidate_9d439729d29356fd6625",
+    "candidate_8db9a442e207f396e56f"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-10-29",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_1d3f81ef4f7b1b2b7aa4",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整，但证据仅单一arXiv组，且KV传输阶段排队模型未见实测、26.6%提升仅为摘要级声明，独立支持与适用边界待验证。",
+      "evidence_item_ids": [
+        "139b36854d37dc64123fb27d"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

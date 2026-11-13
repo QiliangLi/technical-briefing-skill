@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_7bfe1cbc9e08d81fff61",
+  "identity": {
+    "problem_key": "fixed_granularity_verification_cost",
+    "mechanism_key": "cost_tiered_verification_granularity_scheduling",
+    "target_key": "coding_agent_verification_loop"
+  },
+  "idea_type": "solution_concept",
+  "title": "按计价在函数图核对、分步验证与全文重放间调度验证粒度",
+  "problem": "Harness普遍把编辑后/步后验证粒度写死：要么全文重读重放、要么单一固定检查。FlowPlan实测基线96-98%的token是缓存重读、73-75%的降幅来自编辑后结构化验证；LAM实测同能力下粒度选择主导成本调整表现（分步验证3217 token解70/70对重放35124 token仅65/70）。粒度是最大的可计价成本杠杆，却没有被当作在线可调度的决策。",
+  "hypothesis": "可证伪问题：把编辑后/步后验证表达为三档——函数级流图结构增量核对、分步路由验证、编辑后全文重放——并按各档预期验证成本（token/调用计价）与结构变化幅度/风险信号在线选档，总验证token显著低于任一固定档基线，解决率不显著下降且调度自身开销不吞掉节省。",
+  "mechanism": "两段联合：FlowPlan的单函数CFG/DFG重建加结构diff作为最细验证档（替代编辑后全文重读）；LAM的粒度间成本-正确性排序（路由分步验证在成本调整上同时优于全量重放与整链单调用）作为计价依据；调度器按预期成本与结构变化幅度/风险信号在线选档——低风险结构增量走图核对，图不覆盖或高风险时升档到分步路由验证乃至全文重放。",
+  "target": "编码Agent的编辑后与步后验证循环",
+  "expected_effect": "总验证token显著低于任一固定档（FlowPlan锚点：整体token比0.32-0.94倍、Haiku 4.5在Verified由3.41M降至1.09M），解决率不显著变化（LAM锚点：分步验证70/70对重放65/70说明细粒度不牺牲正确性），调度与图重建开销占端到端时延比例低于10%。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-13",
+    "rationale": "同期两条独立记录互补：FlowPlan（arxiv:2611.13241）实测结构化编辑后核对是最大token杠杆（73-75%降幅）但只固定最细档；LAM（arxiv:2610.02488）实测验证粒度主导成本调整表现（分步3217 token解70/70、重放35124 token仅65/70、单调用64/70）但没有调度器。『按计价在验证粒度档位间在线调度』任何单条记录均未陈述。"
+  },
+  "evidence": [
+    {
+      "item_id": "1782d8af7c3ca590267f8aa5",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13241v1"
+      ],
+      "reason": "FlowPlan以单函数CFG/DFG流图承载定位、修复表达为显式图增量、编辑后重建同图核对结构变化再整体验证：六设置token比0.32-0.94倍、五处显著且解决率无显著变化（Haiku 4.5在Verified由3.41M降至1.09M），并实测基线96-98%的token是缓存重读、73-75%降幅来自编辑后结构化验证，为最细验证档提供实测锚点；边界：仅Claude Code与单一厂商两个模型、每实例单次运行，端到端时延与流图构建更新成本未验证。",
+      "independence_group": "arxiv:2611.13241"
+    },
+    {
+      "item_id": "4a9a46bf4dbb8e5bc05148dc",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02488v2"
+      ],
+      "reason": "LAM在16步链式MATH上实测验证粒度主导成本调整表现：依赖路由加分步验证每链3217输入token解70/70、全量重放需35124 token仅65/70、整链单调用64/70，为『细粒度不牺牲正确性且成本更优』提供档位间排序，构成熟档间调度的计价依据；边界：合成MATH链，未测编码Agent的Read/Grep负载与时延。",
+      "independence_group": "arxiv:2610.02488"
+    }
+  ],
+  "evidence_item_ids": [
+    "1782d8af7c3ca590267f8aa5",
+    "4a9a46bf4dbb8e5bc05148dc"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.13241v1",
+    "https://arxiv.org/abs/2610.02488v2"
+  ],
+  "independence_groups": [
+    "arxiv:2611.13241",
+    "arxiv:2610.02488"
+  ],
+  "unknowns": [
+    "升档判据（何种结构变化幅度或风险信号触发重放）没有任何记录测量。",
+    "FlowPlan未报告流图构建/重建成本与端到端时延，最细档自身开销可能吞掉token节省。",
+    "LAM的粒度排序出自16步合成MATH链，未测编码Agent负载（其边界自述）。",
+    "结构核对只验证该改的结构变化确实发生，语义回归仍靠升档环节兜底，两环节收益分担未量化。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在编码Agent harness上实现三档验证器（tree-sitter单函数CFG/DFG重建+结构diff、分步路由验证、编辑后全文重读）与按步计价调度器，按预期验证成本与结构变化幅度在线选档，其余流程不变。",
+    "inputs": [
+      "SWE-bench Verified与SWE-rebench任务集",
+      "函数级流图抽取与图diff工具",
+      "各档验证的token与调用计量",
+      "结构变化幅度与风险信号特征"
+    ],
+    "baselines": [
+      "固定编辑后全文重读",
+      "固定函数级流图核对（idea_7cea53838cadf86b598c方案）",
+      "固定分步路由验证"
+    ],
+    "metrics": [
+      "总验证token与缓存重读占比",
+      "解决率（配对检验）",
+      "升档频率与漏检回归率",
+      "调度器自身开销占端到端时延比例"
+    ],
+    "support_criteria": [
+      "解决率不显著低于最强固定档，总验证token显著低于三个固定档各自，调度开销占比低于10%。"
+    ],
+    "reject_criteria": [
+      "升档判据漏检语义回归使解决率显著下降，或调度与图重建开销吞掉token节省。"
+    ],
+    "limitations": [
+      "单Python基准与单harness不可外推多语言仓库。",
+      "动态语言的流图抽取精度未测。",
+      "风险信号特征需人工设计，可能过拟合基准。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整、两组独立来源联合支撑任何单条记录未陈述的档位调度语义；但同触发证据本期已直接生成固定最细档的Idea（idea_7cea53838cadf86b598c把编辑后复查替换为函数级流图增量核对），本候选是其向多档调度策略的扩展，派生与分工需人工裁定；且升档判据与两环节收益分担无任何记录测量，先deferred。",
+  "related_candidate_ids": [
+    "candidate_fb9acc51f933f50a67e7"
+  ],
+  "related_idea_ids": [
+    "idea_7cea53838cadf86b598c"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_7bfe1cbc9e08d81fff61",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "新候选：FlowPlan（1782d8af7c3ca590267f8aa5）与LAM（4a9a46bf4dbb8e5bc05148dc）两条同期独立记录互补，联合支撑『按计价在验证粒度档位间在线调度』这一任何单条记录未陈述的机制，身份与既有对象不同；但与本期由同一FlowPlan证据生成的idea_7cea53838cadf86b598c的派生分工需人工裁定，升档判据无测量，列deferred。",
+      "evidence_item_ids": [
+        "1782d8af7c3ca590267f8aa5",
+        "4a9a46bf4dbb8e5bc05148dc"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

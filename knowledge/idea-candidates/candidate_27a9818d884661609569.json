@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_27a9818d884661609569",
+  "identity": {
+    "problem_key": "kv_compression_ignores_tensor_parallel_communication",
+    "mechanism_key": "shared_value_low_rank_latent_joint_compression",
+    "target_key": "tensor_parallel_llm_inference_kv_communication"
+  },
+  "idea_type": "solution_concept",
+  "title": "以跨卡共享Value低秩潜变量统一压缩张量并行推理的KV缓存与AllGather通信",
+  "problem": "长上下文张量并行推理中已有低秩KV压缩只优化缓存本身：每卡注意力输出在张量并行AllGather时仍按全宽通信，Value缓存、张量并行通信与Key路由开销被分别对待，缓存侧压缩收益无法传导到通信量。",
+  "hypothesis": "若把每卡注意力输出先投影为单个跨卡共享的低维Value潜变量再经保源AllGather通信，且低秩因子对完整输出联合优化、压缩后的Value缓存兼用于Key路由，则可在任务质量基本持平的前提下同时压缩KV缓存与张量并行通信，端到端加速长上下文张量并行推理并降低TTFT。",
+  "mechanism": "每卡注意力输出先投影成低维Value潜变量，再经保源AllGather通信；低秩因子对完整输出联合优化；单组共享潜变量同时服务Value缓存、张量并行通信与Key路由三项开销。",
+  "target": "单节点多卡张量并行LLM推理的KV缓存与注意力AllGather通信路径",
+  "expected_effect": "8卡L40S上Llama-3.1-8B张量并行端到端最高1.42倍于稠密基线，TTFT由34.6秒降至24.7秒；LongBench平均46.91对47.02基本持平。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的共享Value低秩潜变量联合压缩机制上；其身份（模型侧同时压缩KV缓存与TP通信）区别于既有候选与Idea。"
+  },
+  "evidence": [
+    {
+      "item_id": "bd0f1f579c8ae3920130bb62",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02583v1"
+      ],
+      "reason": "《BasisKV用共享Value低秩潜变量同时压缩KV缓存与张量并行通信》给出问题、机制与对照结果：已有低秩KV压缩只优化缓存本身、张量并行下注意力输出仍按全宽通信；每卡注意力输出先投影成低维Value潜变量再经保源AllGather通信、低秩因子对完整输出联合优化、压缩Value缓存兼用于Key路由；8卡L40S上Llama-3.1-8B张量并行端到端最高1.42倍于稠密、TTFT由34.6秒降至24.7秒、LongBench平均46.91对47.02；实验全部单机、无跨节点KVCache传输且AllGather通信量字节数未披露。",
+      "independence_group": "arxiv:2611.02583"
+    }
+  ],
+  "evidence_item_ids": [
+    "bd0f1f579c8ae3920130bb62"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.02583v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.02583"
+  ],
+  "unknowns": [
+    "AllGather通信量字节数未披露，通信侧节省的绝对量级不可核验",
+    "实验全部单机8卡L40S，无跨节点KVCache传输，对TPN核心场景（跨网KV调度）的适用边界未建立",
+    "仅Llama-3.1-8B单一模型与LongBench口径，低秩档位下的质量边界与跨模型泛化未知",
+    "证据仅单一arXiv独立组，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单节点多卡张量并行环境复现共享Value低秩潜变量的保源AllGather压缩，对照稠密与仅压缩缓存的低秩基线，补测AllGather通信字节数并评估向跨节点KVCache传输外推的可行性。",
+    "inputs": [
+      "8卡级L40S或同级GPU环境与张量并行Llama-3.1-8B",
+      "低秩潜变量秩档位扫描",
+      "长上下文负载（含LongBench与RULER类）",
+      "AllGather通信字节数与KV缓存占用计量"
+    ],
+    "baselines": [
+      "稠密张量并行基线（证据内基线）",
+      "仅压缩KV缓存的低秩压缩基线",
+      "全宽AllGather通信路径"
+    ],
+    "metrics": [
+      "端到端吞吐",
+      "TTFT",
+      "AllGather通信字节数",
+      "KV缓存占用",
+      "LongBench等任务质量"
+    ],
+    "support_criteria": [
+      "端到端与TTFT收益按证据量级复现，且通信字节数与缓存占用同向下降、任务质量基本持平"
+    ],
+    "reject_criteria": [
+      "秩档位降低后任务质量显著回退，或潜变量投影与联合优化开销吞没通信节省"
+    ],
+    "limitations": [
+      "原始证据未披露AllGather通信字节数且实验全部为单机8卡"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可测效应完整且身份（模型侧同时压缩KV缓存与张量并行通信）区别于既有候选与Idea，但证据仅单一arXiv独立组，实验全部单机、无跨节点KVCache传输且AllGather通信量字节数未披露，对TPN核心场景的适用边界未建立；且该记录同日已进入idea_f7841984fcce6a274881的证据链，独立成案还是并入该Idea需人工世系决定，先延期观察。",
+  "related_candidate_ids": [
+    "candidate_6d4e0b92fba3433de649",
+    "candidate_c8e42d5d6235afa242f5"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a687dcd35879e2295b6a",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可测效应完整且身份（模型侧同时压缩KV缓存与张量并行通信）区别于既有候选与Idea，但证据仅单一arXiv独立组，实验全部单机、无跨节点KVCache传输且AllGather通信量字节数未披露，对TPN核心场景的适用边界未建立；且该记录同日已进入idea_f7841984fcce6a274881的证据链，独立成案还是并入该Idea需人工世系决定，先延期观察。",
+      "evidence_item_ids": [
+        "bd0f1f579c8ae3920130bb62"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

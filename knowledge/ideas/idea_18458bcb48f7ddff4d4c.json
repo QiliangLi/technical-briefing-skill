@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_18458bcb48f7ddff4d4c",
+  "identity": {
+    "problem_key": "irreversible_kv_eviction_breaks_verbatim_tasks",
+    "mechanism_key": "quantized_recallable_cold_tier_with_temporal_prefetch",
+    "target_key": "tight_budget_quality_with_bounded_overhead"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "驱逐即降级：可召回4比特量化冷层加读指针预取的KV驱逐假设",
+  "problem": "内容得分式 KV 驱逐不可逆删除被逐条目，使逐字复制类任务中途断裂——RULER-16K、20% 保留率下 Qwen2.5-7B 该类任务得分仅 0.8，且该类任务占最强基线剩余差距的 86%；引擎侧虽有驱逐时把 SWA KV 降级到主机而非丢弃的先例，但缺少『驱逐即降级＋按读指针预取召回』机制在多模型、多预算与 serving 级的统一验证。",
+  "hypothesis": "在 5%-20% KV 保留预算下，把低可预测性字面片段经准入降入 4 比特量化可召回冷层而非删除、读指针检测到逐字复制时预取位置后继换入热层（热层容量恒定、单次预取开销与上下文长度无关），能在 7B 级以上模型把逐字复制类任务恢复到全量注意力的 90% 以上、整体均值不低于等预算不可逆驱逐对照，同时存储开销≤1%、复制期时延开销≤10%；若增益不跨模型迁移（Mistral-7B 口径仅 1.66）、4 比特冷层质量塌陷（2 比特已有塌陷先例）或开销随上下文长度增长，则可召回冷层只应作为逐字密集负载的可选路径而非默认驱逐行为。",
+  "mechanism": "驱逐改为准入降级：低可预测性字面片段经准入降入 4 比特量化冷层而非删除；读指针检测到逐字复制时预取位置后继换入热层，热层容量恒定使单次开销与上下文长度无关；引擎侧同向先例为 SGLang 0.5.21 驱逐时把 SWA KV 降级到主机而非丢弃。",
+  "expected_effect": "逐字任务从 0.8 恢复到 78.4 量级、均值较等预算不可逆对照高约 8 分且 LongBench 无回归（对照 KVFetch 单模型试点），存储约 0.36%、复制期约 4.8% 时延的 bounded 开销在更大模型与真实 serving 负载上保持。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "56b69243c1dcf4c051e4d398",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.08811v1"
+      ],
+      "reason": "直接证据：KVFetch 为内容得分式驱逐增加时序预取通道，低可预测性字面片段经准入降入 4 比特量化冷层而非删除、读指针检测逐字复制时预取位置后继换入热层，RULER-16K、20% 保留率下逐字任务从 0.8 升至 78.4、均值较等预算对照高 8.4 分、LongBench 无回归（只修复续写不修复定位、Mistral-7B 增益仅 1.66、2 比特冷层塌陷，单作者在审且代码未公开）。"
+    },
+    {
+      "item_id": "8ebfdd80885029eae2fed50a",
+      "issue_date": "2026-10-14",
+      "source_urls": [
+        "https://github.com/sgl-project/sglang/releases/tag/v0.5.21"
+      ],
+      "reason": "引擎侧降级而非丢弃的先例：SGLang 0.5.21 驱逐时把 SWA KV 降级到主机而非丢弃、主机池自动定容（Agentic LRU 把 p99 ITL 降 43.9% 为 opt-in、默认行为收益与主机自动定容均无独立基准）；跨条目推断(inferred)：说明『驱逐即降级』在主流引擎可落地，与 KVFetch 的可召回冷层机制同向。"
+    },
+    {
+      "item_id": "d302b5fce18bcf6d3dbefb3f",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.06927v1"
+      ],
+      "reason": "同类问题的替代机制证据：AttSVD 按当前提示的注意力几何在线截断 SVD，不丢 token 而按保留秩成比例削减 KV 显存，50% 预算下 Phi-4-14B 与 Qwen3-8B 的 LongBench 均分与稠密缓存持平、实测 KV 显存为稠密的 0.502 倍（在线 SVD 运行时代价未给出、仅单流质量评测、在审预印本）；跨条目推断(inferred)：『驱逐不可逆伤害』问题被独立工作线以低秩截断而非冷层召回的方式求解，可召回冷层假设需在同预算对比中相对低秩路径验证其必要性。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "跨模型与跨预算的增益稳定性（Mistral-7B 口径仅 1.66），30B+/MoE 模型行为未知",
+    "冷层量化宽度的塌陷边界（2 比特已塌陷、4 比特可行，3 比特未测）",
+    "只修复续写不修复定位类任务时的残余质量缺口",
+    "与前缀缓存命中路径及 GPU/CPU/SSD 分层放置的叠加（原证据无命中率与分层口径）",
+    "serving 级吞吐、并发与显存占用（试点无 serving 实测）",
+    "预取误触发（非逐字负载）下的热层污染与开销",
+    "与不丢 token 的在线低秩截断（AttSVD 口径）在同预算下的质量-时延-存储对比，可召回冷层相对低秩路径的必要性"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "Qwen2.5-7B（复现口径）＋Mistral-7B（弱增益边界）＋一款 14B 级模型；不外推闭源超大模型",
+    "inputs": [
+      "保留预算 5%/10%/15%/20% 扫描",
+      "冷层量化宽度 4/3/2 比特",
+      "上下文长度 16K/64K/128K",
+      "逐字复制、定位、一般长上下文三类任务对照",
+      "预取深度 1-8，并混入非逐字负载测预取误触发"
+    ],
+    "baselines": [
+      "等预算不可逆驱逐（SnapKV 类口径）",
+      "全量注意力（质量上界）",
+      "驱逐直删无冷层对照",
+      "全量 KV 常驻（开销下界参照）",
+      "AttSVD 式在线截断 SVD 低秩对照（不丢 token，50% 秩档）"
+    ],
+    "metrics": [
+      "逐字任务得分与全量注意力比值",
+      "LongBench/RULER 均值",
+      "冷层存储开销占比",
+      "复制期时延开销占比",
+      "serving 吞吐与 P95 TPOT"
+    ],
+    "support_criteria": [
+      "逐字任务恢复到全量注意力的 90% 以上",
+      "整体均值不低于等预算不可逆驱逐对照",
+      "存储开销≤1%",
+      "复制期时延开销≤10%"
+    ],
+    "reject_criteria": [
+      "任一模型整体均值低于等预算不可逆对照",
+      "存储或时延开销随上下文长度超线性增长",
+      "4 比特冷层质量塌陷"
+    ],
+    "limitations": [
+      "原证据为单作者在审、代码未公开的单模型试点",
+      "未覆盖多请求并发与 GPU/CPU/SSD 分层组合",
+      "未覆盖 MoE 与多模态骨干"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-10-14",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_52fee6137405c450e52b",
+      "issue_date": "2026-11-11",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据已发布证据新建 Idea：驱逐即降级的可召回4比特量化冷层加读指针预取假设。",
+      "evidence_item_ids": [
+        "56b69243c1dcf4c051e4d398",
+        "8ebfdd80885029eae2fed50a"
+      ]
+    },
+    {
+      "event_id": "idea_decision_26e8ae35b68fedefe6b1",
+      "issue_date": "2026-11-13",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增低秩替代机制证据：AttSVD 以按提示在线截断 SVD 在不丢 token 前提下把实测 KV 显存压到稠密的 0.502 倍且 50% 预算 LongBench 持平，确认『驱逐不可逆伤害』问题成立，同时为假设引入同预算低秩对照路径（已加入 baselines），冷层召回的相对必要性需在其对比中验证。",
+      "evidence_item_ids": [
+        "d302b5fce18bcf6d3dbefb3f"
+      ]
+    }
+  ]
+}

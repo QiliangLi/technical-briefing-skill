@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_53c8cc189b926f907071",
+  "identity": {
+    "problem_key": "llm_decode_collective_fixed_overhead",
+    "mechanism_key": "one_sided_write_sync_fusion",
+    "target_key": "small_batch_moe_serving_latency"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "NVLinkOneSided以单边NVLink远程写去除小批量MoE专家并行dispatch/combine固定开销",
+  "problem": "专家并行MoE推理中每层dispatch与combine的元数据交换等固定开销主导小批量时延，按带宽口径优化通信无法兑现解码收益。",
+  "hypothesis": "若源GPU不经元数据交换、把token直接单边远程写入目标GPU按源秩划分的对称显存槽位、分组GEMM按槽索引原地计算，则小批量档（每秩不超128个token）MoE专家并行的往返与层时延显著下降（八卡B300往返较DeepEP快1.75至3.00倍、MoE层最高快2.37倍），且收益随批量增大被融合内核反超、反转边界可由固定开销与传输项的比值预测。",
+  "mechanism": "单边NVLink远程写使源GPU不经元数据交换直接把token写入目标GPU按源秩划分的对称显存槽位；分组GEMM按槽索引原地计算；每层dispatch/combine的固定协调开销随之移出热路径。",
+  "target": "单一NVLink域八卡B300上小批量专家并行MoE解码的dispatch/combine路径",
+  "expected_effect": "八卡B300往返时延较DeepEP快1.75至3.00倍（每秩不超128个token），MoE层较DeepEP+DeepGEMM最高快2.37倍；大批量被融合的MegaMoE反超；未报告端到端吞吐与功耗。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "Synthesis任务审阅触发记录52bf64e6777327522d956d96：其独立给出问题（每层dispatch/combine固定开销主导小批量时延）、机制（源GPU不经元数据交换、单边NVLink远程写直入按源秩划分的对称显存槽位、分组GEMM按槽索引原地计算）、目标（单一NVLink域八卡B300小批量专家并行MoE解码）与可检验效应（往返快1.75至3.00倍、MoE层最高快2.37倍、每秩128 token内收益最大且大批量被MegaMoE反超），四要素齐备；但其问题+机制+目标身份元组与正式Idea idea_53c8cc189b926f907071（llm_decode_collective_fixed_overhead + one_sided_write_sync_fusion + small_batch_moe_serving_latency）完全一致，该Idea于2026-11-13由跨期已发布证据（0f57e9c8 GPU直连RDMA机制级测量、02d505da flash-comm就绪同步并入数据移动）与本触发记录联合创建，其evidence_for已收录本条并引用其全部关键数值，本条系同身份复报、无新语义；与candidate_344ecdd2e672a28ef630（跨执行域就绪证据并入数据通路）及candidate_ca18f83fd1802da517c3（NVLink域解码集合通信同步并入数据移动）为机理族亲缘而非同身份。"
+  },
+  "evidence": [
+    {
+      "item_id": "52bf64e6777327522d956d96",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13188v1"
+      ],
+      "reason": "NVLinkOneSided实测小批量MoE专家并行的dispatch/combine固定开销可经单边远程写去除：源GPU不经元数据交换直接把token写入目标GPU按源秩划分的对称显存槽位、分组GEMM按槽索引原地计算，八卡B300往返时延较DeepEP快1.75至3.00倍（每秩不超128个token）、MoE层较DeepEP+DeepGEMM最高快2.37倍，并给出批量反转边界的首个数据点；边界：仅限单一NVLink域、工作区显存随EP规模增长、大批量被融合的MegaMoE反超、未报告端到端吞吐与功耗。该条同时是正式Idea idea_53c8cc189b926f907071的evidence_for创建证据之一（2026-11-13创建事件收录三条证据含本条）。单版本arXiv预印本，独立分组arxiv:2611.13188。",
+      "independence_group": "arxiv:2611.13188"
+    }
+  ],
+  "evidence_item_ids": [
+    "52bf64e6777327522d956d96"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.13188v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.13188"
+  ],
+  "unknowns": [
+    "收益随批量反转的临界点未系统扫描（每秩不超128个token收益最大、大批量被MegaMoE反超）",
+    "仅限单一NVLink域，跨节点规模与PCIe层级未验证",
+    "按源秩划分的对称工作区显存随EP规模增长的容量代价与多租户共存行为未刻画",
+    "端到端吞吐与功耗未报告"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单节点8卡B300或H20上以vLLM/SGLang运行开源MoE模型，实现单边NVLink写dispatch/combine与就绪同步并入数据移动两种变体，按每秩token数（16至512）与专家并行规模扫描并记录输出精度。",
+    "inputs": [
+      "开源MoE checkpoint与专家并行配置",
+      "单边写与同步融合两个通信变体实现",
+      "每秩token数与EP规模扫描范围"
+    ],
+    "baselines": [
+      "DeepEP+DeepGEMM默认路径",
+      "NCCL或SGLang custom AR基线",
+      "融合MegaMoE类大批量路径"
+    ],
+    "metrics": [
+      "dispatch/combine往返时延",
+      "MoE层时延与解码TPOT",
+      "输出精度余弦相似度",
+      "对称工作区显存增量"
+    ],
+    "support_criteria": [
+      "小批量档往返与MoE层时延收益可复现且跨硬件代际方向一致，精度余弦相似度不低于0.9999",
+      "批量反转临界点可由固定开销与传输项的解析比值预测"
+    ],
+    "reject_criteria": [
+      "收益仅在单一批量档或单一NVLink域成立，或对称工作区显存增量使可部署EP规模受限"
+    ],
+    "limitations": [
+      "首版限单节点解码相位与NVLink域内，不含训练、跨节点与多租户场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "触发记录四要素齐备，但其问题+机制+目标身份元组与正式Idea idea_53c8cc189b926f907071（llm_decode_collective_fixed_overhead + one_sided_write_sync_fusion + small_batch_moe_serving_latency）完全一致：同为解码期集合通信固定协调开销经单边写与同步融合移出热路径、收益随批量反转的机理；该Idea于2026-11-13由跨期已发布证据（0f57e9c8 GPU直连RDMA给出0.70µs机制底线与最多4.6µs库开销、02d505da flash-comm就绪同步并入数据移动使B300 all-reduce中位降28.8%）与本触发记录52bf64e6777327522d956d96联合创建，其evidence_for已收录本条并引用其全部关键数值（1.75至3.00倍、2.37倍、批量反转边界），本条系同身份复报、无新语义，按duplicate指向该Idea，不重复立项；与candidate_344ecdd2e672a28ef630、candidate_ca18f83fd1802da517c3为机理族亲缘而非同身份。",
+  "related_candidate_ids": [
+    "candidate_344ecdd2e672a28ef630",
+    "candidate_ca18f83fd1802da517c3"
+  ],
+  "related_idea_ids": [
+    "idea_53c8cc189b926f907071"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_3e48b295547fa5d7a2f9",
+      "issue_date": "2026-11-13",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "触发证据四要素齐备，但身份与正式Idea idea_53c8cc189b926f907071相同且该Idea的evidence_for（2026-11-13创建事件）已收录本条，属同身份复报，按duplicate处置并指向该Idea。",
+      "evidence_item_ids": [
+        "52bf64e6777327522d956d96"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

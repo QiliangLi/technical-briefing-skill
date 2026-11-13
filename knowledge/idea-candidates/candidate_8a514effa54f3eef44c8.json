@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8a514effa54f3eef44c8",
+  "identity": {
+    "problem_key": "gpu_config_space_prediction_gap",
+    "mechanism_key": "measured_fixed_latency_stall_reuse",
+    "target_key": "gpu_design_space_exploration"
+  },
+  "idea_type": "solution_concept",
+  "title": "ForeSight复用实测固定延迟停顿、仅重算排队停顿，把GPU跨配置性能预测误差降到8.3%",
+  "problem": "GPU配置空间大到周期级模拟器难以遍历，而既有解析模型跨配置外推失准（最优基线Habitat核函数时间MAPE为14.1%）：硬件选型与配置裁剪缺少既快又准的跨配置性能预测手段，设计空间探索要么太慢、要么不可信。",
+  "hypothesis": "若把核函数停顿分解为固定延迟停顿与排队停顿两类，对配置不敏感的固定延迟停顿复用一次实测值，仅对新配置重解逐SM、L2切片、DRAM通道的排队停顿，则跨配置性能预测可同时获得接近周期级模拟的精度与低一个数量级以上的预测成本：九款GPU上核函数时间MAPE约8.3%、单核预测比Accel-Sim快约49倍，并可外推到H20上vLLM端到端时延误差约2.0%。",
+  "mechanism": "UnitSight从CUPTI恢复每单元计数器，取得一次实测的固定延迟停顿；ForeSight重放CTA派发，逐SM、L2切片、DRAM通道求解排队停顿，固定延迟停顿直接复用实测值而不随配置重新模拟，把模拟工作收缩到对配置敏感的排队部分。",
+  "target": "九款GPU上以核函数时间为口径的跨配置性能预测与设计空间探索，以及H20上vLLM推理服务的端到端时延预测。",
+  "expected_effect": "九款GPU跨配置核函数时间MAPE为8.3%（最优解析基线Habitat为14.1%）；H20上vLLM端到端误差2.0%；单核预测比Accel-Sim快49倍；据此的设计空间结论如102 SM内HBM栈从6减到4吞吐损失小于2%、建模成本降24%至31%、L2减到10MB吞吐几乎不变。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（GPU配置空间大到周期级模拟器难以遍历、解析模型跨配置预测失准）、可解释机制（UnitSight从CUPTI恢复每单元计数器取实测固定延迟停顿，ForeSight重放CTA派发仅重解逐SM、L2切片、DRAM通道的排队停顿）、目标对象（九款GPU跨配置核函数时间预测与设计空间探索、H20上vLLM端到端时延预测）与可检验效应（MAPE 8.3%对Habitat 14.1%、vLLM端到端误差2.0%、单核预测比Accel-Sim快49倍）；其问题+机制+目标身份与既有候选及Idea均不同——既有候选与Idea均不涉及GPU跨配置性能解析建模：内核优化闭环Idea idea_0beeab7573d3f58b0330是内核生成与部署验收闭环，HBM容量墙候选candidate_6323fce8732010f20bef与candidate_dbcdbe6cf77d0c2b841c是占用压缩与内核内解压，问题、机制与目标对象均不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "cd92167a888ea3dafdd6f9e1",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13762v1"
+      ],
+      "reason": "ForeSight记录给出问题（GPU配置空间大到周期级模拟器难以遍历、解析模型跨配置预测失准）、机制（UnitSight从CUPTI恢复每单元计数器；重放CTA派发、逐SM/L2切片/DRAM通道求解排队停顿、固定延迟停顿复用实测值）、目标（九款GPU跨配置核函数时间预测与设计空间探索、H20上vLLM端到端时延）与可检验效应（MAPE 8.3%对Habitat 14.1%、vLLM端到端误差2.0%、单核预测比Accel-Sim快49倍），并同时给出设计空间探索的最优配置只是模型预测、无实测或流片验证的边界。",
+      "independence_group": "arxiv:2611.13762"
+    }
+  ],
+  "evidence_item_ids": [
+    "cd92167a888ea3dafdd6f9e1"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.13762v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.13762"
+  ],
+  "unknowns": [
+    "设计空间探索得到的最优配置只是模型预测，无实测或流片验证",
+    "单一arXiv v1预印本独立分组，缺独立复现",
+    "九款GPU之外与更激进配置档位（跨代架构、更大幅度L2/HBM裁剪）上误差是否保持一位数未知",
+    "记录仅覆盖核函数时间与单机推理服务口径，训练相位与多卡扩展的预测能力未知"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在2至3款自有GPU上选取代表核函数与一个vLLM负载，复现『一次实测固定延迟停顿＋逐SM/L2切片/DRAM通道排队停顿重解』的预测流程，扫描SM数、L2容量、HBM栈数配置档位，对照周期级模拟与最优解析基线度量预测误差与预测成本。",
+    "inputs": [
+      "代表核函数集合与vLLM推理负载",
+      "CUPTI每单元计数器与一次实测的固定延迟停顿剖面",
+      "SM数、L2容量、HBM栈数的配置扫描档位"
+    ],
+    "baselines": [
+      "Accel-Sim周期级模拟",
+      "Habitat解析模型（报告核函数时间MAPE 14.1%）"
+    ],
+    "metrics": [
+      "跨配置核函数时间MAPE",
+      "vLLM端到端时延预测误差",
+      "单核预测耗时相对周期级模拟的加速比",
+      "关键配置裁剪结论与实测方向的一致性"
+    ],
+    "support_criteria": [
+      "自有硬件上跨配置MAPE接近单位数且显著优于解析基线",
+      "单核预测成本较周期级模拟器低一个数量级以上",
+      "至少一条配置裁剪结论（如HBM栈或L2缩减）与实测方向一致"
+    ],
+    "reject_criteria": [
+      "固定延迟停顿复用使跨配置外推误差回升到解析基线水平（约14%或以上）",
+      "排队停顿模型在激进配置档位上出现系统性偏差且随配置距离增大"
+    ],
+    "limitations": [
+      "属建议未执行，全部检验项为suggestion_only",
+      "预测得到的最优配置需目标配置实测或流片验证后才能采信",
+      "覆盖范围以核函数时间与单机推理服务口径为限"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea均不同（既有候选与Idea均不涉及GPU跨配置性能解析建模，最接近的内核优化闭环Idea属内核生成与部署验收、HBM容量墙候选属占用压缩，问题、机制与目标对象均不同）；但仅有单一arXiv v1预印本独立分组支撑，设计空间探索的最优配置只是模型预测、无实测或流片验证，缺独立复现与适用边界，先观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_763aeee1d202cf6bd954",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "Direct任务审阅触发证据，问题、机制、目标与可检验效应四要素齐备且身份与既有候选及Idea不同；但仅有单一arXiv v1预印本独立分组支撑，设计空间探索结论只是模型预测、无实测或流片验证，缺独立复现与适用边界，按deferred观察。",
+      "evidence_item_ids": [
+        "cd92167a888ea3dafdd6f9e1"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

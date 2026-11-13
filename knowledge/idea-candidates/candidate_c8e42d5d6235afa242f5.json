@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_c8e42d5d6235afa242f5",
+  "identity": {
+    "problem_key": "full_kv_decode_read_bandwidth_bound",
+    "mechanism_key": "attention_coverage_gated_page_selection",
+    "target_key": "vllm_adaptive_sparse_decoding"
+  },
+  "idea_type": "solution_concept",
+  "title": "按注意力覆盖度逐层逐头保留最小KV页集的单GPU免训练自适应稀疏解码",
+  "problem": "长上下文解码每个输出token都要读取全部KV缓存，解码时延受显存带宽限制；省带宽不省容量，高并发下仍受显存上限约束。",
+  "hypothesis": "若在vLLM中免训练地按每请求、每层、每KV头、每解码步的覆盖率规则保留估计注意力质量达到gamma的最小KV页集，并由自规划注意力核让线程块自行划分任务、整步保持在CUDA图内，则可在保持精度的同时成比例减少解码读页量并显著降低TPOT。",
+  "mechanism": "覆盖率规则逐请求、逐层、逐KV头、逐步估计注意力质量，保留达到gamma的最小页集；自规划注意力核让线程块自行划分任务；整步保持在CUDA图内，免训练集成于vLLM。",
+  "target": "vLLM中单GPU上的免训练自适应稀疏解码路径（长上下文解码阶段）",
+  "expected_effect": "RULER 128k、gamma=0.99时精度与稠密FA3持平，仅读约30%页，TPOT降低2.2至2.5倍；并发16时吞吐提高45%至51%。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的覆盖率门控KV页选择机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "7a7fc63f8c40f2385b0d4aeb",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.04313v1"
+      ],
+      "reason": "《MOIRA按注意力覆盖度自适应选KV页，128k解码TPOT降低2.2至2.5倍》给出机制与对照结果：覆盖率规则逐请求、逐层、逐KV头、逐步保留达到gamma的最小页集，自规划注意力核整步保持在CUDA图内；RULER 128k、gamma=0.99时精度与稠密FA3持平、仅读约30%页、TPOT降2.2至2.5倍，并发16时吞吐提高45%至51%。",
+      "independence_group": "arxiv:2610.04313"
+    }
+  ],
+  "evidence_item_ids": [
+    "7a7fc63f8c40f2385b0d4aeb"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.04313v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.04313"
+  ],
+  "unknowns": [
+    "仅单GPU评估，无跨节点KV传输、TTFT或网络侧数据，对TPN核心场景（网络侧KV调度）的适用边界未建立",
+    "省带宽不省容量，高并发仍受显存上限约束",
+    "gamma覆盖度档位与页保留量的精度-带宽权衡在RULER之外负载上的泛化未知",
+    "该记录同日已进入idea_f7841984fcce6a274881的证据链并被定位为GPU侧强基线，网络侧调度相对它的增量收益尚无对照数据"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单GPU vLLM环境复现覆盖率门控的逐层逐头KV页选择，与稠密FA3及固定稀疏基线对照，并补测TTFT与多并发档位。",
+    "inputs": [
+      "RULER 128k级长上下文负载",
+      "gamma覆盖度档位",
+      "并发档位（含并发16）",
+      "KV页粒度与读页比例计量"
+    ],
+    "baselines": [
+      "稠密FA3注意力",
+      "固定稀疏或滑窗注意力"
+    ],
+    "metrics": [
+      "TPOT",
+      "读页比例",
+      "任务精度",
+      "解码吞吐",
+      "TTFT"
+    ],
+    "support_criteria": [
+      "精度与稠密FA3持平时读页比例与TPOT收益按证据量级复现，且多并发档位吞吐收益保持"
+    ],
+    "reject_criteria": [
+      "覆盖率估计或页选择开销在负载变化下吞没带宽收益，或精度在非RULER负载明显回退"
+    ],
+    "limitations": [
+      "原始证据仅单GPU评估，无跨节点KV传输与网络侧口径"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv独立组，评估限单GPU、无跨节点KV传输、TTFT或网络数据，对TPN核心场景的适用边界未建立，且该记录同日已进入idea_f7841984fcce6a274881证据链，独立成案还是并入该Idea需人工世系决定。",
+  "related_candidate_ids": [
+    "candidate_b74aefcc6da4997763c0",
+    "candidate_362068f7684cc5f18b4f",
+    "candidate_dd166315cf32699a83fb",
+    "candidate_9746d7c9681dc92f4042"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d60e7929e4c933ed68f",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv独立组，评估限单GPU、无跨节点KV传输、TTFT或网络数据，对TPN核心场景的适用边界未建立，且该记录同日已进入idea_f7841984fcce6a274881证据链，独立成案还是并入该Idea需人工世系决定。",
+      "evidence_item_ids": [
+        "7a7fc63f8c40f2385b0d4aeb"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

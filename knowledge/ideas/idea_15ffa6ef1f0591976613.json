@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_15ffa6ef1f0591976613",
+  "identity": {
+    "problem_key": "moe_expert_weight_capacity_wall",
+    "mechanism_key": "tiered_expert_streaming_io_overlap",
+    "target_key": "capacity_limited_moe_inference"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "MoE专家权重容量墙可用分层驻留加流式I/O重叠在真实硬件上兑现",
+  "problem": "万亿参数级MoE的专家权重总量超出快存容量：数据中心侧受专家权重带宽墙与HBM容量夹击，端侧与消费级平台连全驻留都不可行，全驻留假设使超大MoE在容量受限硬件上直接不可运行。",
+  "hypothesis": "把专家权重分层驻留到慢速大容量层（SSD/UFS/近存NAND/近数据CXL设备），以对齐布局的O(1)偏移读取、固定粒度流式换入、异步I/O与计算重叠以及逐专家代价选择执行位置，可在容量受限硬件上兑现可用的超大MoE推理；其吞吐上限由慢速层带宽利用率与I/O-计算重叠度决定而非容量本身，且随模型规模增大近似按带宽比例劣化（1T解码1.03 token/s对2.8T仅0.465 token/s）。",
+  "mechanism": "专家权重按对齐块重排使慢速层读取成为O(1)偏移访问；专家池驻留慢速层、经固定大小arena按组流式换入并把加载隐藏在计算后；非驻留专家按传输代价与就地执行代价解析比较择优；RAM与显存作为热度缓存并配合显存内解压。",
+  "expected_effect": "在消费级与边缘容量受限平台把1T级MoE推理从不可运行变为可用（解码约1 token/s量级、较现有卸载基线1.35至3.44倍），在数据中心以近存介质缓解专家权重带宽墙（仿真口径最高一个数量级加速），并把部署决策从『容量够不够』转为『慢速层带宽利用率与I/O重叠度够不够』。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "91a31e62a26076717c83ef1c",
+      "issue_date": "2026-08-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.17074v2"
+      ],
+      "reason": "ThAME最早把MoE推理的两道墙表述为专家权重带宽与非确定token路由，将专家权重存进片上3D FeFET-NAND并以层次NoC吸收scatter-gather流量，仿真口径较Stratum等基线最高加速15.7倍、能效9.8倍（全部为周期级仿真无流片、未给端到端服务P95）；为『专家权重放慢速大容量近存介质』提供最早的架构级实证。"
+    },
+    {
+      "item_id": "bb2b2fe1727d566adf827248",
+      "issue_date": "2026-08-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.21614v1"
+      ],
+      "reason": "SAEM在真实GPU-CPU层级验证非驻留专家的执行位置选择：CoT推理各阶段专家激活连贯可预测，按阶段边界而非token粒度管理专家缓存、非驻留专家比较PCIe传输与CPU就地执行择优，两个推理MoE上较最强基线平均1.33倍吞吐、Bookkeeping开销占比从54.2%降到40.0%（阶段检测依赖英语话语线索、评测限数学与科学推理负载）；支撑逐专家代价选择执行位置机制。"
+    },
+    {
+      "item_id": "e041762630a5be09f348c000",
+      "issue_date": "2026-09-03",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.00407v1"
+      ],
+      "reason": "DynaNDE用三层时延解析模型指导NPU与近数据CXL/NDP设备间的每层专家调度，兼顾专家并发与驻留复用，批量MoE推理较SOTA框架prefill加速2.6倍、decode加速2.2倍、驻留感知消融贡献平均1.1至1.3倍（评估基于模拟器与综合无真实芯片、单NDP配置、收益随batch增大与NPU基线差距缩小）；支撑驻留复用与解析调度的近数据路径。"
+    },
+    {
+      "item_id": "a69ffd0d55a889b50d65e3c1",
+      "issue_date": "2026-09-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.06551v1"
+      ],
+      "reason": "EStream在真实手机NPU上把专家池驻留UFS、经固定大小arena按组流式换入并把加载隐藏在计算后，以单一编译专家图服务所有专家实现运行时路由与权重地址绑定，18个设置上纯prefill TTFT加速2.25至27.57倍、峰值内存最多降12.29倍（覆盖prefill-only负载、绑定Qualcomm平台、Q4量化精度影响未量化）；为『慢速闪存层+流式换入+I/O计算重叠』提供端侧实测。"
+    },
+    {
+      "item_id": "f356968039545b01ff980787",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.18110v1"
+      ],
+      "reason": "SSD-LLaMA把SSD-内存-显存组织为专家流水线：专家权重重排为对齐块实现O(1)偏移读取、异步I/O重叠、RAM与显存作缓存并按逐专家代价选择执行位置，1T MoE在RTX 5090与32GB内存上解码1.03 token/s、较llama.cpp 1.35至3.44倍、SSD带宽利用率77.7%对最好基线43.2%，首次在消费级真实硬件上验证该机理的可用下限与规模劣化斜率（2.8T的Kimi-K3解码仅0.465 token/s；属系统软件而非新芯片、自身能耗未测、被引研究提示SSD卸载每token能耗最高可增12倍）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "慢速层带宽利用率的可达上限及其受文件系统、GC与接口协议干扰的程度（77.7%对43.2%仅单系统实测）",
+    "能耗边界未刻画：SSD-LLaMA自身能耗未测，被引研究提示SSD卸载每token能耗最高可增12倍，分层推理可能以能耗换容量",
+    "decode与prefill两相位收益不对称（EStream仅prefill，SSD-LLaMA解码1.03 token/s接近可用下限）",
+    "仿真证据（ThAME、DynaNDE）与真实硬件证据（SAEM、EStream、SSD-LLaMA）之间的量级差距尚未对齐",
+    "路由局部性与阶段可预测性（SAEM按阶段缓存、DynaNDE驻留复用）相对盲分层流式的增量收益未量化"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在单张消费级GPU（RTX 5090级、32GB内存+NVMe SSD）上搭建SSD-内存-显存三层专家流水线原型，运行1T与0.5T两档开源MoE，扫描专家块大小、显存/内存缓存容量与预取深度。",
+    "inputs": [
+      "开源1T与0.5T MoE checkpoint及真实路由统计",
+      "对齐块布局与O(1)偏移读取的权重重排工具",
+      "NVMe SSD分层与缓存容量、预取深度扫描配置",
+      "有条件时接入每token能耗计量"
+    ],
+    "baselines": [
+      "llama.cpp等现有CPU/GPU卸载基线",
+      "小模型全显存驻留参考",
+      "无异步重叠的同步读取变体"
+    ],
+    "metrics": [
+      "解码token/s与TTFT",
+      "SSD/内存/显存各层带宽利用率",
+      "专家缓存命中率与换入数据量",
+      "端到端时延分布",
+      "每token能耗（有条件时）"
+    ],
+    "support_criteria": [
+      "1T档解码吞吐在慢速层带宽利用率大于60%时兑现且较最好基线不低于1.3倍",
+      "异步I/O重叠使慢速层读取隐藏于计算后的比例可测且可复现",
+      "吞吐随模型规模劣化斜率与带宽比例模型预测一致"
+    ],
+    "reject_criteria": [
+      "吞吐随模型规模劣化显著快于带宽比例，说明容量之外出现随机访问或元数据瓶颈",
+      "能耗增幅吞噬容量收益且不可经调度规避"
+    ],
+    "limitations": [
+      "首版仅单卡消费级平台与MoE推理相位，不含训练、多卡与数据中心近存介质"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-11",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_b61e77e3d02da265f95a",
+      "issue_date": "2026-11-13",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "跨期已发布证据（ThAME近存NAND存专家权重、SAEM按代价择优执行位置、DynaNDE近数据专家调度与驻留复用、EStream UFS流式换入）与本期SSD-LLaMA收敛于同一机理：MoE专家权重容量墙可用分层驻留+流式换入+I/O计算重叠+逐专家代价调度在容量受限硬件上兑现；按problem+mechanism+target身份创建为正式Idea并保持observing；五条证据指向同一机理的聚合判断属跨记录推断(inferred)。",
+      "evidence_item_ids": [
+        "91a31e62a26076717c83ef1c",
+        "bb2b2fe1727d566adf827248",
+        "e041762630a5be09f348c000",
+        "a69ffd0d55a889b50d65e3c1",
+        "f356968039545b01ff980787"
+      ]
+    }
+  ]
+}

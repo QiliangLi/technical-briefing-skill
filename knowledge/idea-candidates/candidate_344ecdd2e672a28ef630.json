@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_344ecdd2e672a28ef630",
+  "identity": {
+    "problem_key": "explicit_sync_fixed_overhead_bottleneck",
+    "mechanism_key": "data_embedded_readiness_implicit_sync",
+    "target_key": "cross_scope_accelerator_execution"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "把就绪证据并入数据通路：跨执行域消除显式同步固定开销",
+  "problem": "加速器多个执行域都依赖显式同步原语协调数据依赖，其固定开销与资源上限直接侵蚀有效算力：昇腾Cube/Vector双路内核受显式同步与8个硬件同步标志上限及层级搬运制约；多卡集合通信每层每token执行一次，微秒级固定协调开销在B300上已超过小消息传输本身；MoE解码中token分发与分组GEMM争用同一组SM、通信与计算内核间依赖显式排序；scale-up训练栈迁入NVL72后细粒度通信方向不当带来最高18%完成信号开销与13%调度开销。各记录分别只在自己执行域内缓解，缺被多域证据共同支持的统一同步消除机理。",
+  "hypothesis": "若数据块自带就绪证据（哨兵值、块序号、单标志位环形缓冲或令牌环按块握手）并由接收端直接校验、数据到达即启动，稳态下不再执行跨域显式同步原语（硬件同步标志、跨卡屏障、CPU-GPU同步、内核间显式排序），辅以按消息大小、卡数与硬件代际选择编码与路径的代价模型，则NPU解耦内核、GPU内SM分区、多卡集合通信与CPU-GPU边界四个执行域的同步固定开销可同时消除，且精度保持不变（GC-MoE最小余弦0.99999976）。",
+  "mechanism": "就绪证据并入数据通路并由接收端自校验、数据到达即启动：AIV侧单标志位协调环形缓冲实现内核内隐式同步、摆脱硬件同步标志上限；令牌环按块握手使计算随数据到达即启动；集合通信数据块携带哨兵值或块序号实现稳态零跨卡屏障，代价模型按消息大小与卡数选择编码及一跳或分片两跳路径；设备侧环形缓冲在单一巨型内核内消除CPU-GPU同步。",
+  "target": "同步耦合的加速器执行域：昇腾类解耦Cube/Vector NPU的稀疏内核、GPU内通信/计算SM分区的MoE解码、单NVLink域多卡LLM解码集合通信、NVL72级scale-up域的MoE训练巨型内核",
+  "expected_effect": "各域实测：820个SuiteSparse矩阵SpMM内核几何均值较最强NPU基线提速12.70至20.55倍、两层GCN训练较PyG快3.5至6.8倍；8卡H20解码平均快1.1881倍（峰值1.2957倍）、8卡B300平均1.1059倍；8卡B300 all-reduce中位降28.8%（最高43.7%）、端到端TPOT降1.7%至6.8%；GB300 NVL72四模型形状最高加速2.37倍、512 GPU生产栈每GPU吞吐761升至1070 token/s。若跨域机理成立，其他同步受限路径做同型改造应获得同类固定开销削减，且削减不随数据量增大而消失。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-06",
+    "rationale": "四条独立记录（2026-09-30与2026-11-06两个期次、四个arXiv独立分组）在CPU-GPU边界（MoK设备侧环形缓冲）、NPU解耦单元内核（Ascend-SpMM单标志位环形缓冲）、GPU内SM分区（GC-MoE令牌环按块握手）与多卡集合通信（flash-comm哨兵值/块序号）四个执行域联合支持“把就绪证据并入数据通路、接收端自校验、数据到达即启动，可消除显式同步原语的固定开销”这一跨域机理；任何单条记录只陈述自己域内的做法，均未陈述该跨域机理。与idea_46f7dbdd677133518d37不同：该Idea身份是MoE通信-计算SM争用的显式资源分区与运行时调优，其unknowns已把与同步消除（flash-comm）路径的叠加列为未测问题；与其余21个候选及另外2个Idea的身份与含义亦不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "e5785b0bcab7b8d1970ac9ba",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.36070v1"
+      ],
+      "reason": "为scale-out优化的MoE训练系统迁到NVL72单跳域后常慢于PyTorch+NCCL基线，细粒度通信方向不当带来最高18%完成信号开销与13%调度开销；MoK以设备侧环形缓冲在单一巨型内核内消除CPU-GPU同步，GB300 NVL72四个模型形状较最强基线最高加速2.37倍、512 GPU生产栈仅换MoE实现使每GPU吞吐从761升至1070 token/s，给出该机理在CPU-GPU执行边界的最早已发表实证。",
+      "independence_group": "arxiv:2609.36070"
+    },
+    {
+      "item_id": "f79c4d41b0c9252603b482ac",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.01936v1"
+      ],
+      "reason": "昇腾解耦Cube/Vector通路的SpMM内核受显式同步与层级搬运制约；Ascend-SpMM在AIV侧用单标志位协调环形缓冲隐式同步、摆脱8个硬件同步标志上限，820个SuiteSparse矩阵内核几何均值较最强NPU基线提速12.70至20.55倍、两层GCN训练较PyG快3.5至6.8倍，证明内核内同步资源上限可用环形缓冲数据到达协调替代显式同步标志。",
+      "independence_group": "arxiv:2611.01936"
+    },
+    {
+      "item_id": "e72addc6b58204ae181aa091",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04222v1"
+      ],
+      "reason": "MoE解码中token分发与分组GEMM争用同一组SM；GC-MoE把SM切成小通信与大计算分区后以CUDA Graph并发启动两类内核、令牌环按块握手使计算随数据到达即启动，8卡H20与B300共54个测点全部快于DeepGEMM基线（H20解码平均1.1881倍、峰值1.2957倍，B300平均1.1059倍，精度最小余弦0.99999976），证明GPU内跨分区依赖可用按块握手的数据到达驱动启动替代显式排序。",
+      "independence_group": "arxiv:2611.04222"
+    },
+    {
+      "item_id": "02d505da249588037229d17d",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06634v1"
+      ],
+      "reason": "自回归解码的集合通信每层每token执行一次，微秒级固定协调开销在B300上已超过小消息传输本身；flash-comm让数据块自带就绪证据（哨兵值或块序号）、接收端直接校验，稳态集合通信零跨卡屏障，并以代价模型按消息大小与卡数选择编码及一跳或分片两跳路径；8卡B300上all-reduce较SGLang custom AR v2中位降28.8%、最高43.7%，端到端TPOT降1.7%至6.8%，直接证明同步开销可并入数据移动本身消除。",
+      "independence_group": "arxiv:2611.06634"
+    }
+  ],
+  "evidence_item_ids": [
+    "e5785b0bcab7b8d1970ac9ba",
+    "f79c4d41b0c9252603b482ac",
+    "e72addc6b58204ae181aa091",
+    "02d505da249588037229d17d"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.36070v1",
+    "https://arxiv.org/abs/2611.01936v1",
+    "https://arxiv.org/abs/2611.04222v1",
+    "https://arxiv.org/abs/2611.06634v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.36070",
+    "arxiv:2611.01936",
+    "arxiv:2611.04222",
+    "arxiv:2611.06634"
+  ],
+  "unknowns": [
+    "四个独立分组各绑定不同硬件体制（昇腾NPU、H20/B300单NVLink域、GB300 NVL72），机理在其他硬件代际与拓扑上未验证",
+    "flash-comm限单NVLink域2至8卡、bf16或fp32对齐张量、Hopper以上GPU；GC-MoE仅测解码且每卡256 token时增益收窄至1.01至1.13倍、无分区消融",
+    "Ascend-SpMM三个NPU基线中两个为作者复现、9.9%至22.2%矩阵仍慢于cuSPARSE；MoK加速随计算受限程度收窄（BF16反向仅1.58倍）且结果绑定NVL72体制与特定模型形状",
+    "与SM显式分区（idea_46f7dbdd677133518d37）等其他杠杆的叠加收益未测；四条记录均为单版本arXiv预印本，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在三个可及执行域各取一条同步受限路径实测：单卡昇腾类NPU的Cube/Vector双路稀疏内核（以单标志位环形缓冲替代硬件同步标志）、单节点8卡H20或B300的MoE解码（令牌环按块握手）与LLM解码all-reduce（数据块携带哨兵值或块序号），对照各自显式同步基线，量化固定同步开销占比与替换后的时延与精度。",
+    "inputs": [
+      "昇腾类NPU与GPU集群各一及其同步开销profiling",
+      "SpMM、MoE解码与all-reduce等同步受限代表性路径",
+      "数据携带就绪证据的编码（哨兵值、块序号）与单标志位环形缓冲实现"
+    ],
+    "baselines": [
+      "硬件同步标志版的NPU内核",
+      "默认调度排序的MoE解码（DeepGEMM/DeepEP基线）",
+      "SGLang custom AR v2等显式屏障集合通信",
+      "PyTorch+NCCL基线"
+    ],
+    "metrics": [
+      "内核与集合通信时延",
+      "端到端TPOT或训练吞吐",
+      "同步原语执行次数与固定开销占比",
+      "就绪证据编码的带宽开销与输出精度（余弦相似度）"
+    ],
+    "support_criteria": [
+      "至少两个执行域替换显式同步后时延显著下降且精度不变，方向跨域一致"
+    ],
+    "reject_criteria": [
+      "任一域中就绪证据编码开销超过同步节省，或仅单一域成立而其他域不可迁移"
+    ],
+    "limitations": [
+      "首版各域仅一个硬件体制与一条路径",
+      "哨兵值编码与块序号回绕处理未跨域统一验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备：显式同步原语的固定开销与同步资源上限在四个执行域侵蚀有效算力，就绪证据并入数据通路、接收端自校验、数据到达即启动可消除该开销，各域均有实测时延或吞吐数值；四个独立arXiv分组跨2026-09-30与2026-11-06两个期次联合支持这一跨域机理，且任何单条记录都只陈述自己域内的做法、未陈述该机理；与既有22个候选及3个Idea的身份与含义均不同——idea_46f7dbdd677133518d37的身份是MoE通信-计算SM争用的显式资源分区与运行时调优，本候选消除显式同步本身，两者叠加恰是对方unknowns列为未测的开放问题——故立为proposed待人工晋升。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_46f7dbdd677133518d37"
+  ],
+  "first_seen_issue": "2026-09-30",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_4797b12e0428db1f5059",
+      "issue_date": "2026-11-06",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应齐备：显式同步原语的固定开销与同步资源上限在四个执行域侵蚀有效算力，就绪证据并入数据通路、接收端自校验、数据到达即启动可消除该开销，各域均有实测时延或吞吐数值；四个独立arXiv分组跨2026-09-30与2026-11-06两个期次联合支持这一跨域机理，且任何单条记录都只陈述自己域内的做法、未陈述该机理；与既有22个候选及3个Idea的身份与含义均不同——idea_46f7dbdd677133518d37的身份是MoE通信-计算SM争用的显式资源分区与运行时调优，本候选消除显式同步本身，两者叠加恰是对方unknowns列为未测的开放问题——故立为proposed待人工晋升。",
+      "evidence_item_ids": [
+        "e5785b0bcab7b8d1970ac9ba",
+        "f79c4d41b0c9252603b482ac",
+        "e72addc6b58204ae181aa091",
+        "02d505da249588037229d17d"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_3957174660eb8129b82b",
+  "identity": {
+    "problem_key": "rag_non_prefix_reuse_ceiling",
+    "mechanism_key": "segment_kv_reuse_with_causal_suffix_repair",
+    "target_key": "rag_serving_ttft_and_output_consistency"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "RAG段级KV复用加因果后缀修复的重算区间假设",
+  "problem": "主流引擎 KV 复用仅限精确前缀，RAG 请求文档组合多变、常无共享前缀可复用（Zipfian 负载 30GB 缓存下命中率仅 3.3%）；按文档段直接拼接复用又因状态依赖原始上下文而悄然改变输出（仅保留 47.2%/37.8% 全量预填充答案，多跳 2WMQA 从 0.80 退到 0.50）。；且 token 级修复选择器不知道预算应投向哪里——损伤实际分散于其余块而非拼接边界，预算应重算答案所在的目标块（问题注意力最多 18.8% 选中目标块，BGE-M3 检索器 Top-1 达 36%-64%）",
+  "hypothesis": "存在一个重算起点比例区间（预计 5%-30%），且修复预算应定向投向检索命中的目标块（把检索 Top-1 块移到紧邻问题处重算）而非 token 级分散，使段级 KV 复用加定向因果修复在 16K+ 输入上同时满足：输出一致率≥99%、多跳质量损失≤2 分、TTFT 低于全量预填充——5% 预算定向重算已在九个开放域 QA/API 设置全部胜过 token 级选择器、移位重算优于原地重算 0.07-0.18；若任何区间或定向策略都不能同时满足，则段级复用仅适用于单跳负载、不应进入多跳 RAG 服务路径。补充：修复预算应装入按长度归一化 KV 偏差排序选出的完整连续文档 span 而非散布 top-k，5% 预算下连续 span 重算已把跨请求顺序答案变化率从 69.0% 降到 26.1%。",
+  "mechanism": "保留分隔符切分输入、逐段检查 KV 可用性，段键不预旋转位置编码、复用时按当前位置重对齐；选定起始文档后保留其前的拼接缓存，按原顺序重算该文档及其后所有文档与查询使下游因果状态一致，重算起点由检索分数做风险引导选择。；修复目标由检索定位：复用时各块重旋转让块序可自由选择，把检索器 Top-1 块移到紧邻问题处再重算，5% 预算下已知目标块重算在九个开放域 QA/API 设置全部胜过 token 级选择器、移位重算优于原地重算 0.07-0.18。；连续 span 形态：把可复用 prompt 划分为指令与各文档 span，按长度归一化的 KV 偏差排序，在 5% 预算内装入完整连续 span。",
+  "expected_effect": "命中率从约 3% 量级提升到 50% 以上（对照 KV-Repurpose 的 63.9%），行为一致率恢复到 99% 以上（对照 SAFE-KV 修复后 99.8%/98.4%），并在某重算区间内 16K+ 输入 TTFT 低于全量预填充。；修复预算从 SAFE-KV 式『重算多数上下文』压缩到 5% 定向目标块重算，修复时延不再必然慢于全量预填充。；跨请求顺序答案变化率压到 30% 以下（对照连续 span 26.1% 对 token top-k 69.0%，中位 TTFT 2408→415 毫秒）。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "d58266858faeb6cef77fd7c3",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.13060v1"
+      ],
+      "reason": "实测 Zipfian 负载 30GB 下段级复用把命中率从 3.3% 升至 63.9%、超 1.6 万 token 后 TTFT 低于前缀缓存，同时多跳推理明显退化（2WMQA 0.50 对 0.80）——同时给出收益上限与必须修复的证据。"
+    },
+    {
+      "item_id": "5eed420efde155b0ee118a32",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.28069v2"
+      ],
+      "reason": "SemPIC 把文档 KV 编译成位置无关可复用形态，三模型四任务对 KVPacket 平均 micro-F1 从 0.53 升到 0.60（全量重算 0.62），证明越过精确前缀的文档级复用可行且质量损失有界。"
+    },
+    {
+      "item_id": "cadc885d313b830c50aec301",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06397v1"
+      ],
+      "reason": "目标块定向修复证据：非前缀复用的损伤分散于其余块、修复预算应重算答案所在目标块——5% 预算下已知目标块重算在九个开放域 QA/API 设置全部胜过 token 级选择器，把检索 Top-1 块移到紧邻问题处重算再全部优于原地重算 0.07-0.18（问题注意力最多 18.8% 选中目标块、BGE-M3 检索器 36%-64%）；跨条目推断(inferred)：该结果把本假设的可行重算区间从 SAFE-KV 式多上下文重算推向 5% 定向重算，直接缓解『修复慢于全量预填充』的反证压力。"
+    },
+    {
+      "item_id": "4238f9e8771a68ae2dd0e959",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.05833v1"
+      ],
+      "reason": "滚动 Agent 证据把修复预算投向从目标块定向推进到连续 span 形态：长运行 Agent 滚动更新文档窗口使精确前缀缓存失效、选择性复用加重算的输出质量依赖请求历史，文档对齐的连续 span 重算在 5% 预算下把跨请求顺序答案变化率从 token top-k 的 69.0% 降到 26.1%、中位 TTFT 从全量 prefill 的 2408 毫秒降至 415 毫秒（仅单一模型与单一 L4 GPU 评测金融抽取负载、无命中率与吞吐数据）；跨条目推断(inferred)：修复应装入完整连续 span 而非散布选点，与目标块定向修复证据同向并补充顺序敏感性维度。"
+    }
+  ],
+  "evidence_against": [
+    {
+      "item_id": "e5ad016e59da3e39390f4363",
+      "issue_date": "2026-10-21",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.15186v1"
+      ],
+      "reason": "SAFE-KV 显示因果后缀修复虽把输出保留率从 47.2%/37.8% 恢复到 99.8%/98.4%，但修复要重算多数上下文，五个负载中四个延迟慢于全量预填充，且仅在 7B 单请求 L40S 微基准验证、未接入服务栈——直接威胁假设中『TTFT 低于全量预填充』的部分。"
+    }
+  ],
+  "unknowns": [
+    "并发多租户吞吐下的修复排队与容量竞争",
+    "真实检索流量分布下的命中率与起点选择稳定性",
+    "闭源超大模型（逾千亿参数）上段级复用行为是否随规模改变",
+    "SemPIC 式离线编译成本未计入 TTFT 口径的影响",
+    "检索器 Top-1 命中答案所在目标块的比例随语料与检索器变化的稳定性（BGE-M3 口径为 36%-64%）",
+    "连续 span 与目标块定向两种修复取向在多跳负载上的相对收益与组合方式（滚动 Agent 证据为单一模型金融抽取负载）"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "7B 级开源模型（与 SAFE-KV 的 Qwen2.5-7B 同级）加一个 30B 以上模型验证规模效应；KV-Repurpose 的逾千亿参数结论不外推",
+    "inputs": [
+      "2WikiMQA/MuSiQue 加 Zipfian 文档组合重放（30GB 缓存容量口径对齐 KV-Repurpose）",
+      "重算起点比例扫描 0-30%（步长 5%）",
+      "输入长度 8K/16K/32K",
+      "目标块定位对照：token 级选择器 vs 检索 Top-1 定向重算（原地与移到紧邻问题处两档）"
+    ],
+    "baselines": [
+      "全量预填充",
+      "vLLM-APC 精确前缀缓存",
+      "KV-Repurpose 式直接拼接（无修复）",
+      "SAFE-KV 式风险引导修复",
+      "检索 Top-1 定向重算（原地，不移动块序）"
+    ],
+    "metrics": [
+      "命中率",
+      "TTFT P50/P95",
+      "对全量预填充的输出一致率",
+      "多跳 QA 分数（2WMQA/MuSiQue）",
+      "缓存容量占用",
+      "目标块定位准确率（重算块是否为答案所在块）"
+    ],
+    "support_criteria": [
+      "输出一致率≥99% 且 16K+ 输入 TTFT 低于全量预填充",
+      "多跳质量损失≤2 分",
+      "命中率≥50%"
+    ],
+    "reject_criteria": [
+      "任何重算比例下一致率<99%",
+      "多跳损失>2 分",
+      "全部区间 TTFT 均高于全量预填充（此时假设限定为仅单跳负载适用）"
+    ],
+    "limitations": [
+      "未覆盖并发多租户吞吐与真实检索流量",
+      "未覆盖闭源超大模型",
+      "未与 CacheBlend 等方法对比（KV-Repurpose 测试床同样缺失）",
+      "SemPIC 式离线编译成本未计入",
+      "目标块定向修复证据仅覆盖 7B-8B 模型与四个英文数据集，主表吞吐与显存数据缺失"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-28",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_395e4cd43c6e07064f05",
+      "issue_date": "2026-10-29",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据已发布证据新建 Idea：RAG段级KV复用加因果后缀修复的重算区间假设。",
+      "evidence_item_ids": [
+        "d58266858faeb6cef77fd7c3",
+        "5eed420efde155b0ee118a32",
+        "e5ad016e59da3e39390f4363"
+      ]
+    },
+    {
+      "event_id": "idea_decision_3957c2f11d6ab40e9375",
+      "issue_date": "2026-11-06",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增目标块定向修复证据：非前缀复用的损伤分散于其余块，5% 预算定向重算检索 Top-1 目标块（移到紧邻问题处）在九个开放域 QA/API 设置全部胜过 token 级选择器、优于原地重算 0.07-0.18，把修复预算投向确认为假设的核心变量，并缓解 SAFE-KV『修复要重算多数上下文、四个负载中四个延迟更慢』的反证压力。",
+      "evidence_item_ids": [
+        "cadc885d313b830c50aec301"
+      ]
+    },
+    {
+      "event_id": "idea_decision_61340bfdd8e3ad1e17b0",
+      "issue_date": "2026-11-09",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增滚动 Agent 连续 span 修复证据：5% 预算文档对齐连续 span 重算把跨请求顺序答案变化率从 token top-k 的 69.0% 降到 26.1%、中位 TTFT 从 2408 毫秒降至 415 毫秒，把修复预算的形态从散布选点收紧为完整连续 span，与目标块定向修复证据同向。",
+      "evidence_item_ids": [
+        "4238f9e8771a68ae2dd0e959"
+      ]
+    }
+  ]
+}

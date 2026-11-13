@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_c2cda6bbfce511a744e4",
+  "identity": {
+    "problem_key": "harness_evolution_score_only_reward",
+    "mechanism_key": "resource_priced_net_benefit_bandit_reward",
+    "target_key": "fixed_weight_agent_harness_slot_evolution"
+  },
+  "idea_type": "solution_concept",
+  "title": "以LAM资源计价为净收益奖励轴的Harness槽位组合自进化",
+  "problem": "固定模型权重下的Harness自进化按任务总分选型：MESH式槽位组合bandit把评估次数当预算、把任务得分当唯一奖励，所选出配置的调用、token、内存与验证开销不进奖励；而同能力模型换harness的开销可差一个量级（LAM），总分进化的赢家可能在部署资源成本上净亏，进化过程自身的评估开销也无入账。",
+  "hypothesis": "可证伪问题：把槽位组合进化的奖励从任务总分改为任务得分减去LAM四资源定律计价成本（评估期开销与终选配置的模拟部署开销分别入账）后，同一评估预算下进化终选配置的成本调整净收益显著优于总分奖励基线，且任务得分不显著更低。",
+  "mechanism": "两段联合：MESH的槽位组合进化骨架（功能槽位+固定容量实现池、LinUCB按槽位嵌入打分、坐标上升选组合、验证轨迹驱动LLM修订实现池）作为搜索器；LAM的四资源定律计价账本（对调用、token流量、内存读写、验证与失败率计价）作为奖励的成本轴与终选部署计价器——奖励改为任务得分减去计价成本，使进化直接优化成本调整净收益而非任意代价下的总分。",
+  "target": "固定模型权重下的Agent Harness槽位组合自进化循环",
+  "expected_effect": "同评估预算下，计价奖励进化终选配置的任务得分不显著低于总分进化，部署期调用/token/验证成本显著更低（量级参考：LAM实测同能力路由验证与重放的token差约10倍；MESH自报测试期成本可降44.2%，说明成本轴存在可挖空间）。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-13",
+    "rationale": "同期两条独立记录互补：LAM（arxiv:2610.02488）给出固定能力下对调用、token、内存与验证的计价账本与『路由+分步验证3217 token解70/70对重放35124 token仅65/70』的成本调整排序；MESH（arxiv:2610.05300）给出固定评估预算下的槽位组合bandit进化骨架，但其奖励只有任务得分且自报成本计量单位缺失。『以资源计价净收益为奖励轴的组合进化』任何单条记录均未陈述。"
+  },
+  "evidence": [
+    {
+      "item_id": "4a9a46bf4dbb8e5bc05148dc",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02488v2"
+      ],
+      "reason": "LAM固定模型语义能力，对调用、token流量、内存读写与失败率计价并给出约束通信、访问、重算与验证开销的四条资源定律；16步链式MATH上路由加分步验证每链3217输入token解70/70、重放需35124 token仅65/70、整链单调用64/70，首次使harness差异可按资源开销而非总分比较，为奖励成本轴提供计价框架与量级锚点；边界：实证限于合成任务与MATH链，顶点粒度理论不覆盖整任务单调用，未测编码Agent负载与时延。",
+      "independence_group": "arxiv:2610.02488"
+    },
+    {
+      "item_id": "08be7221c0402bd87e12943e",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.05300v1"
+      ],
+      "reason": "MESH-Harness在不动模型权重下把harness拆成功能槽位、各槽位配固定容量实现池，LinUCB按槽位嵌入为组合打分、坐标上升选择、验证轨迹驱动LLM修订，同样40次完整评估预算内四类任务比Meta-Harness高2.00-7.01点、测试期与含搜索总成本分别低44.2%与14.6%；证明组合进化骨架可行，但其奖励仅任务得分、成本只做事后计量，绝对测试分数与成本计量单位在可见证据中缺失——正是计价奖励要补的轴。",
+      "independence_group": "arxiv:2610.05300"
+    }
+  ],
+  "evidence_item_ids": [
+    "4a9a46bf4dbb8e5bc05148dc",
+    "08be7221c0402bd87e12943e"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.02488v2",
+    "https://arxiv.org/abs/2610.05300v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.02488",
+    "arxiv:2610.05300"
+  ],
+  "unknowns": [
+    "组合机制无任何记录直接测量：LAM计价出自16步合成MATH链，MESH的绝对测试分数与成本计量单位在可见证据中缺失。",
+    "LAM四资源定律到bandit奖励的折算权重（token、调用、内存、验证如何合成单一价签）无标定依据。",
+    "计价奖励可能引导进化收敛到低开销但低能力上限的组合，任务得分下限约束的设定无先例。",
+    "评估期开销入账后预算内可探索的组合数会缩小，搜索效率损失未测。"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在MESH式槽位组合进化骨架（功能槽位+固定容量实现池+LinUCB打分与坐标上升）上实现双奖励臂：基线臂仅任务总分，计价臂为任务得分减去LAM式资源计价成本（进化过程的评估开销与终选配置的模拟部署开销分别入账），同一固定完整评估预算下并行进化并比较终选配置。",
+    "inputs": [
+      "带真值评分的任务套件（复用MESH式四类任务）",
+      "槽位与实现池的配置空间定义",
+      "LAM式资源计价器：调用数、token流量、内存读写与验证开销的折算规则",
+      "每次评估的逐调用token与内存日志"
+    ],
+    "baselines": [
+      "任务总分奖励的组合进化（MESH原样）",
+      "随机槽位组合",
+      "当期最优单一固定harness配置"
+    ],
+    "metrics": [
+      "成本调整净收益（任务得分减计价成本）",
+      "终选配置的模拟部署调用数与token",
+      "任务得分（配对检验）",
+      "达到同等得分消耗的完整评估次数"
+    ],
+    "support_criteria": [
+      "同预算下计价臂终选配置的净收益显著高于总分臂，且任务得分不显著更低。"
+    ],
+    "reject_criteria": [
+      "计价臂任务得分显著下降，或计价折算使净收益排序与总分臂无显著差。"
+    ],
+    "limitations": [
+      "LAM计价折算规则来自合成MATH链，权重需在目标域重标定。",
+      "模拟部署开销不等于真实生产负载成本。",
+      "单骨架单任务族结论不可外推。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份与46条既有候选、7条Idea不同：candidate_ae6aa6ff84cfc80cba76的预算约束作用于离线选择协议而非进化奖励，candidate_30000ab57d8d17fb38df与candidate_9fa60df23e23f6a7dcc2分别是改进循环的定位与验收侧；但LAM触发证据已于本期被idea_7ba369353fb1935cba45吸收为选型『部署成本核算』一侧，本候选把同一计价框架推进到bandit奖励轴，谱系分工需人工裁定；且组合机制无任何记录直接测量（LAM限合成MATH链、MESH成本计量单位缺失），先deferred。",
+  "related_candidate_ids": [
+    "candidate_ae6aa6ff84cfc80cba76",
+    "candidate_30000ab57d8d17fb38df"
+  ],
+  "related_idea_ids": [
+    "idea_7ba369353fb1935cba45"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_c2cda6bbfce511a744e4",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "新候选：LAM（4a9a46bf4dbb8e5bc05148dc）与MESH-Harness（08be7221c0402bd87e12943e）两条同期独立记录互补，联合支撑『资源计价净收益为奖励轴的槽位组合进化』这一任何单条记录未陈述的机制，身份与既有对象不同；但与idea_7ba369353fb1935cba45已吸收的LAM部署成本核算一侧的谱系分工需人工裁定，且组合机制无直接测量，列deferred。",
+      "evidence_item_ids": [
+        "4a9a46bf4dbb8e5bc05148dc",
+        "08be7221c0402bd87e12943e"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

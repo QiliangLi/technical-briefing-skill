@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_12df5b1aae499cb6ba3e",
+  "identity": {
+    "problem_key": "host_offload_full_kv_fetch_pcie_bound",
+    "mechanism_key": "error_certificate_gated_selective_kv_fetch",
+    "target_key": "single_gpu_host_offload_vllm_decode"
+  },
+  "idea_type": "solution_concept",
+  "title": "以(ε,δ)误差证书门控主机KV补取的单卡offload解码",
+  "problem": "KV缓存超出显存后，全量搬运主机缓存使解码时延被PCIe带宽支配；查询无关的KV压缩又易在部分查询上崩塌。",
+  "hypothesis": "若GPU仅驻留按基础压缩器得分泊松抽样选出的token子集，每个解码步先对注意力近似误差评估(ε,δ)证书，证书满足容差即不访主机、违例才按需补取缺失KV，则可在32K上下文质量保持稠密注意力90%以上的同时，把每token主机取回量压到2-23%、显存降8-32倍，并使vLLM解码较全量offload提速、主机传输量大幅缩减。",
+  "mechanism": "PoissonComp按基础压缩器得分对token泊松抽样，选出GPU驻留子集；KVFetch逐步评估注意力的(ε,δ)误差证书，满足容差不访主机，违例时按需补取缺失KV。",
+  "target": "单卡PCIe主机offload下vLLM解码的KV取回路径（GPU驻留子集选择与主机补取门控）",
+  "expected_effect": "32K上下文质量为稠密注意力的90-100%，显存降8-32倍，每token仅取回缓存2-23%；vLLM解码较全量offload最高提速3.1倍，主机传输量减少47倍。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的误差证书门控选择性KV取回机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "65dfa7dbca4d6e1b86242b08",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.11319v1"
+      ],
+      "reason": "《VERKV：误差证书门控KV取回，vLLM解码提速1.6倍》给出机制与对照结果：PoissonComp按基础压缩器得分泊松抽样选出GPU驻留token，KVFetch评估注意力的(ε,δ)证书，满足容差不访主机、否则补取；32K上下文质量为稠密注意力的90-100%、显存降8-32倍、每token仅取回缓存2-23%，vLLM解码较全量offload最高提速3.1倍、主机传输少47倍；边界为单卡PCIe卸载、ε0=0.5时比稠密驻留慢约6倍、2位草图在严格容差下违反δ。",
+      "independence_group": "arxiv:2611.11319"
+    }
+  ],
+  "evidence_item_ids": [
+    "65dfa7dbca4d6e1b86242b08"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.11319v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.11319"
+  ],
+  "unknowns": [
+    "仅单卡PCIe卸载评估，无跨节点网络、TTFT或P95口径，证书门控作为跨节点KVCache传输调度原语的适用边界未建立（证据明确无跨节点网络证据）",
+    "ε0=0.5时比稠密驻留慢约6倍、2位草图在严格容差下违反δ，证书参数与草图位数在容差-开销权衡上的安全档位未知",
+    "泊松抽样依赖基础压缩器得分，基础压缩器较弱或负载分布变化时GPU驻留子集的代表性未知",
+    "仅单一arXiv独立组，质量口径限32K上下文",
+    "该记录同日已进入idea_f7841984fcce6a274881证据链并被定位为按证书选择性传输分支的支持，独立成案还是并入该Idea需人工世系决定"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单GPU vLLM主机offload环境复现泊松抽样GPU驻留加(ε,δ)证书门控的按需补取，与全量主机offload取回、稠密GPU驻留及查询无关压缩基线对照，补测TTFT、TPOT与P95。",
+    "inputs": [
+      "32K级长上下文负载",
+      "容差参数(ε,δ)档位（含ε0=0.5）",
+      "草图位数档位（含2位草图）",
+      "GPU驻留比例档位（对应每token取回2-23%区间）"
+    ],
+    "baselines": [
+      "全量主机KV offload取回",
+      "稠密GPU驻留注意力",
+      "查询无关KV压缩"
+    ],
+    "metrics": [
+      "解码吞吐、TPOT、TTFT与P95",
+      "每token主机取回比例与PCIe传输量",
+      "任务质量（相对稠密注意力的保持率）",
+      "证书违例率与实际误差分布"
+    ],
+    "support_criteria": [
+      "质量保持稠密注意力90%以上的同时，每token取回量与主机传输缩减按证据量级复现，解码提速保持"
+    ],
+    "reject_criteria": [
+      "证书评估或补取延迟吞没PCIe节省（如ε0=0.5档显著慢于稠密驻留且调参无法恢复），或严格容差下草图证书失效导致质量回退"
+    ],
+    "limitations": [
+      "原始证据仅单卡PCIe卸载评估，无跨节点KV传输与网络侧口径"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea（与MOIRA的覆盖度门控KV页选择、HiSparse的主机分层固定GPU足迹、FlashOffloading的主机权威分阶段双向卸载及覆盖度需求门控PD传输联合调度均不同，核心增量是把(ε,δ)误差证书作为是否访主机的可验证判据、先验证证书再决定补取，附统计保证而非启发式命中率驱动），但证据仅单一arXiv独立组，评估限单卡PCIe卸载、无跨节点网络证据，ε0=0.5时比稠密驻留慢约6倍、2位草图在严格容差下违反δ，对TPN核心场景（跨节点KVCache传输调度）的适用边界未建立；且该记录同日已进入idea_f7841984fcce6a274881证据链并被定位为按证书选择性传输分支的支持，独立成案还是并入该Idea需人工世系决定。",
+  "related_candidate_ids": [
+    "candidate_c8e42d5d6235afa242f5",
+    "candidate_b74aefcc6da4997763c0",
+    "candidate_26fa5d23636135a24c51",
+    "candidate_ac114558ae64d984a62f"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ba481b0a60e1398b5",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea（与MOIRA的覆盖度门控KV页选择、HiSparse的主机分层固定GPU足迹、FlashOffloading的主机权威分阶段双向卸载及覆盖度需求门控PD传输联合调度均不同，核心增量是把(ε,δ)误差证书作为是否访主机的可验证判据、先验证证书再决定补取，附统计保证而非启发式命中率驱动），但证据仅单一arXiv独立组，评估限单卡PCIe卸载、无跨节点网络证据，ε0=0.5时比稠密驻留慢约6倍、2位草图在严格容差下违反δ，对TPN核心场景（跨节点KVCache传输调度）的适用边界未建立；且该记录同日已进入idea_f7841984fcce6a274881证据链并被定位为按证书选择性传输分支的支持，独立成案还是并入该Idea需人工世系决定。",
+      "evidence_item_ids": [
+        "65dfa7dbca4d6e1b86242b08"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

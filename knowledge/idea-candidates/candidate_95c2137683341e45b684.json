@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_95c2137683341e45b684",
+  "identity": {
+    "problem_key": "ascend_npu_spmm_implementation_gap",
+    "mechanism_key": "density_aware_cube_vector_mapping_implicit_ring_sync",
+    "target_key": "ascend_npu_gnn_spmm_training"
+  },
+  "idea_type": "solution_concept",
+  "title": "密度感知Cube/Vector双路映射加单标志位环形缓冲隐式同步补齐昇腾NPU的SpMM内核",
+  "problem": "SpMM在昇腾NPU上缺系统实现，解耦的Cube与Vector通路受显式同步与层级搬运制约，在昇腾上跑GNN的团队缺少高效的SpMM内核支撑。",
+  "hypothesis": "若以内存成本模型与密度感知映射把稠密区域分给Cube通路、稀疏残留留给Vector通路，并在AIV侧用单标志位协调环形缓冲隐式同步以摆脱8个硬件同步标志上限，昇腾NPU上的SpMM内核可大幅快于最强NPU基线，两层GCN训练稳定快于PyG。",
+  "mechanism": "内存成本模型与密度感知映射将稠密区域分给Cube通路、稀疏残留留给Vector，构成双路子内核；AIV侧用单标志位协调环形缓冲隐式同步，摆脱8个硬件同步标志上限。",
+  "target": "昇腾NPU（Ascend解耦Cube/Vector架构）上的SpMM内核与GNN训练",
+  "expected_effect": "820个SuiteSparse矩阵上内核几何均值较最强NPU基线提速12.70至20.55倍；两层GCN训练较PyG快3.5至6.8倍。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发表记录同时给出问题（SpMM在昇腾NPU缺系统实现、解耦的Cube与Vector通路受显式同步与层级搬运制约）、可解释机制（内存成本模型与密度感知映射的双路子内核加AIV侧单标志位环形缓冲隐式同步）、目标对象（昇腾NPU上的SpMM内核与GNN训练）与可检验效应（820个SuiteSparse矩阵几何均值较最强NPU基线提速12.70至20.55倍、两层GCN训练较PyG快3.5至6.8倍）。"
+  },
+  "evidence": [
+    {
+      "item_id": "f79c4d41b0c9252603b482ac",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.01936v1"
+      ],
+      "reason": "Ascend-SpMM记录给出问题（SpMM在昇腾NPU上缺系统实现，解耦的Cube与Vector通路受显式同步与层级搬运制约）、机制（内存成本模型与密度感知映射将稠密区域分给Cube通路、稀疏残留留给Vector的双路子内核；AIV侧用单标志位协调环形缓冲隐式同步，摆脱8个硬件同步标志上限）、目标（昇腾NPU上的SpMM内核与GNN训练）与可检验效应（820个SuiteSparse矩阵上内核几何均值较最强NPU基线提速12.70至20.55倍；两层GCN训练较PyG快3.5至6.8倍），并同时给出三个NPU基线中两个为作者复现、对比A100属跨平台、9.9%至22.2%矩阵慢于cuSPARSE的边界。",
+      "independence_group": "arxiv:2611.01936"
+    }
+  ],
+  "evidence_item_ids": [
+    "f79c4d41b0c9252603b482ac"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.01936v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.01936"
+  ],
+  "unknowns": [
+    "三个NPU基线中两个为作者复现，基线强度与对比口径待独立核验",
+    "对比A100属跨平台口径，9.9%至22.2%矩阵慢于cuSPARSE，慢矩阵的密度特征未界定",
+    "单一arXiv v1预印本独立分组，缺独立复现",
+    "收益仅在SpMM内核与两层GCN训练验证，更深层GNN与稀疏注意力等其他稀疏负载未测"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有昇腾NPU环境以开源Ascend-SpMM内核复现密度感知Cube/Vector双路映射与单标志位环形缓冲隐式同步，在自有SuiteSparse矩阵集与GNN训练负载上对照最强NPU基线与PyG。",
+    "inputs": [
+      "昇腾NPU与CANN工具链环境",
+      "SuiteSparse矩阵集及密度分布画像",
+      "两层GCN类GNN训练负载"
+    ],
+    "baselines": [
+      "最强NPU SpMM基线（独立复测口径）",
+      "昇腾上的PyG SpMM路径",
+      "A100 cuSPARSE跨平台参考"
+    ],
+    "metrics": [
+      "SpMM内核几何均值加速比",
+      "慢于cuSPARSE的矩阵占比",
+      "GNN每epoch训练时间"
+    ],
+    "support_criteria": [
+      "自有矩阵集与GNN负载上几何均值加速与训练加速复现，且慢矩阵占比不高于报告区间"
+    ],
+    "reject_criteria": [
+      "收益主要来自作者复现基线的弱口径，或仅在特定密度区间成立"
+    ],
+    "limitations": [
+      "首版绑定昇腾解耦架构与SpMM算子族，A100对比仅作跨平台参考口径"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同（该证据同日已作为idea_0beeab7573d3f58b0330的支持证据，但彼为内核优化闭环身份，与本候选的昇腾SpMM内核身份不同，亦与解耦单元负载再平衡研究假设的身份不同）；但仅有单一arXiv预印本独立分组支撑，三个NPU基线中两个为作者复现、对比A100属跨平台且9.9%至22.2%矩阵慢于cuSPARSE，基线口径与慢矩阵边界待独立核验，先观察。",
+  "related_candidate_ids": [
+    "candidate_354849a7e622a14673a6",
+    "candidate_cf2a2e504c58dbc374de"
+  ],
+  "related_idea_ids": [
+    "idea_0beeab7573d3f58b0330"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_09fadd3a3c224275d17a",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同（该证据同日已作为idea_0beeab7573d3f58b0330的支持证据，但彼为内核优化闭环身份，与本候选的昇腾SpMM内核身份不同，亦与解耦单元负载再平衡研究假设的身份不同）；但仅有单一arXiv预印本独立分组支撑，三个NPU基线中两个为作者复现、对比A100属跨平台且9.9%至22.2%矩阵慢于cuSPARSE，基线口径与慢矩阵边界待独立核验，先观察。",
+      "evidence_item_ids": [
+        "f79c4d41b0c9252603b482ac"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

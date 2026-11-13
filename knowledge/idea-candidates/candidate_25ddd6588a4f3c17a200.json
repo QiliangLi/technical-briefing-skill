@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_25ddd6588a4f3c17a200",
+  "identity": {
+    "problem_key": "pcie_no_p2p_moe_host_relay",
+    "mechanism_key": "single_step_dma_sender_synced_collectives",
+    "target_key": "single_node_pcie_consumer_gpu_moe_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "单步DMA通信消除PCIe消费级GPU上MoE专家并行的主机中转",
+  "problem": "PCIe消费级GPU之间无P2P互访，MoE专家并行通信只能经CPU内存走NCCL环形路径，逐跳中转与小消息同步开销拖累单机多卡MoE推理。",
+  "hypothesis": "把MoE激活的All-Gather与Reduce-Scatter改为单步DMA通信并按发送方同步，可在单节点PCIe消费级GPU上明显加速MoE推理的prefill与decode。",
+  "mechanism": "单步All-Gather把6卡流量减少40%，Reduce-Scatter缩短依赖链；DMA引擎直接搬移数据、按发送方同步，prefill阶段通信可与计算重叠。",
+  "target": "单节点PCIe消费级GPU上的MoE专家并行激活通信路径",
+  "expected_effect": "在6卡RTX 4090/5090与三个MoE模型上，较vLLM基线prefill最高加速1.66倍、decode吞吐最高提升1.26倍。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "ec1ea177b0a399d941b6ce94",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.40093v1"
+      ],
+      "reason": "ThunderEP给出PCIe无P2P时MoE专家并行通信只能经CPU内存走NCCL环形路径的问题、单步DMA集合通信机制（单步All-Gather减40%流量、Reduce-Scatter缩短依赖链、按发送方同步、prefill通信计算重叠），以及6卡RTX 4090/5090与三个MoE模型上较vLLM基线prefill最高1.66倍、decode吞吐最高1.26倍的对照结果。",
+      "independence_group": "arxiv:2609.40093"
+    }
+  ],
+  "evidence_item_ids": [
+    "ec1ea177b0a399d941b6ce94"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.40093v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.40093"
+  ],
+  "unknowns": [
+    "范围仅单节点PCIe消费级GPU的MoE激活通信，不涉及KVCache与多节点，向TPN核心场景的适用边界未建立",
+    "decode阶段无通信重叠，decode收益的来源与上限未拆解",
+    "小消息下同步开销主导与算法减流量40%的结论向KVCache传输量级外推未经验证",
+    "仅与vLLM基线在6卡RTX 4090/5090与三个MoE模型上对照，无NCCL其他算法与更大卡数对照"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单节点多卡PCIe消费级GPU环境复现单步DMA集合通信与NCCL环形路径的对照，并补测KVCache量级消息下同步开销与带宽项的占比。",
+    "inputs": [
+      "6卡RTX 4090/5090级PCIe环境",
+      "三个MoE模型负载",
+      "消息规模扫描（MoE激活量级到KVCache量级）"
+    ],
+    "baselines": [
+      "vLLM默认NCCL环形路径",
+      "经CPU内存的主机中转传输"
+    ],
+    "metrics": [
+      "prefill加速比",
+      "decode吞吐",
+      "每步通信流量与同步开销占比"
+    ],
+    "support_criteria": [
+      "单步DMA保持prefill与decode加速，且小消息同步开销主导的结论在KVCache量级消息下复现"
+    ],
+    "reject_criteria": [
+      "消息规模放大后带宽项主导，单步DMA收益消失"
+    ],
+    "limitations": [
+      "原始证据仅单节点PCIe消费级GPU且不涉及KVCache与多节点"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv组，范围限单节点PCIe消费级GPU的MoE激活通信、不涉及KVCache与多节点，对TPN核心场景的适用边界未建立，先作相邻证据观察。",
+  "related_candidate_ids": [
+    "candidate_fe5ae3613b2811ae297e"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_b121ca2182e5e296fba5",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv组，范围限单节点PCIe消费级GPU的MoE激活通信、不涉及KVCache与多节点，对TPN核心场景的适用边界未建立，先作相邻证据观察。",
+      "evidence_item_ids": [
+        "ec1ea177b0a399d941b6ce94"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

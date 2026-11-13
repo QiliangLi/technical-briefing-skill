@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_c56cd1e6215a71f3f27f",
+  "identity": {
+    "problem_key": "remote_kv_hit_slower_than_recompute",
+    "mechanism_key": "bandwidth_threshold_cost_model_rank_sharding",
+    "target_key": "remote_kv_layer_deployment"
+  },
+  "idea_type": "solution_concept",
+  "title": "用带宽阈值与固定开销判据按提示选择远程加载或重算",
+  "problem": "远程KV层在生产部署中可能使命中慢于重算，缺少按提示长度判断加载是否值得的部署判据与修复手段。",
+  "hypothesis": "以每提示带宽阈值B*与固定开销T0构成的成本模型判定命中能否胜过重算，并以秩分片存储把每提示带宽提过阈值，可使命中密集流p99恢复到接近本地。",
+  "mechanism": "成本模型给出带宽阈值与固定开销；修复为PCP秩分片、每秩一个Valkey实例、异步加载。",
+  "target": "部署远程KV缓存层的推理引擎",
+  "expected_effect": "重放命中密集流时p99从83.32秒降至0.67秒，98.5%的token仍由远端层提供；8路200k提示吞吐较秩0存储升14%-15%。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-18",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "570220b6b85fafc361c5fde1",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21500v1"
+      ],
+      "reason": "《远程KV缓存命中慢于重算的量化与修复》给出生产实测、成本模型与修复对照。",
+      "independence_group": "arxiv:2610.21500"
+    }
+  ],
+  "evidence_item_ids": [
+    "570220b6b85fafc361c5fde1"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.21500v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.21500"
+  ],
+  "unknowns": [
+    "每条件仅运行一次，10%以内差异未确立",
+    "仅评估预填充且单引擎，中位数仍比重算慢0.09秒"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在内部部署上采集每提示带宽与固定开销，拟合B*与T0并按秩分片重放命中密集流验证p99。",
+    "inputs": [
+      "内部提示长度分布",
+      "存储层带宽画像",
+      "命中密集重放流"
+    ],
+    "baselines": [
+      "秩0集中存储",
+      "本地重算"
+    ],
+    "metrics": [
+      "p99 TTFT",
+      "远端层token占比",
+      "每提示加载字节数"
+    ],
+    "support_criteria": [
+      "判据预测与实测交叉点一致且分片后p99数量级下降"
+    ],
+    "reject_criteria": [
+      "固定开销在真实网络抖动下淹没带宽项"
+    ],
+    "limitations": [
+      "原始评估单次运行且仅预填充"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整，但每条件单次运行且仅评估预填充，独立支持不足。",
+  "related_candidate_ids": [
+    "candidate_827f27dbafeac04e8d94"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-18",
+  "last_updated_issue": "2026-10-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_7190f548f9860951d3d",
+      "issue_date": "2026-10-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整，但每条件单次运行且仅评估预填充，独立支持不足。",
+      "evidence_item_ids": [
+        "570220b6b85fafc361c5fde1"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

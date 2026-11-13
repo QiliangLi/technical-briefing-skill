@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6e5db588e2f81f9058b6",
+  "identity": {
+    "problem_key": "lossy_narrowband_kv_handoff",
+    "mechanism_key": "value_ordered_deadline_fec",
+    "target_key": "edge_multi_agent_kv_handoff"
+  },
+  "idea_type": "solution_concept",
+  "title": "有损窄带KV交接按效用排序并用截止期感知FEC纠错",
+  "problem": "边缘多智能体交接任务时，已预填的KV缓存须在TTFT前穿过有损窄带链路，紧截止期下完整传输常不可行，直接截断会让任务质量大幅下降。",
+  "hypothesis": "若按KV各层与位置的效用画像排定发送顺序，并用流式前向纠错按接收反馈调度修复包，则在丢包与截止期双重受限的边缘交接下，任务质量应显著优于截断传输或无差别纠错基线。",
+  "mechanism": "先以KV清零实验建立各层与位置的效用画像并排定发送顺序，再用GF(2^8)流式前向纠错，由Double-DQN依接收反馈调度修复包，使截止期内送达的KV价值最大化。",
+  "target": "边缘或跨节点多智能体KV缓存交接的有损窄带传输路径",
+  "expected_effect": "约8.4%丢包且截止期只容八成KV串行传输时，六组任务平均token F1约43%对最强基线约8%，控制开销P99低于一个包间隔。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-29",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的价值排序加自适应纠错机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "ed4d6f4a29231c530ddb5255",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21390v1"
+      ],
+      "reason": "PriorityFEC记录给出紧截止期有损窄带KV交接的量化对照：约8.4%丢包且截止期只容八成KV串行传输时，KV清零效用画像排序加GF(2^8)流式FEC并由Double-DQN调度修复包，六组任务平均token F1约43%对最强基线约8%，控制开销P99低于一个包间隔。",
+      "independence_group": "arxiv:2610.21390"
+    }
+  ],
+  "evidence_item_ids": [
+    "ed4d6f4a29231c530ddb5255"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.21390v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.21390"
+  ],
+  "unknowns": [
+    "可见指标是任务token F1，TTFT/TPOT时延与吞吐未测",
+    "宽截止期下FLEC-RT多项反超，适用边界待划定",
+    "回放规模小（六组任务），跨模型与跨负载泛化未知",
+    "KV清零效用画像的构建成本与模型结构敏感性未知"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "边缘交接测试床：两侧节点经可配置丢包率与带宽的有损窄带链路相连，发送侧持有小模型多智能体任务的已预填KV缓存，接收侧施加仅容部分KV串行传输的TTFT截止期。",
+    "inputs": [
+      "小模型多智能体交接任务集与已预填KV缓存",
+      "可配置丢包率（含约8.4%）与带宽的链路仿真",
+      "多档截止期预算（含仅容八成KV串行传输档）",
+      "各层各位置KV效用画像（KV清零实验）"
+    ],
+    "baselines": [
+      "截止期处直接截断的串行传输",
+      "不按效用排序的无差别FEC",
+      "FLEC-RT",
+      "无条件重传的可靠传输"
+    ],
+    "metrics": [
+      "任务token F1",
+      "TTFT与TPOT",
+      "截止期违约率",
+      "控制开销P99（按包间隔计）",
+      "修复包带宽开销"
+    ],
+    "support_criteria": [
+      "约8.4%丢包与八成KV截止期预算下，效用排序加自适应FEC的任务F1显著高于截断与无差别FEC基线",
+      "控制开销P99保持低于一个包间隔",
+      "补测的TTFT/TPOT无显著回退"
+    ],
+    "reject_criteria": [
+      "宽截止期档位下相对FLEC-RT无优势或被反超",
+      "时延或吞吐代价抵消质量收益",
+      "效用画像换模型后收益消失"
+    ],
+    "limitations": [
+      "证据仅单篇arXiv记录单独立来源",
+      "原评估为回放式小规模任务",
+      "原文献无时延指标可见性"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且区别于既有候选与Idea，但仅单篇单独立来源支持，可见指标是任务F1而非TTFT/TPOT，宽截止期下FLEC-RT多项反超，先观察。",
+  "related_candidate_ids": [
+    "candidate_12d1fbd40f0591dbe67d",
+    "candidate_8fab1b37d95800b51284"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-10-29",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ba6b6a305327396b2567",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且区别于既有候选与Idea，但仅单篇单独立来源支持，可见指标是任务F1而非TTFT/TPOT，宽截止期下FLEC-RT多项反超，先观察。",
+      "evidence_item_ids": [
+        "ed4d6f4a29231c530ddb5255"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

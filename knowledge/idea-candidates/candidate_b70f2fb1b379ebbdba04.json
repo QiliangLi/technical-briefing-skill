@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_b70f2fb1b379ebbdba04",
+  "identity": {
+    "problem_key": "batch1_decode_weight_bandwidth_wall",
+    "mechanism_key": "lossless_entropy_coding_fused_matvec_decode",
+    "target_key": "consumer_gpu_batch1_llm_decoding"
+  },
+  "idea_type": "solution_concept",
+  "title": "以无损熵编码压缩权重并在矩阵向量乘融合核内解码，缓解消费级GPU单流LLM解码的带宽瓶颈",
+  "problem": "单流（batch-1）LLM解码每个token都要搬运全部权重，本地低时延部署受显存带宽限制；消费级GPU上该带宽瓶颈使低并发本地推理的单流解码吞吐远低于硬件潜力。",
+  "hypothesis": "若对量化后仍非均匀的权重施加无损熵编码（dtANS-LLM），并在batch-1矩阵向量乘融合核内解码、超参数按GPU与checkpoint自整定，则单流解码每token搬运的权重量显著下降，解码吞吐较最快基线提升（4060 Ti约2.52倍、5090约1.48倍），且因编码无损不引入超出底层量化之外的精度损失。",
+  "mechanism": "dtANS-LLM对量化后仍非均匀的权重做无损熵编码；batch-1用融合核把解码并入矩阵向量乘；超参数按GPU与checkpoint自整定。",
+  "target": "消费级GPU（4060 Ti与5090）上Llama 3.1 8B（2.1-bit checkpoint）的batch-1单流LLM解码，即低并发本地推理（vLLM插件）场景。",
+  "expected_effect": "在Llama 3.1 8B的2.1-bit checkpoint上，较最快基线提速2.52倍（4060 Ti，81.6 tok/s）与1.48倍（5090）。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（单流解码每个token都搬运全部权重、本地低时延部署受带宽限制）、可解释机制（量化后权重仍非均匀，dtANS-LLM无损熵编码，batch-1融合核把解码并入矩阵向量乘，超参数按GPU与checkpoint自整定）、目标对象（消费级GPU上Llama 3.1 8B的2.1-bit checkpoint单流解码）与可检验效应（较最快基线提速2.52倍（4060 Ti，81.6 tok/s）与1.48倍（5090））。"
+  },
+  "evidence": [
+    {
+      "item_id": "1457b432889301c766397e89",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09424v2"
+      ],
+      "reason": "MINE记录给出问题（单流解码每个token都搬运全部权重，本地低时延部署受带宽限制）、机制（dtANS-LLM对量化后仍非均匀的权重做无损熵编码，batch-1用融合核把解码并入矩阵向量乘，超参数按GPU与checkpoint自整定）、目标（消费级GPU上Llama 3.1 8B的2.1-bit checkpoint单流解码）与可检验效应（较最快基线提速2.52倍（4060 Ti，81.6 tok/s）与1.48倍（5090）），并给出仅一个模型与两张消费级GPU、无数据中心与多卡结果、端到端精度验证缺失的边界，及低并发本地推理可试用其vLLM插件、须在目标GPU重跑调参并自测精度的适用提示。",
+      "independence_group": "arxiv:2611.09424"
+    }
+  ],
+  "evidence_item_ids": [
+    "1457b432889301c766397e89"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.09424v2"
+  ],
+  "independence_groups": [
+    "arxiv:2611.09424"
+  ],
+  "unknowns": [
+    "仅实测Llama 3.1 8B单一模型与4060 Ti、5090两张消费级GPU，无数据中心与多卡结果",
+    "端到端精度验证缺失，无损性仅在熵编码层面成立、未经任务级验证",
+    "加速自4060 Ti的2.52倍降至5090的1.48倍，带宽约束较松的更新代际上收益边界未刻画",
+    "超参数须按GPU与checkpoint自整定，迁移到其他模型与GPU的调参成本未量化",
+    "单一arXiv v2预印本独立分组，缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在4060 Ti与5090（或等价代际消费级GPU）上以MINE的vLLM插件复现无损熵编码加融合解码的batch-1单流解码，按目标GPU与checkpoint重跑超参数自整定，对照最快基线并自测端到端精度。",
+    "inputs": [
+      "消费级GPU两档（4060 Ti与5090或等价代际）",
+      "Llama 3.1 8B的2.1-bit checkpoint",
+      "dtANS-LLM超参数自整定配置与vLLM插件"
+    ],
+    "baselines": [
+      "最快量化基线（同checkpoint未熵编码解码）",
+      "vLLM原生batch-1解码"
+    ],
+    "metrics": [
+      "单流解码吞吐（tok/s）",
+      "相对最快基线加速比",
+      "端到端任务精度或困惑度"
+    ],
+    "support_criteria": [
+      "目标GPU上复现1.48至2.52倍量级的加速且端到端精度与未熵编码checkpoint一致"
+    ],
+    "reject_criteria": [
+      "融合解码的核内计算开销在更新代际GPU上吞掉带宽节省，或端到端精度受损"
+    ],
+    "limitations": [
+      "首版仅覆盖一个模型与两张消费级GPU，无数据中心与多卡场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备：单流解码每个token都搬运全部权重、本地低时延部署受显存带宽限制，dtANS-LLM对量化后仍非均匀的权重做无损熵编码、batch-1用融合核把解码并入矩阵向量乘且超参数按GPU与checkpoint自整定的机制明确，目标为消费级GPU上Llama 3.1 8B（2.1-bit checkpoint）的batch-1单流解码，效应为较最快基线提速2.52倍（4060 Ti，81.6 tok/s）与1.48倍（5090）；且与33个既有候选及4个Idea的身份与含义均不同——最接近的candidate_6323fce8732010f20bef系HBM容量墙下以8%至45%运行开销换21%至60%显存节省、目标为数据中心显存受限内核，candidate_677162bb3beb92db288b系有损NVFP4协同训练面向Blackwell MoE推理栈，本候选是带宽受限单流解码经无损熵编码取得的净提速，问题、机制与目标三键均不同。但仅有单一arXiv v2预印本独立分组支撑，缺独立复现；仅实测一个模型与两张消费级GPU、无数据中心与多卡结果，端到端精度验证缺失，适用边界未划定，先观察。",
+  "related_candidate_ids": [
+    "candidate_6323fce8732010f20bef",
+    "candidate_677162bb3beb92db288b"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ae17a66dd588d00b8387",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备：单流解码每个token都搬运全部权重、本地低时延部署受显存带宽限制，dtANS-LLM对量化后仍非均匀的权重做无损熵编码、batch-1用融合核把解码并入矩阵向量乘且超参数按GPU与checkpoint自整定的机制明确，目标为消费级GPU上Llama 3.1 8B（2.1-bit checkpoint）的batch-1单流解码，效应为较最快基线提速2.52倍（4060 Ti，81.6 tok/s）与1.48倍（5090）；且与33个既有候选及4个Idea的身份与含义均不同——最接近的candidate_6323fce8732010f20bef系HBM容量墙下以8%至45%运行开销换21%至60%显存节省、目标为数据中心显存受限内核，candidate_677162bb3beb92db288b系有损NVFP4协同训练面向Blackwell MoE推理栈，本候选是带宽受限单流解码经无损熵编码取得的净提速，问题、机制与目标三键均不同。但仅有单一arXiv v2预印本独立分组支撑，缺独立复现；仅实测一个模型与两张消费级GPU、无数据中心与多卡结果，端到端精度验证缺失，适用边界未划定，先观察。",
+      "evidence_item_ids": [
+        "1457b432889301c766397e89"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

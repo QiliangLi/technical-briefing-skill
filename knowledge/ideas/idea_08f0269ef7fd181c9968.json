@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_08f0269ef7fd181c9968",
+  "identity": {
+    "problem_key": "cross_node_prefix_reuse",
+    "mechanism_key": "hot_prefix_replication",
+    "target_key": "distributed_kv_placement"
+  },
+  "idea_type": "solution_concept",
+  "title": "把热前缀当作可复制对象，联合路由与跨节点 KV 放置",
+  "problem": "跨节点前缀复用若只依赖请求落点，会因缓存位置与路由割裂而重复计算或远程搬移。",
+  "hypothesis": "根据前缀热度复制 KV，并让路由读取同一放置状态，可以提高跨节点复用并降低 TTFT。",
+  "mechanism": "维护前缀热度、复制预算和节点目录，由路由与分布式张量池共同决定放置与检索。",
+  "expected_effect": "减少重复 Prefill 和跨节点冷检索，同时控制复制带来的内存与更新成本。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "69f88e7cf73dab2f22f7e6f3",
+      "issue_date": "2026-08-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.22648v1"
+      ],
+      "reason": "PTStore 以 CDN 式热前缀复制验证了跨节点分布式检索路径。"
+    },
+    {
+      "item_id": "a93564bff4afb59e45ade272",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.06007v1"
+      ],
+      "reason": "TensorCast 展示了把路由与 KV 放置放入统一张量生命周期层。"
+    },
+    {
+      "item_id": "d58fd88331805fcc606d1dc7",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.19677v1"
+      ],
+      "reason": "《CacheRoute 以计划式前缀亲和路由提升 KV 复用》为该候选的问题、机制或边界提供已发布依据。"
+    },
+    {
+      "item_id": "118ded5a1be93f4bec3b8337",
+      "issue_date": "2026-09-16",
+      "source_urls": [
+        "https://github.com/LMCache/LMCache/releases/tag/v0.5.4"
+      ],
+      "reason": "LMCache v0.5.4 把 KV 缓存发现从单节点升级为舰队级：键目录加事件驱动控制平面、专用 ingest 层与指标导出，为把热前缀当作可复制对象、联合路由与跨节点放置提供了正在工程化的参考形态；Release Notes 无量化基准。"
+    },
+    {
+      "item_id": "4556110b217a4d31038037df",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.29820v1"
+      ],
+      "reason": "UlaCache把KV放置状态收敛为统一逻辑地址映射，引擎与路由读同一映射、KV移动只更新映射且仅传缺失条目，支持让路由读取同一放置状态能提高复用的机制前提；但实验全部限于节点内GPU池与CPU内存，无跨节点热度复制与TTFT数据，只能作为跨节点方案的节点内对照基线。"
+    },
+    {
+      "item_id": "d2334e0d811f04c7dd7eaee4",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.40292v1"
+      ],
+      "reason": "DolphinRouting把两侧缓存折算ISL作为路由特征之一，按请求簇离线学习聚合或分离prefill的查表决策并在H20集群vLLM+Mooncake真实部署中P90 TTFT降5.7-7.9%、P90 TPOT降2.6-10.1%；支持让路由读取缓存放置状态可降低TTFT的机制前提，但不含前缀热度复制，吞吐与KV传输量未报告。"
+    },
+    {
+      "item_id": "e196a92a7cf23d4c8fdd2524",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09474v1"
+      ],
+      "reason": "Nebula把位置无关KV片段升级为集群级可调度对象：路由器记录预期缓存位置与负载并经节点事件纠正、以幽灵命中反馈自调前缀与位置无关缓存的容量配比，并把排队、计算与KV传输成本并入预填完成时间估计来调度跨节点取用与并行预填充，四模型RAG/代理负载中位TTFT较最强基线平均降61.4%、找回前缀缓存漏失token的76.1%；为“路由读取同一放置状态可提高跨节点复用并降低TTFT”给出集群级实证，但其机制是容量配比与并行预填权衡而非前缀热度复制（每请求仅一个输出token，TPOT、吞吐与网络利用率未报告）。"
+    },
+    {
+      "item_id": "106c093ccfdf3a7b18974a2e",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10178v1"
+      ],
+      "reason": "KV缓存存储行为刻画用11条trace证明执行信号显著优于新近度做保留决策：按负载定制的空闲TTL较全局p90（253秒）最多多保留22%会话内命中、少留40%死状态，会话ID计数比请求级少标4至700倍状态且41%至99%被复用；支持“前缀热度可由工作负载/会话信号估计”的复制预算前提，但全部结论来自trace驱动模拟、无TTFT与网络指标，不构成跨节点复用本身的性能证据。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "热度变化下的复制抖动与目录一致性成本。",
+    "多租户隔离和前缀隐私边界。"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "带有限显存、前缀流行度和请求路由的多节点缓存模拟器。",
+    "inputs": [
+      "Zipf 热度参数",
+      "复制因子",
+      "缓存容量",
+      "节点数",
+      "前缀更新率"
+    ],
+    "baselines": [
+      "无复制的一致性哈希",
+      "本地 LRU",
+      "固定复制因子"
+    ],
+    "metrics": [
+      "P95 TTFT",
+      "跨节点传输字节",
+      "重复 Prefill 次数",
+      "显存占用",
+      "复制写放大"
+    ],
+    "support_criteria": [
+      "在显存预算内持续降低重复 Prefill 和尾 TTFT，复制写放大保持可控。"
+    ],
+    "reject_criteria": [
+      "热度漂移使复制抖动抵消检索收益，或目录/同步成本高于重算。"
+    ],
+    "limitations": [
+      "模拟不能覆盖真实模型前缀可共享性、租户安全和网络故障恢复。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-10",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_fd86a73915d0aa587361",
+      "issue_date": "2026-08-10",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "已发布证据给出了明确问题和可检验机制，因此建立 Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "a93564bff4afb59e45ade272"
+      ]
+    },
+    {
+      "event_id": "idea_decision_3f8d857fffb0610a3cd5",
+      "issue_date": "2026-08-11",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "69f88e7cf73dab2f22f7e6f3"
+      ]
+    },
+    {
+      "event_id": "idea_decision_a610146e3916c43abd3d",
+      "issue_date": "2026-09-04",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据继续支持同一问题、机制和目标身份；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "d58fd88331805fcc606d1dc7"
+      ]
+    },
+    {
+      "event_id": "idea_decision_363911c73a306768cbe",
+      "issue_date": "2026-09-16",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增已发布证据为热前缀复制对象的控制平面形态提供工程参照；Idea 状态暂不改变。",
+      "evidence_item_ids": [
+        "118ded5a1be93f4bec3b8337"
+      ]
+    },
+    {
+      "event_id": "idea_decision_a8cf07a93683d3ebcdf",
+      "issue_date": "2026-10-23",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增UlaCache作为统一放置状态被路由直接读取的节点内实证，状态保持observing，跨节点前缀热度复制仍无直接证据。",
+      "evidence_item_ids": [
+        "4556110b217a4d31038037df"
+      ]
+    },
+    {
+      "event_id": "idea_decision_4b0c7b0f727888633e62",
+      "issue_date": "2026-11-02",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增真实集群缓存感知PD路由实证，支持路由读取放置状态的前提；状态保持observing，前缀热度复制与跨节点复用的TTFT收益仍无直接证据。",
+      "evidence_item_ids": [
+        "d2334e0d811f04c7dd7eaee4"
+      ]
+    },
+    {
+      "event_id": "idea_decision_d5f84407757560770126",
+      "issue_date": "2026-11-11",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增集群级位置无关缓存调度实证与会话级保留信号：前者支持路由读取放置状态降低TTFT的前提、后者支持前缀热度可由执行信号估计；状态保持observing，跨节点前缀热度复制本身的TTFT收益仍无直接证据。",
+      "evidence_item_ids": [
+        "e196a92a7cf23d4c8fdd2524",
+        "106c093ccfdf3a7b18974a2e"
+      ]
+    }
+  ]
+}

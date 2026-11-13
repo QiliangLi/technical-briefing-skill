@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8526e9de0019513782c9",
+  "identity": {
+    "problem_key": "model_switch_prefix_cache_invalidation",
+    "mechanism_key": "slo_slack_shadow_prefill_alternates",
+    "target_key": "multi_model_agent_prefix_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "用SLO余量为备选模型影子预填充会话上下文，消除Agent模型切换的前缀缓存失效",
+  "problem": "Agent逐步路由在切换模型时前缀缓存失效：命中率从80-89%跌至44-65%，切换调用退化为冷前缀重算，切换TTFT与token成本被抬高，逐步模型路由的收益被切换开销部分抵消。",
+  "hypothesis": "若在当前模型服务的SLO时延余量内，用空闲容量为按切换可能性排序的备选模型预填充会话上下文的影子副本，并以影子KV限占缓存池25%、优先淘汰、可溢出主机内存的预算约束保护正常流量，则多数切换调用可直接命中备侧前缀缓存，在不损害正常流量SLO的前提下显著压低切换调用TTFT与token成本。",
+  "mechanism": "当前模型服务时按切换可能性对备选模型排序，在SLO时延余量内于备选模型预填充影子上下文；影子KV限占缓存池25%、优先淘汰并可溢出到主机内存，切换发生时调用直接命中已就绪的备侧前缀缓存，避免冷重算。",
+  "target": "多模型Agent服务的前缀缓存与KV池（vLLM式服务栈）",
+  "expected_effect": "16卡H100的vLLM原型实测口径：切换调用TTFT平均降61.9%，token成本估算降20.4%，正常流量SLO达成率微升0.1-0.3个百分点。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应：切换命中率坍塌的量化、影子预填充机制与16卡H100 vLLM原型实测。"
+  },
+  "evidence": [
+    {
+      "item_id": "dfb4bd481a9af4315c948fba",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13176v1"
+      ],
+      "reason": "SHADOWPREFILL在生产形态上量化了问题（Agent逐步路由切换模型时前缀缓存命中率从80-89%降至44-65%）并给出机制与实测：按切换可能性排序备选模型，在SLO时延余量内为备选模型预填充影子上下文，影子KV限占池25%、优先淘汰并可溢出主机内存；16卡H100的vLLM原型上切换调用TTFT平均降61.9%、token成本估算降20.4%、正常流量SLO达成率微升0.1-0.3个百分点。边界：KV移动均在实例内或集群内、无WAN数据，收益集中于小目标模型与长上下文、紧SLO与高负载下收窄。",
+      "independence_group": "arxiv:2611.13176"
+    }
+  ],
+  "evidence_item_ids": [
+    "dfb4bd481a9af4315c948fba"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.13176v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.13176"
+  ],
+  "unknowns": [
+    "全部KV移动均在实例内或集群内实测，无WAN/跨域数据，跨域形态收益未知",
+    "收益集中于小目标模型与长上下文，紧SLO与高负载下收窄，适用负载边界未系统刻画",
+    "切换可能性排序依赖路由器可预知性，真实Agent负载下的切换预测质量分布未给出",
+    "影子KV占池25%上限、优先淘汰与主机内存溢出参数在其他硬件与负载下的最优点未知",
+    "token成本降低20.4%为估算口径而非直接实测",
+    "与KV迁移/翻译式交接（idea_7d4c5b213d117cba4697的潜空间映射加刷新调度）在同一切换问题上的取舍与联合收益未比较"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在多模型Agent服务原型（vLLM）上实现按切换可能性排序的影子预填充：SLO时延余量检测、影子KV池（25%上限、优先淘汰、主机内存溢出），回放含模型切换的Agent路由trace并与无影子预填充对照。",
+    "inputs": [
+      "真实Agent多模型路由trace（含切换序列及路由器输出的切换可能性）",
+      "多档负载强度与SLO目标",
+      "备选模型对组合（含大小模型搭配）"
+    ],
+    "baselines": [
+      "无影子预填充的逐模型独立前缀缓存",
+      "切换时冷重算",
+      "KV翻译/迁移式跨模型交接（如冻结模型KV翻译器）"
+    ],
+    "metrics": [
+      "切换调用TTFT均值与P95",
+      "前缀缓存命中率",
+      "token成本",
+      "正常流量SLO达成率",
+      "影子KV显存开销与淘汰率"
+    ],
+    "support_criteria": [
+      "切换调用TTFT显著下降且正常流量SLO达成率不劣于噪声范围",
+      "token成本下降可复现，且收益随负载/SLO松紧的变化曲线刻画出适用边界"
+    ],
+    "reject_criteria": [
+      "紧SLO或高负载下影子预填充挤占正常prefill算力导致SLO显著劣化",
+      "切换可能性预测失准使命中率收益消失",
+      "收益仅在小目标模型窄场景成立且不可迁移"
+    ],
+    "limitations": [
+      "原始证据仅16卡H100单原型、实例内/集群内KV移动，无WAN数据",
+      "验证计划为建议，未执行"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且身份区别于既有候选与Idea：本期刚吸收该记录为证据的idea_7d4c5b213d117cba4697身份为跨模型KV潜空间映射加阈值刷新调度，其证据注记明确影子预填充以提前重算而非状态迁移处理同一问题、不回答迁移加刷新的可用边界；JointServe候选（unified_weight_shard_kv_budget）为单卡显存统一预算、Fairway候选（load_switched_dual_lane_prefill_scheduling）为复用-公平prefill仲裁，均非为备选模型预填充影子上下文；但证据为单一预印本、仅16卡H100单原型与单一独立组，且无WAN跨域数据，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_5393564e98d6d52d688e",
+    "candidate_8bb95c60c96c52d5911b"
+  ],
+  "related_idea_ids": [
+    "idea_7d4c5b213d117cba4697"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_327f4a50893ef924d717",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应完整，身份区别于跨模型KV迁移调度Idea与多模型显存预算、prefill仲裁等既有候选；但证据为单一预印本与单一独立组、无WAN数据，缺独立支持与适用边界确认，暂缓等待人工裁决。",
+      "evidence_item_ids": [
+        "dfb4bd481a9af4315c948fba"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

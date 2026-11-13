@@ -1,0 +1,1017 @@
+{
+  "schema_version": 1,
+  "reader_contract_version": 1,
+  "source_issue_hash": "851e4c9ae3aa1f148b71ecaf9f13c4c72e1fdb138a63c80278d31d8fe0ec1f0a",
+  "issue_date": "2026-09-16",
+  "headline": "AI语义Fabric技术情报（公测版）",
+  "judgements": [
+    {
+      "title": "编码 Agent 的两个便宜杠杆:321 token 的定向上下文与纠错顺序",
+      "body": "DDBENCH 的双条件对照把一个模糊问题变成了可测量的数:平均只有 321 token 的定向调试上下文,让十个模型在六十个分布式系统缺陷上的聚合通过率提升 18.1 个百分点,弱模型主要涨通过率,强模型主要省 token,平均 token 消耗约减半。同期的 harness 实验从反面补上前提:进化好的 harness 被专家全轨迹模仿破坏后,七项企业任务全部回退,只有重写失败轮次的在策略纠错把成功率从 78.0% 安全推到 79.7%。两条证据合起来读,在动模型权重之前,先排对上下文供给与 harness 迭代的顺序,是当前成本最低的路径。",
+      "evidence_item_ids": [
+        "26e0483ebfbb21980b42f136",
+        "148e019b96cd62b15911aceb"
+      ]
+    },
+    {
+      "title": "KV 缓存的驱逐与失效粒度开始跟随任务语义",
+      "body": "SGLang 连续两个版本的变化方向一致。会话引用感知驱逐让 session_id 决定哪些前缀不能逐出,会话结束才释放引用,面向的正是 agentic 与 RL rollout 的多轮负载;最新版本把统一 Radix 树推成全模型默认,L3 存储支持运行时挂载卸载,KV 池尺寸核算也开始计入常驻权重内存。缓存的正确性边界和容量规划正在从通用 LRU 走向感知负载语义,会话级多轮负载是第一批受益者,代价是这些能力目前都缺少量化的命中率与 TTFT 数据,评估要自己做。",
+      "evidence_item_ids": [
+        "37d70c4e94dbbab119def6ba",
+        "21914b7ee925e43025949605"
+      ]
+    },
+    {
+      "title": "回溯式纠错进了生产,时延价签也一起到了",
+      "body": "ACTS-SQL 是这期里唯一带着生产数据的纠错系统:树结构分支加回溯加执行验证,在火山引擎日志服务上把真实查询执行准确率从 36.77% 提到 53.61%,公开基准上超此前最好方法九点四个百分点。代价同样具体,平均每实例约五次 API 调用,端到端约三分钟,接近无纠错路径的三十五倍,弱骨干上增益有限。把这种结构迁移到内部代码修复或 DSL 生成之前,时延预算和模型能力门槛是两个必须先回答的问题。",
+      "evidence_item_ids": [
+        "ecb917b03037725e3180d8ff"
+      ]
+    }
+  ],
+  "watch_next": [
+    "SGLang 会话引用感知驱逐与统一树默认化的命中率、TTFT 量化数据,关注社区部署报告",
+    "ACTS-SQL 类回溯式纠错的时延优化进展,以及弱骨干增益边界是否被后续工作突破",
+    "LMCache 舰队级缓存发现的量化基准与真实部署数据"
+  ],
+  "items": {
+    "195c8451c59c8f1421205d97": {
+      "source_item_hash": "071abd2afe45f1bb1c5afaffc826cab7",
+      "role": "core",
+      "topic_id": "frontier_exploration",
+      "direction_id": "agent_tooling_frontier",
+      "published_at": "2026-09-08T16:19:06Z",
+      "score": 95.74,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.08965v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-08T16:19:06Z"
+        }
+      ],
+      "title": "把自动驾驶场景测试的整条流水线交给 LLM Agent 打理",
+      "lead": "慕尼黑工大的 PlannerForge 针对的是一个碎片化的老问题。场景生成、检索、修改、执行与结果分析各自为政,规划器的代价权重长期靠手工调。它把 Pegasus 六阶段全部纳入同一个 LLM Agent 框架,再加代价调优与基准对比两个阶段,由一个模块路由器调度经过 schema 校验的模块。",
+      "body": [
+        "效果体现在三处。场景修改经 CommonRoad 与 SUMO 之间的往返完成,物理有效率从基线的 31% 提到 94% 以上;场景检索的 rank-1 满足率 92.0%,BM25 只有 67.5%;对 Frenetix 规划器的代价调优在 400 条样本时把成功率从 50.4% 拉到 70.2%。8 万次调用里,开源 20-35B 模型在 5 个任务的 3 个追平商用 API。",
+        "系统仍是开环,定量结果只覆盖 Frenetix 一个规划器,评测语料以德国地图为主。论文的三条经验对我们直接可用:提示技术要对着具体失败模式选,外部思维链会与原生推理模型互相干扰,可靠性最终靠每个调用外的 schema 校验兜底。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "慕尼黑工大的 PlannerForge 针对的是一个碎片化的老问题。场景生成、检索、修改、执行与结果分析各自为政,规划器的代价权重长期靠手工调。它把 Pegasus 六阶段全部纳入同一个 LLM Agent 框架,再加代价调优与基准对比两个阶段,由一个模块路由器调度经过 schema 校验的模块。"
+        },
+        {
+          "heading_key": "result",
+          "text": "效果体现在三处。场景修改经 CommonRoad 与 SUMO 之间的往返完成,物理有效率从基线的 31% 提到 94% 以上;场景检索的 rank-1 满足率 92.0%,BM25 只有 67.5%;对 Frenetix 规划器的代价调优在 400 条样本时把成功率从 50.4% 拉到 70.2%。8 万次调用里,开源 20-35B 模型在 5 个任务的 3 个追平商用 API。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "系统仍是开环,定量结果只覆盖 Frenetix 一个规划器,评测语料以德国地图为主。论文的三条经验对我们直接可用:提示技术要对着具体失败模式选,外部思维链会与原生推理模型互相干扰,可靠性最终靠每个调用外的 schema 校验兜底。"
+        }
+      ]
+    },
+    "c817bf2d42eca5ff0e9f4642": {
+      "source_item_hash": "d7354e3989922754b17b74f2666d0f9f",
+      "role": "core",
+      "topic_id": "frontier_exploration",
+      "direction_id": "agent_tooling_frontier",
+      "published_at": "2026-09-01T14:48:08Z",
+      "score": 95.44,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.01335v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-01T14:48:08Z"
+        }
+      ],
+      "title": "推理时配置选择可以当成无限多臂老虎机来在线调",
+      "lead": "线上 LLM 系统的模型选择、检索深度、提示与温度没有现成验证集,只能一边服务一边观察。IMABO 把这个问题命名为在线超参优化,解成无限多臂老虎机,一个可插拔的 bandit 策略在已采样配置间分配流量,另一个 oracle 负责提议新配置。",
+      "body": [
+        "其中的 IMOSS 策略让活动集按 t 的 β 次幂缓慢增长,并给出免重启的分位遗憾界。活动集长得慢意味着换配置的次数少,这对每次切换都要预热的生产系统很实际。延迟反馈场景下,它按有效计数节流新配置的准入。",
+        "在 HotpotQA 检索问答流水线的真实调优里,TabPFN oracle 的在线平均遗憾最低;4D 合成函数上它对 StoSOO 等分层优化基线取得最均衡的权衡。注意实验都是把预计算基准搬上线,不算真实生产流量。论文自己的建议也直接:优先 mutation oracle,代理模型留给最优难以到达的场景。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "线上 LLM 系统的模型选择、检索深度、提示与温度没有现成验证集,只能一边服务一边观察。IMABO 把这个问题命名为在线超参优化,解成无限多臂老虎机,一个可插拔的 bandit 策略在已采样配置间分配流量,另一个 oracle 负责提议新配置。"
+        },
+        {
+          "heading_key": "mechanism",
+          "text": "其中的 IMOSS 策略让活动集按 t 的 β 次幂缓慢增长,并给出免重启的分位遗憾界。活动集长得慢意味着换配置的次数少,这对每次切换都要预热的生产系统很实际。延迟反馈场景下,它按有效计数节流新配置的准入。"
+        },
+        {
+          "heading_key": "result",
+          "text": "在 HotpotQA 检索问答流水线的真实调优里,TabPFN oracle 的在线平均遗憾最低;4D 合成函数上它对 StoSOO 等分层优化基线取得最均衡的权衡。注意实验都是把预计算基准搬上线,不算真实生产流量。论文自己的建议也直接:优先 mutation oracle,代理模型留给最优难以到达的场景。"
+        }
+      ]
+    },
+    "18f6147179430e12ac0d1f2a": {
+      "source_item_hash": "9a7332b8c2ccb17a35982e5acf945352",
+      "role": "core",
+      "topic_id": "frontier_exploration",
+      "direction_id": "systems_mechanism_transfer",
+      "published_at": "2026-08-27T13:15:26Z",
+      "score": 95.04,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.27099v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-27T13:15:26Z"
+        }
+      ],
+      "title": "只看纠缠成本的量子线路划分评估,漏掉了最贵的部分",
+      "lead": "分布式量子计算要把线路切开分到多台 QPU,现有评估几乎只数纠缠比特(e-bit)总成本。WPI 做了一条 YAML 驱动的可复现流水线,统一调用 DISQCO 和 Pytket-DQC 三族划分算法,600 秒超时,把单体电路与分布式电路放在一起比 e-bit、编译耗时和线路结构特征。",
+      "body": [
+        "结果的反直觉之处在于,e-bit 成本接近的划分,线路深度膨胀和门密度塌缩可以差得很远。MLFM-R 成功率 90.4%,FGP-rOEE 81.5%,几乎全部输在 17.3% 的划分超时;Pytket 三个变体只有 33% 到 34%,卡在后处理超时。从全连接拓扑换成线性拓扑也会明显抬高 e-bit 消耗。",
+        "这条对量子领域之外同样成立。我们评估自己的放置与传输算法时,如果只盯传输字节数或命中率,同样会漏掉时延膨胀这类结构惩罚。把端到端时延和资源占用绑进评估,是这篇论文最直接的迁移价值。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "分布式量子计算要把线路切开分到多台 QPU,现有评估几乎只数纠缠比特(e-bit)总成本。WPI 做了一条 YAML 驱动的可复现流水线,统一调用 DISQCO 和 Pytket-DQC 三族划分算法,600 秒超时,把单体电路与分布式电路放在一起比 e-bit、编译耗时和线路结构特征。"
+        },
+        {
+          "heading_key": "contradiction",
+          "text": "结果的反直觉之处在于,e-bit 成本接近的划分,线路深度膨胀和门密度塌缩可以差得很远。MLFM-R 成功率 90.4%,FGP-rOEE 81.5%,几乎全部输在 17.3% 的划分超时;Pytket 三个变体只有 33% 到 34%,卡在后处理超时。从全连接拓扑换成线性拓扑也会明显抬高 e-bit 消耗。"
+        },
+        {
+          "heading_key": "implication",
+          "text": "这条对量子领域之外同样成立。我们评估自己的放置与传输算法时,如果只盯传输字节数或命中率,同样会漏掉时延膨胀这类结构惩罚。把端到端时延和资源占用绑进评估,是这篇论文最直接的迁移价值。"
+        }
+      ]
+    },
+    "148e019b96cd62b15911aceb": {
+      "source_item_hash": "81dcd72abc5f1cc4fbcdd2d8c3c1fe24",
+      "role": "core",
+      "topic_id": "agent_acceleration",
+      "direction_id": "agent_harness",
+      "published_at": "2026-09-08T00:00:00.000Z",
+      "score": 83.25,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.09134",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-08T00:00:00.000Z"
+        }
+      ],
+      "title": "harness 进化之后,别再用专家全轨迹去微调模型",
+      "lead": "Salesforce 的实验给了一个反直觉结论。先用自动进化把弱模型的 harness 调好,7 项企业任务从 29.2% 提到 78.0%;此时用更强专家的完整轨迹做 LoRA 模仿,弱模型反而在全部 7 项任务上回退,平均掉 14.9 分。原因在模型与 harness 的匹配被破坏,模仿让模型学会了专家的规划风格,却没学会执行这种风格的能力。",
+      "body": [
+        "替代方案是在策略纠错。一个元级 MLE 智能体在弱模型自己的 rollout 里找出走错的那一轮,专家只重写这一轮,其余步骤原样保留。大约 400 行修正样本,质量裁判从 3 个候选里挑一个,训练不足 1 小时,成功率再涨 1.7 个点到 79.7%;规划类失败保持在 1.8%,模仿路线的这项会涨到 14.6%。",
+        "顺序在这里比方法本身重要。先进化 harness,再做在策略纠错,避免全轨迹模仿。这条原则可以直接套进我们自己的 harness 迭代与模型微调排期。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "Salesforce 的实验给了一个反直觉结论。先用自动进化把弱模型的 harness 调好,7 项企业任务从 29.2% 提到 78.0%;此时用更强专家的完整轨迹做 LoRA 模仿,弱模型反而在全部 7 项任务上回退,平均掉 14.9 分。原因在模型与 harness 的匹配被破坏,模仿让模型学会了专家的规划风格,却没学会执行这种风格的能力。"
+        },
+        {
+          "heading_key": "mechanism",
+          "text": "替代方案是在策略纠错。一个元级 MLE 智能体在弱模型自己的 rollout 里找出走错的那一轮,专家只重写这一轮,其余步骤原样保留。大约 400 行修正样本,质量裁判从 3 个候选里挑一个,训练不足 1 小时,成功率再涨 1.7 个点到 79.7%;规划类失败保持在 1.8%,模仿路线的这项会涨到 14.6%。"
+        },
+        {
+          "heading_key": "implication",
+          "text": "顺序在这里比方法本身重要。先进化 harness,再做在策略纠错,避免全轨迹模仿。这条原则可以直接套进我们自己的 harness 迭代与模型微调排期。"
+        }
+      ]
+    },
+    "26e0483ebfbb21980b42f136": {
+      "source_item_hash": "666bdae6d17e77ac521db36640ecd1e2",
+      "role": "core",
+      "topic_id": "agent_acceleration",
+      "direction_id": "read_grep",
+      "published_at": "2026-08-14T19:59:56Z",
+      "score": 80.9,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.14863v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-14T19:59:56Z"
+        }
+      ],
+      "title": "321 token 的调试上下文,值 18.1 个百分点的修复通过率",
+      "lead": "USC 的 DDBENCH 回答了一个我们一直想量化的问题:给编码 Agent 喂多少定向调试上下文,值多少通过率。基准收了 60 个开源分布式系统的真实缺陷,每个缺陷跑两次,唯一区别是有没有挂载一个平均 321 token 的上下文包,里面是日志、追踪、竞态报告或代码探索笔记。",
+      "body": [
+        "10 个模型的聚合通过率提升 18.1 个百分点,收益不对称,弱模型主要涨通过率,强模型主要省 token,整体平均 token 消耗约减半。最难案例集上模型间通过率相差 61 个百分点,15 对顶级模型有 9 对被显著区分,说明分布式调试考察的是单进程基准测不出的推理维度。收益随缺陷搜索空间缩小而衰减,最简单的一层只剩 7.1 个点。",
+        "实验只用 mini-swe-agent 一个脚手架,上下文包没有做内容级消融,不知道日志和追踪各自贡献多少;忠实的上下文偶尔也会把模型带偏。但把定向上下文注入当作独立于模型升级的加速杠杆,这个结论已经足够扎实。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "USC 的 DDBENCH 回答了一个我们一直想量化的问题:给编码 Agent 喂多少定向调试上下文,值多少通过率。基准收了 60 个开源分布式系统的真实缺陷,每个缺陷跑两次,唯一区别是有没有挂载一个平均 321 token 的上下文包,里面是日志、追踪、竞态报告或代码探索笔记。"
+        },
+        {
+          "heading_key": "result",
+          "text": "10 个模型的聚合通过率提升 18.1 个百分点,收益不对称,弱模型主要涨通过率,强模型主要省 token,整体平均 token 消耗约减半。最难案例集上模型间通过率相差 61 个百分点,15 对顶级模型有 9 对被显著区分,说明分布式调试考察的是单进程基准测不出的推理维度。收益随缺陷搜索空间缩小而衰减,最简单的一层只剩 7.1 个点。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "实验只用 mini-swe-agent 一个脚手架,上下文包没有做内容级消融,不知道日志和追踪各自贡献多少;忠实的上下文偶尔也会把模型带偏。但把定向上下文注入当作独立于模型升级的加速杠杆,这个结论已经足够扎实。"
+        }
+      ]
+    },
+    "ecb917b03037725e3180d8ff": {
+      "source_item_hash": "00ee863c9172e84caf1d5faaf6d15273",
+      "role": "core",
+      "topic_id": "frontier_exploration",
+      "direction_id": "agent_tooling_frontier",
+      "published_at": "2026-08-15T09:43:57Z",
+      "score": 79.6,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.15145v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-15T09:43:57Z"
+        }
+      ],
+      "title": "ACTS-SQL 的树结构回溯式 SQL 纠错已在火山引擎上线",
+      "lead": "单路径的 SQL 纠错有个老毛病,第一步对用户意图的隐式假设会锁死后面所有修正。人大和字节的 ACTS-SQL 把纠错改成树结构,多种修正策略并行为分支,发现不一致就回溯,执行验证加子句级诊断工具负责定位错误,BIRD-Critic 上超过此前最好方法 9.42%。",
+      "body": [
+        "更有说服力的是生产数据。它已经部署在火山引擎日志服务的在线 Text-to-TLS 接口,用 GPT-5 做骨干把真实用户查询的执行准确率从 36.77% 提到 53.61%。代价同样清楚,平均每个实例 4.97 次 API 调用,端到端约 3 分钟,推理模型要 4 到 5 分钟,约为无纠错路径的 35 倍。",
+        "论文没有给出延迟预算或加速手段,弱骨干上的增益不足 1.2 个点。分支、回溯加执行验证这个结构本身可以迁移到代码修复和内部 DSL 生成,迁移前要先定下时延预算和模型能力门槛。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "单路径的 SQL 纠错有个老毛病,第一步对用户意图的隐式假设会锁死后面所有修正。人大和字节的 ACTS-SQL 把纠错改成树结构,多种修正策略并行为分支,发现不一致就回溯,执行验证加子句级诊断工具负责定位错误,BIRD-Critic 上超过此前最好方法 9.42%。"
+        },
+        {
+          "heading_key": "result",
+          "text": "更有说服力的是生产数据。它已经部署在火山引擎日志服务的在线 Text-to-TLS 接口,用 GPT-5 做骨干把真实用户查询的执行准确率从 36.77% 提到 53.61%。代价同样清楚,平均每个实例 4.97 次 API 调用,端到端约 3 分钟,推理模型要 4 到 5 分钟,约为无纠错路径的 35 倍。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "论文没有给出延迟预算或加速手段,弱骨干上的增益不足 1.2 个点。分支、回溯加执行验证这个结构本身可以迁移到代码修复和内部 DSL 生成,迁移前要先定下时延预算和模型能力门槛。"
+        }
+      ]
+    },
+    "37d70c4e94dbbab119def6ba": {
+      "source_item_hash": "e4a2fb3d7feeb20a9721d38617a12e99",
+      "role": "core",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "published_at": "2026-08-08T00:19:16Z",
+      "score": 78.0,
+      "sources": [
+        {
+          "publisher": "GitHub Release",
+          "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.17",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-08T00:19:16Z"
+        }
+      ],
+      "title": "SGLang 给缓存驱逐加上会话语义,不再纯按 LRU 逐出",
+      "lead": "v0.5.17 里最值得看的是会话引用感知的统一 Radix 缓存。请求可以带一个稳定的 session_id,驱逐时就知道哪些前缀仍被活跃会话引用,不再按纯缓存策略逐出;会话结束调用 /close_session 释放引用。用 --enable-session-radix-cache 开启,面向的正是 agentic 和 RL rollout 这类多轮负载。",
+      "body": [
+        "同一版本还有两项工程改进。把不连续的 CPU 权重视图先拷成连续存储再传 H2D,大 MoE 模型的加载时间从约 35 分钟缩到 6 分 20 秒;MI355X 上去掉多余的专家 padding,FP4 权重体积降到 112.36GB。随 Kimi K3 的 day-0 支持,KDA 前缀缓存和 HiCache L2 over DCP 一并落地。",
+        "这些都是发布说明的自报数字。会话缓存没有给命中率或 TTFT 的量化收益,需要自己测。驱逐感知任务语义这个实现范式,对内部 Agent Cache 和 RL 平台可以直接借鉴。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "cache",
+          "text": "v0.5.17 里最值得看的是会话引用感知的统一 Radix 缓存。请求可以带一个稳定的 session_id,驱逐时就知道哪些前缀仍被活跃会话引用,不再按纯缓存策略逐出;会话结束调用 /close_session 释放引用。用 --enable-session-radix-cache 开启,面向的正是 agentic 和 RL rollout 这类多轮负载。"
+        },
+        {
+          "heading_key": "engineering",
+          "text": "同一版本还有两项工程改进。把不连续的 CPU 权重视图先拷成连续存储再传 H2D,大 MoE 模型的加载时间从约 35 分钟缩到 6 分 20 秒;MI355X 上去掉多余的专家 padding,FP4 权重体积降到 112.36GB。随 Kimi K3 的 day-0 支持,KDA 前缀缓存和 HiCache L2 over DCP 一并落地。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "这些都是发布说明的自报数字。会话缓存没有给命中率或 TTFT 的量化收益,需要自己测。驱逐感知任务语义这个实现范式,对内部 Agent Cache 和 RL 平台可以直接借鉴。"
+        }
+      ]
+    },
+    "dd775e7cefeb9f98fed2e592": {
+      "source_item_hash": "67881b13eb92fa03d005ddc8b749fae5",
+      "role": "core",
+      "topic_id": "agent_acceleration",
+      "direction_id": "tool_chain",
+      "published_at": "2026-09-06T21:16:42Z",
+      "score": 73.3,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.06835v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-06T21:16:42Z"
+        }
+      ],
+      "title": "只学正常样本,也能盯住 Agent 工作流里的异常",
+      "lead": "Skynet 把多智能体执行记录整理成有向工作流图,节点和边携带角色、工具、状态与因果顺序,再用 K=150 个仅含良性流量的 k-means 模式库建模正常流形。语义上下文和依赖结构联合建模,执行一旦偏离流形就报警。训练从未见过攻击或失败,所以没见过的失败模式也落在同一条判别规则里。",
+      "body": [
+        "在 Agent-SafetyBench 和 AgentErrorBench 两个基准上,它在 0.89% 误报率下召回 100%,17 类内在失败(包括幻觉、约束忽视这类细微错误)全部覆盖;混合场景 F1 94.07,高于各图异常检测基线。常开监控最怕误报,这个低于 1% 的误报预算是它最实际的卖点。",
+        "边界也清楚:与良性工作流高度相似的异常会漏,间接提示注入的召回只有 74%,作者自己说需要内容级检查互补;时延只有定性描述。要用在内部,前提是我们的运行时能暴露结构化执行记录。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "mechanism",
+          "text": "Skynet 把多智能体执行记录整理成有向工作流图,节点和边携带角色、工具、状态与因果顺序,再用 K=150 个仅含良性流量的 k-means 模式库建模正常流形。语义上下文和依赖结构联合建模,执行一旦偏离流形就报警。训练从未见过攻击或失败,所以没见过的失败模式也落在同一条判别规则里。"
+        },
+        {
+          "heading_key": "result",
+          "text": "在 Agent-SafetyBench 和 AgentErrorBench 两个基准上,它在 0.89% 误报率下召回 100%,17 类内在失败(包括幻觉、约束忽视这类细微错误)全部覆盖;混合场景 F1 94.07,高于各图异常检测基线。常开监控最怕误报,这个低于 1% 的误报预算是它最实际的卖点。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "边界也清楚:与良性工作流高度相似的异常会漏,间接提示注入的召回只有 74%,作者自己说需要内容级检查互补;时延只有定性描述。要用在内部,前提是我们的运行时能暴露结构化执行记录。"
+        }
+      ]
+    },
+    "21914b7ee925e43025949605": {
+      "source_item_hash": "aee71382ab97c4f175484ea4b695fea9",
+      "role": "core",
+      "topic_id": "kv_management",
+      "direction_id": "offload_hierarchy",
+      "published_at": "2026-09-05T02:27:42Z",
+      "score": 73.05,
+      "sources": [
+        {
+          "publisher": "GitHub Release",
+          "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.19",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-05T02:27:42Z"
+        }
+      ],
+      "title": "SGLang 把统一 Radix 树推成全模型默认,L3 缓存可热插拔",
+      "lead": "v0.5.19 的统一 Radix 树不再只服务混合架构模型,而是所有模型的默认缓存。配套三件事:PD 分离下的 decode worker 能为 gpt-oss 这类 SWA 混合模型复用缓存前缀;L3 存储可以在服务器运行时挂载和卸载;HiCache L3 与流水线并行跨 rank 保持一致。",
+      "body": [
+        "KV 池的尺寸核算也修正了,常驻权重内存被计入容量,权重加载内存仍被引用时池被配得过小的问题得到修复。mxfp8 KV cache 补上了 PD 传输与 CPU 卸载支持。长上下文一侧,128K 输入下纯 TP 在八卡 B200 上到 680 tok/s 左右就不再扩展,DCP 则随并发继续扩展。",
+        "发布说明没有给统一树默认化对常规模型的量化对比,Beam search 也与 HiCache、投机解码、分离部署不兼容。L3 热插拔加 PD 前缀复用这两个信号,对我们设计分层缓存的容量弹性最有参考价值。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "cache",
+          "text": "v0.5.19 的统一 Radix 树不再只服务混合架构模型,而是所有模型的默认缓存。配套三件事:PD 分离下的 decode worker 能为 gpt-oss 这类 SWA 混合模型复用缓存前缀;L3 存储可以在服务器运行时挂载和卸载;HiCache L3 与流水线并行跨 rank 保持一致。"
+        },
+        {
+          "heading_key": "engineering",
+          "text": "KV 池的尺寸核算也修正了,常驻权重内存被计入容量,权重加载内存仍被引用时池被配得过小的问题得到修复。mxfp8 KV cache 补上了 PD 传输与 CPU 卸载支持。长上下文一侧,128K 输入下纯 TP 在八卡 B200 上到 680 tok/s 左右就不再扩展,DCP 则随并发继续扩展。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "发布说明没有给统一树默认化对常规模型的量化对比,Beam search 也与 HiCache、投机解码、分离部署不兼容。L3 热插拔加 PD 前缀复用这两个信号,对我们设计分层缓存的容量弹性最有参考价值。"
+        }
+      ]
+    },
+    "5b126924d057b449f43cd89d": {
+      "source_item_hash": "90d03c82f08d26510f069761f9d6224d",
+      "role": "supplement",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "published_at": "2026-08-01",
+      "score": 82,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.00358v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-01"
+        }
+      ],
+      "title": "Meta 把集合通信搬进片上网络,推荐训练不再挤占计算网格",
+      "lead": "传统 GPU 加 NIC 的架构里,集合通信以设备 kernel 形式执行,要占用计算网格。Meta 的 HCCL 与其首款片上集成网络的 MTIA 300 协同设计,由 host 生成带依赖的完整子图描述交给消息引擎自主执行,近存计算单元在线速完成归约,通信彻底让出计算 grid。",
+      "body": [
+        "训练场景机架内集合通信达到 940 GB/s,并发计算吞吐劣化低于 0.5%;推理路径集合时延低于 6 微秒。边界也明确:评测面向 Meta 自有推荐排序负载,片上网络绑定 MTIA 300,难以移植到 GPU 生态。对定制加速器的通信栈设计,这是一份少见的完整工程参考。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "传统 GPU 加 NIC 的架构里,集合通信以设备 kernel 形式执行,要占用计算网格。Meta 的 HCCL 与其首款片上集成网络的 MTIA 300 协同设计,由 host 生成带依赖的完整子图描述交给消息引擎自主执行,近存计算单元在线速完成归约,通信彻底让出计算 grid。"
+        },
+        {
+          "heading_key": "result",
+          "text": "训练场景机架内集合通信达到 940 GB/s,并发计算吞吐劣化低于 0.5%;推理路径集合时延低于 6 微秒。边界也明确:评测面向 Meta 自有推荐排序负载,片上网络绑定 MTIA 300,难以移植到 GPU 生态。对定制加速器的通信栈设计,这是一份少见的完整工程参考。"
+        }
+      ]
+    },
+    "319b55fc706fafc98624f980": {
+      "source_item_hash": "028c66bb80774df916b575dde9d42926",
+      "role": "supplement",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "published_at": "2026-07-30T11:04:45Z",
+      "score": 81.2,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.28699v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-30T11:04:45Z"
+        }
+      ],
+      "title": "给 KV 量化发风险证书,超阈值就回退精度",
+      "lead": "WitCert 为 KV 量化计算请求级的风险证书并在线门控。它逐层、逐头、逐步计算精确与压缩注意力之间的 total variation 上界,超过阈值就触发修复或回退精度。同样的 SGLang 内存下,certified INT8 能多服务 1.88 倍的 KV tokens。",
+      "body": [
+        "证书是逐层逐步的局部界,跨层聚合、prefill 主导负载和真实跨域传输都还没验证。如果要在内部给 KV 传输加风险门,证书开销、失败预算和端到端 P95 都要先测。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "WitCert 为 KV 量化计算请求级的风险证书并在线门控。它逐层、逐头、逐步计算精确与压缩注意力之间的 total variation 上界,超过阈值就触发修复或回退精度。同样的 SGLang 内存下,certified INT8 能多服务 1.88 倍的 KV tokens。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "证书是逐层逐步的局部界,跨层聚合、prefill 主导负载和真实跨域传输都还没验证。如果要在内部给 KV 传输加风险门,证书开销、失败预算和端到端 P95 都要先测。"
+        }
+      ]
+    },
+    "5e62a640e937c34d109167e8": {
+      "source_item_hash": "061a52520269361111aecad6dba2f45f",
+      "role": "supplement",
+      "topic_id": "agent_acceleration",
+      "direction_id": "agent_harness",
+      "published_at": "2026-09-10T00:00:00.000Z",
+      "score": 78.85,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.11682",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-10T00:00:00.000Z"
+        }
+      ],
+      "title": "用赌博机分配技能评估,优化成本省一半以上",
+      "lead": "COBRA-Skills 把技能优化当成动态候选空间上的预算化序列优化:每个候选技能是一个以语义嵌入为特征的臂,奖励预测器加 LinearUCB 决定先评估谁;种群按计划更新,从轨迹档案里变异出新技能,替换低优先技能。",
+      "body": [
+        "六个基准、三个目标模型上平均性能领先,对无技能基线分别提升 13.1、26.9 和 22.5 个百分点,相对 SkillOpt 总成本降 55% 到 58%,每个基准只用 50 个优化样本。在 Claude Code 和 Codex 两套外部 harness 下也保持领先。",
+        "作者因为无法复现 SkillOpt 在 OfficeQA 的报告结果而剔除了该基准,成本按固定 API 价格核算。对我们来说,这是技能库维护的低成本形态,值得照着做一版内部对照。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "COBRA-Skills 把技能优化当成动态候选空间上的预算化序列优化:每个候选技能是一个以语义嵌入为特征的臂,奖励预测器加 LinearUCB 决定先评估谁;种群按计划更新,从轨迹档案里变异出新技能,替换低优先技能。"
+        },
+        {
+          "heading_key": "result",
+          "text": "六个基准、三个目标模型上平均性能领先,对无技能基线分别提升 13.1、26.9 和 22.5 个百分点,相对 SkillOpt 总成本降 55% 到 58%,每个基准只用 50 个优化样本。在 Claude Code 和 Codex 两套外部 harness 下也保持领先。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "作者因为无法复现 SkillOpt 在 OfficeQA 的报告结果而剔除了该基准,成本按固定 API 价格核算。对我们来说,这是技能库维护的低成本形态,值得照着做一版内部对照。"
+        }
+      ]
+    },
+    "0323b177a35ce3e649adf16c": {
+      "source_item_hash": "f7461b7b8994ef77da3bfd694b4948e0",
+      "role": "supplement",
+      "topic_id": "kv_management",
+      "direction_id": "paged_management",
+      "published_at": "2026-08-26T09:46:30Z",
+      "score": 78.75,
+      "sources": [
+        {
+          "publisher": "GitHub Release",
+          "url": "https://github.com/vllm-project/vllm/releases/tag/v0.28.0",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-26T09:46:30Z"
+        }
+      ],
+      "title": "vLLM 把分层 KV 卸载补成闭环,磁盘层可外挂可观测",
+      "lead": "v0.28.0 一次补齐分层卸载的几块短板:SimpleCPUOffloadConnector 支持磁盘卸载,二级层管理器可以经 module_path 从树外接入,还定义了并行无关的规范 CPU 布局。细粒度前缀匹配让混合模型也能吃到部分尾部前缀的复用。",
+      "body": [
+        "Kimi-K3 一侧的合并 all-gather 内核提速 1.5 到 3 倍,自适应投机预算让 DSpark 的 TTFT 提升约 60%。注意这些都是发布说明的自报数字,tiering 指标还没有配套的命中率或端到端收益数据。外挂二级层加指标接口,正好是测分层收益边界的现成入口。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "engineering",
+          "text": "v0.28.0 一次补齐分层卸载的几块短板:SimpleCPUOffloadConnector 支持磁盘卸载,二级层管理器可以经 module_path 从树外接入,还定义了并行无关的规范 CPU 布局。细粒度前缀匹配让混合模型也能吃到部分尾部前缀的复用。"
+        },
+        {
+          "heading_key": "result",
+          "text": "Kimi-K3 一侧的合并 all-gather 内核提速 1.5 到 3 倍,自适应投机预算让 DSpark 的 TTFT 提升约 60%。注意这些都是发布说明的自报数字,tiering 指标还没有配套的命中率或端到端收益数据。外挂二级层加指标接口,正好是测分层收益边界的现成入口。"
+        }
+      ]
+    },
+    "44400d42b94dcdd8ce303fa3": {
+      "source_item_hash": "52d044f0014b651b09e305d55cea67fa",
+      "role": "supplement",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "memory_io_codesign",
+      "published_at": "2026-07-22T13:23:52Z",
+      "score": 78.7,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.20120v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-22T13:23:52Z"
+        }
+      ],
+      "title": "三代昇腾 NPU 上的科学计算实测,瓶颈画到了内核级",
+      "lead": "这项工作在三代 Ascend NPU 上实测量子模拟等五类科学负载,把负载映射到 Cube 与内存层级,给出带宽与内核级的瓶颈归因。30 量子比特的 RCS 模拟在 910C 上经门融合后 11.4 秒完成,瓶颈在状态向量搬运。",
+      "body": [
+        "优化依赖特定 CANN 版本与手工 kernel,可移植性受限,FP32 仿真的精度边界只在选定负载内验证过。作为少见的国产 NPU 科学计算系统级实测,它可以直接当我们评估国产加速器的基线之一。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "这项工作在三代 Ascend NPU 上实测量子模拟等五类科学负载,把负载映射到 Cube 与内存层级,给出带宽与内核级的瓶颈归因。30 量子比特的 RCS 模拟在 910C 上经门融合后 11.4 秒完成,瓶颈在状态向量搬运。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "优化依赖特定 CANN 版本与手工 kernel,可移植性受限,FP32 仿真的精度边界只在选定负载内验证过。作为少见的国产 NPU 科学计算系统级实测,它可以直接当我们评估国产加速器的基线之一。"
+        }
+      ]
+    },
+    "054c37b7eb06938803b04a35": {
+      "source_item_hash": "bc39a272577356dffd7d5d48754a9ea3",
+      "role": "supplement",
+      "topic_id": "cross_region",
+      "direction_id": "transfer_placement",
+      "published_at": "2026-07-27T12:08:56Z",
+      "score": 77.7,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2607.24331v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-27T12:08:56Z"
+        }
+      ],
+      "title": "按 head 相似性分组分 rank 的 KV 压缩,GQA 要当心",
+      "lead": "DynaCalKV 用 CKA 计算 Key head 之间的相似度并聚类,在固定参数预算下给每组分配低秩 rank,Value 侧沿用离线校准分解。分组和 rank 分配只发生在压缩阶段,推理时不增加计算。",
+      "body": [
+        "小模型上对 MHA 稳定有效,但 GQA 长上下文相对 ReCalKV 校准分解出现退化。实验只用三种小模型和单张 T4,没测服务吞吐和 P95。我们做 KV 压缩时,MHA 与 GQA 的预算要分开设,GQA 先保守。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "DynaCalKV 用 CKA 计算 Key head 之间的相似度并聚类,在固定参数预算下给每组分配低秩 rank,Value 侧沿用离线校准分解。分组和 rank 分配只发生在压缩阶段,推理时不增加计算。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "小模型上对 MHA 稳定有效,但 GQA 长上下文相对 ReCalKV 校准分解出现退化。实验只用三种小模型和单张 T4,没测服务吞吐和 P95。我们做 KV 压缩时,MHA 与 GQA 的预算要分开设,GQA 先保守。"
+        }
+      ]
+    },
+    "f5acc1ff6ef45db250fb0805": {
+      "source_item_hash": "9acf671049d3a49bfa209625f9f43ac4",
+      "role": "supplement",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "published_at": "2026-09-01",
+      "score": 77.5,
+      "sources": [
+        {
+          "publisher": "Characterizing the Scalability and Performance of Large-Scal",
+          "url": "https://arxiv.org/abs/2609.00817v2",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-01T07:17:17Z"
+        }
+      ],
+      "title": "2400 卡上的多租户实测,减速跟着通信模式走",
+      "lead": "跨六套系统、最高 2400 GPU 的表征显示,通信开销跨出节点后陡增:DGX A100 的扩展效率不低于 99%,而 NVL72 的数据并行在 32 到 64 卡降到 80% 到 85%。FSDP 的通信时间始终低于 10%,数据并行则超过 70%。多租户并发下的减速高度依赖负载的通信模式,各负载之间差异很大。",
+      "body": [
+        "Alps 上数据并行的方差过大,绝对值难以解释。对我们的价值一半在结论、一半在方法:按通信模式匹配网络,并按模式与规模评估多租户风险。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "result",
+          "text": "跨六套系统、最高 2400 GPU 的表征显示,通信开销跨出节点后陡增:DGX A100 的扩展效率不低于 99%,而 NVL72 的数据并行在 32 到 64 卡降到 80% 到 85%。FSDP 的通信时间始终低于 10%,数据并行则超过 70%。多租户并发下的减速高度依赖负载的通信模式,各负载之间差异很大。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "Alps 上数据并行的方差过大,绝对值难以解释。对我们的价值一半在结论、一半在方法:按通信模式匹配网络,并按模式与规模评估多租户风险。"
+        }
+      ]
+    },
+    "56d021594c5f17e77fffbe1c": {
+      "source_item_hash": "ebbb6d0006d1c9a7ea3cfb92c26a6d67",
+      "role": "supplement",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "published_at": "2026-08-06T00:19:56Z",
+      "score": 76.95,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.05483v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-06T00:19:56Z"
+        }
+      ],
+      "title": "把上千个 LoRA 放进 CXL 近存内存池,解码时延降 6.6 倍",
+      "lead": "PLoRA 把 LoRA adapter 与 KV cache 放进 CXL 池化内存,由近存计算单元返回归约结果,GPU 用自己的 load/store 取结果,host 不介入。单张 H100 服务 1,000 个 adapter 时,解码时延比 S-LoRA 低 6.6 倍。",
+      "body": [
+        "带宽结论值得单独记住:链路 32 到 64 GB/s 就饱和,继续加带宽没有意义;长上下文场景想靠加带宽追平,需要 12.2 到 18.6 TB/s,不现实。剩余链路带宽应该换成池容量。大部分结论来自模拟,且依赖带设备侧计算的 CXL 3.1 组网,对我们内存语义方向的带宽与容量取舍是直接输入。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "mechanism",
+          "text": "PLoRA 把 LoRA adapter 与 KV cache 放进 CXL 池化内存,由近存计算单元返回归约结果,GPU 用自己的 load/store 取结果,host 不介入。单张 H100 服务 1,000 个 adapter 时,解码时延比 S-LoRA 低 6.6 倍。"
+        },
+        {
+          "heading_key": "contradiction",
+          "text": "带宽结论值得单独记住:链路 32 到 64 GB/s 就饱和,继续加带宽没有意义;长上下文场景想靠加带宽追平,需要 12.2 到 18.6 TB/s,不现实。剩余链路带宽应该换成池容量。大部分结论来自模拟,且依赖带设备侧计算的 CXL 3.1 组网,对我们内存语义方向的带宽与容量取舍是直接输入。"
+        }
+      ]
+    },
+    "88812b7c4e16361e0573a0e6": {
+      "source_item_hash": "11bd416f4d92ba27051af1156517e2ac",
+      "role": "supplement",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "chiplet_packaging",
+      "published_at": "2026-08-19T19:26:21Z",
+      "score": 76.8,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2608.19395v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-19T19:26:21Z"
+        }
+      ],
+      "title": "混合 Transformer-Mamba 芯片的 chiplet 设计空间怎么搜",
+      "lead": "HYDRA 把异构 chiplet 选型、片上网络拥塞感知放置与弹性调度放进同一个设计空间探索:prefill 与 decode 用不同 chiplet 分开放置来缓解片上网络拥塞,调度按负载弹性调整。建模下所有负载平均吞吐 1.55 倍,TTFT 降 43.7%。",
+      "body": [
+        "结论来自建模与仿真,chiplet 库是四种假设设计,没有流片数据。它把封装内异构和 NoI 拥塞纳入 DSE 的做法,可以直接用在我们评估 chiplet 方案对带宽与容量影响的工作里。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "mechanism",
+          "text": "HYDRA 把异构 chiplet 选型、片上网络拥塞感知放置与弹性调度放进同一个设计空间探索:prefill 与 decode 用不同 chiplet 分开放置来缓解片上网络拥塞,调度按负载弹性调整。建模下所有负载平均吞吐 1.55 倍,TTFT 降 43.7%。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "结论来自建模与仿真,chiplet 库是四种假设设计,没有流片数据。它把封装内异构和 NoI 拥塞纳入 DSE 的做法,可以直接用在我们评估 chiplet 方案对带宽与容量影响的工作里。"
+        }
+      ]
+    },
+    "118ded5a1be93f4bec3b8337": {
+      "source_item_hash": "0ebbb387183a000d972f46aeae4e7a60",
+      "role": "supplement",
+      "topic_id": "tpn",
+      "direction_id": "kv_transfer",
+      "published_at": "2026-08-20T20:07:13Z",
+      "score": 76.75,
+      "sources": [
+        {
+          "publisher": "GitHub",
+          "url": "https://github.com/LMCache/LMCache/releases/tag/v0.5.4",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-08-20T20:07:13Z"
+        }
+      ],
+      "title": "LMCache 的 KV 缓存发现从单节点升级为舰队级",
+      "lead": "v0.5.4 把多进程协调器升级成控制平面:缓存事件经专用 ingest 层喂给舰队控制器,CacheBlend 的查找改由协调器的键目录服务,一次 blend 请求可以命中舰队里任意节点的可复用 KV。传输侧加了惰性卸载与入队时预取,把工作挪出关键路径。",
+      "body": [
+        "发布说明只有定性表述,没有量化基准,舰队级查找的性能要看后续部署数据。键目录加事件驱动控制平面这个形态,是跨节点 KV 放置调度的直接参考,值得持续跟踪。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "engineering",
+          "text": "v0.5.4 把多进程协调器升级成控制平面:缓存事件经专用 ingest 层喂给舰队控制器,CacheBlend 的查找改由协调器的键目录服务,一次 blend 请求可以命中舰队里任意节点的可复用 KV。传输侧加了惰性卸载与入队时预取,把工作挪出关键路径。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "发布说明只有定性表述,没有量化基准,舰队级查找的性能要看后续部署数据。键目录加事件驱动控制平面这个形态,是跨节点 KV 放置调度的直接参考,值得持续跟踪。"
+        }
+      ]
+    },
+    "d675106d31c751ce4e6812c4": {
+      "source_item_hash": "3402db0cf09ef83fa81cd5937de537f2",
+      "role": "supplement",
+      "topic_id": "ai_chip_accelerator",
+      "direction_id": "accelerator_architecture",
+      "published_at": "2026-09-01",
+      "score": 76.6,
+      "sources": [
+        {
+          "publisher": "Instella-MoE Technical Report",
+          "url": "https://arxiv.org/abs/2609.00791v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-01T06:38:17Z"
+        }
+      ],
+      "title": "AMD GPU 从零训出开源 MoE,非 CUDA 生态的一次完整验证",
+      "lead": "AMD 在 MI300X 与 MI325X 上从零训练了 16B 总参、2.8B 激活的 MoE,7.1T token 预训练后基准平均 76.7 分,超过同量级的 OLMo-3-7B 与 OLMoE,六阶段检查点全部开源。技术栈是 Gated MLA 加 FarSkip Collective 重叠 all-to-all,ROCm 上用 Primus 训练。",
+      "body": [
+        "GPU 节点数与训练吞吐未公开,评测套件自选,数据配比披露不全。对我们而言,这套 ROCm 加 Primus 加 FarSkip 的完整开源栈,是评估非 CUDA 训练栈时的现成参照系。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": null,
+          "text": "AMD 在 MI300X 与 MI325X 上从零训练了 16B 总参、2.8B 激活的 MoE,7.1T token 预训练后基准平均 76.7 分,超过同量级的 OLMo-3-7B 与 OLMoE,六阶段检查点全部开源。技术栈是 Gated MLA 加 FarSkip Collective 重叠 all-to-all,ROCm 上用 Primus 训练。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "GPU 节点数与训练吞吐未公开,评测套件自选,数据配比披露不全。对我们而言,这套 ROCm 加 Primus 加 FarSkip 的完整开源栈,是评估非 CUDA 训练栈时的现成参照系。"
+        }
+      ]
+    },
+    "5e7171f04ad8cd73a5f3ab5a": {
+      "source_item_hash": "a28e99d42be205f9370fbc530f0faab7",
+      "role": "supplement",
+      "topic_id": "tpn",
+      "direction_id": "pd_disaggregation",
+      "published_at": "2026-07-27T01:06:58Z",
+      "score": 73.0,
+      "sources": [
+        {
+          "publisher": "GitHub Release",
+          "url": "https://github.com/vllm-project/vllm/releases/tag/v0.26.0",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-27T01:06:58Z"
+        }
+      ],
+      "title": "vLLM 给 KV 分层卸载配上对象存储层与副本感知",
+      "lead": "v0.26.0 的 KV 卸载体系补上了可观测性与放置语义:CPU 缓存用量拆成读、写两个量表,分层查找时延拆成同步与异步直方图;对象存储二级层带工作负载身份,分层支持 DP 副本感知,tier 自有事件与 BlockStored 事件负责跨层状态同步。",
+      "body": [
+        "混合模型拿到部分前缀缓存命中与选择性保留;DeepSeek-V4 的专项内核带来 2.94% 的端到端 TPOT 改善。发布说明没有给卸载命中率或收益数据,对象存储层也没有时延数字。副本感知加工作负载身份这个组合,说明 KV 层次开始被当成分布式资源来管理,值得在我们的 PD 分离缓存设计里对照。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "engineering",
+          "text": "v0.26.0 的 KV 卸载体系补上了可观测性与放置语义:CPU 缓存用量拆成读、写两个量表,分层查找时延拆成同步与异步直方图;对象存储二级层带工作负载身份,分层支持 DP 副本感知,tier 自有事件与 BlockStored 事件负责跨层状态同步。"
+        },
+        {
+          "heading_key": "result",
+          "text": "混合模型拿到部分前缀缓存命中与选择性保留;DeepSeek-V4 的专项内核带来 2.94% 的端到端 TPOT 改善。发布说明没有给卸载命中率或收益数据,对象存储层也没有时延数字。副本感知加工作负载身份这个组合,说明 KV 层次开始被当成分布式资源来管理,值得在我们的 PD 分离缓存设计里对照。"
+        }
+      ]
+    },
+    "a2e1b648c2398a3c35f977c2": {
+      "source_item_hash": "3da2f35819e92d2fe1c81d623f78c460",
+      "role": "supplement",
+      "topic_id": "kv_management",
+      "direction_id": "prefix_reuse",
+      "published_at": "2026-07-25T00:13:18Z",
+      "score": 72.3,
+      "sources": [
+        {
+          "publisher": "GitHub Release",
+          "url": "https://github.com/sgl-project/sglang/releases/tag/v0.5.16",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-07-25T00:13:18Z"
+        }
+      ],
+      "title": "缓存命中只重置用到的状态,层切分让每 rank KV 省 74%",
+      "lead": "v0.5.16 把 UnifiedRadixTree 推成 SWA、Mamba 与 DSA 模型的默认缓存,并改了失效粒度:一次缓存命中只重置实际用到的状态,不再整体重置。GLM-5.2 的 DSA 缓存层切分把 KV 与 indexer 层按不相交区间分给各 CP rank,cp_size=4 时每 rank KV 从 0.77GB 降到 0.20GB,约省 74%。",
+      "body": [
+        "ReplaySSM 的投机暂存也通过环形验证从 11.5GB 压到 1.8GB。这些是选择性开启的功能,发布说明没给端到端 workload 收益。命中失效粒度与层分片,是前缀复用里正确性与显存占用两个都可以量化的改进点。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "cache",
+          "text": "v0.5.16 把 UnifiedRadixTree 推成 SWA、Mamba 与 DSA 模型的默认缓存,并改了失效粒度:一次缓存命中只重置实际用到的状态,不再整体重置。GLM-5.2 的 DSA 缓存层切分把 KV 与 indexer 层按不相交区间分给各 CP rank,cp_size=4 时每 rank KV 从 0.77GB 降到 0.20GB,约省 74%。"
+        },
+        {
+          "heading_key": "boundary",
+          "text": "ReplaySSM 的投机暂存也通过环形验证从 11.5GB 压到 1.8GB。这些是选择性开启的功能,发布说明没给端到端 workload 收益。命中失效粒度与层分片,是前缀复用里正确性与显存占用两个都可以量化的改进点。"
+        }
+      ]
+    },
+    "622db7a6607fca74b57f8c55": {
+      "source_item_hash": "f5c1438316ec47aba04fa435792e6e3c",
+      "role": "supplement",
+      "topic_id": "tpn",
+      "direction_id": "kv_network_scheduling",
+      "published_at": "2026-09-10T16:00:35Z",
+      "score": 69.5,
+      "sources": [
+        {
+          "publisher": "arXiv",
+          "url": "https://arxiv.org/abs/2609.11744v1",
+          "source_level": "A",
+          "primary": true,
+          "published_at": "2026-09-10T16:00:35Z"
+        }
+      ],
+      "title": "vLLM 的磁盘 KV 加载快 2 倍,秘诀是少而大的异步读",
+      "lead": "py-kvcache 优化 vLLM 外部 KV 缓存的加载:预加载信号取自调度器等待队列,磁盘读取与计算重叠,80k token 场景比 LMCache 快 2.0 倍。它还加了一个 break-even 准入门,低于门槛的前缀不再加载,把外部缓存当成部署级准入决策。",
+      "body": [
+        "加速的来源值得记住:更少、更大的异步传输,而非更高的带宽,两者实际都只有约 24 到 26 GB/s。同一份测量也给出反面结论,H100 上平均请求低于 break-even 点时,外部缓存反而无益。结论绑定所测硬件与版本,只测了 FP16 单输出 token。",
+        "break-even 准入门可以直接搬进内部分层缓存的准入判断,传输时机与粒度的结论也能用于离线缓存调优。"
+      ],
+      "takeaway": null,
+      "blocks": [
+        {
+          "heading_key": "mechanism",
+          "text": "py-kvcache 优化 vLLM 外部 KV 缓存的加载:预加载信号取自调度器等待队列,磁盘读取与计算重叠,80k token 场景比 LMCache 快 2.0 倍。它还加了一个 break-even 准入门,低于门槛的前缀不再加载,把外部缓存当成部署级准入决策。"
+        },
+        {
+          "heading_key": "contradiction",
+          "text": "加速的来源值得记住:更少、更大的异步传输,而非更高的带宽,两者实际都只有约 24 到 26 GB/s。同一份测量也给出反面结论,H100 上平均请求低于 break-even 点时,外部缓存反而无益。结论绑定所测硬件与版本,只测了 FP16 单输出 token。"
+        },
+        {
+          "heading_key": "implication",
+          "text": "break-even 准入门可以直接搬进内部分层缓存的准入判断,传输时机与粒度的结论也能用于离线缓存调优。"
+        }
+      ]
+    }
+  },
+  "radar": [
+    {
+      "radar_id": "9369f8d23ee735fb2f2c5c00",
+      "source_signal_hash": "e52b860de97dccb5b1b8abc44ae58bbdbac4e665edfadec23007eb2a0eeef455",
+      "category": "AI Infra",
+      "signal": "追踪瓶颈：在 AMD Instinct MI355X 上优化 MiniMax M3",
+      "summary": "MiniMax M3 在 AMD Instinct MI355X 上的 vLLM 服务性能经逐层瓶颈优化大幅提升。MXFP8 标准服务在并发 32 下从 109.1 升至 342.4 output tokens/s/GPU（3.14×），MXFP4 在 TP2/EP1 下达到 943.5，为初始结果的 4.45×。",
+      "source_urls": [
+        "https://vllm.ai/blog/2026-09-10-minimax-m3-mi355x"
+      ]
+    },
+    {
+      "radar_id": "f9645b181abbc7e9ba40e4b7",
+      "source_signal_hash": "cf669146d070a5ed8206f9227f8733ed075a4bf47fb1214b48342a78cd00ff0f",
+      "category": "AI Infra",
+      "signal": "Artificial Analysis 评测：GPT-Live-1 以 81.5 分登顶 Speech to Speech Index",
+      "summary": "Artificial Analysis 发布 Speech to Speech Index，OpenAI 的 GPT-Live-1 以 81.5 分（Astra 后端，medium 推理强度）排名第一，超过 Grok Voice Think Fast 2.0 High 的 81.3；Sol 后端配置得 80.1 排第三。",
+      "source_urls": [
+        "https://x.com/ArtificialAnlys/status/2099698254414029207"
+      ]
+    },
+    {
+      "radar_id": "4009e9e8824cee4bf8e9e691",
+      "source_signal_hash": "650b18c452a5952c6524e099bada1d2202ea570bbd276e920a29520be4cd1617",
+      "category": "AI Infra",
+      "signal": "NVIDIA AI 公告。",
+      "summary": "行业意义 ：推理侧的工程优化与模型能力同等重要，NIM 微服务的持续调优直接降低了单位 token 的服务成本。",
+      "source_urls": [
+        "https://x.com/NVIDIAAI/status/2099550869381353910"
+      ]
+    },
+    {
+      "radar_id": "db89950f26bbe1bece789991",
+      "source_signal_hash": "8976bbb066053e5d63979a99e17348ab66f2e2cc4fd2a4f76a28794180a3c211",
+      "category": "Agent生态",
+      "signal": "Gergely Orosz 探访 OpenAI：Codex 驱动的智能体软件工厂",
+      "summary": "Gergely Orosz 实地探访 OpenAI 总部并访谈七位工程师与工程负责人，发现自约一月起 Codex 和 ChatGPT Work 已成为公司几乎所有工作的基础。",
+      "source_urls": [
+        "https://newsletter.pragmaticengineer.com/p/openai-software-factory"
+      ]
+    },
+    {
+      "radar_id": "050d9e1d3026696b47d778b3",
+      "source_signal_hash": "2b827133bdb945c991b125d4c067f93f5eb1c4b1580d032f4c3e8fce979e9a10",
+      "category": "Agent生态",
+      "signal": "Anthropic 如何重构测试影响分析服务以应对智能体编码带来的 CI 压力",
+      "summary": "Anthropic 工程师每季度交付的代码量是 2021-2025 年均值的 8 倍，其中 80% 由 Claude 编写，六个月内 CI 任务增长 25 倍。",
+      "source_urls": [
+        "https://claude.com/blog/agentic-coding-is-straining-ci-heres-how-we-scaled-test-impact-analysis-at-anthropic"
+      ]
+    },
+    {
+      "radar_id": "79e0a984b2290ce207f8705f",
+      "source_signal_hash": "1a90829d4189ee5678a5aeaef0f24bc8ffbad3bc4f877d6142ebef598df798fb",
+      "category": "Agent生态",
+      "signal": "Trail of Bits 批评 1Password 的 AI 补丁基准存在误导，并发布两个补丁验证 Agent 技能",
+      "summary": "Trail of Bits 发文批评 1Password 8月6日发布的 FLAWED 报告，称其 26% 的 AI 干净修复率受四项实验设计选择影响而失真，包括刻意指示智能体应用错误修复的提示词占 22% 数据、36% 的试验禁止编译测试，以及不同推理档位设置。",
+      "source_urls": [
+        "https://blog.trailofbits.com/2026/09/15/1passwords-ai-patching-benchmark-is-misleading"
+      ]
+    },
+    {
+      "radar_id": "9c304d222f85d5b580460f76",
+      "source_signal_hash": "dad68f7f26bf5d1fa042cee50dfba05f78df68bc4bbd783b585b675416b77ce7",
+      "category": "Agent生态",
+      "signal": "F-Droid 有多少应用是 LLM 生成的？作者审查 102 个应用得出 72.5% 多为 AI 编写",
+      "summary": "一位 FOSS 爱好者人工审查 F-Droid 2026 年 9 月 12 日推送更新的 102 个应用，依据提交记录、Agent 基础设施和 README 风格做三档分类，结果 74 个（72.5%）大多为 AI 编写，10 个难以归类，18 个（17.6%）几无 AI 痕迹。",
+      "source_urls": [
+        "https://tintotint.eu/whacky-corner/f-droid_slop"
+      ]
+    },
+    {
+      "radar_id": "53f026619dc822b359ca58e2",
+      "source_signal_hash": "e7312d7e82d849a162b9f646165a6b6a4386da629a2069aeea9bbdce5a5587d1",
+      "category": "Agent生态",
+      "signal": "Agent Harness、Agent Framework 与 MCP 如何分层：谁负责执行循环、状态、工具、权限与恢复",
+      "summary": "文章区分 Agent harness、Agent framework 与 MCP 三层架构，指出 harness 拥有执行循环、状态、权限和恢复，框架只暴露钩子，MCP 仅拥有工具传输且无法在协议层强制同意。",
+      "source_urls": [
+        "https://www.marktechpost.com/2026/09/14/agent-harness-vs-agent-framework-vs-mcp-which-layer-owns-the-loop-state-tools-permissions-and-recovery"
+      ]
+    },
+    {
+      "radar_id": "3de38dffc2f8d689359f451f",
+      "source_signal_hash": "d887fa8f916ed6a613896bd920405860f7fbcb7849b0cc64fa7c959261192d0d",
+      "category": "KVCache生态",
+      "signal": "HuggingFace 技术报告。",
+      "summary": "行业意义 ：KV Cache 压缩是推理成本下降的关键，CED 可能影响后续长上下文推理架构。",
+      "source_urls": [
+        "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf"
+      ]
+    },
+    {
+      "radar_id": "973d87e07fc6b89889c43a04",
+      "source_signal_hash": "0aa54534eb317e52e7fec25c3e33c51ec3c225a1b9ccca9cbc9740c84faccd6c",
+      "category": "KVCache生态",
+      "signal": "马东锡 NLP。",
+      "summary": "行业意义 ：KV Cache 压缩是推理成本下降的关键，CED 可能影响后续长上下文推理架构。",
+      "source_urls": [
+        "https://x.com/dongxi_nlp/status/2099397246479401151"
+      ]
+    },
+    {
+      "radar_id": "d9c83cbe3f9536a70360c24c",
+      "source_signal_hash": "824b194cabcf65f56055629a490c5c4406f60c4d59263d9fdd72375800a68b98",
+      "category": "其他技术前沿",
+      "signal": "GPT-5.6 Luna 对比 GPT-6 Astra：$1.20 的模型做代码评审够用吗",
+      "summary": "Entelligence 在 50 个公开基准 PR 上用相同提示词对比 GPT-5.6 Luna 和 GPT-6 Astra 的代码评审能力，Luna 找到 69 个经验证 bug（Astra 92 个），总成本 $0.20 对 $5.66，精度 74% 对 96%。",
+      "source_urls": [
+        "https://entelligence.ai/blogs/gpt-5.6-luna-vs-gpt-6-astra-is-a-1.20-model-good-enough-for-code-review"
+      ]
+    },
+    {
+      "radar_id": "dd3899db5b86c5d01accf033",
+      "source_signal_hash": "d9f8407ef28b98633ad8f85c58289b987373fdcde93c6cd4d3b4376a16e74749",
+      "category": "其他技术前沿",
+      "signal": "Fireworks 评测 DeepSeek-V4.1-Flash：DeepSWE 达 GPT-6 Astra 水准、成本仅 1/15",
+      "summary": "Fireworks 发布 DeepSeek-V4.1-Flash 并公布完整基准结果：在 DeepSWE 上以 max 档取得 74.34% pass@1，与 GPT-6 Astra 同一水平，但每任务成本 $0.43，约为 Astra 的 1/15。",
+      "source_urls": [
+        "https://fireworks.ai/blog/DeepSeek-V4.1-Flash-Astra"
+      ]
+    },
+    {
+      "radar_id": "1741b0b2a7446a3f3a41b8a7",
+      "source_signal_hash": "5ae0f59319086188553ebcfd28c5806672a0c04d156a643854557af43a019f54",
+      "category": "其他技术前沿",
+      "signal": "生数科技发布 Vidu S2：含 Avatar 与 Editing 双模型，探索空间视频",
+      "summary": "生数科技正式发布 Vidu S2，包含面向数字角色实时交互的 Vidu S2-Avatar 和面向视频流实时编辑的 Vidu S2-Editing，并探索面向 VR 头显的实时空间视频生成与编辑。",
+      "source_urls": [
+        "https://mp.weixin.qq.com/s?__biz=MzkzMDQ5NTQwMQ%3D%3D&mid=2247489246&idx=2&sn=b23b39da69f6c75594eccac11854111f"
+      ]
+    },
+    {
+      "radar_id": "ab75241a711191be3f2935e0",
+      "source_signal_hash": "9022c123171dbc856b53becd717688450698e5da3fe06548c6d4fa012d38b987",
+      "category": "其他技术前沿",
+      "signal": "阶跃星辰发布 StepAudio 3 系列语音大模型，多款在 Artificial Analysis 榜单全球第一",
+      "summary": "阶跃星辰发布 StepAudio 3 系列，包含 Realtime、ASR、TTS、Gen 和 Music 五款模型，已在阶跃星辰开放平台上线。",
+      "source_urls": [
+        "https://mp.weixin.qq.com/s?__biz=MzkyNTYxNzg5Mg%3D%3D&mid=2247488074&idx=1&sn=7d92ce0f0098ec0c53b243df4709b522"
+      ]
+    },
+    {
+      "radar_id": "f8ffa33ae21196095c8c48df",
+      "source_signal_hash": "4e5cacfbcbcbdaa1678fb8099d5adce3d187a7f5b08275f5b3bab5816f4f8282",
+      "category": "其他技术前沿",
+      "signal": "硅基流动上线开源模型 Hy4 preview，770B 总参数、1M 上下文",
+      "summary": "硅基流动（SiliconFlow）宣布开源模型 Hy4 preview 上线其平台。该模型总参数 770B、每 token 激活 49B、支持 1M 上下文，采用 Apache 2.0 协议，面向编码、分析、研究和复杂实际工作。用户可将其接入 Claude Code、Codex、Cursor 等已有工具；图片显示定价为每 1M tokens 输入 $0.834、输出 $2.501、缓存 $0.042。",
+      "source_urls": [
+        "https://x.com/SiliconFlowAI/status/2099536759168352634"
+      ]
+    },
+    {
+      "radar_id": "6c20fd2544cacd9046aedbb0",
+      "source_signal_hash": "0cd30f2d28e8180de7e589aad38454c4a2a79781d30bcbfedc49831dd3cc0869",
+      "category": "边界探索",
+      "signal": "404 Media 曝光 OpenAI 莉莉计划：人工审核 ChatGPT 聊天记录以优化模型",
+      "summary": "404 Media 披露 OpenAI 内部代号为莉莉计划（Project Lily）的项目，由时薪超 50 美元的提示词审核员查看匿名化后的真实用户聊天记录，评判回复是否切题、是否存在 AI 式话术和谄媚口吻。",
+      "source_urls": [
+        "https://www.ithome.com/1/002/750.htm"
+      ]
+    }
+  ],
+  "generated_at": "2026-09-16T00:05:49+08:00",
+  "rewrite_status": "current_run_reader_projection"
+}

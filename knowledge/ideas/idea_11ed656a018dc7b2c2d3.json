@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_11ed656a018dc7b2c2d3",
+  "identity": {
+    "problem_key": "delayed_outcome_evidence",
+    "mechanism_key": "prefix_reward_prediction_termination",
+    "target_key": "long_horizon_agent_cost_success"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "长时程Agent的成败判定应前移到轨迹前缀，而不是跑满全程",
+  "problem": "长时程编码Agent的可验证奖励只在工具调用链跑完后出现，测试时扩展与训练在注定失败的轨迹上持续花费；同时harness的完成信号本身不可信：命令先提问再行动时关闭输入的假返回与原样重发的循环都会伪装成进展。",
+  "hypothesis": "只读已观测工具输出与workspace diff的前缀终止奖励预测器，配合退化阈值与提前终止，能在与终端验证器一致率可校准的前提下，以远低于跑满全轨迹的成本筛除注定失败轨迹，使测试时扩展与RL训练的token成本显著下降而最终成功率不降。",
+  "mechanism": "在轨迹前缀上预测终止奖励：预测器不见未来动作与评测结果，检索既往经验合成自适应rubric，低于阈值的轨迹判为退化并提前终止；循环检测与进程状态报告等外部信号作为前缀可观测的补充判据。",
+  "expected_effect": "测试时扩展token下降且成功率持平或提升，RL训练信号更早更密；虚假完成与循环等前缀可观测的失败模式先于全轨迹成本暴露。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "2ae2e3ae6dc86483a4c1405b",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.31995v1"
+      ],
+      "reason": "CER直接实测该机制：前缀预测器只读已观测工具输出与workspace diff，SWE-bench Verified较最强基线高4.2pp、省64.8% token，RL训练Qwen3.5-9B达51.6%对TMax 49.7%；边界为与终端验证器一致率仅60.9%、论文在审且摘要RL token节省未获数值复核。"
+    },
+    {
+      "item_id": "c0a45071e1dd5bc405236eb9",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.19376v1"
+      ],
+      "reason": "DeLoop提供前缀可观测失败信号的相邻证据：循环检测能量化原样重发（压缩使循环率29.0%升至57.3%），循环是可在前缀上廉价识别的退化模式；其修复依赖DPO训练而非判定门（仅8B与CodeGym实测）。"
+    },
+    {
+      "item_id": "2d005b011494273654015461",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.01930v1"
+      ],
+      "reason": "RECEIPT界定判定信号的信任前提：11.5%的提示型调用未执行动作即返回0、未回答提问使token增至2.9倍，提前判定不能依赖Agent自报完成，需进程状态等外部信号（作者自述未必适用于其他harness与LLM）。"
+    },
+    {
+      "item_id": "acf34646754cd776c36b3295",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.28667v1"
+      ],
+      "reason": "预注册实验量化完成信号不可信问题侧：构建者自测对46个植入缺陷检出85.1%而新鲜上下文验证者95.4%，且换供应商验证者不升反平（85.1%）——判定独立性来自上下文分离而非换模型，这同时提示前缀终止预测器（当前与终端验证器一致率60.9%）的校准目标应是与独立上下文验证对齐；边界为契约与人工发布环节未端到端检验、发布门召回无法测得。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "前缀预测与终端验证器的一致率能否在跨任务分布上稳定（当前仅60.9%）。",
+    "提前终止对最终成功率的长期影响与rubric漂移。",
+    "循环率与虚假完成率在内部轨迹中的真实基线。"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在固定长时程编码任务集上校准一个只读前缀（已观测工具输出+workspace diff）的终止奖励预测器，与跑满全轨迹后再判定对比；同时用循环检测与进程状态报告作为补充前缀信号。",
+    "inputs": [
+      "长时程编码任务轨迹（如SWE-bench Verified衍生）",
+      "前缀截断点扫描（如25%/50%/75%）",
+      "用于合成rubric的既往经验库",
+      "带输入连接保持与进程状态报告的harness"
+    ],
+    "baselines": [
+      "跑满全轨迹后再判定",
+      "固定步数上限终止",
+      "同预算随机终止"
+    ],
+    "metrics": [
+      "与终端验证器一致率",
+      "最终成功率（pass@1）",
+      "总token与每正确答案成本",
+      "虚假完成与循环率"
+    ],
+    "support_criteria": [
+      "一致率显著高于随机且跨任务稳定，按预测提前终止在成功率下降不超过1个百分点时总token降至少30%。"
+    ],
+    "reject_criteria": [
+      "一致率随任务分布漂移不可校准，或提前终止造成的成功率损失超过token节省收益。"
+    ],
+    "limitations": [
+      "预测器与终端验证器存在相关偏差；CER论文在审且部分数字未复核；循环与虚假完成信号同任务失败的对应关系在不同域可能不同。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_14e37bcd848ade9e1deb",
+      "issue_date": "2026-11-06",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "已发布证据给出明确问题（成败证据迟到且完成信号不可信）与可检验机制（前缀终止奖励预测加提前终止），建立研究假设Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "2ae2e3ae6dc86483a4c1405b",
+        "c0a45071e1dd5bc405236eb9",
+        "2d005b011494273654015461"
+      ]
+    },
+    {
+      "event_id": "idea_decision_0280a5962342efe162eb",
+      "issue_date": "2026-11-09",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增独立上下文验证优于构建者自测的预注册实测（95.4%对85.1%、换供应商不升反平），为完成信号不可信的问题侧与终端验证器选择提供依据；状态保持seed，一致率校准仍未解决。",
+      "evidence_item_ids": [
+        "acf34646754cd776c36b3295"
+      ]
+    }
+  ]
+}

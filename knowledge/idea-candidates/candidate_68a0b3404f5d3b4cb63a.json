@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_68a0b3404f5d3b4cb63a",
+  "identity": {
+    "problem_key": "distributed_fs_weak_consistency_no_shared_cache",
+    "mechanism_key": "switch_coherence_directory_page_msi",
+    "target_key": "cluster_kernel_page_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "交换机内一致性目录支撑的强一致集群级内核页缓存",
+  "problem": "分布式文件系统语义弱一致，各节点页缓存无法跨节点共享：跨节点共享文件数据要么放弃强一致语义，要么付出远端访问或中心协调的代价，难以在近本地性能下获得强一致的共享缓存视图。",
+  "hypothesis": "在共享解耦内存上，以页粒度MSI失效协议同步各节点保留的标准Linux页缓存，并由可编程交换机内一致性目录线速排序一致性事件、定向发送失效且无中心协调节点，可在近本地性能下提供强一致的集群级缓存；若10–30%写混合负载下平均吞吐不再显著高于NFS弱一致基线，或低写比例下所有权迁移使扩展劣于单节点，则该假设被证伪。",
+  "mechanism": "每节点保留标准Linux页缓存抽象，跨节点用页粒度MSI失效协议同步文件数据；可编程交换机内一致性目录线速排序一致性事件并定向发送失效，无中心协调节点，缓存本体落在经RDMA访问的共享解耦内存。",
+  "target": "基于RDMA与可编程交换机的共享解耦内存集群级内核页缓存",
+  "expected_effect": "读多写少共享负载下获得近本地性能的强一致跨节点缓存：证据自报10–30%写混合读写平均吞吐为NFS的4.6倍，99%读均匀访问键值负载跨4节点约4.5 Mops、为单节点的1.72倍。",
+  "topic_ids": [
+    "memory_dsa"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发表系统记录（Callosal）同时给出具体问题、可解释机制、目标对象与可检验效应，构成本期直接触发候选。"
+  },
+  "evidence": [
+    {
+      "item_id": "3014e44ac2645ee785b867cc",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36347v1"
+      ],
+      "reason": "Callosal把Linux页缓存重构为以共享解耦内存为中心的集群级缓存：每节点保留标准页缓存抽象，跨节点用页粒度MSI失效协议同步文件数据，交换机内一致性目录线速排序并定向发失效、无中心协调节点；10–30%写混合读写平均吞吐为NFS的4.6倍，99%读均匀访问键值负载跨4节点约4.5 Mops、为单节点1.72倍，为该候选的问题、机制、目标与可检验效应提供已发布依据（边界：冲突写与私有覆写吞吐低于NFS、5%写时所有权迁移无法扩展出单节点、缺时延与CPU数据）。",
+      "independence_group": "arxiv:2610.36347"
+    }
+  ],
+  "evidence_item_ids": [
+    "3014e44ac2645ee785b867cc"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.36347v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.36347"
+  ],
+  "unknowns": [
+    "冲突写与私有覆写下吞吐低于NFS的写比例边界未量化",
+    "5%写时所有权迁移使系统无法扩展出单节点的机理与缓释手段未知",
+    "可见证据缺时延与CPU开销数据",
+    "单一arXiv来源构成单独立性分组，无独立复现",
+    "该证据同日已进入两个既有Idea（容量层相邻证据、联合准入Idea的创建证据），独立成Idea的谱系归属待人工决策"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "离散事件模拟多节点共享解耦内存上的页缓存：页粒度MSI失效协议叠加交换机内一致性目录的线速排序与定向失效，回放共享文件与读多写少负载并扫描写比例与冲突写比例。",
+    "inputs": [
+      "多节点共享文件与读多写少负载轨迹（写比例与冲突写比例扫描）",
+      "页所有权迁移率与失效流量参数",
+      "RDMA链路带宽时延与交换机目录处理速率"
+    ],
+    "baselines": [
+      "NFS弱一致共享",
+      "单节点页缓存（无跨节点共享）",
+      "无交换机一致性目录的解耦内存直访"
+    ],
+    "metrics": [
+      "平均吞吐",
+      "跨节点扩展比（对单节点）",
+      "失效与所有权迁移流量开销",
+      "时延与CPU开销（原证据缺失，仿真补测）"
+    ],
+    "support_criteria": [
+      "读多写少共享负载下吞吐与跨节点扩展比显著优于弱一致基线，且保持强一致语义"
+    ],
+    "reject_criteria": [
+      "冲突写或私有覆写吞吐持续低于NFS，或低写比例下所有权迁移吞没跨节点共享收益"
+    ],
+    "limitations": [
+      "仿真无法复现交换机ASIC线速排序与真实RDMA时延",
+      "原证据自报数字绑定其特定RDMA与可编程交换拓扑，未见时延与CPU数据，需独立复现"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且与既有候选和Idea身份不同（仅一致维度、不含公平准入，目标为内核页缓存而非KV容量层或多租户争用解），但证据仅单一独立性分组、无独立复现，冲突写与私有覆写下吞吐低于NFS且缺时延与CPU数据构成适用边界；该证据同日已是idea_2f2161ae7470caca28bb的相邻领域证据与idea_e2f9f007a7d278e1e449的创建证据，是否独立成Idea的谱系决策留待人工，故列为deferred。",
+  "related_candidate_ids": [
+    "candidate_2f2161ae7470caca28bb"
+  ],
+  "related_idea_ids": [
+    "idea_2f2161ae7470caca28bb",
+    "idea_e2f9f007a7d278e1e449"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_daebdab9f3252f3be976",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且与既有候选和Idea身份不同（仅一致维度、不含公平准入，目标为内核页缓存而非KV容量层或多租户争用解），但证据仅单一独立性分组、无独立复现，冲突写与私有覆写下吞吐低于NFS且缺时延与CPU数据构成适用边界；该证据同日已是idea_2f2161ae7470caca28bb的相邻领域证据与idea_e2f9f007a7d278e1e449的创建证据，是否独立成Idea的谱系决策留待人工，故列为deferred。",
+      "evidence_item_ids": [
+        "3014e44ac2645ee785b867cc"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

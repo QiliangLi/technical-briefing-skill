@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_80a11fa68bdf30c34571",
+  "identity": {
+    "problem_key": "uniform_budget_prompt_side_eviction_scoring",
+    "mechanism_key": "layer_shape_plus_future_query_eviction",
+    "target_key": "kv_cache_eviction_policy"
+  },
+  "idea_type": "solution_concept",
+  "title": "驱逐决策引入层形状与响应侧未来查询双信号",
+  "problem": "驱逐方法对每层用相同预算、打分只用prompt侧信号，漏掉层异质性与仅生成期重要的token。",
+  "hypothesis": "离线学出逐层预算形状（类比静态量化标定）叠加从冻结模型采样未来查询估计删除代价，在紧预算下显著优于统一预算加prompt侧打分，宽预算下各方法趋同。",
+  "mechanism": "贝叶斯加NSGA-II离线逐层预算搜索并经缩放解码迁移；免训练短前瞻采样以响应侧查询计算删除代价。",
+  "target": "自研推理栈KVCache驱逐与分层策略",
+  "expected_effect": "MOSAIC在154个设置中146个胜过统一分配、同分数最多省75%缓存；LORE-KV紧预算下LongBench均值较AnDPro提升2.75分。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-10-23",
+    "rationale": "同期三条独立证据分别指向层形状与未来查询两个被忽略的驱逐信号维度。"
+  },
+  "evidence": [
+    {
+      "item_id": "86c0149adfbdd159a26d13ec",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.25431v1"
+      ],
+      "reason": "MOSAIC证明层维度异质性：逐层预算在154个设置中146个胜过统一分配。",
+      "independence_group": "arxiv:2610.25431"
+    },
+    {
+      "item_id": "757775758481577d00f2fdfb",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.07643v2"
+      ],
+      "reason": "LORE-KV证明响应侧未来查询信号在紧预算下优于prompt侧打分。",
+      "independence_group": "arxiv:2610.07643"
+    },
+    {
+      "item_id": "afa9bbe36d6238053583a937",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.06996v1"
+      ],
+      "reason": "MaskAhead以未来掩码探针为保留集排序，佐证未来信号可替代累计注意力打分（面向块扩散模型）。",
+      "independence_group": "arxiv:2610.06996"
+    }
+  ],
+  "evidence_item_ids": [
+    "86c0149adfbdd159a26d13ec",
+    "757775758481577d00f2fdfb",
+    "afa9bbe36d6238053583a937"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.25431v1",
+    "https://arxiv.org/abs/2610.07643v2",
+    "https://arxiv.org/abs/2610.06996v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.25431",
+    "arxiv:2610.07643",
+    "arxiv:2610.06996"
+  ],
+  "unknowns": [
+    "无延迟、吞吐与显存实测",
+    "一次性搜索需9至40GPU时、采样压缩开销1.46至2.77倍",
+    "两种信号叠加是否互相干扰"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在统一驱逐框架中实现逐层预算加响应侧查询打分并做消融",
+    "inputs": [
+      "LongBench与RULER负载",
+      "驱逐方法矩阵",
+      "层形状搜索预算"
+    ],
+    "baselines": [
+      "SnapKV统一分配",
+      "AnDPro"
+    ],
+    "metrics": [
+      "任务分数",
+      "缓存占用",
+      "TTFT"
+    ],
+    "support_criteria": [
+      "紧预算下组合显著优于任一单一信号"
+    ],
+    "reject_criteria": [
+      "搜索或采样开销超过收益，或宽预算下显著劣化"
+    ],
+    "limitations": [
+      "两法来自不同模型与负载"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "两条独立证据线互补但未在同一框架对照，先观察组合验证。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-23",
+  "last_updated_issue": "2026-10-23",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_bb08d092c9f080f18bd",
+      "issue_date": "2026-10-23",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "两条独立证据线互补但未在同一框架对照，先观察组合验证。",
+      "evidence_item_ids": [
+        "86c0149adfbdd159a26d13ec",
+        "757775758481577d00f2fdfb",
+        "afa9bbe36d6238053583a937"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8cff851313c56bb9998d",
+  "identity": {
+    "problem_key": "tp_sp_moe_communication_training_critical_path",
+    "mechanism_key": "persistent_kernel_demand_queue_role_switching",
+    "target_key": "mi350_single_node_llm_training"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "KOSMOS以单一持久内核按消费需求队列切换通信与矩阵计算角色加速MI350训练",
+  "problem": "TP+SP与MoE专家并行把集合通信压到训练关键路径，既有的通信计算重叠方法仍留有空闲窗口，MI350级加速器上的端到端训练被通信调度而非矩阵算力拖累。",
+  "hypothesis": "若通信与计算同驻一个持久内核、工作组按消费需求队列在通信与矩阵计算角色间动态切换，以形状启发替代逐形状调优，并让MoE路由基于XGMI对称内存不下设备，则MI350系列上稠密与MoE训练的端到端速度可稳定超过Transformer Engine与DeepEP基线。",
+  "mechanism": "通信与计算运行在一个持久内核里：工作组按消费需求队列在通信与矩阵计算角色间动态切换，形状启发替代逐形状调优；MoE路由不下设备，基于XGMI对称内存。",
+  "target": "AMD Instinct MI350系列上的单机稠密与MoE（代理层数）LLM训练",
+  "expected_effect": "稠密训练的47项非OOM实测全胜Transformer Engine（1.097至1.280倍）；MoE代理训练全配置胜DeepEP 1.29至1.83倍。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（TP+SP与MoE专家并行把通信压到训练关键路径、既有重叠方法留有空闲窗口）、可解释机制（单一持久内核内工作组按消费需求队列在通信与矩阵计算角色间动态切换、形状启发替代逐形状调优、MoE路由基于XGMI对称内存不下设备）、目标对象（MI350系列单机稠密与MoE训练）与可检验效应（稠密47项非OOM实测全胜Transformer Engine 1.097至1.280倍、MoE代理训练全配置胜DeepEP 1.29至1.83倍）；但其问题+机制+目标的含义与正式Idea idea_46f7dbdd677133518d37一致，该Idea的evidence_for已于2026-11-09收录本条。"
+  },
+  "evidence": [
+    {
+      "item_id": "c7d7374408bb50f29a003d5d",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07477v1"
+      ],
+      "reason": "KOSMOS记录给出问题（TP+SP与MoE专家并行把通信压到训练关键路径，既有重叠方法留有空闲窗口）、机制（通信与计算同驻一个持久内核，工作组按消费需求队列在通信与矩阵计算角色间动态切换，形状启发替代逐形状调优，MoE路由不下设备、基于XGMI对称内存）、目标（MI350系列单机稠密与MoE代理训练）与可检验效应（稠密训练47项非OOM实测全胜Transformer Engine 1.097至1.280倍，MoE代理训练全配置胜DeepEP 1.29至1.83倍），并同时给出仅单机验证、依赖XGMI对称内存、RDMA与多节点验证待后续、大模型用代理层数且有一格OOM的边界。",
+      "independence_group": "arxiv:2611.07477"
+    }
+  ],
+  "evidence_item_ids": [
+    "c7d7374408bb50f29a003d5d"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.07477v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.07477"
+  ],
+  "unknowns": [
+    "仅单机验证：当前依赖XGMI对称内存，RDMA与多节点验证待后续",
+    "大模型用代理层数验证，且实测中有一格OOM",
+    "单一arXiv v1预印本独立分组，缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有MI350级AMD Instinct单机环境复现持久内核内按消费需求队列切换通信与矩阵计算角色的训练执行，对照Transformer Engine与DeepEP基线，并按自有拓扑重核XGMI对称内存依赖。",
+    "inputs": [
+      "MI350级单机环境与ROCm软件栈",
+      "稠密与MoE训练负载及代理层数口径",
+      "消费需求队列与形状启发调度配置"
+    ],
+    "baselines": [
+      "Transformer Engine稠密训练栈",
+      "DeepEP MoE通信基线"
+    ],
+    "metrics": [
+      "端到端训练加速比",
+      "通信与计算重叠的空闲窗口占比",
+      "非OOM配置覆盖率与稳定性"
+    ],
+    "support_criteria": [
+      "稠密与MoE负载上端到端加速在非OOM配置稳定复现"
+    ],
+    "reject_criteria": [
+      "角色切换调度开销或XGMI对称内存依赖使收益不可复现，或仅代理层数模型成立"
+    ],
+    "limitations": [
+      "首版仅覆盖单机XGMI互连与MI350代际，多节点RDMA未验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "触发记录四要素齐备，但其问题+机制+目标的含义与正式Idea idea_46f7dbdd677133518d37（MoE通信-计算SM争用的显式分区与运行时调优）一致：同为集合通信与矩阵计算争用执行资源、以显式角色划分加运行时调度兑现训练吞吐收益；该Idea的evidence_for已于2026-11-09收录本条c7d7374408bb50f29a003d5d并把KOSMOS描述为该机理向AMD硬件与训练相位的扩展，本条系同族复报、无新机理，按duplicate指向该Idea，不重复立项。",
+  "related_candidate_ids": [
+    "candidate_46f7dbdd677133518d37"
+  ],
+  "related_idea_ids": [
+    "idea_46f7dbdd677133518d37"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ccb963181020688232ff",
+      "issue_date": "2026-11-09",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "Direct任务审阅触发证据，问题、机制、目标与可检验效应四要素齐备，但其问题+机制+目标含义与正式Idea idea_46f7dbdd677133518d37相同且该Idea的evidence_for已于2026-11-09收录本条，按duplicate处置并指向该Idea。",
+      "evidence_item_ids": [
+        "c7d7374408bb50f29a003d5d"
+      ],
+      "actor": "agent"
+    }
+  ]
+}
