@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_4eb8b7088c32aac6cd8f",
+  "identity": {
+    "problem_key": "security_mechanism_tradeoff_unpriced",
+    "mechanism_key": "attack_utility_priced_mechanism_selection",
+    "target_key": "agent_harness_security_configuration"
+  },
+  "idea_type": "solution_concept",
+  "title": "把安全机制开关按攻击面与效用联合定价后做Harness机制组合选型",
+  "problem": "编码Agent框架的安全机制此前缺乏系统刻画，配置决策是纯开关式的：HarnessSecurity-Bench实测自动批准把攻击成功率从29.2%抬到95.6%、网络隔离把攻击压到0.8%但效用损失24.5个百分点，这些权衡从未被定价；而LAM式固定能力资源计价只覆盖调用、token、内存与验证，安全暴露不在账本内，安全机制组合选型没有统一比较基础。",
+  "hypothesis": "可证伪问题：把每类安全机制测成（效用增量ΔU、攻击成功率增量ΔA、机制资源开销ΔC）三元组，并按期望安全损失（攻击成功率×损失幅度估计）折入与token/调用同口径的统一账本后做组合选型，所得配置在攻击成功率不高于设定阈值的约束下，成本调整效用显著高于默认、全开与单目标加固基线。",
+  "mechanism": "三段联合：用HarnessSecurity-Bench的隔离容器配对开关协议（确定性oracle同时度量任务效用与攻击成败）把每类机制测成三元组；用LAM式固定能力计价账本把期望安全损失折算为第五种资源价签；选型层在攻击成功率约束下按成本调整效用选机制组合，输出每机制可解释价签。",
+  "target": "编码Agent Harness的安全机制配置层",
+  "expected_effect": "同一任务集与攻击负载下，定价选型组合在攻击成功率不高于阈值的约束下任务效用显著高于默认与全开基线（锚点：网络隔离效用损失24.5pp、自动批准攻击面抬升66.4pp），且每机制价签在第二个框架上方向一致地复现。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-13",
+    "rationale": "同期两条独立记录互补：HarnessSecurity-Bench（arxiv:2610.07639）首次用确定性oracle配对开关同时量化十类机制的攻击面与任务效用（自动批准29.2%→95.6%、网络隔离0.8%但效用−24.5pp）但没有计价与选型框架；LAM（arxiv:2610.02488）给出固定能力资源计价账本但完全不含安全暴露轴。『把期望安全损失折入统一计价账本做机制组合选型』任何单条记录均未陈述。"
+  },
+  "evidence": [
+    {
+      "item_id": "10f8ef36cb2a0933d32f1b28",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.07639v2"
+      ],
+      "reason": "HarnessSecurity-Bench对40个框架的十类机制逐格评级，并在隔离容器中以确定性oracle配对开关机制、每条件重复十次，同时度量任务效用与攻击成败：固定GLM-5.2基线下自动批准使攻击成功率29.2%升至95.6%、网络隔离压至0.8%但效用损失24.5个百分点，给出机制级（效用,攻击面）权衡的首批系统测量与配对开关协议；边界：运行时评估仅6个框架与单一LLM基线，黑白名单量化缺失，机制组合交互未测。",
+      "independence_group": "arxiv:2610.07639"
+    },
+    {
+      "item_id": "4a9a46bf4dbb8e5bc05148dc",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02488v2"
+      ],
+      "reason": "LAM固定模型语义能力，对调用、token流量、内存读写与验证计价并给出约束通信、访问、重算与验证开销的四条资源定律，提供把异质开销折入同一账本做净收益核算的计价框架；其账本不含安全暴露轴，本候选把期望安全损失作为新增资源轴接入；边界：计价实证限于16步MATH合成链，未测编码Agent负载。",
+      "independence_group": "arxiv:2610.02488"
+    }
+  ],
+  "evidence_item_ids": [
+    "10f8ef36cb2a0933d32f1b28",
+    "4a9a46bf4dbb8e5bc05148dc"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.07639v2",
+    "https://arxiv.org/abs/2610.02488v2"
+  ],
+  "independence_groups": [
+    "arxiv:2610.07639",
+    "arxiv:2610.02488"
+  ],
+  "unknowns": [
+    "HarnessSecurity-Bench运行时评估仅6个框架与单一LLM基线，三元组的跨框架稳定性未知。",
+    "期望损失定价所需的损失幅度模型（一次攻击成功的代价分布）没有任何记录测量。",
+    "LAM四定律在含安全机制的真实编码负载上未验证（其边界自述未测编码Agent的Read/Grep与时延）。",
+    "机制间交互（如自动批准×网络隔离的组合效应）在可见证据中缺失，三元组可加性假设未检验。"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在HSB式隔离评测架上对同一harness的十类安全机制做逐机制与关键组合的配对开关测量，拟合每机制（ΔU、ΔA、ΔC）三元组，实现期望损失定价选型器，与默认、全开、单目标加固配置在同一任务集与攻击负载下比较。",
+    "inputs": [
+      "HSB式23任务基准与攻击注入负载",
+      "十类安全机制的可开关实现",
+      "确定性攻击oracle与任务效用评分",
+      "损失幅度估计表（人工标定）"
+    ],
+    "baselines": [
+      "框架默认安全配置",
+      "全部机制开启",
+      "仅网络隔离",
+      "仅收紧自动批准"
+    ],
+    "metrics": [
+      "攻击成功率",
+      "任务效用",
+      "成本调整效用（效用−期望安全损失−机制资源开销）",
+      "每机制价签的跨框架复现一致性"
+    ],
+    "support_criteria": [
+      "定价选型在攻击成功率不高于阈值的约束下成本调整效用显著高于全部基线，且价签在第二个框架上方向一致。"
+    ],
+    "reject_criteria": [
+      "机制组合交互使三元组不可加、定价选型不优于默认配置，或价签跨框架反向。"
+    ],
+    "limitations": [
+      "攻击负载与oracle不等于真实攻击分布。",
+      "损失幅度靠人工标定，定价结果对其敏感。",
+      "运行时证据仅6框架单LLM，外推受限。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "四要素完整且身份与含义不同于46条既有候选与7条Idea：candidate_63fd707887381cc17e62是工具出口参数改写、candidate_b917073794319bd1630e是网关层级发现架构、idea_a90d71c35ea8a0f208da是调用前状态监督，均非安全机制的联合定价选型；两组同期独立来源联合支撑任何单条记录未陈述的机制，列为proposed等待人工晋升。",
+  "related_candidate_ids": [
+    "candidate_b917073794319bd1630e"
+  ],
+  "related_idea_ids": [
+    "idea_a90d71c35ea8a0f208da"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_4eb8b7088c32aac6cd8f",
+      "issue_date": "2026-11-13",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "新候选：HarnessSecurity-Bench（10f8ef36cb2a0933d32f1b28）与LAM（4a9a46bf4dbb8e5bc05148dc）两条同期独立记录互补，联合支撑『安全机制按攻击面与效用联合定价后选型』这一任何单条记录未陈述的机制；与既有候选及Idea身份与含义均不同，四要素完整，列为proposed等待人工晋升。",
+      "evidence_item_ids": [
+        "10f8ef36cb2a0933d32f1b28",
+        "4a9a46bf4dbb8e5bc05148dc"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

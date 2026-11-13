@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_687aa32867cbce7356de",
+  "identity": {
+    "problem_key": "irreversible_eviction_and_prompt_independent_bases",
+    "mechanism_key": "per_prompt_online_truncated_svd_attention_geometry",
+    "target_key": "kv_cache_low_rank_compression_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "按提示注意力几何的在线截断SVD低秩KV压缩：不丢token、按保留秩削减显存",
+  "problem": "免训练驱逐式KVCache压缩不可逆丢弃token，且既有低秩压缩方法的基与当前提示无关（来自校准口径而非当前提示自身的注意力几何），缓存预算收缩时不可逆损失与基失配同时损害质量。",
+  "hypothesis": "对每层每头在RoPE后按当前提示自身的注意力几何做在线截断SVD（键按query度量、值按注意力质量加权截断、基仅来自当前提示、无需校准集或训练），可在不丢弃token的前提下按保留秩成比例削减KV显存：50%预算下Phi-4-14B与Qwen3-8B的LongBench均分与稠密缓存持平，实测KV显存为稠密的0.502倍。",
+  "mechanism": "对每层每头在RoPE后做在线截断SVD：键按query度量截断、值按注意力质量加权截断，基仅由当前提示构造，无需校准集或训练阶段；不驱逐token，而以保留秩为旋钮按比例压缩KV显存。",
+  "target": "LLM服务中KVCache的免训练压缩路径（逐层逐头在线截断SVD决策点与KV显存预算-质量权衡）。",
+  "expected_effect": "50%预算下Phi-4-14B与Qwen3-8B的LongBench均分与稠密缓存持平，实测KV显存为稠密的0.502倍；边界为仅单流质量评测、在线SVD运行时代价与硬件规格未测、论文为在审预印本。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "单条已发布记录同时给出问题（免训练驱逐式压缩不可逆丢弃token、既有低秩方法基与当前提示无关）、可解释机制（每层每头RoPE后在线截断SVD，键按query度量、值按注意力质量加权，基仅来自当前提示，免校准免训练）、目标对象（LLM服务KVCache免训练压缩路径）与可检验效应（50%预算下Phi-4-14B与Qwen3-8B LongBench均分与稠密持平、实测KV显存为稠密的0.502倍）。"
+  },
+  "evidence": [
+    {
+      "item_id": "d302b5fce18bcf6d3dbefb3f",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.06927v1"
+      ],
+      "reason": "AttSVD给出问题（驱逐式压缩不可逆丢弃token、既有低秩基与当前提示无关）、机制（每层每头RoPE后在线截断SVD，键按query度量、值按注意力质量加权，基仅来自当前提示，免校准免训练）、目标（LLM服务KVCache压缩路径）与可检验效应（50%预算下Phi-4-14B与Qwen3-8B LongBench均分与稠密持平、实测KV显存0.502倍）；边界为无在线SVD运行时代价与硬件规格、仅单流质量评测、在审预印本。",
+      "independence_group": "arxiv:2610.06927"
+    }
+  ],
+  "evidence_item_ids": [
+    "d302b5fce18bcf6d3dbefb3f"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.06927v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.06927"
+  ],
+  "unknowns": [
+    "在线SVD的运行时代价与硬件规格未测，服务吞吐与时延影响未知",
+    "仅单流质量评测（LongBench），无并发多请求serving评测",
+    "在审预印本，单一证据源，无独立工作线复现",
+    "仅Phi-4-14B与Qwen3-8B两款模型，跨规模与跨架构外推未知",
+    "保留秩/预算扫描口径及其与驱逐式基线的对照未在证据中给出"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在统一KVCache压缩框架中实现按提示注意力几何的逐层逐头在线截断SVD压缩（RoPE后键按query度量、值按注意力质量加权、基仅来自当前提示），对照免训练驱逐式压缩与稠密缓存。",
+    "inputs": [
+      "Phi-4-14B与Qwen3-8B复现口径并扩展更多模型与规模",
+      "KV预算/保留秩扫描（含50%档）",
+      "LongBench质量负载与并发serving负载",
+      "基来源消融（当前提示 vs 提示无关校准口径）",
+      "在线SVD运行时代价计量（每层每头开销、显存带宽、TTFT/TPOT）"
+    ],
+    "baselines": [
+      "免训练驱逐式token丢弃压缩（证据所述驱逐口径）",
+      "提示无关基的既有低秩压缩",
+      "稠密KV缓存（质量与显存上界参照）"
+    ],
+    "metrics": [
+      "LongBench等长上下文任务分数",
+      "实测KV显存/稠密比值",
+      "在线SVD运行时开销与端到端TTFT/TPOT、吞吐",
+      "预算-质量权衡曲线"
+    ],
+    "support_criteria": [
+      "50%预算下LongBench均分与稠密持平且KV显存约0.5倍可复现",
+      "在线SVD运行时代价不抵消显存收益（吞吐/时延劣化在可接受界内）",
+      "质量优于提示无关基的低秩压缩"
+    ],
+    "reject_criteria": [
+      "在线SVD运行时代价使吞吐或时延劣化至不可接受",
+      "并发或多模型负载下质量显著低于稠密或驱逐基线",
+      "按query度量键与注意力质量加权值的截断不优于提示无关基"
+    ],
+    "limitations": [
+      "原始证据为在审预印本，仅单流质量评测，无运行时代价与硬件规格"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且与既有候选不同义：candidate_18458bcb48f7ddff4d4c与idea_18458bcb48f7ddff4d4c同治驱逐式压缩不可逆丢弃token，但机制为可召回4比特量化冷层加读指针时序预取；candidate_80a11fa68bdf30c34571为层形状加未来查询的驱逐打分信号，candidate_d4ad44954f43a2562f13与idea_d4ad44954f43a2562f13为打分层深度选择，candidate_2091ab950b508be4892f与candidate_e048816b7955140a7f4f为KV树结构读取集缩减，idea_e3cdce04f96650909c4d为前缀命中与KV压缩组合的节能核算，均非按当前提示注意力几何的在线截断SVD低秩压缩；但证据为单一在审预印本，仅单流质量评测，在线SVD运行时代价与硬件规格未测，无独立支持，先观察。",
+  "related_candidate_ids": [
+    "candidate_18458bcb48f7ddff4d4c",
+    "candidate_80a11fa68bdf30c34571",
+    "candidate_d4ad44954f43a2562f13"
+  ],
+  "related_idea_ids": [
+    "idea_18458bcb48f7ddff4d4c",
+    "idea_e3cdce04f96650909c4d"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_834743fde88cfd79e3ed",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且与既有候选不同义：candidate_18458bcb48f7ddff4d4c与idea_18458bcb48f7ddff4d4c同治驱逐式压缩不可逆丢弃token，但机制为可召回4比特量化冷层加读指针时序预取；candidate_80a11fa68bdf30c34571为层形状加未来查询的驱逐打分信号，candidate_d4ad44954f43a2562f13与idea_d4ad44954f43a2562f13为打分层深度选择，candidate_2091ab950b508be4892f与candidate_e048816b7955140a7f4f为KV树结构读取集缩减，idea_e3cdce04f96650909c4d为前缀命中与KV压缩组合的节能核算，均非按当前提示注意力几何的在线截断SVD低秩压缩；但证据为单一在审预印本，仅单流质量评测，在线SVD运行时代价与硬件规格未测，无独立支持，先观察。",
+      "evidence_item_ids": [
+        "d302b5fce18bcf6d3dbefb3f"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -97,6 +97,14 @@
         "https://arxiv.org/abs/2611.12062v1"
       ],
       "reason": "KV缓存跨模型翻译只训练翻译器（源与目标冻结）把源KV改写为目标自有格式：MLA潜变量逐词元线性映射、从源第0层潜变量解码词元id以保住精确召回，多轮交接只翻译新增分段；64K切换较冷重读快18.7与46.8倍、经PCIe传4.2GB KV加148MiB状态耗84毫秒，同构对上分段翻译多轮与原生重读持平且追赶时间约为其1/6——直接支撑映射迁移优于重复Prefill、且分段增量翻译是多轮质量必需而非仅省时的假设（传输全在机内GPU/PCIe测得、无WAN数据，仅限同分词器模型对，多轮单种子，个别方向低于原生）。"
+    },
+    {
+      "item_id": "dfb4bd481a9af4315c948fba",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13176v1"
+      ],
+      "reason": "SHADOWPREFILL把模型切换的KV复用失效在生产形态上量化：Agent逐步路由切换时前缀缓存命中率从80-89%跌至44-65%，其缓解是在SLO时延余量内用空闲容量为备选模型预填充影子上下文（影子KV限占池25%、优先淘汰并可溢出主机内存），16卡H100 vLLM原型上切换调用TTFT平均降61.9%、token成本估算降20.4%；KV移动均在实例内或集群内、无WAN数据，且影子预填充以提前重算而非状态迁移处理同一问题、不回答迁移加刷新的可用边界，但确认切换重算成本是模型路由的一阶变量。"
     }
   ],
   "evidence_against": [],
@@ -134,7 +142,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-23",
-  "last_updated_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-13",
   "decision_log": [
     {
       "event_id": "idea_decision_cc74c1c22d091a7dc8de",
@@ -214,6 +222,17 @@
       "reason": "新增同分词器混合注意力模型对间KV翻译器的实测证据：分段增量翻译是多轮交接的质量必需而非仅省时，映射式迁移显著优于冷重读；状态保持observing，跨机房WAN复用与跨分词器模型对仍缺验证。",
       "evidence_item_ids": [
         "b49c6bccc286b5c961ad8d18"
+      ]
+    },
+    {
+      "event_id": "idea_decision_f06c8b78d86ad0db0af82484",
+      "issue_date": "2026-11-13",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增模型切换时前缀缓存命中率坍塌（80-89%降至44-65%）的实测证据与实例内影子预填充缓解；它以提前重算而非KV迁移处理同一问题，且无WAN数据，状态保持observing。",
+      "evidence_item_ids": [
+        "dfb4bd481a9af4315c948fba"
       ]
     }
   ]

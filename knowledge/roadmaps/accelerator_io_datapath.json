@@ -3,8 +3,8 @@
   "topic_id": "accelerator_io_datapath",
   "topic_name": "加速器直连I/O与存储数据路径",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-11",
-  "summary": "加速器直连I/O数据路径的主线仍是把发起与控制权推向加速器侧、数据经DMA直达显存：uGDS用户态NVMe路径在A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型），五节点PoC以gds_stats计数器证实124012次I/O全部走nvfs DMA、零次兼容回退、聚合读132.1 GiB/s（厂商自测、未测能耗与端到端负载），AWS以GDS把KV缓存分层单客户端吞吐上限提到1200 Gbps（架构文规格口径、仅限NVIDIA实例且需同可用区），本期三星PLINK重构GPU侧NVMe队列处理，量化BaM式同步路径93.1%的I/O周转时间耗在CQ轮询与门铃，专用SQ/CQ warp分工加槽位等待与warp级门铃合并后在4KB随机读QD1024微基准中以136个I/O warp使SSD饱和、较基线238个少43%（幻灯片只报告warp数量、无时延与端到端负载结果、基准不计完成通知开销）；供给侧美光AI级NAND路线图把GPU发起小块访问写入头部介质厂商优先级、下一代SSD目标25M-100M IOPS与512TB（纯前瞻无实测），KIOXIA演示512字节随机读20+ MIOPS的近GPU SSD（无测试条件的器件演示），VDURA V12 GA并经Supermicro认证（8-10万GPU与约20 PB均为无基线宣称），Google Cloud宣布GA的A5X裸金属实例的Managed Lustre将支持GPUDirect Storage、直连路径进入公有云托管并行文件系统并绑定GA裸金属实例（将来时表述、无生效日期与任何实测数字），NVIDIA开源gds-diag把装前校验、装后审计与深度诊断收进一个工具（运维成熟度信号、无性能数据），另有NVIDIA官方教程确立用cuFile nvfs/posix计数器审计真实路径的方法（H100上256次1 GiB读全走加速路径、未注册缓冲仍多一次GPU内复制）；当前判断：直连数据路径仍处于计数器可自证、供给侧（介质、平台、标准化、公有云托管与运维工具链）全面跟进但量化口径仍以厂商宣称为主的工程验证期，GPU发起路径的队列处理开销已可量化、评估方案时应把warp占用列为资源成本指标，uGDS类控制面出内核可试点KV缓存或向量检索外置但须先评估错误恢复语义并补齐POSIX适配，无基线厂商数字与FlatCake等主源缺失条目维持待复核、不作为架构决策依据；PLINK时延与端到端负载结果、第三方复测、时延/能耗/尾时延口径、uGDS错误恢复与多盘扩展证据，或美光/KIOXIA细粒度器件实测交付出现，即应上调直连路径与细粒度介质层的成熟度判断。",
+  "updated_by_issue": "2026-11-13",
+  "summary": "加速器直连I/O数据路径的主线仍是把发起与控制权推向加速器侧、数据经DMA直达显存：uGDS用户态NVMe路径在A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型），五节点PoC以gds_stats计数器证实124012次I/O全部走nvfs DMA、零次兼容回退、聚合读132.1 GiB/s（厂商自测、未测能耗与端到端负载），AWS以GDS把KV缓存分层单客户端吞吐上限提到1200 Gbps（架构文规格口径、仅限NVIDIA实例且需同可用区），PLINK量化BaM式同步路径93.1%的I/O周转时间耗在CQ轮询与门铃、专用SQ/CQ warp分工加槽位等待与warp级门铃合并后以136个I/O warp使SSD饱和、较基线238个少43%（幻灯片只报告warp数量、无时延与端到端负载结果、基准不计完成通知开销），本期SSCAD 2026论文提出基于Linux原生io_uring的跨厂商GPU发起I/O（UNICAMP与AMD作者），为GPU发起路径新增复用Linux原生原语的跨厂商学术路线信号，但可见证据仅为摘要为空的落地页，只有出版事实可证、无任何机制与性能数据，PDF补取前不引用其设计；供给侧美光AI级NAND路线图把GPU发起小块访问写入头部介质厂商优先级、下一代SSD目标25M-100M IOPS与512TB（纯前瞻无实测），KIOXIA演示512字节随机读20+ MIOPS的近GPU SSD（无测试条件的器件演示），VDURA V12 GA并经Supermicro认证（8-10万GPU与约20 PB均为无基线宣称），Google Cloud宣布GA的A5X裸金属实例的Managed Lustre将支持GPUDirect Storage（将来时表述、无生效日期与任何实测数字），NVIDIA以gds-diag与cuFile计数器审计教程补齐GDS部署校验与真实路径自证工具链（运维成熟度信号、无性能数据）；当前判断：直连数据路径仍处于计数器可自证、供给侧全面跟进但量化口径仍以厂商宣称为主的工程验证期，GPU发起路径的队列处理开销已可量化、评估方案时应把warp占用列为资源成本指标，uGDS类控制面出内核可试点KV缓存或向量检索外置但须先评估错误恢复语义并补齐POSIX适配，跨厂商io_uring路线仅记方向信号，无基线厂商数字与FlatCake等主源缺失条目维持待复核、不作为架构决策依据；SSCAD论文PDF补取并核对其io_uring跨厂商设计、PLINK时延与端到端负载结果、第三方复测、uGDS错误恢复与多盘扩展证据，或美光/KIOXIA细粒度器件实测交付出现，即应上调直连路径与细粒度介质层的成熟度判断。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -111,6 +111,14 @@
             "https://www.hotstorage.org/2026/slides/plink_slide.pdf"
           ],
           "reason": "2026-11-11 已发布日报收录：三星在HotStorage '26幻灯片提出PLINK重构GPU侧NVMe队列处理——BaM式同步路径93.1%的I/O周转时间花在CQ轮询和门铃上，PLINK以专用SQ warp持续提交、专用CQ warp处理完成、等待方按槽位等待而不再扫描CQ并以warp为单位合并写门铃，4KB随机读队列深度1024微基准中136个I/O warp即使SSD饱和、较基线238个少43%（只做SQ/CQ解耦反而需246个；幻灯片只报告warp数量、没有时延和端到端负载结果、基准不计完成通知开销）；按加速器发起I/O分支记录GPU侧队列处理开销的首个量化结果，评估方案时把warp占用列为资源成本指标，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "7c58430599ddde25291aa2ed",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://sol.sbc.org.br/index.php/sscad/article/view/46669"
+          ],
+          "reason": "2026-11-13 已发布日报收录：UNICAMP与AMD作者的SSCAD 2026论文提出基于Linux原生io_uring的跨厂商GPU发起I/O设计，为GPU发起路径新增复用Linux原生原语、跨厂商通用化的学术路线信号；可见证据仅为摘要为空的落地页（英文PDF未抓取），只有出版事实可证——论文收录于SSCAD 2026论文集，无任何设计细节、工作负载、基线或IOPS与时延数据，发现源提到的ring所有权协议未经主源核实；列待补取PDF，按加速器发起I/O分支记录其出现，不据此强行划分阶段。"
         }
       ],
       "open_questions": [],
@@ -126,7 +134,8 @@
         "fcc0c18d8d6e0695d8d52b2d",
         "7185271b4bf979dfc1fcc43c",
         "17eb246304de167a8bbcdc2a",
-        "9277255f427b131d07864051"
+        "9277255f427b131d07864051",
+        "7c58430599ddde25291aa2ed"
       ],
       "source_urls": [
         "https://blogs.nvidia.com/blog/ai-storage-fms",
@@ -140,7 +149,8 @@
         "https://www.hotstorage.org/2026/program.html",
         "https://arxiv.org/abs/2610.06622",
         "https://americas.kioxia.com/en-us/business/news/2026/ssd-20261008-1.html",
-        "https://www.hotstorage.org/2026/slides/plink_slide.pdf"
+        "https://www.hotstorage.org/2026/slides/plink_slide.pdf",
+        "https://sol.sbc.org.br/index.php/sscad/article/view/46669"
       ]
     },
     {
@@ -491,6 +501,16 @@
       "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
       "evidence_item_ids": [
         "9277255f427b131d07864051"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_ee8065197ad2aec2bcfa",
+      "issue_date": "2026-11-13",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "7c58430599ddde25291aa2ed"
       ]
     }
   ]

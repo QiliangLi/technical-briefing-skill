@@ -3,8 +3,8 @@
   "topic_id": "kv_management",
   "topic_name": "KVCache管理与复用",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-11",
-  "summary": "本期四条新证据把『驱逐策略是当前最能兑现命中率→端到端时延收益的改造杠杆』进一步坐实：意图感知驱逐 IAC 在 SGLang 上从日志学习每意图状态的回访概率与对数正态轮间延迟、按中位复用窗口/复用概率/规模字典序驱逐 RadixTree 叶子，把 ShareChat 命中率从 LRU 的 12.2% 提到 34.6% 并直接转化为 Qwen-1.5-110B 的 TTFT 6.98→3.76 秒（954a38c6f86e6cf1050cee83）；KVTether 用 Harness 导出的消息生命周期驱动三级放置，高缓存压力下命中率 49.5% 对 LMCache LRU 的 10.2%、端到端时延最高降 26.3%（8f9c78115b218621b855fc32）；同时 KVFetch 把『驱逐不可逆』补成 4 比特可召回冷层加读指针预取、RULER-16K 逐字任务从 0.8 修复到 78.4（56b69243c1dcf4c051e4d398），Page-EntroKV 量化并按构造修复 GQA 逐头驱逐预算膨胀至 5.10 倍的失败模式（b31255edd83a780764e98b71）——因此维持『流量自适应/语义感知驱逐＋含执行路径的多维来源绑定缓存键』为自研 KV 栈下一轮改造的优先组合，并把『驱逐即降级到可召回冷层』纳入驱逐改造的设计空间；会把判断推向升级的观察点是：语义驱逐的命中率→时延传导能否从回放口径（IAC/KVTether 均非在线生产验证）推广到真实在线流量，以及无请求元数据的影子重放在线切换能否逼近有元数据语义驱逐的传导效率。",
+  "updated_by_issue": "2026-11-13",
+  "summary": "本期三条新证据在不改变『流量自适应/语义感知驱逐＋含执行路径与操作历史的多维来源绑定缓存键』为自研 KV 栈下一轮改造优先组合的判断下，给收益评估补上两条验收约束并新增能耗维度：SIMPLE 四参数定律解析显示前缀缓存的节能上限受解码期 KV 读取项制约——约 93% 前缀命中下总能耗估算降 2.7 倍、命中请求能耗仍为非 agentic 请求的 4.8 倍（a9fc4d466fcba05d8952502c），命中率工程的收益评估须区分能耗与时延两种口径并与 KV 压缩组合兑现；跨 LoRA 适配器复用骨干 KV 虽有约 16 倍 warm-cache TTFT（8K 下 30ms 对 486ms）但标准适配器上的质量代价未被确立、GSM8K Δ最高 -4.6 EM（788f1bb39a068886ede516b1），任何跨来源复用试点必须以质量回归为先决门槛；AttSVD 证明按提示注意力几何的在线截断 SVD 可在不丢 token 前提下把实测 KV 显存压到稠密的 0.502 倍、50% 预算 LongBench 持平（d302b5fce18bcf6d3dbefb3f，服务时代价未测），为『驱逐不可逆伤害』提供低秩替代路径——因此维持三分支 evidence_timeline 视图与既有优先级，把『语义驱逐命中率→时延传导的在线生产验证』『跨来源复用质量代价边界』『命中率×KV 压缩的联合能耗收益』列为会改变判断的观察点。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -199,6 +199,22 @@
             "https://arxiv.org/abs/2611.09715v1"
           ],
           "reason": "2026-11-11 已发布日报收录：多轮对话服务中通用 LRU 驱逐浪费大量前缀复用，IAC 在 SGLang 上为请求分类意图、从日志学习每状态回访概率与对数正态轮间延迟，按中位复用窗口、复用概率与规模字典序比较 RadixTree 叶子、低者优先驱逐；140K 容量下 ShareChat 命中率 34.6% 对 LRU 的 12.2%，Qwen-1.5-110B 在 5 请求/秒下 TTFT 从 6.98 秒降至 3.76 秒（结果基于回放的公开对话轨迹与单一 4xA100 测试床，非在线生产验证，与离线上界的差距未知）；跨条目推断(inferred)：与 WAKMan 影子重放切换、Agentic LRU、会话引用感知驱逐同读为『驱逐策略需匹配流量语义』的又一条独立证据，且首次给出命中率增益向 TTFT 兑现的量化传导；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "a9fc4d466fcba05d8952502c",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.03330v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：SIMPLE 四参数能耗定律把单 token 能耗解析分解为预填充摊销、KV 缓存与下一 token 计算三项，13 个稠密模型的 H100 轨迹上 R2 达 0.969 且无需逐模型拟合，并指出前缀缓存仅按未缓存输入长度缩放预填充项、节能上限受解码期 KV 缓存读取项制约——估算显示约 93% 前缀命中下总能耗降 2.7 倍，命中请求能耗仍为非 agentic 的 4.8 倍（系数绑定 H100 与 TensorRT-LLM、不建模批大小与并发、未覆盖 MoE，焦耳数为定律估算而非实测能耗）；按前缀复用分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "788f1bb39a068886ede516b1",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.17109v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：共享骨干配多 LoRA 专家的部署可一次计算骨干 prefill KV 跨专家复用换 8K 上下文 warm-cache TTFT 约 16 倍（30ms 对 486ms），但标准适配器上的质量代价未被确立——GSM8K 上 Δ最高 -4.6 EM，两分支峰值内存仅低 12% 且前缀未物理共享（单骨干两适配器的小规模扫描，作者明确质量等价与通用边界规则均未确立）；跨条目推断(inferred)：与来源契约、执行路径绑定证据同读，跨适配器/跨来源复用的收益必须以质量回归为先决门槛；按前缀复用分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -225,7 +241,9 @@
         "223dedc5cf9f3e09f0dcd895",
         "4238f9e8771a68ae2dd0e959",
         "d51e96cd99400f8cb09ffe77",
-        "954a38c6f86e6cf1050cee83"
+        "954a38c6f86e6cf1050cee83",
+        "a9fc4d466fcba05d8952502c",
+        "788f1bb39a068886ede516b1"
       ],
       "source_urls": [
         "https://github.com/sgl-project/sglang/releases/tag/v0.5.16",
@@ -250,7 +268,9 @@
         "https://arxiv.org/abs/2610.18143v1",
         "https://arxiv.org/abs/2610.05833v1",
         "https://arxiv.org/abs/2610.02766v1",
-        "https://arxiv.org/abs/2611.09715v1"
+        "https://arxiv.org/abs/2611.09715v1",
+        "https://arxiv.org/abs/2611.03330v1",
+        "https://arxiv.org/abs/2609.17109v1"
       ]
     },
     {
@@ -569,6 +589,14 @@
             "https://arxiv.org/abs/2610.03135v1"
           ],
           "reason": "2026-11-11 已发布日报收录：GQA 下逐 head 独立驱逐迫使共享 KV 缓冲保留并集、实测缓存最多膨胀到预算的 5.10 倍，Page-EntroKV 在物理 GQA 组内用 sink 隔离的 Rényi-2 熵权重池化各 head 分数，再投影到 PagedAttention 页帧驱逐、按构造保证预算不超限；试点中 head 独立驱逐并集开销最高 5.10 倍、本方法 1008 次测量恒为 1.0，20% 预算 needle 检索 100% 对平均池化 0%（仅 Qwen2.5-1.5B 试点、无 serving 吞吐实测、strict 判据下深度 0 召回仅 0.00-0.33）；按分层存储与驱逐分支记录，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "d302b5fce18bcf6d3dbefb3f",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2610.06927v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：AttSVD 免训练地对每层每头在 RoPE 后按当前提示自身的注意力几何在线做截断 SVD——键按 query 度量、值按注意力质量加权截断、基仅来自当前提示、无需校准集或训练阶段，不丢 token 而按保留秩成比例削减 KV 显存；50% 预算下 Phi-4-14B 与 Qwen3-8B 的 LongBench 均分与稠密缓存持平、实测 KV 显存为稠密的 0.502 倍（在线 SVD 的运行时代价与硬件规格未给出，仅单流质量评测、在审预印本）；按分层存储与驱逐分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -601,7 +629,8 @@
         "82f14ff195dbea5aecc459d7",
         "8f9c78115b218621b855fc32",
         "56b69243c1dcf4c051e4d398",
-        "b31255edd83a780764e98b71"
+        "b31255edd83a780764e98b71",
+        "d302b5fce18bcf6d3dbefb3f"
       ],
       "source_urls": [
         "https://github.com/sgl-project/sglang/releases/tag/v0.5.17",
@@ -632,7 +661,8 @@
         "https://arxiv.org/abs/2611.07232v1",
         "https://arxiv.org/abs/2609.39819v1",
         "https://arxiv.org/abs/2610.08811v1",
-        "https://arxiv.org/abs/2610.03135v1"
+        "https://arxiv.org/abs/2610.03135v1",
+        "https://arxiv.org/abs/2610.06927v1"
       ]
     }
   ],
@@ -839,6 +869,18 @@
         "8f9c78115b218621b855fc32",
         "954a38c6f86e6cf1050cee83",
         "b31255edd83a780764e98b71"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_b8d2cb30d49d5edfb663",
+      "issue_date": "2026-11-13",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "788f1bb39a068886ede516b1",
+        "a9fc4d466fcba05d8952502c",
+        "d302b5fce18bcf6d3dbefb3f"
       ]
     }
   ]

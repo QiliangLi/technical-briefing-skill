@@ -264,13 +264,45 @@
         "https://arxiv.org/abs/2611.08770v1"
       ],
       "reason": "ReKV把KV交接做成传输与重算的联合选择：预填侧先发BF16边界隐状态、解码侧重算后缀层，量化前缀KV在途传输并恢复，动作先过质量门槛再取中位时延最小；跨节点H100上Joint Q8的8K交接中位时延较全量BF16传输快2.36-3.65倍、带宽是关键编排变量（计时不含prefill与后续decode，无并发端到端TTFT/TPOT/P95，最优动作随长度与带宽翻转）；直接支持切分层与传输精度随带宽联动的交叉点假设。"
+    },
+    {
+      "item_id": "6beac1cd9683eedadf8d01e4",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13293v1"
+      ],
+      "reason": "TKNP把权重放置与KV归属解耦：各节点仅对自己请求的本地KV算attention、跨节点只剩scatter/gather，八节点可用KV容量约为DP的5倍，405B与32K上下文下较DP吞吐最高2.06倍、较DCP 1.53倍（加双活root微批1.7倍）；以放置架构形态支持'就地计算在长上下文高并发解码下占优'的分支，是传输/重算/就地交叉点必须纳入的架构侧对照（评估仅InfiniBand互连H100、小batch或短上下文时通信开销可能超过收益）。"
+    },
+    {
+      "item_id": "9a355876a02b1d84ace7b6fb",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04807v1"
+      ],
+      "reason": "KV缓存内存约束下cμ规则经流体模型证明渐近最优：按代价乘以有效服务率排序请求并以准入检查保证未来各步KV占用不超限，压缩To-B生产轨迹上cμ-backfill平均时延9.47秒、TTFT 2.56秒对vLLM默认35.49秒与28.77秒且输出吞吐基本持平；为交叉点假设补上纯GPU内存调度基线——网络侧传输与调度策略的增量收益应在其上量化（对比策略均假设输出长度精确已知、预测误差未测、单GPU无网络机制）。"
+    },
+    {
+      "item_id": "65dfa7dbca4d6e1b86242b08",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.11319v1"
+      ],
+      "reason": "VERKV以PoissonComp按基础压缩器得分泊松抽样选GPU驻留token、KVFetch评估注意力(ε,δ)证书满足容差不访主机否则补取，每token仅取回缓存2-23%、vLLM解码提速1.6倍（较全量offload最高3.1倍）、主机传输少47倍；直接支持'必要KV优先/按证书选择性传输'分支，证书门控可作为跨节点KV传输调度原语（单卡PCIe卸载、ε0=0.5时比稠密驻留慢约6倍、2位草图在严格容差下违反δ）。"
+    },
+    {
+      "item_id": "cf5fb762ffca196ee029781b",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09825v1"
+      ],
+      "reason": "BitDecoding-FP4以双FP4残差查询、欠流感知概率缩放与离群感知键量化实现原生FP4 KV解码并在FP4张量核全程运行注意力，Qwen3-4B上NVFP4精度67.27对BF16 KV的67.69几乎无损，256K上下文TPOT快1.81倍、64并发单卡峰值吞吐为BF16的2.4-3.0倍；把模型侧压缩这条对照路线的解码吞吐基线抬到原生FP4（全部单节点Blackwell实验、无TTFT、P95或跨节点KV传输评估）。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
     "多租户 P95/P99 下的交叉点是否稳定。",
     "代价预测错误与画像漂移会造成多大回退。",
-    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）与主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）的增量收益尚无对照数据。"
+    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）、主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）、放置架构基线（TKNP八节点KV容量约为DP的5倍、较DCP 1.53倍）与单卡KV内存调度基线（cμ-backfill平均时延9.47秒对vLLM默认35.49秒）的增量收益尚无对照数据。"
   ],
   "validation_plan": {
     "mode": "simulation",
@@ -304,7 +336,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-02",
-  "last_updated_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-13",
   "decision_log": [
     {
       "event_id": "idea_decision_4f7da6ed9342bd9a8339",
@@ -505,6 +537,20 @@
         "e196a92a7cf23d4c8fdd2524",
         "6a40c55e6e13c84e9e723e82",
         "1c1a7069e13c4d967fb84030"
+      ]
+    },
+    {
+      "event_id": "idea_decision_44cf0b566c37e7f3cfd3",
+      "issue_date": "2026-11-13",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增放置架构解耦、单卡KV内存约束调度、误差证书门控选择性取回与原生FP4解码四条证据：交叉点假设的对照面扩展到架构侧与GPU内存调度侧，证书门控选择性取回可直接借鉴为跨节点传输调度原语；状态保持observing，传输、重算与就地策略在并发端到端TTFT/TPOT与网络利用率口径下的统一对照仍缺失。",
+      "evidence_item_ids": [
+        "6beac1cd9683eedadf8d01e4",
+        "9a355876a02b1d84ace7b6fb",
+        "65dfa7dbca4d6e1b86242b08",
+        "cf5fb762ffca196ee029781b"
       ]
     }
   ]

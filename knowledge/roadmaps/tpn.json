@@ -3,8 +3,8 @@
   "topic_id": "tpn",
   "topic_name": "状态感知网络、TPN",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-11",
-  "summary": "TPN方向本期证据把“KV传输成本是否进入调度决策”的验证推进到请求级与交接级：Nebula让路由器记录预期缓存位置与负载、经节点事件纠正并以幽灵命中反馈自调前缀与位置无关缓存的容量配比，把排队、计算与KV传输成本并入预填完成时间估计来调度跨节点取用与并行预填充，四模型RAG/代理负载中位TTFT较最强基线平均降61.4%、找回前缀缓存漏失token的76.1%（每请求仅一个输出token，TPOT、吞吐与网络利用率未报告，最强基线未点名）；ReKV把KV交接做成带宽感知的分层精度选择——预填侧先发BF16边界隐状态、解码侧重算后缀层、量化前缀KV在途传输，8K交接中位时延较全量BF16传输快2.36-3.65倍且最优动作随长度与带宽翻转（单交接点，计时不含prefill与后续decode，无并发端到端TTFT/TPOT/P95）；Evolving Infra则证明纯服务层自适应（在线重指派PD阶段、KV驻留主机内存共享池、排队期RDMA异步取回）已把Claude Code负载平均端到端时延由54.4秒降至13.2秒、P95 TTFT由142秒降至10.2秒，成为网络侧机制必须先战胜的服务层基线（聚合KV传输量与网络利用率未报告，未报告重复与方差）；邻接trace研究给出工作负载/会话/会话结束三信号接口支撑多级存储保留决策但无网络与延迟指标。当前判断：KV跨网优化的可行收益仍是路径机制（ZCube确定路径、光电路预留、MoSE按模式重构、INC-MoE网内卸载、ARK端主机预留）、非网络侧替代（MOIRA GPU侧自适应稀疏解码、FlashOffloading主机内存权威副本、BasisKV模型侧压缩、发送侧状态裁剪）与服务层成本感知编排（Nebula、Evolving Infra）的三方权衡而非单点扩带宽；判断升级的观察点收紧为：网络侧KV调度相对服务层编排在并发P95/P99 TTFT、TPOT与网络利用率口径下的增量收益，目前仍无对照。",
+  "updated_by_issue": "2026-11-13",
+  "summary": "TPN方向本期证据把网络侧机制必须战胜的非网络对照面从服务层编排扩展为覆盖放置架构、单卡KV内存调度、证书门控选择性取回与模型侧FP4压缩的四层前沿：TKNP把权重放置与KV归属解耦（各节点仅对本地KV算attention、跨节点只剩scatter/gather），八节点可用KV容量约为DP的5倍、405B与32K上下文下较DCP吞吐1.53倍（双活root微批1.7倍）、较DP最高2.06倍（仅InfiniBand互连H100、小batch或短上下文时通信开销可能反超）；cμ规则在KV缓存内存约束下经流体模型证明渐近最优，压缩To-B生产轨迹上cμ-backfill平均时延9.47秒、TTFT 2.56秒对vLLM默认35.49秒与28.77秒（假设输出长度精确已知、单GPU无网络机制）；VERKV以PoissonComp选GPU驻留token、KVFetch用注意力(ε,δ)证书门控取回，主机KV传输少47倍、每token仅取回2-23%（单卡PCIe卸载、ε0=0.5时比稠密驻留慢约6倍），证书门控本身可借鉴为跨节点KV传输调度原语；BitDecoding-FP4原生FP4 KV解码近无损（Qwen3-4B上67.27对BF16的67.69）且256K上下文TPOT快1.81倍、64并发单卡峰值吞吐为BF16的2.4-3.0倍（全部单节点Blackwell实验）。当前判断：网络侧KV调度（Nebula式传输成本入调度估计、ReKV式量化交接、ARK式端主机路径预留、INC-MoE式网内卸载）的价值主张必须在并发P95/P99 TTFT、TPOT与网络利用率口径下相对这条四层非网络前沿证明增量收益，其中VERKV的误差证书门控与TKNP的KV归属解耦是最可直接借入网络侧调度的两个机制原语。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -519,12 +519,44 @@
             "https://arxiv.org/abs/2611.10178v1"
           ],
           "reason": "2026-11-11 已发布日报收录：UT Austin与IBM用11条trace把KV缓存访问归一化为带时间戳与执行元数据的块访问流，区分单会话与跨会话复用后提出工作负载、会话、会话结束三信号接口供存储层决定保留与回收：按负载定制的空闲TTL比全局p90（253秒）最多多保留22%会话内命中、少留40%死状态，会话ID计数比请求级少标4至700倍状态、41%至99%被复用（全部结论来自trace驱动模拟，未见TTFT、TPOT等网络与延迟指标，放置决策未量化）；按KV感知调度分支记录为多级存储保留策略的邻接信号：本文无网络侧机制，不能回答网络调度相对内存调度的增值，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "6beac1cd9683eedadf8d01e4",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.13293v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：TKNP把权重放置与KV归属解耦，各节点仅对自己请求的本地KV算attention、跨节点只剩scatter/gather，八节点可用KV容量约为DP的5倍，vLLM上最多64块H100、405B与32K上下文下较DP吞吐最高2.06倍、八节点较DCP 1.53倍（加双活root微批达1.7倍）；按KV感知调度分支记录为放置架构对照基线信号（评估仅InfiniBand互连H100、小batch或短上下文时通信开销可能超过收益），不据此改变阶段判断。"
+        },
+        {
+          "item_id": "9a355876a02b1d84ace7b6fb",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.04807v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：KV缓存内存约束下cμ规则的渐近最优性与生产轨迹验证——cμ按代价乘以有效服务率（综合算力、访存带宽与容量）排序请求，准入检查确保未来各步KV占用不超限、backfill变体绕过不可行请求，压缩To-B轨迹上平均时延9.47秒、TTFT 2.56秒对vLLM默认调度35.49秒与28.77秒、输出吞吐基本持平；按KV感知调度分支记录为纯GPU内存调度基线信号（对比策略均假设输出长度精确已知且预测误差未测、单GPU设定无网络机制），不据此改变阶段判断。"
+        },
+        {
+          "item_id": "65dfa7dbca4d6e1b86242b08",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.11319v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：VERKV先验证误差证书再取回——PoissonComp按基础压缩器得分泊松抽样选出GPU驻留token，KVFetch评估注意力的(ε,δ)证书、满足容差不访主机否则补取，32K上下文质量为稠密注意力的90-100%、显存降8-32倍、每token仅取回缓存2-23%，vLLM解码提速1.6倍（较全量offload最高3.1倍）、主机传输少47倍；按KV感知调度分支记录为证书门控选择性取回信号：可借鉴为跨节点KV传输调度原语，但属单卡PCIe卸载、无跨节点网络证据（ε0=0.5时比稠密驻留慢约6倍、2位草图在严格容差下违反δ），不据此改变阶段判断。"
+        },
+        {
+          "item_id": "cf5fb762ffca196ee029781b",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.09825v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：BitDecoding-FP4以算法内核协同设计实现几乎无精度损失的原生FP4 KV解码——双FP4残差表示查询、欠流感知概率缩放、离群感知键量化，注意力全程运行于FP4张量核，Qwen3-4B上NVFP4精度67.27对BF16 KV的67.69，256K上下文TPOT快1.81倍、64并发单卡峰值吞吐为BF16的2.4-3.0倍；按KV感知调度分支记录为模型侧压缩解码吞吐基线信号（全部为单节点Blackwell内核与显存实验、未见TTFT、P95或跨节点KV传输评估），不据此改变阶段判断。"
         }
       ],
       "open_questions": [
-        "网络侧KV传输与带宽调度的增量收益尚无相对GPU侧自适应稀疏解码基线的对照数据（MOIRA单卡128k解码仅读约30%页、TPOT降2.2至2.5倍）。",
+        "网络侧KV传输与带宽调度的增量收益尚无相对GPU侧自适应稀疏解码基线（MOIRA单卡128k解码仅读约30%页、TPOT降2.2至2.5倍）、放置架构基线（TKNP八节点可用KV容量约为DP的5倍、较DCP 1.53倍、跨节点只剩scatter/gather）与单卡KV内存调度基线（cμ-backfill平均时延9.47秒对vLLM默认35.49秒）的对照数据。",
         "KV压缩执行开销尚未进入KV调度代价模型（FastKVComp证明压缩执行过慢会抵消200-Gb/s链路上的通信节省）。",
-        "服务层成本感知编排成为网络侧机制必须先战胜的新对照基线：Evolving Infra仅靠在线重指派PD阶段加排队期RDMA异步取回（无任何网络侧机制）就把Claude Code负载P95 TTFT由142秒降至10.2秒，但聚合KV传输量与网络利用率未报告；网络侧KV调度相对服务层编排的增量收益尚无数据。"
+        "服务层与模型侧非网络基线持续抬高对照门槛：Evolving Infra仅靠在线重指派PD阶段加排队期RDMA异步取回（无任何网络侧机制）就把Claude Code负载P95 TTFT由142秒降至10.2秒，BitDecoding-FP4原生FP4解码在256K上下文TPOT快1.81倍、64并发单卡吞吐为BF16的2.4-3.0倍，VERKV证书门控选择性取回把主机KV传输降47倍；各基线聚合KV传输量与网络利用率未报告，网络侧KV调度相对它们的增量收益尚无数据。"
       ],
       "evidence_item_ids": [
         "081c683d89c0a8496e81e918",
@@ -589,7 +621,11 @@
         "bd0f1f579c8ae3920130bb62",
         "c1d02abf4e06c53a69c9fcbd",
         "e196a92a7cf23d4c8fdd2524",
-        "106c093ccfdf3a7b18974a2e"
+        "106c093ccfdf3a7b18974a2e",
+        "6beac1cd9683eedadf8d01e4",
+        "9a355876a02b1d84ace7b6fb",
+        "65dfa7dbca4d6e1b86242b08",
+        "cf5fb762ffca196ee029781b"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.28150v1",
@@ -651,7 +687,11 @@
         "https://arxiv.org/abs/2611.02583v1",
         "https://arxiv.org/abs/2610.37779v1",
         "https://arxiv.org/abs/2611.09474v1",
-        "https://arxiv.org/abs/2611.10178v1"
+        "https://arxiv.org/abs/2611.10178v1",
+        "https://arxiv.org/abs/2611.13293v1",
+        "https://arxiv.org/abs/2611.04807v1",
+        "https://arxiv.org/abs/2611.11319v1",
+        "https://arxiv.org/abs/2611.09825v1"
       ]
     },
     {
@@ -1153,7 +1193,7 @@
     }
   ],
   "schema_version": 1,
-  "version": 4,
+  "version": 5,
   "change_type": "material_change",
   "history": [
     {
@@ -1179,6 +1219,12 @@
       "issue_date": "2026-11-11",
       "change_type": "material_change",
       "path": "knowledge/history/roadmaps/tpn/v4.json"
+    },
+    {
+      "version": 5,
+      "issue_date": "2026-11-13",
+      "change_type": "material_change",
+      "path": "knowledge/history/roadmaps/tpn/v5.json"
     }
   ],
   "change_log": [
@@ -1493,6 +1539,19 @@
         "1c1a7069e13c4d967fb84030",
         "6a40c55e6e13c84e9e723e82",
         "e196a92a7cf23d4c8fdd2524"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_98a03dcc3cc4c00be495",
+      "issue_date": "2026-11-13",
+      "change_type": "material_change",
+      "version": 5,
+      "summary": "本期证据改变了分支、阶段、状态或开放问题。",
+      "evidence_item_ids": [
+        "65dfa7dbca4d6e1b86242b08",
+        "6beac1cd9683eedadf8d01e4",
+        "9a355876a02b1d84ace7b6fb",
+        "cf5fb762ffca196ee029781b"
       ]
     }
   ]

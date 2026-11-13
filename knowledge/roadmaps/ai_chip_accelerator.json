@@ -3,8 +3,8 @@
   "topic_id": "ai_chip_accelerator",
   "topic_name": "AI芯片与加速器",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-11",
-  "summary": "AI芯片本期证据继续收敛于『可用算力由软件栈、执行资源映射与算法结构决定』的判断，并把瓶颈迁移的位置再细化一步：AMD把量化注意力中落在慢于矩阵核的向量单元上的softmax免训练折叠进GEMM（冻结行最大值并入分数GEMM、Schraudolph近似吸收指数、行和改为全一列矩阵乘、量化前旋转分散离群值），MI355X上MXFP8/6/4内核吞吐达BF16的2.07至3.2倍、Wan2.2混合调度端到端提速2.05倍且VBench略高于BF16，但峰值条件为s=32768、短序列吞吐明显下降、MXFP4会改变画面内容（9b9afbfc9fc00c971761f38c，https://arxiv.org/abs/2611.09225v1）；FOSCAR证明2/4位KV省下的HBM流量会被逐值反量化（s·q+z重建）的指令发射瓶颈吃掉，把组尺度与偏移仿射折叠出热路径后INT2内核才较FlashInfer BF16几何平均快3.36倍（H100）与2.67倍（B200）、H100上INT4有效KV吞吐达峰值带宽91.3%（5f0b3a320c99019dca435bac，https://arxiv.org/abs/2611.09722v1）；MINE对量化后仍非均匀的权重做无损熵编码并把解码融合进batch-1矩阵向量乘，Llama 3.1 8B的2.1-bit checkpoint上较最快基线提速2.52倍（4060 Ti，81.6 tok/s）、1.48倍（5090）（1457b432889301c766397e89，https://arxiv.org/abs/2611.09424v2）；GARDEN以缓存-采样-批处理协同设计把十亿边GNN训练在单机6×RTX 3090上较DGL-UVA、DUCATI、FastGL平均加速4.54×、1.27×、2.97×（898be7c2952bd11f2ba2cd72，https://arxiv.org/abs/2611.11043v1）。当前判断：低比特与压缩带来的带宽收益在标量/向量侧工作（softmax、反量化重建、熵解码、采样访存）未折叠进矩阵数据流时不兑现——这些环节而非峰值硬件才是现有芯片上的真实限制，采用任何量化或压缩能力前必须确认softmax与尺度重建等环节已折叠进矩阵运算，并按目标序列长度、精度口径与目标设备重跑实测（MINE超参数即按GPU与checkpoint自整定）；引用加速比前继续核对执行路径、batch、共享度与精度口径。",
+  "updated_by_issue": "2026-11-13",
+  "summary": "AI芯片本期证据继续收敛于『可用算力由软件栈、执行资源映射与数据通路执行结构决定』的判断：上期『低比特与压缩收益须把softmax、反量化重建等标量/向量侧工作折叠进矩阵数据流才兑现』维持不变，本期把同一原理外推到通信与容量两个新位置——小批量MoE专家并行的时延由每层dispatch/combine的微秒级固定开销主导，NVIDIA NVLinkOneSided以单边NVLink远程写去除元数据交换后八卡B300往返较DeepEP快1.75至3.00倍（每秩不超128个token）、MoE层最高快2.37倍（52bf64e6777327522d956d96，https://arxiv.org/abs/2611.13188v1），与flash-comm『就绪同步并入数据移动、B300 all-reduce中位降28.8%、TPOT降1.7%至6.8%』（02d505da249588037229d17d，https://arxiv.org/abs/2611.06634v1）同族，通信侧小批量的下一杠杆是固定协调开销而非带宽（inferred）；专家权重容量墙可在真实硬件上以分层驻留绕过，SSD-LLaMA把SSD-内存-显存组织为专家流水线后1T MoE在RTX 5090与32GB内存上解码1.03 token/s、SSD带宽利用率77.7%对最好基线43.2%，但自身能耗未测且被引研究提示SSD卸载每token能耗最高可增12倍（f356968039545b01ff980787，https://arxiv.org/abs/2609.18110v1）；晶圆级栈必须以编译期每核调度治理连续批处理与MoE路由动态才能兼顾时延与吞吐，MeshRT较WaferLLM解码吞吐最高55.8倍、动态治理每token仅增25至40µs，但其H200对比为乐观线性投影（fdb0906f107f40f4d270dcde，https://arxiv.org/abs/2611.08508v1）；跨配置内存敏感度可用复用实测停顿的解析模型预测，九款GPU核函数时间MAPE 8.3%、102 SM内HBM栈从6减到4吞吐损失小于2%（cd92167a888ea3dafdd6f9e1，https://arxiv.org/abs/2611.13762v1）。当前判断：选型与采用应按开销构成与负载形态核算——小批量档先去除固定协调开销、超容量场景先测分层带宽利用率与能耗、引用跨配置结论先区分实测与解析投影，而不是按峰值带宽与规格表决策。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -663,6 +663,38 @@
             "https://arxiv.org/abs/2611.11043v1"
           ],
           "reason": "2026-11-11 已发布日报收录：GARDEN在固定显存预算内协同设计缓存、采样与批处理——自适应缓存分配器按热度缓存特征与邻接表、并行采样器重排邻域访问提升warp占用、度分类器组成同质超批实现合并传输，四个十亿边级图、三种模型、单机6×RTX 3090上平均端到端训练较DGL-UVA、DUCATI、FastGL加速4.54×、1.27×、2.97×（限于单机多GPU采样式训练且剔除离线预处理、基线间精度对比与能效数据不可见）；按架构分支记录为商用GPU软件栈协同设计证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "fdb0906f107f40f4d270dcde",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.08508v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：MeshRT（SOSP'26）针对晶圆级推理栈难以支撑连续批处理与MoE路由动态的问题，利用LLM内核类型封闭、动态结构可在编译期确定的特点，把控制消息处理织入编译期生成的每核片上调度表并按资源受限的段执行免死锁片上重配置，同硬件对比WaferLLM的GPT-OSS-120B解码吞吐最高提升55.8倍、动态治理每token仅增25至40µs（约7.6%至9.5%），但对H200集群的优势是理想线性扩展的乐观投影、能耗按厂商功率预算估算且吞吐导向场景可低于GPU对比值；按架构分支记录为晶圆级SRAM驻留服务动态治理的运行时证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "f356968039545b01ff980787",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2609.18110v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：SSD-LLaMA把SSD、内存、显存组织为专家流水线——专家权重重排为对齐块实现O(1)偏移读取、异步I/O使读取与计算重叠、RAM与显存作缓存并配合显存内解压、执行位置按逐专家代价选择，1T模型在RTX 5090与32GB内存上解码达1.03 token/s、较llama.cpp 1.35至3.44倍、SSD带宽利用率77.7%对最好基线43.2%（2.8T的Kimi-K3解码仅0.465 token/s；属系统软件而非新芯片、自身能耗未测、被引研究提示SSD卸载每token能耗最高可增12倍）；按架构分支记录为专家权重容量墙的存储分层实测证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "cd92167a888ea3dafdd6f9e1",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.13762v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：ForeSight复用实测固定延迟停顿、仅重算排队停顿——UnitSight从CUPTI恢复每单元计数器、重放CTA派发并逐SM、L2切片、DRAM通道求解排队停顿，九款GPU跨配置核函数时间MAPE为8.3%（最优基线Habitat为14.1%）、H20上vLLM端到端误差2.0%、单核预测较Accel-Sim快49倍，其设计空间探索显示102 SM内HBM栈从6减到4吞吐损失小于2%、L2减到10MB吞吐几乎不变（最优配置只是模型预测、无实测或流片验证）；按架构分支记录为跨配置内存敏感度可解析预测的证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "52bf64e6777327522d956d96",
+          "issue_date": "2026-11-13",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.13188v1"
+          ],
+          "reason": "2026-11-13 已发布日报收录：NVIDIA NVLinkOneSided针对专家并行MoE推理中每层dispatch与combine固定开销主导小批量时延的问题，让源GPU不经元数据交换、把token直接远程写入目标GPU按源秩划分的对称显存槽位，分组GEMM按槽索引原地计算，八卡B300上往返时延较DeepEP快1.75至3.00倍（每秩不超128个token）、MoE层较DeepEP+DeepGEMM最高快2.37倍（仅限单一NVLink域、工作区显存随EP规模增长、大批量被融合的MegaMoE反超、未报告端到端吞吐与功耗）；按架构分支记录为解码期通信固定开销去除的小批量实测证据，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -747,79 +779,83 @@
         "d62314a68ee1003784752567",
         "9b9afbfc9fc00c971761f38c",
         "1457b432889301c766397e89",
-        "898be7c2952bd11f2ba2cd72"
+        "898be7c2952bd11f2ba2cd72",
+        "fdb0906f107f40f4d270dcde",
+        "f356968039545b01ff980787",
+        "cd92167a888ea3dafdd6f9e1",
+        "52bf64e6777327522d956d96"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2607.09385v1",
-        "https://arxiv.org/abs/2607.17074v2",
-        "https://arxiv.org/abs/2607.21535v1",
+        "https://arxiv.org/abs/2608.05033v1",
         "https://arxiv.org/abs/2608.00146v1",
-        "https://arxiv.org/abs/2608.01150v1",
+        "https://arxiv.org/abs/2607.17074v2",
+        "https://arxiv.org/abs/2608.04428v1",
+        "https://arxiv.org/abs/2608.08382v1",
+        "https://arxiv.org/abs/2608.08256v1",
         "https://arxiv.org/abs/2608.02845v1",
         "https://arxiv.org/abs/2608.03026v1",
-        "https://arxiv.org/abs/2608.04428v1",
-        "https://arxiv.org/abs/2608.05033v1",
-        "https://arxiv.org/abs/2608.06441v1",
-        "https://arxiv.org/abs/2608.08256v1",
-        "https://arxiv.org/abs/2608.08382v1",
         "https://arxiv.org/abs/2608.14376v1",
+        "https://arxiv.org/abs/2607.09385v1",
         "https://arxiv.org/abs/2608.15764v1",
-        "https://arxiv.org/abs/2608.16940v1",
-        "https://arxiv.org/abs/2608.17310v1",
-        "https://arxiv.org/abs/2608.21614v1",
-        "https://arxiv.org/abs/2608.21719v1",
-        "https://arxiv.org/abs/2608.21836v1",
+        "https://arxiv.org/abs/2607.21535v1",
+        "https://arxiv.org/abs/2608.06441v1",
         "https://arxiv.org/abs/2608.24664v1",
-        "https://arxiv.org/abs/2608.25096v1",
         "https://arxiv.org/abs/2608.26418v1",
-        "https://arxiv.org/abs/2608.28044v1",
-        "https://arxiv.org/abs/2608.28511v1",
-        "https://arxiv.org/abs/2608.28968v1",
-        "https://arxiv.org/abs/2608.30376v1",
-        "https://arxiv.org/abs/2609.00407v1",
+        "https://arxiv.org/abs/2608.21836v1",
+        "https://arxiv.org/abs/2608.21614v1",
         "https://arxiv.org/abs/2609.00450v1",
-        "https://arxiv.org/abs/2609.00791v1",
-        "https://arxiv.org/abs/2609.00817v2",
+        "https://arxiv.org/abs/2609.00407v1",
+        "https://arxiv.org/abs/2608.28511v1",
+        "https://arxiv.org/abs/2608.28044v1",
         "https://arxiv.org/abs/2609.02109v1",
+        "https://arxiv.org/abs/2608.01150v1",
+        "https://arxiv.org/abs/2608.17310v1",
         "https://arxiv.org/abs/2609.03079v1",
-        "https://arxiv.org/abs/2609.03151v1",
         "https://arxiv.org/abs/2609.03459v1",
+        "https://arxiv.org/abs/2609.03151v1",
         "https://arxiv.org/abs/2609.04168v1",
-        "https://arxiv.org/abs/2609.04417v1",
-        "https://arxiv.org/abs/2609.06157v1",
         "https://arxiv.org/abs/2609.06551v1",
         "https://arxiv.org/abs/2609.07536v1",
+        "https://arxiv.org/abs/2609.04417v1",
+        "https://arxiv.org/abs/2608.28968v1",
+        "https://arxiv.org/abs/2608.16940v1",
+        "https://arxiv.org/abs/2608.30376v1",
+        "https://arxiv.org/abs/2609.06157v1",
+        "https://arxiv.org/abs/2609.00817v2",
+        "https://arxiv.org/abs/2609.00791v1",
         "https://arxiv.org/abs/2609.09095v1",
+        "https://arxiv.org/abs/2608.21719v1",
+        "https://arxiv.org/abs/2608.25096v1",
         "https://arxiv.org/abs/2609.24270v1",
-        "https://arxiv.org/abs/2609.29867v1",
-        "https://arxiv.org/abs/2609.32114v1",
-        "https://arxiv.org/abs/2609.32814v1",
-        "https://arxiv.org/abs/2609.32922v1",
-        "https://arxiv.org/abs/2609.34334v1",
-        "https://arxiv.org/abs/2609.34340v1",
-        "https://arxiv.org/abs/2609.34818v2",
-        "https://arxiv.org/abs/2609.35568v1",
         "https://arxiv.org/abs/2609.36070v1",
-        "https://arxiv.org/abs/2610.01380v1",
-        "https://arxiv.org/abs/2610.02241v1",
-        "https://arxiv.org/abs/2610.04277v1",
-        "https://arxiv.org/abs/2610.17463v1",
+        "https://arxiv.org/abs/2609.34334v1",
+        "https://arxiv.org/abs/2609.32114v1",
+        "https://arxiv.org/abs/2609.34340v1",
+        "https://arxiv.org/abs/2609.35568v1",
+        "https://arxiv.org/abs/2609.32922v1",
+        "https://arxiv.org/abs/2609.34818v2",
+        "https://arxiv.org/abs/2609.32814v1",
+        "https://arxiv.org/abs/2609.29867v1",
         "https://arxiv.org/abs/2610.22230v1",
-        "https://arxiv.org/abs/2610.22377v1",
-        "https://arxiv.org/abs/2610.23086v1",
+        "https://arxiv.org/abs/2610.01380v1",
+        "https://arxiv.org/abs/2610.17463v1",
         "https://arxiv.org/abs/2610.24161v1",
-        "https://arxiv.org/abs/2610.25519v1",
-        "https://arxiv.org/abs/2610.25675v1",
-        "https://arxiv.org/abs/2610.26178v1",
-        "https://arxiv.org/abs/2610.26945v1",
+        "https://arxiv.org/abs/2610.23086v1",
         "https://arxiv.org/abs/2610.28947v1",
+        "https://arxiv.org/abs/2610.26945v1",
         "https://arxiv.org/abs/2610.28998v1",
         "https://arxiv.org/abs/2610.29171v1",
+        "https://arxiv.org/abs/2610.02241v1",
+        "https://arxiv.org/abs/2610.22377v1",
+        "https://arxiv.org/abs/2610.04277v1",
         "https://arxiv.org/abs/2610.31034v1",
+        "https://arxiv.org/abs/2610.25675v1",
+        "https://arxiv.org/abs/2610.26178v1",
+        "https://arxiv.org/abs/2610.25519v1",
+        "https://arxiv.org/abs/2610.40039v1",
+        "https://arxiv.org/abs/2610.39222v1",
         "https://arxiv.org/abs/2610.36587v1",
         "https://arxiv.org/abs/2610.39029v1",
-        "https://arxiv.org/abs/2610.39222v1",
-        "https://arxiv.org/abs/2610.40039v1",
         "https://arxiv.org/abs/2611.01936v1",
         "https://arxiv.org/abs/2611.04222v1",
         "https://arxiv.org/abs/2611.05748v1",
@@ -829,7 +865,11 @@
         "https://arxiv.org/abs/2611.07198v1",
         "https://arxiv.org/abs/2611.09225v1",
         "https://arxiv.org/abs/2611.09424v2",
-        "https://arxiv.org/abs/2611.11043v1"
+        "https://arxiv.org/abs/2611.11043v1",
+        "https://arxiv.org/abs/2611.08508v1",
+        "https://arxiv.org/abs/2609.18110v1",
+        "https://arxiv.org/abs/2611.13762v1",
+        "https://arxiv.org/abs/2611.13188v1"
       ]
     },
     {
@@ -1035,23 +1075,23 @@
         "5f0b3a320c99019dca435bac"
       ],
       "source_urls": [
-        "https://arxiv.org/abs/2606.15535v1",
+        "https://arxiv.org/abs/2607.08786v1",
         "https://arxiv.org/abs/2606.26441v1",
         "https://arxiv.org/abs/2607.01590v2",
-        "https://arxiv.org/abs/2607.08786v1",
-        "https://arxiv.org/abs/2607.20120v1",
+        "https://arxiv.org/abs/2606.15535v1",
         "https://arxiv.org/abs/2607.26491v1",
-        "https://arxiv.org/abs/2607.29575v1",
-        "https://arxiv.org/abs/2608.10103v1",
         "https://arxiv.org/abs/2608.17641v2",
-        "https://arxiv.org/abs/2608.26575v1",
+        "https://arxiv.org/abs/2607.29575v1",
         "https://arxiv.org/abs/2609.06172v1",
+        "https://arxiv.org/abs/2607.20120v1",
+        "https://arxiv.org/abs/2608.10103v1",
+        "https://arxiv.org/abs/2608.26575v1",
         "https://arxiv.org/abs/2609.08739v1",
-        "https://arxiv.org/abs/2609.10368v1",
-        "https://arxiv.org/abs/2609.13585v1",
         "https://arxiv.org/abs/2609.15311v1",
         "https://arxiv.org/abs/2609.21264v1",
         "https://arxiv.org/abs/2609.24089v1",
+        "https://arxiv.org/abs/2609.13585v1",
+        "https://arxiv.org/abs/2609.10368v1",
         "https://arxiv.org/abs/2610.14244v1",
         "https://arxiv.org/abs/2610.32695v1",
         "https://arxiv.org/abs/2611.06634v1",
@@ -1066,9 +1106,6 @@
       ],
       "status": "emerging",
       "stages": [],
-      "open_questions": [
-        "贝叶斯筛选框架在真实晶圆厂与 2.5D/3D 热-机械耦合下的故障概率界限是否成立。"
-      ],
       "evidence_timeline": [
         {
           "item_id": "09306d50f9ae20d406d906ab",
@@ -1111,6 +1148,9 @@
           "reason": "2026-10-21 已发布日报收录：异构2.5D/3D-IC封装热仿真单次数百秒拖慢迭代设计,Cadence与圣母大学提出DAIST按装配结构分块并用神经算子迭代耦合求解:封装划分为逻辑die、HBM与interposer等块,各块用U-NO神经算子求解,经界面温度与热流迭代交换收敛,同型块推理合并为单次GPU调用;多chiplet系统单次求解0.821秒对Celsius参考146秒,先进封装系统约2秒对197秒,跨拓扑免再训练下MAE为1.056K;精度基准是Celsius生成数据,算例为毫米级学术封装且推理硬件未说明,属EDA热分析工具证据而非新加速器架构；按Chiplet与封装分支记录，不据此改变阶段判断。"
         }
       ],
+      "open_questions": [
+        "贝叶斯筛选框架在真实晶圆厂与 2.5D/3D 热-机械耦合下的故障概率界限是否成立。"
+      ],
       "evidence_item_ids": [
         "09306d50f9ae20d406d906ab",
         "88812b7c4e16361e0573a0e6",
@@ -1122,8 +1162,8 @@
         "https://arxiv.org/abs/2607.20141v1",
         "https://arxiv.org/abs/2608.19395v1",
         "https://arxiv.org/abs/2609.31092v1",
-        "https://arxiv.org/abs/2610.02461v1",
-        "https://arxiv.org/abs/2610.14612v1"
+        "https://arxiv.org/abs/2610.14612v1",
+        "https://arxiv.org/abs/2610.02461v1"
       ]
     }
   ],
@@ -1475,6 +1515,19 @@
         "5f0b3a320c99019dca435bac",
         "898be7c2952bd11f2ba2cd72",
         "9b9afbfc9fc00c971761f38c"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_faf317ae5486908ab5ff",
+      "issue_date": "2026-11-13",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "52bf64e6777327522d956d96",
+        "cd92167a888ea3dafdd6f9e1",
+        "f356968039545b01ff980787",
+        "fdb0906f107f40f4d270dcde"
       ]
     }
   ]

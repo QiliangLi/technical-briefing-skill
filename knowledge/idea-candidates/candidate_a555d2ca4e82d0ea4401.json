@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a555d2ca4e82d0ea4401",
+  "identity": {
+    "problem_key": "harness_design_space_combinatorial_explosion",
+    "mechanism_key": "slotwise_linucb_compositional_evolution",
+    "target_key": "fixed_weight_agent_harness"
+  },
+  "idea_type": "solution_concept",
+  "title": "槽位组合进化加LinUCB打分：固定评估预算内自改进固定权重Agent Harness",
+  "problem": "固定模型权重下改进Agent harness本身可行，但harness设计空间随功能组合爆炸、每次完整评估昂贵，人工设计与无结构搜索在有限评估预算内难以找到好组合。",
+  "hypothesis": "把harness拆成功能槽位并各配固定容量实现池，用LinUCB按槽位嵌入为组合打分、坐标上升选择组合、验证轨迹驱动LLM修订实现，可在同等完整评估预算下取得比现有harness自改进方法更高的任务分数，并降低测试期与含搜索总成本。",
+  "mechanism": "槽位化分解：各功能槽位维护固定容量实现池；LinUCB按槽位嵌入为组合打分；坐标上升在打分引导下选择组合；评估产生的验证轨迹驱动LLM修订池内实现；部署期只运行搜索结束后冻结的harness组合。",
+  "target": "固定模型权重下Agent Harness的功能槽位与实现组合（harness自改进搜索流程）",
+  "expected_effect": "同样40次完整评估预算下，四类任务比Meta-Harness分别高5.70、7.01、2.00、5.00点；测试期成本低44.2%，含搜索总成本低14.6%。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "08be7221c0402bd87e12943e",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.05300v1"
+      ],
+      "reason": "《MESH-Harness在固定模型权重下自改进Agent Harness》给出问题（harness设计空间组合爆炸、完整评估昂贵）、机制（功能槽位固定容量实现池、LinUCB按槽位嵌入为组合打分、坐标上升选组合、验证轨迹驱动LLM修订实现）与同预算对照结果（40次完整评估预算下四类任务比Meta-Harness高5.70/7.01/2.00/5.00点，测试期与含搜索总成本低44.2%/14.6%）。",
+      "independence_group": "arxiv:2610.05300"
+    }
+  ],
+  "evidence_item_ids": [
+    "08be7221c0402bd87e12943e"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.05300v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.05300"
+  ],
+  "unknowns": [
+    "四项提升的绝对测试分数与成本计量单位在可见证据中缺失，仅有相对基准差。",
+    "失效模式分析缺失，组合搜索在报告实现池之外的槽位结构上是否泛化未知。",
+    "仅与Meta-Harness单一基线对照，独立复现缺失。",
+    "迁移到自有流水线需先定义任务奖励信号与评估预算，当前两者均未定义。",
+    "固定容量实现池的容量选择与槽位划分依据未报告。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部固定权重Agent harness上实现槽位分解、各槽位固定容量实现池、LinUCB组合打分与坐标上升搜索，验证轨迹驱动LLM修订实现，与人工固定harness及随机、贪心组合搜索在同等完整评估预算下对比。",
+    "inputs": [
+      "槽位化harness模板与各槽位固定容量实现池",
+      "带验证轨迹的任务集",
+      "完整评估预算上限（如40次）"
+    ],
+    "baselines": [
+      "人工固定harness",
+      "随机组合搜索（同预算）",
+      "贪心逐槽搜索（同预算）"
+    ],
+    "metrics": [
+      "同等评估预算下的任务分数",
+      "测试期harness执行成本",
+      "含搜索的总成本",
+      "搜索消耗的完整评估次数"
+    ],
+    "support_criteria": [
+      "同等预算下任务分数高于全部基线且测试期成本不升",
+      "含搜索总成本相对基线的降低达到可摊销水平"
+    ],
+    "reject_criteria": [
+      "同预算下分数不优于随机或贪心搜索，或搜索成本吞没测试期收益",
+      "LinUCB打分在槽位嵌入上系统性偏离真实组合表现"
+    ],
+    "limitations": [
+      "原始证据仅单一arXiv来源，绝对分数、成本单位与失效模式缺失",
+      "内部任务集的奖励信号与评估预算定义尚未确定"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份与既有记录不同：harness设计空间组合爆炸且完整评估昂贵的问题、槽位固定容量实现池加LinUCB组合打分与坐标上升选择的搜索机制，均未被46条既有候选与7条Idea陈述覆盖（最近的candidate_30000ab57d8d17fb38df以翻转任务完整复评为采纳门、candidate_ae6aa6ff84cfc80cba76以失败路由Pareto优化器做预算受限选择、candidate_9fa60df23e23f6a7dcc2以无真值行为对比递归改进，机制均不同；idea_876c619ed473b24b78bc已于2026-11-13把本条触发证据吸收为可演化Harness一侧的支持证据，但其身份是版本化项目状态承接长任务连续性，不构成本身份的重复）。但仅单一独立来源支持，且绝对测试分数、成本计量单位与失效模式分析在可见证据中缺失，内部迁移需先定义任务奖励信号与评估预算，先观察。",
+  "related_candidate_ids": [
+    "candidate_30000ab57d8d17fb38df",
+    "candidate_9fa60df23e23f6a7dcc2",
+    "candidate_ae6aa6ff84cfc80cba76"
+  ],
+  "related_idea_ids": [
+    "idea_876c619ed473b24b78bc"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_daa34415f456c453118",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份与既有记录不同：harness设计空间组合爆炸且完整评估昂贵的问题、槽位固定容量实现池加LinUCB组合打分与坐标上升选择的搜索机制，均未被46条既有候选与7条Idea陈述覆盖（最近的candidate_30000ab57d8d17fb38df以翻转任务完整复评为采纳门、candidate_ae6aa6ff84cfc80cba76以失败路由Pareto优化器做预算受限选择、candidate_9fa60df23e23f6a7dcc2以无真值行为对比递归改进，机制均不同；idea_876c619ed473b24b78bc已于2026-11-13把本条触发证据吸收为可演化Harness一侧的支持证据，但其身份是版本化项目状态承接长任务连续性，不构成本身份的重复）。但仅单一独立来源支持，且绝对测试分数、成本计量单位与失效模式分析在可见证据中缺失，内部迁移需先定义任务奖励信号与评估预算，先观察。",
+      "evidence_item_ids": [
+        "08be7221c0402bd87e12943e"
+      ],
+      "actor": "agent"
+    }
+  ]
+}
