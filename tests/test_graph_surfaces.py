@@ -426,7 +426,7 @@ def test_renderer_adapter_style_tables_and_vendored_cytoscape():
 
 LENS_REPRO = {
     "topic": "agent_acceleration",
-    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (21, 24)},
+    "counts": {"structure": (5, 4), "evolution": (20, 28), "judgements": (20, 23)},
 }
 
 
@@ -626,7 +626,6 @@ def test_lens_layout_reports_honest_empty_states():
         ("dpu_inline", "judgements"),
         ("dpu_inline", "evolution"),
         ("ai_infra_horizontal", "judgements"),
-        ("ai_infra_horizontal", "evolution"),
     ]:
         assert rows[key]["empty"] is True, key
         assert rows[key]["viewport"] is False, key
@@ -637,14 +636,17 @@ def test_lens_layout_reports_honest_empty_states():
     # issue cited an ai_infra_horizontal item from an issue judgement, but
     # that judgement left the window once 2026-11-02/06 were materialized,
     # and ai_infra_horizontal's own INT8 item (2026-10-18/21) left the
-    # window again once 2026-11-11 was materialized, so both of its lenses
-    # are empty, while dpu_inline's only item (zram, 2026-09-30) has long
-    # left the window and both of its lenses are empty.
+    # window again once 2026-11-11 was materialized — until its 2026-11-16
+    # stage cited fresh accelerator-memory evidence that re-entered the
+    # window, so its evolution lens is populated again while its judgements
+    # lens stays empty, and dpu_inline's only item (zram, 2026-09-30) has
+    # long left the window so both of its lenses are empty.
     for key in [
         ("agent_acceleration", "evolution"),
         ("kv_management", "evolution"),
         ("tpn", "evolution"),
         ("tpn", "judgements"),
+        ("ai_infra_horizontal", "evolution"),
     ]:
         assert rows[key]["empty"] is False, key
         assert rows[key]["viewport"] is True, key

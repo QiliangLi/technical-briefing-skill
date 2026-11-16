@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_5eb73656f2719273ee04",
+  "identity": {
+    "problem_key": "pd_agent_surge_metastable_degradation",
+    "mechanism_key": "step_synchronized_transfer_budget_session_admission",
+    "target_key": "pd_disaggregated_agent_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "引擎步边界上在途KV传输预算与会话准入的联合调度阻断PD分离Agent服务的突增亚稳态",
+  "problem": "PD分离的Agent推理服务依赖前缀缓存复用，一次短时请求突增即可令服务陷入亚稳态：变慢的响应拉长会话、扩大工作集，超出缓存后未命中触发重复Prefill、会话积压，负载回落后仍持续劣化（实测10分钟突增一倍后前缀命中率由0.95跌至0.27、中位TTFT约60秒）。同时PD间KV交接尾延迟由在途预算轮次与引擎步边界决定而非链路速度。现有两侧控制互不感知：准入不消耗传输预算，步间传输调度不感知会话工作集增长，突增时重复Prefill的KV交接与准入会话相互放大。",
+  "hypothesis": "把会话级准入与PD间KV传输的在途预算绑定到同一引擎步边界联合调度——仅当解码侧缓存余量（含可出借的空闲解码显存）与Prefill→Decode在途KV预算轮次同时可用时才放行新会话的预填充提交——能在突增期间阻断“变慢→扩工作集→未命中→重复Prefill”的正反馈，使前缀命中率与TTFT在负载回落后恢复，同时把KV交接提交尾延迟保持在毫秒级；优于仅会话准入（BASIN）或仅步间传输预算（vllm-rlt）单独作用。",
+  "mechanism": "在vllm-rlt证实的可调度耦合点（提交与完成只发生在引擎步之间、在途预算按单请求KV设定）上执行两记录各自单独缺失的联合控制：以在途预算轮次为传输侧资源账本，以会话优先级准入为负载侧闸门；突增时先拒绝低优先级会话的预填充提交，避免其拉长在途轮次与排队（vllm-rlt实测融合优化令预填充排队、中位TTFT升至6.41秒，正是需要联合而非各自为政的信号），同时按BASIN机制出借空闲解码显存扩容缓存以稳住命中率。",
+  "target": "PD分离Agent推理服务的调度层：Prefill/Decode间KV交接传输预算与会话准入的联合控制点（vllm-rlt式NIXL直传路径之上）",
+  "expected_effect": "突增一倍并回落的场景下，前缀命中率不再出现0.95→0.27量级的持续坍塌，中位TTFT不进入约60秒级的持续劣化且恢复时间显著短于仅准入或仅传输预算；KV交接提交尾延迟保持在毫秒档（对照约1秒缩至17毫秒的实测档），稳态吞吐不低于BASIN相对Continuum的1.20–1.70倍改善区间。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-16",
+    "rationale": "同期两条独立记录联合支撑一个任何单条都未陈述的机制：vllm-rlt给出突增侧可调度的传输资源账本（在途预算轮次、步间提交完成）及其排队放大证据（中位TTFT升至6.41秒），BASIN给出负载侧正反馈失效模型与会话准入/显存出借闸门；联合机制（准入消耗在途预算、步边界统一放行）两者均未提出。它与吸收这两条证据的既有Idea身份与含义均不同：idea_f7841984fcce6a274881是传输/重算/就地计算的执行位置交叉点选择，idea_08f0269ef7fd181c9968是热前缀复制与跨节点放置（其吸收理由也明确指出BASIN的准入+出借并非前缀热度复制）；本候选的对象是突增亚稳态，核心增量是步边界上传输预算×会话准入的联合闸门。与既有候选（cμ规则单GPU准入、容量规划回路、在线阶段重指派）的机制与目标均不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "bd2b49eeff5341c458da618a",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.05150v1"
+      ],
+      "reason": "vllm-rlt实测PD解耦KV交接尾延迟由在途预算轮次而非链路速度决定：在途预算按单请求KV设定、提交与完成只发生在引擎步之间，KV经NIXL的CUDA IPC从预填充池直入解码池终页，32请求PD吞吐由143-147升至479 tok/s、提交尾延迟约1秒缩至17毫秒，而移除TCP仅使64MB块20.0降至16.9毫秒；给出步边界上可调度的传输资源账本，且融合优化令预填充排队、中位TTFT升至6.41秒，是传输与负载必须联合调度的放大证据。边界：PD证据仅限单节点IPC、最快一档关闭UCX对端容错且与基线传输不匹配、仅测小型循环模型。",
+      "independence_group": "arxiv:2611.05150"
+    },
+    {
+      "item_id": "7134df25b7f0eb47feac12bc",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02543v1"
+      ],
+      "reason": "BASIN在真实PD分离Agent系统演示并建模群体-缓存正反馈亚稳态：10分钟突增一倍后前缀命中率由0.95跌至0.27、中位TTFT约60秒且负载回落后仍持续劣化；会话优先级准入并出借空闲解码显存扩容缓存，H200真实部署突增下吞吐为Continuum的1.20-1.70倍；给出负载侧闸门与亚稳态的量化失效面。边界：硬件实验仅单模型SGLang、1P1D上仅与最强基线相当、多数结果来自仿真；其状态感知位于服务层，联合机制的传输侧须由vllm-rlt证据补足。",
+      "independence_group": "arxiv:2611.02543"
+    }
+  ],
+  "evidence_item_ids": [
+    "bd2b49eeff5341c458da618a",
+    "7134df25b7f0eb47feac12bc"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.05150v1",
+    "https://arxiv.org/abs/2611.02543v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.05150",
+    "arxiv:2611.02543"
+  ],
+  "unknowns": [
+    "两条证据来自不同负载域：vllm-rlt为小型循环模型单节点IPC，BASIN为Agent多轮会话、硬件实验仅单模型SGLang，联合机制未在任何真实PD集群验证",
+    "突增时解码侧“空闲显存”是否仍可出借：vllm-rlt显示融合优化令预填充排队（中位TTFT升至6.41秒），说明传输、计算与缓存余量并非独立资源",
+    "在途预算轮次与会话工作集增长的联合行为缺少解析模型；1P1D上BASIN仅与最强基线相当，联合机制的边际收益未知",
+    "会话优先级信号与准入粒度（会话vs请求）在多租户下的公平性与饿死边界未定义"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在PD分离Agent服务仿真中复用BASIN的群体-缓存正反馈模型，叠加vllm-rlt式步间在途预算传输模型（按单请求KV设定预算、提交与完成只在步间发生），实现“准入×传输预算×显存出借”联合控制器与两个单独机制的对照组。",
+    "inputs": [
+      "突增trace（如10分钟负载翻倍后回落）下的会话到达与前缀复用曲线",
+      "单请求KV在途预算参数与步边界周期",
+      "解码侧可出借显存容量与命中率-容量曲线（BASIN标定的0.95→0.27档）",
+      "PD间KV交接时延参数（IPC直传与经网络两档）"
+    ],
+    "baselines": [
+      "仅BASIN式会话优先级准入+显存出借",
+      "仅vllm-rlt式步间在途预算传输调度（不感知会话）",
+      "Continuum等PD分离serving基线"
+    ],
+    "metrics": [
+      "突增期及回落后的前缀命中率",
+      "中位/P99 TTFT及其恢复时间",
+      "KV交接提交尾延迟",
+      "服务吞吐（对照Continuum的1.20-1.70倍档）"
+    ],
+    "support_criteria": [
+      "联合控制在突增期把前缀命中率维持在仅准入基线之上、不出现0.95→0.27量级坍塌",
+      "TTFT在负载回落后的恢复时间显著短于两个单独机制，且交接提交尾延迟不劣化至百毫秒以上"
+    ],
+    "reject_criteria": [
+      "预算充裕或1P1D场景下联合控制劣于单独机制，复现并放大vllm-rlt观察到的融合排队效应",
+      "准入与预算的联合判定开销或信息延迟吞没收益，命中率与TTFT无统计显著改善"
+    ],
+    "limitations": [
+      "vllm-rlt证据仅限单节点IPC与小型循环模型",
+      "BASIN多数结果来自仿真、硬件实验仅单模型SGLang",
+      "联合机制先于真实多租户PD集群验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "两条独立arXiv记录联合给出完整的问题、机制、目标与可检验效应，身份与含义不同于全部既有Candidate与Idea，等待人工晋升决策。",
+  "related_candidate_ids": [
+    "candidate_ceee2786d1661cb60130",
+    "candidate_aa8fbca78a3cc57d5d83",
+    "candidate_9d439729d29356fd6625"
+  ],
+  "related_idea_ids": [
+    "idea_08f0269ef7fd181c9968",
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-16",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5f1a02c7d9e3b4861ac7",
+      "issue_date": "2026-11-16",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "两条独立记录联合给出完整的问题、机制、目标与可检验效应，身份与含义不同于全部既有Candidate与Idea，等待人工晋升决策。",
+      "evidence_item_ids": [
+        "bd2b49eeff5341c458da618a",
+        "7134df25b7f0eb47feac12bc"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

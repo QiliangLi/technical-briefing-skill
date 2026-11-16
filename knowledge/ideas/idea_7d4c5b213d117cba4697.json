@@ -105,6 +105,14 @@
         "https://arxiv.org/abs/2611.13176v1"
       ],
       "reason": "SHADOWPREFILL把模型切换的KV复用失效在生产形态上量化：Agent逐步路由切换时前缀缓存命中率从80-89%跌至44-65%，其缓解是在SLO时延余量内用空闲容量为备选模型预填充影子上下文（影子KV限占池25%、优先淘汰并可溢出主机内存），16卡H100 vLLM原型上切换调用TTFT平均降61.9%、token成本估算降20.4%；KV移动均在实例内或集群内、无WAN数据，且影子预填充以提前重算而非状态迁移处理同一问题、不回答迁移加刷新的可用边界，但确认切换重算成本是模型路由的一阶变量。"
+    },
+    {
+      "item_id": "77f27b4b2614a367fad9d413",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.11761v1"
+      ],
+      "reason": "BridgeKV用轻量KV缝合模块把大模型预填KV翻译成小模型布局（逐层源层聚合、键值各自残差非线性映射弥合层数/KV头数/头维度差异，两个锚点模型冻结训练），解码只运行小模型且推理仅需一次缓存交接；服务仿真中8B→1B响应时间39.80秒降至9.13秒、吞吐增至113.5 tok/s，A40单卡每请求2.96秒与1B单跑2.80秒相当——为“跨模型KV迁移优于重复Prefill”再添一个异构对（8B→1B）实例，并把逐层KV交接开销0.04-0.08毫秒带入传输调度参考点（主表系统数字来自含排队与传输开销的仿真而非实测、质量侧五个数据集与指标在证据中不可见、网络仅建模为固定带宽）。"
     }
   ],
   "evidence_against": [],
@@ -142,7 +150,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-23",
-  "last_updated_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-16",
   "decision_log": [
     {
       "event_id": "idea_decision_cc74c1c22d091a7dc8de",
@@ -233,6 +241,17 @@
       "reason": "新增模型切换时前缀缓存命中率坍塌（80-89%降至44-65%）的实测证据与实例内影子预填充缓解；它以提前重算而非KV迁移处理同一问题，且无WAN数据，状态保持observing。",
       "evidence_item_ids": [
         "dfb4bd481a9af4315c948fba"
+      ]
+    },
+    {
+      "event_id": "idea_decision_4e005668b149684fa539",
+      "issue_date": "2026-11-16",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增大模型预填KV翻译成小模型布局的跨模型缓存交接实证：一次交接替代大模型解码带宽成本、逐层交接开销0.04-0.08毫秒可作传输调度参考；状态保持observing，跨机房WAN复用与跨分词器模型对仍缺验证。",
+      "evidence_item_ids": [
+        "77f27b4b2614a367fad9d413"
       ]
     }
   ]

@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_94e5100feeae696d7ba8",
+  "identity": {
+    "problem_key": "static_quantization_ignores_runtime_numerical_demand",
+    "mechanism_key": "runtime_entropy_driven_layer_precision_selection",
+    "target_key": "runtime_mixed_precision_kvcache_format"
+  },
+  "idea_type": "solution_concept",
+  "title": "运行时按熵与隐状态更新幅度逐层选择KV精度的自适应混合精度格式",
+  "problem": "静态量化在推理前固定精度，与逐层、逐token的动态数值需求错配：精度不足处损失任务精度、富余处浪费比特；对需跨域搬运的KV载荷，静态精度也使待传体积无法随实际数值需求变化。",
+  "hypothesis": "若推理运行时按下一token分布熵与各层隐状态更新幅度逐层选择2/4/6比特精度，并以从NVFP4单一基格式导出的AutoFP承载，则可在约4.9比特权重与最低2比特KV下较静态NVFP4提升任务精度（最高21.7%）并保持其90-98%解码吞吐；作为跨域KV压缩原语时待传字节随负载自适应变化。",
+  "mechanism": "运行时策略按下一token分布熵与各层隐状态更新幅度逐层选择2/4/6比特精度；AutoFP格式从NVFP4单一基格式导出多档精度，无需维护冗余权重副本。",
+  "target": "推理引擎运行时的KV缓存与权重量化格式（AutoFP单基格式导出的混合精度档位），以及以其为原语的跨域KV传输载荷。",
+  "expected_effect": "4.9比特权重下任务精度最高较NVFP4提升21.7%；4张GB300解码吞吐保持NVFP4的90-98%、较全精度提升1.5-2.5倍；仿真加速器在等精度下较NVFP4-only时延降1.6-2.3倍；KV精度可降至2比特使待传字节随负载变化。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-16",
+    "rationale": "单条已发布记录同时给出问题（静态量化与动态数值需求错配）、可解释机制（熵与隐状态更新幅度驱动的逐层精度选择加AutoFP单基格式导出）、目标对象（运行时KV与权重量化格式及其跨域传输载荷原语）与可检验效应（4.9比特下最高较NVFP4提升21.7%、吞吐保持其90-98%、等精度时延降1.6-2.3倍）。"
+  },
+  "evidence": [
+    {
+      "item_id": "f84b7a04b03575c789644f19",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10165v1"
+      ],
+      "reason": "《AutoEMatic运行时自适应混合精度推理，KV缓存精度可降至2比特》给出静态量化在推理前固定精度、与动态数值需求错配的问题，运行时按下一token分布熵与各层隐状态更新幅度逐层选2/4/6比特精度、AutoFP从NVFP4单一基格式导出无需冗余权重副本的机制，以及4.9比特权重下最高较NVFP4提升21.7%、4张GB300解码吞吐保持NVFP4的90-98%、较全精度提升1.5-2.5倍、仿真加速器等精度下时延降1.6-2.3倍的结果；边界为单节点量化研究、无跨域网络评估，21.7%为摘要级声明。",
+      "independence_group": "arxiv:2611.10165"
+    }
+  ],
+  "evidence_item_ids": [
+    "f84b7a04b03575c789644f19"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.10165v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.10165"
+  ],
+  "unknowns": [
+    "单节点量化研究，无跨域网络评估；作为跨域KV压缩原语仅为项目相关性判断",
+    "21.7%提升为摘要级声明，逐基准数据不可见",
+    "2比特KV使待传字节随负载变化，接收方需解析逐层混合格式，一致性未验证",
+    "单一预印本，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在推理引擎内实现熵与隐状态更新幅度驱动的逐层2/4/6比特精度选择与AutoFP式单基格式导出，先在单节点复测精度与吞吐，再以跨域KV传输模拟度量待传字节随负载的波动与接收端解析开销。",
+    "inputs": [
+      "NVFP4基格式的权重与KV缓存",
+      "2/4/6比特精度档位",
+      "长上下文与Agent负载",
+      "跨域带宽与时延矩阵"
+    ],
+    "baselines": [
+      "静态NVFP4量化",
+      "BF16全精度",
+      "均匀低比特静态量化（如均匀INT4/INT2）"
+    ],
+    "metrics": [
+      "任务精度与NVFP4的差距",
+      "解码吞吐",
+      "权重与KV的平均比特数",
+      "跨域待传字节的负载自适应波动",
+      "接收端逐层混合格式解析开销"
+    ],
+    "support_criteria": [
+      "同平均比特数下任务精度显著高于静态NVFP4且解码吞吐保持其90%以上",
+      "跨域载荷字节随数值需求自适应变化且接收端解析开销不吞噬带宽节省"
+    ],
+    "reject_criteria": [
+      "逐基准复测无法再现摘要级精度声明",
+      "信号计算或混合格式解析开销在批量解码下吞噬精度收益",
+      "接收端逐层混合格式一致性无法保证导致跨域可用性失效"
+    ],
+    "limitations": [
+      "原始证据为单节点研究与仿真加速器结果，21.7%为摘要级声明",
+      "跨域迁移（待传字节随负载变化、逐层混合格式解析与一致性）无任何实测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐全，身份区别于既有候选与Idea（静态每头率失真预算、位宽-token-查询通道三轴离线校准分配、MoE逐token联合路由、循环层敏感度背包分配、RAQ-MLA角色分离可逆变换、误差预算残差编码均非运行时熵信号驱动的逐层精度选择；idea_d994d97852383184acfe为增量与残差压缩且仅将其作为相邻证据吸收），但证据为单一预印本、仅单节点评估且无跨域网络数据，21.7%提升为摘要级声明、逐基准数据不可见，2比特KV待传字节随负载变化与接收端逐层混合格式一致性未验证，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_936c6af54caa152d963c",
+    "candidate_aa038cc28689bde871b6",
+    "candidate_210d01444d714b09adb7",
+    "candidate_95c78008f1c0b4437833",
+    "candidate_e5563020923e9d940d63"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-16",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_f65e3462e9262ae55275",
+      "issue_date": "2026-11-16",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且身份区别于静态校准类精度分配与MoE逐token路由类既有候选，但单一预印本仅单节点验证、无跨域网络评估，21.7%为摘要级声明且逐层混合格式的跨域一致性未验证，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "f84b7a04b03575c789644f19"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

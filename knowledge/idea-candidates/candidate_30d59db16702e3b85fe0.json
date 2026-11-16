@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_30d59db16702e3b85fe0",
+  "identity": {
+    "problem_key": "naive_eviction_gate_constant_collapse",
+    "mechanism_key": "distilled_softmax_gated_eviction_centroid_recovery",
+    "target_key": "long_context_decode_kv_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "蒸馏监督的softmax内门控驱逐：固定预算KV占用不随上下文增长",
+  "problem": "可学习KV驱逐门在朴素训练下收敛成常数、退化成不驱逐，长上下文解码的KV占用仍随上下文线性增长。",
+  "hypothesis": "把驱逐门放进softmax内注意力权重并以蒸馏监督训练、辅以无参质心恢复被逐信息，可在固定预算下保持近全缓存质量，使缓存占用随预算而非上下文增长。",
+  "mechanism": "门作用于softmax内注意力权重，被压项质量转给保留项；保护项门恒为1，可逐出项竞争固定预算；被驱逐信息由无参质心在softmax内恢复；蒸馏监督阻止门塌缩为常数。",
+  "target": "长上下文单卡解码的KV缓存（Qwen3-8B，8K至256K输入）",
+  "expected_effect": "75%压缩下8K RULER为90.14、仅比全缓存低3.72分；输入从8K增至256K时批大小32吞吐仅降约28%，缓存占用不随上下文增长。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-16",
+    "rationale": "单条已发布记录同时给出问题（朴素门塌缩为常数）、可解释机制（softmax内蒸馏门控加质心恢复）、目标对象（解码期KV缓存）与可检验效应（75%压缩下质量近全缓存、吞吐随长度仅缓降）。"
+  },
+  "evidence": [
+    {
+      "item_id": "abfcb72f492259931b5436cc",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07605v1"
+      ],
+      "reason": "《IndexMem++可学习门控KV缓存驱逐，75%压缩下RULER仅损3.72分》同条记录给出问题、机制、目标与定量效应，并附边界：16K时与全缓存差距扩大到12分以上、压缩质量代价随长度变陡，论文只测单卡解码、无传输实验。",
+      "independence_group": "arxiv:2611.07605"
+    }
+  ],
+  "evidence_item_ids": [
+    "abfcb72f492259931b5436cc"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.07605v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.07605"
+  ],
+  "unknowns": [
+    "16K以上压缩质量代价随长度变陡的定量规律未刻画，压缩比需按任务长度选择",
+    "仅Qwen3-8B单卡解码验证，缺其他模型家族与多卡、批量多样性下的独立复现",
+    "与保留prompt的每头随机驱逐及最强打分驱逐器在同预算同负载下的受控对比未做（eviction_scoring_marginal候选主张打分贡献极小，二者关系待裁定）",
+    "作为跨域传输前置压缩时对传输字节与恢复后查询质量的影响无实验，传输收益不能由本文推出"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在长上下文解码负载上复现softmax内蒸馏门控驱逐，与代表性驱逐策略在同一固定预算下对比。",
+    "inputs": [
+      "上下文长度档位（8K至256K）",
+      "压缩比档位（50%、75%、87.5%）",
+      "保护项与可逐出项的划分",
+      "蒸馏监督的教师信号"
+    ],
+    "baselines": [
+      "全缓存不驱逐",
+      "保留prompt的每头随机驱逐",
+      "最强打分驱逐器"
+    ],
+    "metrics": [
+      "RULER等长上下文基准质量",
+      "解码吞吐与批容量",
+      "缓存占用随上下文长度的增长曲线",
+      "驱逐门数值分布是否塌缩为常数"
+    ],
+    "support_criteria": [
+      "固定预算下质量接近全缓存且占用不随上下文增长，门值分布非退化"
+    ],
+    "reject_criteria": [
+      "门收敛为常数，或主要长度档质量显著落后于打分驱逐器"
+    ],
+    "limitations": [
+      "单卡解码评估不覆盖跨域传输与多卡分摊",
+      "蒸馏监督的训练与部署开销未计入对比"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，且与既有身份不同：eviction_scoring_marginal是免打分随机驱逐、kvcache_cost_grows_with_length是固定循环记忆替代KVCache、本候选是softmax内蒸馏监督门控驱逐；本期Idea（wan_state_transfer_volume/delta_residual_compression）仅把该记录吸收为载荷压缩的相邻证据，身份并不重合，故不构成duplicate。仅单一独立组、单一模型单卡证据，16K以上边界与跨场景适用性未定，缺独立支持，暂缓等待复现与边界刻画。",
+  "related_candidate_ids": [
+    "candidate_2119757ba208fd48cc78"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-16",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_90607dae9eb26b12bf34",
+      "issue_date": "2026-11-16",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份独立，但仅单一独立组与单模型单卡证据，16K以上质量边界与跨域适用性未测，暂缓等待独立复现。",
+      "evidence_item_ids": [
+        "abfcb72f492259931b5436cc"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

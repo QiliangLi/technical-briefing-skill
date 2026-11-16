@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_989fde0f1d9ac0299ec8",
+  "identity": {
+    "problem_key": "pd_agent_serving_burst_metastable_failure",
+    "mechanism_key": "session_priority_admission_and_decode_memory_lending",
+    "target_key": "pd_disaggregated_agent_serving_admission_prefix_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "会话优先级准入加空闲解码显存出借阻断PD分离Agent服务的突增亚稳态失效",
+  "problem": "PD分离的Agent推理服务依赖前缀缓存复用，一次短时请求突增即可触发群体-缓存正反馈：变慢的响应拉长会话、扩大工作集，超出缓存容量后未命中触发重复预填充、会话积压，使服务陷入负载回落后仍持续的亚稳态劣化（实测10分钟突增一倍后中位TTFT约60秒、前缀命中率由0.95跌至0.27）。",
+  "hypothesis": "若在服务准入层按会话优先级控制并发会话工作集，并把空闲解码显存出借给前缀缓存临时扩容，可在突增下阻断群体-缓存正反馈，使PD分离Agent服务在负载回落后恢复命中率与TTFT，突增期吞吐优于无该保护的基线（证据中H200真实部署下为Continuum的1.20-1.70倍）。",
+  "mechanism": "群体-缓存正反馈建模：变慢的响应拉长会话、扩大工作集，缓存超容后未命中触发重复预填充、会话积压进一步变慢；BASIN缓解由两个耦合部件组成：(1)会话优先级准入控制并发会话的工作集总量，(2)出借空闲解码显存临时扩容前缀缓存容量。",
+  "target": "PD分离Agent推理服务的服务层准入与前缀缓存容量管理（非网络侧机制）",
+  "expected_effect": "突增负载下前缀命中率与中位TTFT的崩塌幅度显著收窄且负载回落后可恢复；H200真实部署突增下吞吐为Continuum基线的1.20-1.70倍（边界：1P1D上仅与最强基线相当）。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-16",
+    "rationale": "Direct触发项单独给出完整的问题（PD分离Agent服务突增亚稳态失效）、可解释机制（群体-缓存正反馈加会话优先级准入与空闲解码显存出借）、目标对象（服务层准入与前缀缓存）与可检验效应（命中率0.95至0.27、中位TTFT约60秒的崩塌实测与H200部署吞吐对照）。"
+  },
+  "evidence": [
+    {
+      "item_id": "7134df25b7f0eb47feac12bc",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02543v1"
+      ],
+      "reason": "《PD分离Agent服务存在亚稳态失效，BASIN以准入与缓存出借缓解》在真实系统演示并建模群体-缓存正反馈亚稳态：10分钟突增一倍后中位TTFT约60秒、前缀命中率由0.95跌至0.27且负载回落后仍持续劣化；BASIN以会话优先级准入加出借空闲解码显存扩容缓存，H200真实部署突增下吞吐为Continuum的1.20-1.70倍；边界为硬件实验仅单模型SGLang、1P1D上仅与最强基线相当、多数结果来自仿真、状态感知位于服务层而非网络。",
+      "independence_group": "arxiv:2611.02543"
+    }
+  ],
+  "evidence_item_ids": [
+    "7134df25b7f0eb47feac12bc"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.02543v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.02543"
+  ],
+  "unknowns": [
+    "仅单一arXiv独立组（arxiv:2611.02543），无独立复现或对照证据",
+    "硬件实验仅单模型SGLang，1P1D配置上仅与最强基线相当，多数结果来自仿真",
+    "会话优先级定义与出借策略在多模型混合、多租户PD集群及不同Agent会话长度分布下的适用边界未知",
+    "状态感知位于服务层而非网络，对TPN网络侧场景（如跨节点KVCache传输调度）的适用边界未建立",
+    "该记录同日已进入idea_08f0269ef7fd181c9968证据链并被定位为其前提（缓存容量与复制预算须与会话工作集联合调度）的支持，独立成案还是并入该Idea需人工世系决定"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在内部PD分离Agent服务环境（vLLM或SGLang类引擎）复现10分钟级请求突增与群体-缓存正反馈，实现会话优先级准入加空闲解码显存出借扩容前缀缓存，对照无保护基线与仅准入/仅出借消融，补记突增期与恢复期的命中率、TTFT、TPOT与吞吐。",
+    "inputs": [
+      "内部PD分离集群与Agent多轮会话负载（含会话长度与到达过程特征）",
+      "突增幅度与持续时间档位（含10分钟突增一倍档）",
+      "会话优先级定义与准入阈值",
+      "空闲解码显存出借比例档位"
+    ],
+    "baselines": [
+      "无会话级过载保护的PD分离服务（证据内基线Continuum）",
+      "仅会话优先级准入、无显存出借",
+      "仅空闲解码显存出借、无会话准入"
+    ],
+    "metrics": [
+      "前缀命中率（突增期与负载回落后）",
+      "中位TTFT与TPOT",
+      "突增期与恢复期吞吐",
+      "会话积压深度与恢复时间"
+    ],
+    "support_criteria": [
+      "突增下前缀命中率与中位TTFT的崩塌幅度显著收窄，负载回落后恢复到突增前水平，且吞吐不低于最强基线"
+    ],
+    "reject_criteria": [
+      "1P1D等低并行配置下出借收益消失，或会话优先级准入在持续高负载下造成低优先级会话饥饿与服务不可用"
+    ],
+    "limitations": [
+      "内部Agent会话长度与到达特征可能偏离论文的单模型SGLang硬件实验与仿真设定",
+      "多模型混合与多租户隔离场景在原始证据中未覆盖"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea（与candidate_aa8fbca78a3cc57d5d83的在线阶段重指派加主机KV共享池、candidate_ceee2786d1661cb60130的单GPU cμ规则准入回填、candidate_15d532fcd3f21efeb738的容量估计-准入预算闭环、candidate_7dbcf1f5c24bf8b8528b的排队论SLO资源切分及idea_08f0269ef7fd181c9968的热前缀复制放置均不同：核心是把突增亚稳态建模为群体-缓存正反馈，用会话优先级准入加空闲解码显存出借扩容前缀缓存来阻断），但证据仅单一arXiv独立组，硬件实验仅单模型SGLang、1P1D上仅与最强基线相当、多数结果来自仿真，状态感知位于服务层而非网络，对TPN网络侧场景的适用边界未建立；且该记录同日已进入idea_08f0269ef7fd181c9968证据链并被定位为其前提（缓存容量与复制预算须与会话工作集联合调度）的支持，独立成案还是并入该Idea需人工世系决定。",
+  "related_candidate_ids": [
+    "candidate_aa8fbca78a3cc57d5d83",
+    "candidate_ceee2786d1661cb60130",
+    "candidate_15d532fcd3f21efeb738",
+    "candidate_7dbcf1f5c24bf8b8528b"
+  ],
+  "related_idea_ids": [
+    "idea_08f0269ef7fd181c9968"
+  ],
+  "first_seen_issue": "2026-11-16",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d349600c0464a4469ca",
+      "issue_date": "2026-11-16",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea（与candidate_aa8fbca78a3cc57d5d83的在线阶段重指派加主机KV共享池、candidate_ceee2786d1661cb60130的单GPU cμ规则准入回填、candidate_15d532fcd3f21efeb738的容量估计-准入预算闭环、candidate_7dbcf1f5c24bf8b8528b的排队论SLO资源切分及idea_08f0269ef7fd181c9968的热前缀复制放置均不同：核心是把突增亚稳态建模为群体-缓存正反馈，用会话优先级准入加空闲解码显存出借扩容前缀缓存来阻断），但证据仅单一arXiv独立组，硬件实验仅单模型SGLang、1P1D上仅与最强基线相当、多数结果来自仿真，状态感知位于服务层而非网络，对TPN网络侧场景的适用边界未建立；且该记录同日已进入idea_08f0269ef7fd181c9968证据链并被定位为其前提（缓存容量与复制预算须与会话工作集联合调度）的支持，独立成案还是并入该Idea需人工世系决定。",
+      "evidence_item_ids": [
+        "7134df25b7f0eb47feac12bc"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

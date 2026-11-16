@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_f92130fdd9e861110204",
+  "identity": {
+    "problem_key": "expensive_candidate_evaluation_fixed_allocation",
+    "mechanism_key": "self_evolving_allocation_agent_counterfactual_exploration",
+    "target_key": "program_evolution_candidate_evaluation_allocation"
+  },
+  "idea_type": "solution_concept",
+  "title": "用自进化分配Agent与反事实探索削减自改进循环的候选评估开销",
+  "problem": "程序进化等自改进循环中完整评估一个候选的计算开销高昂；现有方法在搜索前固定评估分配规则（每个候选评多深、去留如何定），不从分配后果中学习，剪枝错误既不暴露也无法修正。",
+  "hypothesis": "把每个候选的评估深度与去留决策交给显式策略加经验修订的自进化分配Agent，挑战者仅在字典序准则上更优才被采纳，并以默认0.3概率反事实完整评估本被丢弃的候选，可在达到同等进化目标（ShinkaEvolve五种子均值）的同时大幅减少完整评估次数与token消耗，并显式暴露剪枝错误。",
+  "mechanism": "分配策略决定每个候选的评估深度与去留；挑战者策略须在字典序准则上优于现任才被采纳，构成确定性验收门；默认0.3概率的反事实探索完整评估本被丢弃的候选，暴露剪枝错误并驱动分配策略的经验修订。",
+  "target": "程序进化/自改进循环的候选评估分配器（每个候选的评估深度与去留决策点）。",
+  "expected_effect": "达到ShinkaEvolve五种子均值目标时，ADAS-AIME完整评估少59%、token少61%；Circle Packing分别少82%与89%；反事实探索可量化暴露被丢弃候选中的剪枝错误。边界：节省按达标口径计算，预算耗尽时总token反而更多；仅覆盖两个基准，无端到端时延数据。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-16",
+    "rationale": "单条已发布记录同时给出问题（完整评估昂贵且分配规则固定不学习）、可解释机制（自进化分配Agent+字典序采纳+反事实探索）、目标对象（候选评估分配决策）与可检验效应（两基准的完整评估与token降幅）。"
+  },
+  "evidence": [
+    {
+      "item_id": "5b7f8ec69fb38d4ffaede8e2",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.12086v1"
+      ],
+      "reason": "《EvoAlloc用可自进化的分配Agent削减程序进化的评估开销》给出分配策略决定评估深度与去留、字典序准则采纳挑战者、0.3概率反事实探索暴露剪枝错误的机制，以及ADAS-AIME（-59%完整评估/-61% token）与Circle Packing（-82%/-89%）的对照结果和预算耗尽时总token反增的失败口径。",
+      "independence_group": "arxiv:2610.12086"
+    }
+  ],
+  "evidence_item_ids": [
+    "5b7f8ec69fb38d4ffaede8e2"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.12086v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.12086"
+  ],
+  "unknowns": [
+    "节省按达标口径计算，预算耗尽时总token反而更多，实际预算制度下的净节省未验证。",
+    "仅覆盖ADAS-AIME与Circle Packing两个程序进化基准，且无端到端时延数据。",
+    "分配Agent的经验修订向编码Agent自改进等非程序进化负载的迁移性未验证。",
+    "反事实探索概率0.3为论文默认值，开销与纠错收益的权衡敏感性未知。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部自改进/程序进化评估循环中实现自进化分配Agent（字典序准则采纳挑战者、默认0.3概率反事实探索），与搜索前固定的分配规则对比。",
+    "inputs": [
+      "候选程序/配置流与评估器",
+      "分配策略及其经验修订台账",
+      "反事实探索预算（默认0.3概率）"
+    ],
+    "baselines": [
+      "搜索前固定的评估分配规则",
+      "统一完整评估"
+    ],
+    "metrics": [
+      "达标所需完整评估次数",
+      "总token消耗",
+      "反事实探索暴露的剪枝错误数",
+      "目标达成水平（多种子均值口径）"
+    ],
+    "support_criteria": [
+      "同等目标达成水平下完整评估次数与总token显著下降，且预算耗尽情形总token不高于基线"
+    ],
+    "reject_criteria": [
+      "节省仅在达标口径成立而预算耗尽时总token反增，或目标达成水平下降"
+    ],
+    "limitations": [
+      "原始结果仅两个程序进化基准且无端到端时延数据，达标口径节省不等价于实际预算净节省"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份独立：既有候选中固定评估预算的Harness自进化（candidate_a555d2ca4e82d0ea4401）是设计空间组合搜索、验证粒度调度（candidate_7bfe1cbc9e08d81fff61）是编码验证循环的计价选档，均非把候选评估深度与去留交给经验修订的分配Agent；但证据仅一个独立来源组，节省按达标口径计算、预算耗尽时总token反增、仅覆盖两个程序进化基准且无端到端时延数据；且同一证据本期已被 idea_876c619ed473b24b78bc 吸收为可演化Harness线的支撑证据，是否单列候选待人工谱系决定。",
+  "related_candidate_ids": [
+    "candidate_a555d2ca4e82d0ea4401",
+    "candidate_30000ab57d8d17fb38df",
+    "candidate_7bfe1cbc9e08d81fff61"
+  ],
+  "related_idea_ids": [
+    "idea_876c619ed473b24b78bc",
+    "idea_11ed656a018dc7b2c2d3"
+  ],
+  "first_seen_issue": "2026-11-16",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_2ff58eed1fada9f0df",
+      "issue_date": "2026-11-16",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份独立：既有候选中固定评估预算的Harness自进化（candidate_a555d2ca4e82d0ea4401）是设计空间组合搜索、验证粒度调度（candidate_7bfe1cbc9e08d81fff61）是编码验证循环的计价选档，均非把候选评估深度与去留交给经验修订的分配Agent；但证据仅一个独立来源组，节省按达标口径计算、预算耗尽时总token反增、仅覆盖两个程序进化基准且无端到端时延数据；且同一证据本期已被 idea_876c619ed473b24b78bc 吸收为可演化Harness线的支撑证据，是否单列候选待人工谱系决定。",
+      "evidence_item_ids": [
+        "5b7f8ec69fb38d4ffaede8e2"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

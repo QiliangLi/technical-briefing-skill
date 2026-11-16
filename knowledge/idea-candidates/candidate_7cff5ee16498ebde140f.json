@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_7cff5ee16498ebde140f",
+  "identity": {
+    "problem_key": "per_workload_manual_specialization_cost",
+    "mechanism_key": "analytical_model_driven_structure_search",
+    "target_key": "accelerator_datapath_and_execution_plans"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "『结构可搜索加解析模型选优』可跨层替代人工专用设计：FPGA数据通路与分布式执行计划的同批联合证据",
+  "problem": "新负载与新硬件形态的适配长期依赖人工专用设计：FPGA加速器一类求解器一套硬件、HBM通道绑定单一向量致带宽闲置；生产训练与RL后训练依赖手工并行配方与执行计划，适配成本高且未必最优。逐层人工专用化是跨设计层的共同瓶颈，但『以自动搜索替代人工设计』究竟是只在某一层成立的局部经验、还是可跨层复用的通用机理，任何单条记录都无法回答。",
+  "hypothesis": "把系统结构（数据通路阶段划分与指令映射、算子放置、管线异步结构）显式表达为可组合设计空间中的单一可搜索对象，由解析性能模型或整数规划连同实现可行性检查驱动选优并在运行时忠实执行，该机理不是单层特例：在加速器数据通路层与分布式执行计划层都能达到或接近人工专用设计的性能，且搜索加校准总成本低于人工适配成本。",
+  "mechanism": "三条本期独立证据在同一设计范式下各覆盖一层：Helix以DSL把八种Krylov求解器映射到公共原语核与可编程数据通路、编译器搜索最小阶段划分，解析性能模型加快速实现检查器共同驱动设计空间探索，切换求解器仅替换指令并复用HBM通道；AutoParallel在前后向联合计算图上按算子搜索放置、整数规划求解并可回退近似算法；RPEG以图中间表示把有界异步结构与设备并行计划作为整体搜索、按自动校准解析性能模型选优并在运行时忠实执行。跨层共性为『结构即对象、模型选优、忠实执行』；该跨层泛化为聚合判断(inferred)，每条记录只陈述各自层内实例。",
+  "target": "加速器结构与集群执行计划的自动设计流程：FPGA/ASIC类数据通路与内核族设计，以及GPU集群上的并行策略、管线与RL后训练执行计划搜索",
+  "expected_effect": "若跨层机理成立，新负载、新集群与新算法族的适配从人工专用迭代变为模型驱动搜索：数据通路层以56瓦FPGA取得270瓦GPU吞吐的47.5%至96.9%、能效2.29至4.66倍、带宽归一吞吐1.89至3.85倍；执行计划层吞吐进入专家配方-3.6%至+18.3%区间（16B MoE 8卡最高+18.3%）、RL后训练每步时间较VERL最高降2.48倍且精度差0.47%以内。若不成立，至少一层搜索结果系统性落后于人工设计且解析模型误差不可校准，机理退化为层内局部经验。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-16",
+    "rationale": "三条同期已发布记录分属硬件数据通路层（Helix）与分布式执行计划层（AutoParallel、RPEG），联合支持『结构可搜索加解析模型选优可跨层替代人工专用设计』这一未被任何单条记录陈述的机理；本期Idea idea_f83466824736abbf5478仅覆盖GPU训练集群计划层，本候选把同一设计范式推广到跨层，身份与含义不同，经related_idea_ids显式关联待人工判定血缘。"
+  },
+  "evidence": [
+    {
+      "item_id": "b002baad08bd06cb5011c481",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21096v1"
+      ],
+      "reason": "硬件数据通路层实例：Helix把八种Krylov求解器抽象为公共原语核上的指令与可编程数据通路，DSL编译器搜索最小阶段划分，解析性能模型与快速实现检查器共同驱动设计空间探索，FPGA原型达RTX PRO 6000吞吐的47.5%至96.9%、能效2.29至4.66倍、带宽归一吞吐1.89至3.85倍（56瓦对270瓦），证明模型驱动结构搜索在硬件层达到或接近人工优化专用硬件（边界：负载为科学计算稀疏求解器而非AI训练推理、结果来自FPGA原型实测、功耗测量方法未说明）。",
+      "independence_group": "arxiv:2610.21096"
+    },
+    {
+      "item_id": "79e9feb1300c64fbe1c131f3",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08660v1"
+      ],
+      "reason": "执行计划层实例：AutoParallel在前后向联合计算图上按算子搜索放置、以整数规划求解并可回退近似算法，输出可与编译栈组合的普通PyTorch程序；8至128块H100的14组配置中9组快于TorchTitan专家基线、16B MoE 8卡吞吐+18.3%、其余慢3.6%以内，证明同一搜索机理在生产训练计划层达到或超过专家手工配方（未隔离编译与通信重叠等执行层因素、限于128块H100训练、无推理与能效数据）。",
+      "independence_group": "arxiv:2611.08660"
+    },
+    {
+      "item_id": "12c9cee67de133ad814ca54b",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09207v1"
+      ],
+      "reason": "异构管线层实例：RPEG以图中间表示把有界异步结构与设备并行计划作为单一对象整体搜索、依据自动校准的解析性能模型选优并在运行时忠实执行，规模至256块GH200、受控同步对比每步时间较VERL最高降2.48倍（中位数1.488倍）、精度差0.47%以内，把机理扩展到生成-评估-训练异构多阶段管线（最高值达成配置未披露、弱扩展与消融多为模型预测、利用率为调度占用率而非算术利用率）。",
+      "independence_group": "arxiv:2611.09207"
+    }
+  ],
+  "evidence_item_ids": [
+    "b002baad08bd06cb5011c481",
+    "79e9feb1300c64fbe1c131f3",
+    "12c9cee67de133ad814ca54b"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.21096v1",
+    "https://arxiv.org/abs/2611.08660v1",
+    "https://arxiv.org/abs/2611.09207v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.21096",
+    "arxiv:2611.08660",
+    "arxiv:2611.09207"
+  ],
+  "unknowns": [
+    "数据通路层证据的负载为科学计算稀疏求解器而非AI训练/推理，向AI加速器数据通路的外推未经实测",
+    "Helix功耗测量方法未说明，能效对比口径不可核；AutoParallel未隔离编译与通信重叠因素；RPEG最高值配置未披露且弱扩展与消融多为模型预测",
+    "解析性能模型的校准成本及其跨硬件代际、跨集群架构的迁移性未测",
+    "AutoParallel收益含-3.6%负尾，负尾位置能否由解析模型提前预测未知",
+    "计划层语义与本期Idea idea_f83466824736abbf5478重叠，跨层版本的血缘与升格路径需人工判定"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "两层最小对照：数据通路层取一族稀疏迭代内核（SpMV与预条件类），复现公共原语核加阶段划分搜索、解析性能模型加实现检查器选优，与手工优化实现同条件对照；执行计划层在8卡H100上取稠密与MoE训练各一，复现联合图放置搜索，与TorchTitan专家配方同机对照；两层同口径记录搜索加校准的墙钟成本。",
+    "inputs": [
+      "稀疏迭代内核族及其手工优化的FPGA/GPU实现",
+      "8卡H100上稠密与16B级MoE训练负载及TorchTitan专家配方",
+      "解析性能模型自动校准所需的实测带宽与时延数据",
+      "设计空间定义与实现可行性检查器"
+    ],
+    "baselines": [
+      "手工优化的专用硬件实现（含RTX PRO 6000类GPU库）",
+      "TorchTitan等专家手工并行配方",
+      "VERL/ReaL式默认管线执行计划"
+    ],
+    "metrics": [
+      "带宽归一吞吐与能效（吞吐每瓦）",
+      "端到端训练吞吐与每步时间",
+      "相对人工基线的收益分布（含负尾比例与最大回撤）",
+      "搜索加校准的墙钟成本",
+      "精度偏差"
+    ],
+    "support_criteria": [
+      "两层均达到人工基线性能的95%以上且至少一层显著超过（不低于10%）",
+      "搜索加校准总成本低于等价人工适配时间"
+    ],
+    "reject_criteria": [
+      "任一层收益中位数低于人工基线90%",
+      "解析模型校准成本随规模超线性增长抵消收益",
+      "负尾集中于可识别形态且解析模型无法提前预测"
+    ],
+    "limitations": [
+      "首版两层各取一个最小实例，不能穷尽设计层谱系",
+      "Helix功耗口径未说明，能效对比需重测",
+      "执行层因素（编译、通信重叠）未隔离，收益归因可能混合"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备；三个独立来源横跨数据通路与执行计划两层共同支持『结构即对象、解析模型选优、忠实执行』的跨层设计机理，该泛化未被任何单条记录陈述；与既有43个候选及7个Idea的身份和含义均不同（idea_f83466824736abbf5478仅覆盖GPU训练集群计划层，candidate_8a514effa54f3eef44c8是GPU配置预测中复用实测停顿，candidate_d83ad1410507694d893e是异构池子集与流水线划分联合搜索），与计划层Idea的血缘经related_idea_ids显式标注待人工判定。",
+  "related_candidate_ids": [
+    "candidate_8a514effa54f3eef44c8",
+    "candidate_d83ad1410507694d893e"
+  ],
+  "related_idea_ids": [
+    "idea_f83466824736abbf5478"
+  ],
+  "first_seen_issue": "2026-11-16",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d38370432142c14dd7cf",
+      "issue_date": "2026-11-16",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应齐备；三个独立来源横跨数据通路与执行计划两层共同支持『结构即对象、解析模型选优、忠实执行』的跨层设计机理，该泛化未被任何单条记录陈述；与既有43个候选及7个Idea的身份和含义均不同（idea_f83466824736abbf5478仅覆盖GPU训练集群计划层，candidate_8a514effa54f3eef44c8是GPU配置预测中复用实测停顿，candidate_d83ad1410507694d893e是异构池子集与流水线划分联合搜索），与计划层Idea的血缘经related_idea_ids显式标注待人工判定。",
+      "evidence_item_ids": [
+        "b002baad08bd06cb5011c481",
+        "79e9feb1300c64fbe1c131f3",
+        "12c9cee67de133ad814ca54b"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

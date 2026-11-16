@@ -296,13 +296,29 @@
         "https://arxiv.org/abs/2611.09825v1"
       ],
       "reason": "BitDecoding-FP4以双FP4残差查询、欠流感知概率缩放与离群感知键量化实现原生FP4 KV解码并在FP4张量核全程运行注意力，Qwen3-4B上NVFP4精度67.27对BF16 KV的67.69几乎无损，256K上下文TPOT快1.81倍、64并发单卡峰值吞吐为BF16的2.4-3.0倍；把模型侧压缩这条对照路线的解码吞吐基线抬到原生FP4（全部单节点Blackwell实验、无TTFT、P95或跨节点KV传输评估）。"
+    },
+    {
+      "item_id": "bd2b49eeff5341c458da618a",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.05150v1"
+      ],
+      "reason": "vllm-rlt实测循环大模型PD解耦KV交接尾延迟由在途预算轮次而非链路速度决定：在途预算按单请求KV设定、提交与完成只发生在引擎步之间，KV经NIXL CUDA IPC直入解码池终页，32请求PD吞吐由143-147升至479 tok/s、提交尾延迟约1秒缩至17毫秒，而移除TCP仅使64MB块20.0降至16.9毫秒；直接支持“按请求估算传输代价并做步间调度”优于先优化链路的机制前提（PD证据仅限单节点IPC、最快一档关闭UCX对端容错且与基线传输不匹配、仅测小型循环模型；融合优化令预填充排队、中位TTFT升至6.41秒是阶段感知调度信号）。"
+    },
+    {
+      "item_id": "2e8c5f6524d462c8d1d442b1",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.16890v1"
+      ],
+      "reason": "FORGE以片上转子种子重生成三成MoE层专家权重，释放28-29%参数显存（4096上下文KV容量扩至1.2-2.6倍）并以单机化消除跨机专家all-to-all；把交叉点假设的非网络对照面扩展到权重/显存侧重生成基线——网络侧传输与调度的增量收益须在该单机化容量边界之外量化（每专家8token时FFN内核较cuBLASLt FP8快2.28-3.23倍为内核实测，但系统级吞吐与时延为模拟器投影、RGU未流片、替换后下游精度降幅未量化）。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
     "多租户 P95/P99 下的交叉点是否稳定。",
     "代价预测错误与画像漂移会造成多大回退。",
-    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）、主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）、放置架构基线（TKNP八节点KV容量约为DP的5倍、较DCP 1.53倍）与单卡KV内存调度基线（cμ-backfill平均时延9.47秒对vLLM默认35.49秒）的增量收益尚无对照数据。"
+    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）、主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）、放置架构基线（TKNP八节点KV容量约为DP的5倍、较DCP 1.53倍）、单卡KV内存调度基线（cμ-backfill平均时延9.47秒对vLLM默认35.49秒）与片上权重重生成单机化基线（FORGE释放28-29%参数显存、KV容量扩至1.2-2.6倍并消除跨机专家all-to-all）的增量收益尚无对照数据。"
   ],
   "validation_plan": {
     "mode": "simulation",
@@ -336,7 +352,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-02",
-  "last_updated_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-16",
   "decision_log": [
     {
       "event_id": "idea_decision_4f7da6ed9342bd9a8339",
@@ -551,6 +567,18 @@
         "9a355876a02b1d84ace7b6fb",
         "65dfa7dbca4d6e1b86242b08",
         "cf5fb762ffca196ee029781b"
+      ]
+    },
+    {
+      "event_id": "idea_decision_ffd4926393b2e8d1d1d1",
+      "issue_date": "2026-11-16",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增在途预算轮次决定PD交接尾延迟的单节点实测证据与片上权重再生成的显存侧对照基线：前者直接支持预算与步间调度先于链路优化的机制前提、后者把非网络对照面扩展到权重/显存侧；状态保持observing，传输、重算与就地策略在并发端到端TTFT/TPOT与网络利用率口径下的统一对照仍缺失。",
+      "evidence_item_ids": [
+        "bd2b49eeff5341c458da618a",
+        "2e8c5f6524d462c8d1d442b1"
       ]
     }
   ]
