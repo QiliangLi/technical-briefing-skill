@@ -34,10 +34,10 @@ def _ok_response():
 
 def test_config_defaults_and_overrides():
     cfg = ImageAPIConfig.from_settings({})
-    assert cfg.model == "gpt-image-2.5"
+    assert cfg.model == "gpt-image-2.6"
     assert cfg.size == "1536x1024"
-    assert [e["name"] for e in cfg.endpoints] == ["main", "backup", "cn_optimized"]
-    assert cfg.endpoints[-1]["base_url"] == "https://dm-fox.rjj.cc"
+    assert [e["name"] for e in cfg.endpoints] == ["foxcoding"]
+    assert cfg.endpoints[-1]["base_url"] == "https://api.foxcoding.ai"
 
     settings = {
         "image_api": {
@@ -84,8 +84,8 @@ def test_generate_image_generations_endpoint(tmp_path, monkeypatch):
     assert path == out
     assert out.read_bytes() == PNG_BYTES
     assert len(calls) == 1
-    assert calls[0]["url"] == "https://code1.newcli.com/v1/images/generations"
-    assert calls[0]["json"]["model"] == "gpt-image-2.5"
+    assert calls[0]["url"] == "https://api.foxcoding.ai/v1/images/generations"
+    assert calls[0]["json"]["model"] == "gpt-image-2.6"
     assert calls[0]["json"]["prompt"] == "a prompt"
 
 
@@ -108,7 +108,7 @@ def test_generate_image_edits_uses_references(tmp_path, monkeypatch):
     with patch("briefing_skill.image_api.requests.post", side_effect=fake_post):
         generate_image("edit prompt", out, tmp_path, {}, reference_images=[ref], config_override=cfg)
 
-    assert calls[0]["url"] == "https://code1.newcli.com/v1/images/generations".replace(
+    assert calls[0]["url"] == "https://api.foxcoding.ai/v1/images/generations".replace(
         "generations", "edits"
     )
     assert ("response_format", "b64_json") in calls[0]["data"]
@@ -134,7 +134,15 @@ def test_failover_across_endpoints(tmp_path, monkeypatch):
             return Bad()
         return _ok_response()
 
-    cfg = ImageAPIConfig(retries_per_endpoint=0, retry_backoff_seconds=0)
+    cfg = ImageAPIConfig(
+        retries_per_endpoint=0,
+        retry_backoff_seconds=0,
+        endpoints=[
+            {"name": "dead1", "base_url": "https://dead1.invalid", "path_prefix": "/v1"},
+            {"name": "dead2", "base_url": "https://dead2.invalid", "path_prefix": "/v1"},
+            {"name": "live", "base_url": "https://live.invalid", "path_prefix": "/v1"},
+        ],
+    )
     out = tmp_path / "out3.png"
     with patch("briefing_skill.image_api.requests.post", side_effect=fake_post), patch(
         "briefing_skill.image_api.time.sleep"

@@ -26,9 +26,7 @@ from typing import Any
 import requests
 
 DEFAULT_ENDPOINTS: list[dict[str, str]] = [
-    {"name": "main", "base_url": "https://code1.newcli.com", "path_prefix": "/v1"},
-    {"name": "backup", "base_url": "https://code2.newcli.com", "path_prefix": "/v1"},
-    {"name": "cn_optimized", "base_url": "https://dm-fox.rjj.cc", "path_prefix": "/codex/v1"},
+    {"name": "foxcoding", "base_url": "https://api.foxcoding.ai", "path_prefix": "/v1"},
 ]
 
 SECRET_PATH = Path("workspace/secrets/image_api.json")
@@ -41,7 +39,7 @@ class ImageAPIError(RuntimeError):
 
 @dataclass
 class ImageAPIConfig:
-    model: str = "gpt-image-2.5"
+    model: str = "gpt-image-2.6"
     size: str = "1536x1024"
     quality: str = "high"
     timeout_seconds: int = 300
