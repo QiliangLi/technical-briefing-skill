@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_dbbb14247e3ff517cfa2",
+  "identity": {
+    "problem_key": "analog_cim_accuracy_collapse",
+    "mechanism_key": "offline_isometric_reparameterization",
+    "target_key": "pretrained_model_deployment"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "离线重参数化能否让模拟存内计算阵列免重训练恢复预训练模型精度",
+  "problem": "PCM/ReRAM 模拟阵列的器件噪声与低精度 ADC 使预训练模型精度崩塌（已发布仿真口径：ReRAM、6-bit ADC、编程后一天条件下 ViT-B/16 仅 37.4%、Phi-4 仅 27.0%），而硬件感知重训练需逐模型逐介质代重做，成本高。",
+  "hypothesis": "若对模拟路径先做计算中心化以移除可静态预计算的分量，再施加计算不变的等距变换（Hadamard 输出旋转与 tile 内输入旋转），并在推理时于数字域匹配变换，则预训练模型可不经任何梯度更新恢复到距浮点约 2-3 个百分点内的精度。",
+  "mechanism": "计算中心化把模拟路径上可静态预计算的部分移入数字域，等距变换重塑权重分布以匹配模拟阵列误差结构，推理时在数字域执行匹配变换。",
+  "expected_effect": "在 PCM/ReRAM 阵列上免重训练恢复精度至接近硬件感知重训练水平（已发布仿真：ViT-B/16 37.4%→82.9%、Phi-4 27.0%→72.2%、距浮点 2.2 个百分点内）；若在真实芯片复现，模拟 CIM 进入推理层级的逐模型适配成本大幅下降。",
+  "topic_ids": [
+    "storage_media"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "e54be663fc81b351d0a9570b",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08693v1"
+      ],
+      "reason": "该记录给出机制与仿真结果：先对计算中心化移除模拟路径上可静态预计算的部分，再施加计算不变的等距变换（Hadamard 输出旋转与 tile 内输入旋转）、推理时在数字域匹配变换；ReRAM、6-bit ADC、编程后一天条件下 ViT-B/16 从 37.4% 恢复到 82.9%、Phi-4 从 27.0% 到 72.2%、距浮点 2.2 个百分点内（全部为 AIHWKit 仿真，无真实芯片测量与介质参数，硬件感知训练对比仅覆盖 CNN）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "全部结果来自 AIHWKit 仿真，无真实 PCM/ReRAM 芯片测量与介质参数。",
+    "硬件感知重训练对比仅覆盖 CNN，未在同类大模型上与该方案对齐比较。",
+    "等距变换对 tile 划分、路由与编程后长于一天的漂移的敏感性未知。"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在 AIHWKit 复现离线重参数化管线，并在至少一个独立模拟 CIM 前端交叉验证；待真实 PCM/ReRAM 测试芯片可用后用相同变换直接映射。",
+    "inputs": [
+      "预训练 ViT-B/16 与 Phi-4 级小模型检查点",
+      "ADC 位数扫描 4-8 bit",
+      "编程后时间点扫描（1 小时/1 天/1 周）",
+      "PCM 与 ReRAM 两组器件噪声参数"
+    ],
+    "baselines": [
+      "浮点全精度模型",
+      "硬件感知重训练",
+      "无适配直接映射",
+      "仅输出旋转或仅输入旋转的消融"
+    ],
+    "metrics": [
+      "任务精度与浮点差距（百分点）",
+      "免梯度校准的预处理开销（小时）",
+      "对 tile 划分与路由的敏感性"
+    ],
+    "support_criteria": [
+      "在两种介质与至少两档 ADC 下，免重训练恢复距浮点不超过 3 个百分点，且校准开销比硬件感知重训练低一个数量级。"
+    ],
+    "reject_criteria": [
+      "在第二个仿真器或真实芯片上精度恢复消失（如编程后漂移破坏等距变换假设），或校准仍需逐层梯度信息。"
+    ],
+    "limitations": [
+      "当前证据仅来自单一仿真器与单阵列静态校准；未覆盖长上下文 LLM、batch>1 与多阵列互连；真实介质漂移模型未纳入。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_404ea5c1c420df3d7672",
+      "issue_date": "2026-11-11",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "已发布证据给出明确问题（模拟阵列精度崩塌与重训练成本）、可检验机制（计算中心化加等距变换）与量化效果信号（距浮点 2.2 个百分点内），因此建立研究假设 Idea；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "e54be663fc81b351d0a9570b"
+      ]
+    }
+  ]
+}

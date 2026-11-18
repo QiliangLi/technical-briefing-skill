@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ee1f3df5fa5d97498a5f",
+  "identity": {
+    "problem_key": "prefix_block_retention_timeout_setting",
+    "mechanism_key": "max_weight_closure_min_cut_exact_timeouts",
+    "target_key": "radix_prefix_cache_retention_policy"
+  },
+  "idea_type": "solution_concept",
+  "title": "把前缀缓存块组留存超时化为最大权闭包用一次最小割精确求解",
+  "problem": "前缀缓存的每个前缀块组该驻留多久（留存超时/TTL）并不好定：按块独立优化会因忽略前缀祖先-子孙驻留依赖而高估收益，强制祖先超时不小于子孙的排序约束又偏保守，全局统一TTL则无法按前缀价值差分驻留时长。",
+  "hypothesis": "把每个可用前缀块组的命中奖励建为图节点并连接其前置条件边、叠加增量存储成本后构成最大权闭包，用一次最小割求得精确最优的相干超时组合，并以断点定理消除超时网格离散误差；在Mooncake式请求回放上，精确解可在命中率与全局TTL相当的情况下把平均驻留块数降低一个数量级，并可充当RadixTree式前缀缓存留存/驱逐策略的离线上限基准。",
+  "mechanism": "PCR把每个可用前缀奖励建成图节点并按前置条件（祖先依赖）连边，加上增量存储成本后构成最大权闭包，用一次最小割精确求解相干超时组合；断点定理证明最优超时取在奖励与成本变化的断点上，消除超时网格的离散误差。",
+  "target": "RadixTree式前缀缓存KVCache存储（Mooncake类）的块组留存超时与驱逐策略层",
+  "expected_effect": "39,632条Mooncake请求回放中，相干超时在120个参数组合的118个达到无约束最优；低价位命中率与全局TTL相当，平均驻留块从715.97降至69.85。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题（块组留存超时难定：按块独立优化高估收益、祖先排序约束偏保守）、可解释机制（最大权闭包加一次最小割精确求解、断点定理消离散误差）、目标对象（前缀缓存块组留存/驱逐策略层）与可检验效应（39,632条Mooncake回放118/120组合达无约束最优、平均驻留块715.97降至69.85）。"
+  },
+  "evidence": [
+    {
+      "item_id": "d51e96cd99400f8cb09ffe77",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02766v1"
+      ],
+      "reason": "该记录给出问题（每个前缀块组该驻留多久并不好定：按块独立优化会高估收益、强制祖先超时不小于子孙的排序偏保守）、机制（PCR把每个可用前缀奖励建成图节点并连接前置条件，加增量存储成本构成最大权闭包，一次最小割精确求解；断点定理消除超时网格离散误差）、目标（前缀缓存的KVCache留存/驱逐策略）与可检验效应（39,632条Mooncake请求回放中118/120组合达无约束最优、低价位命中率与全局TTL相当、平均驻留块715.97降至69.85）。",
+      "independence_group": "arxiv:2610.02766"
+    }
+  ],
+  "evidence_item_ids": [
+    "d51e96cd99400f8cb09ffe77"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.02766v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.02766"
+  ],
+  "unknowns": [
+    "全部为离线回放，只计节省块数与占用时间，无TTFT、吞吐或端到端时延指标",
+    "低价位命中率收益主要来自分组TTL既有思想，最小割精确解相对分组TTL的增量收益未单列",
+    "奖励与成本模型依赖回放trace的命中统计，负载漂移下超时解的时效性与重解频率未评估",
+    "单一预印本证据，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在内部RadixTree式前缀缓存的请求trace回放器中实现前缀块组奖励图（前置条件边加增量存储成本）的最大权闭包构建与一次最小割求解，对照全局TTL、分组TTL与LRU驱逐基线。",
+    "inputs": [
+      "内部多轮与Agent混合请求trace回放",
+      "命中奖励与增量存储成本参数扫描（120组合口径对齐）",
+      "负载漂移窗口与超时解重解频率扫描",
+      "断点定理超时取值与固定网格取值对照"
+    ],
+    "baselines": [
+      "全局统一TTL",
+      "分组TTL（既有思想口径）",
+      "LRU驱逐（无超时）",
+      "按块独立优化的超时（无前置条件边）"
+    ],
+    "metrics": [
+      "平均驻留块数与占用块时间",
+      "命中率",
+      "无约束最优达成率（参数组合口径）",
+      "在线重解的最小割求解时延"
+    ],
+    "support_criteria": [
+      "命中率不低于全局TTL且平均驻留块数下降一个数量级的口径在内部trace复现",
+      "相对分组TTL基线有可单列的增量收益"
+    ],
+    "reject_criteria": [
+      "奖励或成本画像漂移使超时解快速失效、需频繁重解",
+      "相对分组TTL无显著增量收益，说明收益全来自既有分组TTL思想"
+    ],
+    "limitations": [
+      "原始证据全部为离线回放且无TTFT/吞吐指标",
+      "单一预印本，无独立复现"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有候选及想法不同义（触发项已于2026-11-09被idea_e8ac8cc5cd625623e8dd吸收为在线驱逐切换的离线oracle上限证据，但其留存超时精确求解身份与该想法的影子重放在线切换身份不同），但证据为单一预印本、全部离线回放且无TTFT/吞吐指标，低价位收益主要来自分组TTL既有思想，独立支持不足，先观察。",
+  "related_candidate_ids": [
+    "candidate_e8ac8cc5cd625623e8dd",
+    "candidate_2a9418c21c31e0997a20"
+  ],
+  "related_idea_ids": [
+    "idea_e8ac8cc5cd625623e8dd"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_3f8a1c0d94e27b5a6c2d",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有候选及想法不同义（触发项已于2026-11-09被idea_e8ac8cc5cd625623e8dd吸收为在线驱逐切换的离线oracle上限证据，但其留存超时精确求解身份与该想法的影子重放在线切换身份不同），但证据为单一预印本、全部离线回放且无TTFT/吞吐指标，低价位收益主要来自分组TTL既有思想，独立支持不足，先观察。",
+      "evidence_item_ids": [
+        "d51e96cd99400f8cb09ffe77"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

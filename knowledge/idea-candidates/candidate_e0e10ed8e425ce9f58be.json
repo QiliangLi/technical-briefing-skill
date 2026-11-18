@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_e0e10ed8e425ce9f58be",
+  "identity": {
+    "problem_key": "rolling_agent_selective_reuse_request_history_dependence",
+    "mechanism_key": "document_aligned_contiguous_span_recompute",
+    "target_key": "rolling_agent_selective_kv_reuse_repair"
+  },
+  "idea_type": "solution_concept",
+  "title": "滚动Agent选择性KV复用按文档对齐连续span重算压低请求顺序敏感",
+  "problem": "长运行Agent滚动更新文档窗口使精确前缀缓存失效，选择性KV复用加重算的输出质量依赖先前请求积累的缓存状态：修复预算按token top-k散布选点时，跨请求顺序变化即可改变答案（变化率达69.0%），复用系统输出不可复现。",
+  "hypothesis": "在跨请求持久KV复用的滚动Agent负载中，把选择性复用加重算的修复预算从散布token top-k改为按长度归一化KV偏差排序、在5%预算内装入完整连续文档span，可在相同预算下把跨请求顺序答案变化率从69.0%量级降到26.1%量级，中位TTFT从全量prefill的2408毫秒降至415毫秒量级；若连续span在任务分数或装入率上劣于散布选点，则修复形态选择应回到负载相关而非通用结论。",
+  "mechanism": "把可复用prompt划分为指令与各文档span，按长度归一化的KV偏差排序，在5%重算预算内装入完整连续span（对照散布选点的token top-k），使修复后的因果状态对先前请求积累的缓存状态不敏感。",
+  "target": "持久KV复用系统中滚动Agent负载的选择性KV复用加重算修复路径（修复预算形态决策点）。",
+  "expected_effect": "5%重算预算下，跨请求顺序答案变化率从token top-k的69.0%降至26.1%；中位TTFT从全量prefill的2408毫秒降至415毫秒。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应，但其连续span修复语义已被既有Idea吸收，比对后按重复处置。"
+  },
+  "evidence": [
+    {
+      "item_id": "4238f9e8771a68ae2dd0e959",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.05833v1"
+      ],
+      "reason": "该记录同时给出问题（长运行Agent滚动更新文档窗口使精确前缀缓存失效、选择性复用加重算的输出质量依赖先前请求积累的缓存状态）、机制（可复用prompt划分为指令与各文档span、按长度归一化KV偏差排序、5%预算内装入完整连续span、与散布选点的token top-k对照）、目标（滚动Agent负载的选择性KV复用加重算修复路径）与可检验效应（5%预算下跨请求顺序答案变化率从token top-k的69.0%降至26.1%、中位TTFT从全量prefill的2408毫秒降至415毫秒）；边界为仅单一模型与单一L4 GPU上的金融抽取负载、无命中率与吞吐数据。",
+      "independence_group": "arxiv:2610.05833"
+    }
+  ],
+  "evidence_item_ids": [
+    "4238f9e8771a68ae2dd0e959"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.05833v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.05833"
+  ],
+  "unknowns": [
+    "仅单一模型与单一L4 GPU上评测金融抽取负载，任务域外推未验证",
+    "无命中率与吞吐数据，serving级收益无法直接换算",
+    "单一预印本，无独立工作线复现",
+    "请求顺序敏感性在其他负载类型与更长历史窗口上的边界未刻画",
+    "连续span与检索Top-1目标块定向两种修复取向在多跳负载上的组合方式未知"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在内部持久KV复用系统上以跨请求持久的真实滚动Agent序列回放，实现文档对齐连续span重算与散布token top-k两档修复形态对照。",
+    "inputs": [
+      "跨请求持久的滚动Agent序列回放（含请求顺序打乱对照）",
+      "重算预算扫描（含5%档）",
+      "修复形态对照：连续span装入 vs token top-k散布选点",
+      "缓存命中率与吞吐插桩（原始证据缺失项）"
+    ],
+    "baselines": [
+      "token top-k散布选点重算",
+      "全量prefill",
+      "精确前缀缓存"
+    ],
+    "metrics": [
+      "跨请求顺序答案变化率",
+      "中位TTFT",
+      "任务分数",
+      "命中率与吞吐"
+    ],
+    "support_criteria": [
+      "相同预算下连续span的顺序敏感度显著低于token top-k且任务分数不降",
+      "中位TTFT保持低于全量prefill"
+    ],
+    "reject_criteria": [
+      "连续span在其他负载上劣于散布选点或任务分数显著下降",
+      "span装入率不足使重算预算修复失效"
+    ],
+    "limitations": [
+      "原始证据仅覆盖单一模型与单一L4 GPU的金融抽取负载",
+      "原始证据无命中率与吞吐数据"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "与既有Idea idea_3957174660eb8129b82b（RAG段级KV复用加因果后缀修复的重算区间假设）语义同义：该Idea的hypothesis与mechanism字段已包含本触发项的『修复预算应装入按长度归一化KV偏差排序的完整连续文档span而非散布top-k、5%预算下跨请求顺序答案变化率从69.0%降到26.1%、中位TTFT从2408毫秒降至415毫秒』语义，其expected_effect亦引用同一对照口径，并已于本期（2026-11-09 evidence_added）把触发项4238f9e8771a68ae2dd0e959吸收为evidence_for证据，按重复处置并指向该Idea。",
+  "related_candidate_ids": [
+    "candidate_7bf46e88dbc0e1cfb70d"
+  ],
+  "related_idea_ids": [
+    "idea_3957174660eb8129b82b"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_cfd6c0a17eedd9f94ea8",
+      "issue_date": "2026-11-09",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "触发项同时具备问题（滚动更新文档窗口使精确前缀缓存失效、输出质量依赖请求历史）、机制（按长度归一化KV偏差排序装入完整连续span）、目标（滚动Agent选择性复用加重算修复路径）与可检验效应（顺序答案变化率69.0%降至26.1%、中位TTFT 2408毫秒降至415毫秒），但其连续span修复语义已被既有Idea idea_3957174660eb8129b82b吸收（该Idea于2026-11-09 evidence_added把本触发项并入evidence_for），按重复处置并指向该Idea。",
+      "evidence_item_ids": [
+        "4238f9e8771a68ae2dd0e959"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

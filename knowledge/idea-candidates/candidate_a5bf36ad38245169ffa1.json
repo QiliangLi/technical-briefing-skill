@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a5bf36ad38245169ffa1",
+  "identity": {
+    "problem_key": "rag_agent_prefix_miss_single_node_fragment_reuse",
+    "mechanism_key": "ghost_hit_capacity_feedback_transfer_cost_prefill_scheduling",
+    "target_key": "cluster_location_independent_kv_scheduling"
+  },
+  "idea_type": "solution_concept",
+  "title": "幽灵命中反馈自调前缀与位置无关缓存配比，按取用成本调度跨节点片段以降TTFT",
+  "problem": "RAG与代理的长提示频繁未命中前缀缓存，可复用token散落在位置无关缓存片段中，但既有位置无关缓存只能在单节点内复用片段；片段升级为集群级对象后缺路由器侧位置状态与取用成本依据，跨节点取用与并行预填充无法联合调度，长提示TTFT受损。",
+  "hypothesis": "若路由器维护每个片段的预期缓存位置与节点负载并经节点事件纠正，用未命中产生的幽灵命中反馈在线自调前缀与位置无关缓存的容量配比，并把排队、计算与KV传输成本并入预填充完成时间估计以调度跨节点取用与并行预填充，则可在集群级找回前缀缓存漏失token的大部分并显著降低中位TTFT。",
+  "mechanism": "路由器记录预期缓存位置与负载、经节点事件（写入/逐出）纠正；幽灵命中反馈调节前缀缓存与位置无关缓存的容量配比；调度器把排队、计算与KV传输成本并入预填充完成时间估计，据此选择跨节点取用或并行预填充。",
+  "target": "LLM serving集群中位置无关KV缓存片段的集群级调度层（路由器侧缓存位置状态与预填充调度决策）",
+  "expected_effect": "在四个模型与四类RAG及代理负载上，中位TTFT较最强基线平均降低61.4%，找回前缀缓存漏失token的76.1%。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的集群级位置无关片段调度与幽灵命中容量自调机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "e196a92a7cf23d4c8fdd2524",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09474v1"
+      ],
+      "reason": "《Nebula：位置无关KV缓存升级为跨节点可调度对象》给出问题、机制与集群对照：RAG与代理长提示频繁未命中前缀缓存、既有位置无关缓存只能在单节点内复用片段；路由器记录预期缓存位置与负载并经节点事件纠正，以幽灵命中反馈自调前缀与位置无关缓存的容量配比，把排队、计算与KV传输成本并入预填充完成时间估计；四个模型与四类RAG及代理负载上中位TTFT较最强基线平均降61.4%、找回前缀缓存漏失token的76.1%。",
+      "independence_group": "arxiv:2611.09474"
+    }
+  ],
+  "evidence_item_ids": [
+    "e196a92a7cf23d4c8fdd2524"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.09474v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.09474"
+  ],
+  "unknowns": [
+    "TPOT、吞吐与网络利用率未报告，跨节点取用收益的代价不可见",
+    "每请求限定一个输出token，decode侧效果完全未评估",
+    "绝对TTFT取值仅见图，最强基线对应哪个对比系统文中未点名",
+    "幽灵命中反馈调节容量配比的收敛速度、稳定性与开销未报告",
+    "节点事件纠正路由器缓存位置状态的时效性与状态一致性开销未知"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在内部LLM serving集群上实现路由器侧缓存位置状态与节点事件纠正、幽灵命中反馈的前缀/位置无关容量配比自调，以及含排队、计算与KV传输成本的预填充完成时间估计，在RAG与代理负载（含多输出token）下与仅单节点内位置无关复用和前缀亲和路由对照，并补记TPOT、吞吐与网络利用率。",
+    "inputs": [
+      "集群节点数、互连带宽与KV片段大小",
+      "RAG与代理负载迹（含前缀命中率与片段散布分布）",
+      "前缀/位置无关缓存总容量与配比初值、逐出策略",
+      "多输出token负载集（补齐证据未覆盖的decode侧）"
+    ],
+    "baselines": [
+      "单节点内位置无关缓存复用（证据内既有形态）",
+      "前缀亲和路由（CacheRoute式计划性前缀路由）",
+      "证据内最强基线（复现时需先固化其具体系统）"
+    ],
+    "metrics": [
+      "中位与P90 TTFT",
+      "前缀缓存漏失token找回比例",
+      "TPOT与吞吐",
+      "网络利用率与KV传输量",
+      "容量配比随负载漂移的时间序列"
+    ],
+    "support_criteria": [
+      "中位TTFT相对三条基线下降，且TPOT、吞吐与网络利用率无显著恶化",
+      "多输出token与高逐出率负载下幽灵命中配比自调仍稳定，收益保持"
+    ],
+    "reject_criteria": [
+      "配比自调在负载漂移下震荡不收敛，或其开销吞没调度收益",
+      "KV传输成本估计误差大，使跨节点取用调度劣于单节点内复用基线"
+    ],
+    "limitations": [
+      "内部集群的负载与互连特征可能偏离证据设置",
+      "证据中绝对TTFT仅见图，无可对照的数值口径"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且身份与含义不同于既有Candidate与Idea：与热前缀复制Idea（idea_08f0269ef7fd181c9968，复制热前缀提高跨节点复用）不同，本候选不复制片段，而是调度既有位置无关片段的跨节点取用并自调两级缓存容量配比。但仅单一arXiv独立组，TPOT、吞吐与网络利用率未报告，且每请求限定一个输出token、decode侧完全未评估，缺独立支持与适用边界。",
+  "related_candidate_ids": [
+    "candidate_dae7017f9af75169396e"
+  ],
+  "related_idea_ids": [
+    "idea_08f0269ef7fd181c9968",
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a4c02494853cce076621",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且身份与含义不同于既有Candidate与Idea：与热前缀复制Idea（idea_08f0269ef7fd181c9968，复制热前缀提高跨节点复用）不同，本候选不复制片段，而是调度既有位置无关片段的跨节点取用并自调两级缓存容量配比。但仅单一arXiv独立组，TPOT、吞吐与网络利用率未报告，且每请求限定一个输出token、decode侧完全未评估，缺独立支持与适用边界。",
+      "evidence_item_ids": [
+        "e196a92a7cf23d4c8fdd2524"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

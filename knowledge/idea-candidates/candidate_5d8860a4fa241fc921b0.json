@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_5d8860a4fa241fc921b0",
+  "identity": {
+    "problem_key": "long_horizon_process_drift",
+    "mechanism_key": "out_of_context_runtime_fsm",
+    "target_key": "long_horizon_agent_runtime"
+  },
+  "idea_type": "solution_concept",
+  "title": "流程状态移出模型上下文：运行时守护FSM在工具调用、状态迁移与停止三处强制长程SOP",
+  "problem": "长程任务中Agent会偏离开头一次性给出的SOP/流程，重述提示或续跑只会让漂移改道，提示内流程约束无法闭环纠偏。",
+  "hypothesis": "把流程状态移出模型上下文，由运行时守护进程以有限状态机持有并落盘，在工具调用、状态迁移与回合结束三处强制执行，可把忠实遵循流程的正确决策稳定到任务末尾并拦住提前收工。",
+  "mechanism": "状态机由守护进程持有并落盘，上下文压缩无法抹除；工具调用先查当前状态是否允许；守卫命令成功退出才提交状态迁移；Stop门在回合结束拦截提前收工。",
+  "target": "执行长程多账号SOP任务的Agent运行时工具执行链",
+  "expected_effect": "200账号SOP任务上忠实正确决策由最强基线48.4升至139.2并稳定到最后账号；SWE-bench较难任务69对62且分歧全偏FSM；代价为简单任务中位耗时增加23%。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "唯一触发条目同时给出问题（长程流程漂移且重述无效）、可解释机制（上下文外守护FSM三处门控）、目标对象（Agent运行时工具执行链）与量化效应（139.2对48.4、69对62）。"
+  },
+  "evidence": [
+    {
+      "item_id": "00be0bbfbdcd09b699f05b75",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10884v1"
+      ],
+      "reason": "《Agent运行时用有限状态机约束长程流程漂移》同时给出问题、机制、量化结果与边界（单一SOP任务、单一运行时、守卫过严误拦、简单任务+23%耗时）。",
+      "independence_group": "arxiv:2611.10884"
+    }
+  ],
+  "evidence_item_ids": [
+    "00be0bbfbdcd09b699f05b75"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.10884v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.10884"
+  ],
+  "unknowns": [
+    "守卫的编写与校准方法：守卫过严会误拦合法操作，收益依赖守卫质量",
+    "单一SOP任务与单一运行时之外的一般性未验证",
+    "简单任务中位耗时+23%的成本边界与混合负载下的净收益",
+    "SOP到状态机的编写来源与长期维护成本"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在自有长任务流水线试点：守护进程持有SOP状态机并落盘，同时启用工具调用门与Stop门，对一批重复性多账号SOP任务跑到底并计忠实决策。",
+    "inputs": [
+      "可形式化为状态机的重复性长程SOP任务集",
+      "每一步的守卫命令定义",
+      "同一运行时的无FSM基线完整轨迹"
+    ],
+    "baselines": [
+      "同一运行时无FSM（仅提示内SOP与常规重述）",
+      "周期性重申SOP的提示基线",
+      "论文报告的最强基线设置"
+    ],
+    "metrics": [
+      "固定账号数下的忠实正确决策数及是否稳定到最后账号",
+      "偏离SOP步骤序的发生率",
+      "提前收工率与Stop门拦截数",
+      "中位耗时开销"
+    ],
+    "support_criteria": [
+      "忠实正确决策大幅超过仅提示基线并稳定到任务末尾",
+      "与基线的分歧方向系统性偏向FSM",
+      "Stop门捕获提前收工且守卫误拦率低"
+    ],
+    "reject_criteria": [
+      "守卫误拦合法操作抵消忠实度收益",
+      "简单任务耗时开销超过忠实度收益",
+      "任务异质化后增益消失"
+    ],
+    "limitations": [
+      "依据单篇论文单一运行时的报告结果设计，未独立复现",
+      "试点结论依赖守卫编写投入，守卫质量决定收益"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制完整且区别于既有对象（工具调用前状态与资源监督层管安全而非流程忠实，仓库级规约约束的是生成而非运行时状态迁移），但证据仅arxiv:2611.10884一组独立来源，且边界（单一SOP任务、单一运行时、守卫过严误拦、简单任务+23%耗时）缺独立支持，待内部试点或跨期独立证据后人工晋升。",
+  "related_candidate_ids": [
+    "candidate_a90d71c35ea8a0f208da",
+    "candidate_65a9b36115a5e1e549fb"
+  ],
+  "related_idea_ids": [
+    "idea_a90d71c35ea8a0f208da"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_dd4b6f644f2a53af6dd2",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制完整且区别于既有对象（工具调用前状态与资源监督层管安全而非流程忠实，仓库级规约约束的是生成而非运行时状态迁移），但证据仅arxiv:2611.10884一组独立来源，且边界（单一SOP任务、单一运行时、守卫过严误拦、简单任务+23%耗时）缺独立支持，待内部试点或跨期独立证据后人工晋升。",
+      "evidence_item_ids": [
+        "00be0bbfbdcd09b699f05b75"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

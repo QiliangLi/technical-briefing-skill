@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_345469b0bf93a5918867",
+  "identity": {
+    "problem_key": "giant_lookup_table_pins_host_memory",
+    "mechanism_key": "per_layer_prefetch_deadline_tiered_placement",
+    "target_key": "llm_serving_lookup_table_tiering"
+  },
+  "idea_type": "solution_concept",
+  "title": "按每层预取期限分层放置巨型LLM查表并跨实例共享",
+  "problem": "DeepSeek-V4.1级的巨型查表（203GB）被钉在主机内存：单实例独占主机DRAM，多实例各自复制一份，主机内存成为部署与多实例扩展的硬瓶颈；朴素整表驻留或全量换出都无法在时延与内存之间取得可控折中。",
+  "hypothesis": "查表行地址只依赖输入token，可在步首即发起预取；各层预取期限差异巨大（第1层比第14层短约30倍），以每层预取期限为放置信号——短期限层驻留主机内存并配行缓存、长期限层放NVMe或经RDMA远端读取——可把主机内存从整表203GB降到34GiB且每token时延至多增1.4%，一份表还可供多实例共享、时延差距在2.2%内。",
+  "mechanism": "查表行地址只依赖输入token，步首即发起预取；离线实测各层预取期限并按期限分层放置：短窗层优先读取并配行缓存，长窗层放NVMe或RDMA；表可放第二节点经RDMA读取，批128/256步时间与主机DRAM持平，一份表供两实例共享。",
+  "target": "巨型LLM查表（DeepSeek-V4.1的203GB表）在主机DRAM/NVMe/RDMA间的分层放置与多实例共享",
+  "expected_effect": "主机内存从203GB降至34GiB、每token时延至多增1.4%；表放第二节点经RDMA读取时批128/256步时间与主机DRAM持平；两实例共享一份表时延差距在2.2%内。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "单条已发布记录同时给出问题（203GB查表钉在主机内存、多实例各占一份）、可解释机制（token寻址行地址步首预取、按每层预取期限分层放置并经RDMA共享）、目标对象（巨型LLM查表的内存分层放置与跨实例共享）与可检验效应（主机内存降至34GiB、每token时延至多增1.4%、双实例共享时延差距2.2%内）。"
+  },
+  "evidence": [
+    {
+      "item_id": "351d7a8a85a8d23fd7c47e6b",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13413v1"
+      ],
+      "reason": "《SlackTier按每层预取期限放置203GB的LLM查表》给出问题、机制、目标与可检验效应；其边界为远端读取仅同集群RDMA、未测WAN，吞吐提升36%的实验配置未在已见文本中公开。",
+      "independence_group": "arxiv:2611.13413"
+    }
+  ],
+  "evidence_item_ids": [
+    "351d7a8a85a8d23fd7c47e6b"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.13413v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.13413"
+  ],
+  "unknowns": [
+    "远端读取仅同集群RDMA实测，未测WAN，跨域时延下按期限分层是否仍成立未知",
+    "吞吐提升36%的实验配置未在已见文本中公开",
+    "早层数据期限极短、WAN下只能本地缓存或重算属项目相关性推断，非实测结论",
+    "Agent缓存应随会话迁移而非预热静态热集、公共热表仅覆盖三四成查询为推断，无独立数据",
+    "单一预印本与单一模型（DeepSeek-V4.1），缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在LLM服务引擎中实现按每层预取期限的查表分层放置：步首按token寻址发起预取，短窗层驻主机DRAM并配行缓存，长窗层放NVMe或第二节点RDMA，并以一份共享表服务两实例，与整表驻DRAM对比。",
+    "inputs": [
+      "巨型查表模型（DeepSeek-V4.1级）的服务负载trace",
+      "离线实测的各层预取期限画像",
+      "主机内存/NVMe/RDMA容量配比档位",
+      "单实例独占与双实例共享两种部署形态"
+    ],
+    "baselines": [
+      "整表驻主机DRAM",
+      "仅按容量驱动的朴素分层（无视期限）",
+      "多实例各持一份表副本"
+    ],
+    "metrics": [
+      "每token时延与批128/256步时间",
+      "主机内存占用（GiB）",
+      "双实例共享下两实例间时延差距",
+      "预取与行缓存命中率及额外开销"
+    ],
+    "support_criteria": [
+      "同集群口径下主机内存降至零头（34GiB量级）且每token时延增幅不超过1.4%，双实例共享时延差距在2.2%内"
+    ],
+    "reject_criteria": [
+      "预取期限随负载漂移导致短窗层错置，时延增幅显著吞噬内存收益，或行缓存与预取开销抵消分层收益"
+    ],
+    "limitations": [
+      "原始证据止步同集群RDMA，WAN与跨域Agent缓存迁移为推断，需单独验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且身份区别于既有候选与Idea：非对称检查点分层放置（candidate_9c6e0de5f566b331dd8d）面向混合LLM前缀缓存、以命中只读一个检查点为信号，重算代价与恢复不对称联合调度（candidate_2bb19b8ae91662956d18）把放置作为运行期代价调度的一轴，两比特平面按需读取（candidate_95c78008f1c0b4437833）面向循环层KV精度，idea_984fec4fcf65a75a6b1f为部署亲和路由加双键控压缩保留、其已于2026-11-13以evidence_added事件把本条吸收为驻留价值按重用概率乘恢复代价评估的相邻证据，均未声明按每层预取期限分层放置巨型查表并跨实例共享这一身份；但证据为单一预印本、仅同集群RDMA实测未测WAN，吞吐提升36%的配置未公开，缺独立支持与适用边界确认，且与idea_984fec4fcf65a75a6b1f的分工lineage需人工决定。",
+  "related_candidate_ids": [
+    "candidate_9c6e0de5f566b331dd8d",
+    "candidate_2bb19b8ae91662956d18"
+  ],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_e5fa724816deff86b733",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且身份区别于既有候选与Idea，但证据为单一预印本、仅同集群RDMA实测未测WAN、吞吐提升36%的配置未公开，缺独立支持与适用边界确认；本条证据已被idea_984fec4fcf65a75a6b1f吸收为相邻证据，分工lineage需人工决定。",
+      "evidence_item_ids": [
+        "351d7a8a85a8d23fd7c47e6b"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_9b899f5928d24ae421c1",
+  "identity": {
+    "problem_key": "edge_npu_linear_attention_execution_mismatch",
+    "mechanism_key": "softmax_rearrangement_dataflow_reorg",
+    "target_key": "edge_npu_vlm_inference"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "边缘NPU线性注意力执行失配的机理与数据流重排修复",
+  "problem": "线性注意力理论上降低算力与KV压力，但在解耦矩阵/向量单元的边缘NPU上，端侧VLM实测吞吐反而低于同SoC GPU基线：softmax与张量重排使注意力kernel占计算密集kernel时延最高89.4%并令矩阵单元空转，理论加速消失；时延瓶颈不在统一内存容量而在执行失配。",
+  "hypothesis": "若按NPU数据流对softmax与张量重排做核心级切分、算子级融合与布局重排，而非堆峰值算力，端侧VLM线性注意力层吞吐可恢复并超过同NPU全注意力路径与同SoC GPU基线。",
+  "mechanism": "softmax与张量重排落在向量单元与数据搬移路径而非矩阵单元算力：对二者按NPU数据流重组，核心级按头维度切分并融合依赖算子消除跨核全局内存访问，算子级即时消费中间张量，张量级布局规划减少单元间变换开销，全程不改算法语义。",
+  "target": "解耦矩阵/向量单元的边缘NPU（Hexagon、RKNPU等）上的端侧VLM推理",
+  "expected_effect": "线性注意力层吞吐从较Adreno GPU基线低30%至71%恢复到超过同NPU全注意力路径，注意力kernel时延占比与矩阵单元空转显著下降，端到端请求时延同步下降。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发表实测记录同时给出问题（线性注意力在边缘NPU理论加速消失）、可解释机制（softmax与张量重排致矩阵单元空转的跨层执行失配）、目标对象（解耦矩阵/向量单元边缘NPU上的VLM推理）与可检验效应（较同SoC GPU基线吞吐低30%至71%而同NPU上matmul/conv加速6.3至11.4倍）。"
+  },
+  "evidence": [
+    {
+      "item_id": "1ce17ac6120740f77513a2da",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.40039v1"
+      ],
+      "reason": "边缘NPU实测在未修改生产栈上对6个VLM做kernel级下钻，把端侧VLM时延瓶颈定位到softmax与张量重排的执行路径：注意力kernel占计算密集kernel时延最高89.4%、矩阵单元空转，GDN线性注意力较Adreno GPU基线吞吐低30%至71%而同NPU上matmul/conv加速6.3至11.4倍，直接支撑问题、机制与效应（覆盖Hexagon与RKNPU等解耦矩阵/向量单元NPU；功耗与热降频数值不可见，只含推理不含训练）。",
+      "independence_group": "arxiv:2610.40039"
+    }
+  ],
+  "evidence_item_ids": [
+    "1ce17ac6120740f77513a2da"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.40039v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.40039"
+  ],
+  "unknowns": [
+    "本条实测只定位失配，未实测softmax与张量重排数据流重排的修复收益",
+    "功耗与热降频数值不可见，净收益未测",
+    "结论是否跨NPU厂商与代际成立，实测仅覆盖Hexagon与RKNPU",
+    "只含推理不含训练，训练与集群场景不适用"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在1至2款解耦矩阵/向量单元的边缘NPU上，以含线性注意力（如GDN类）与全注意力对照变体的端侧VLM做kernel级与端到端双口径评测。",
+    "inputs": [
+      "端侧VLM checkpoints（线性与全注意力变体）",
+      "目标NPU工具链与kernel级profiler",
+      "同SoC GPU官方栈基线实现"
+    ],
+    "baselines": [
+      "未重排的NPU线性注意力实现",
+      "同NPU全注意力路径",
+      "同SoC GPU官方栈推理"
+    ],
+    "metrics": [
+      "线性注意力层吞吐与注意力kernel时延占比",
+      "矩阵单元利用率",
+      "端到端请求时延",
+      "设备能耗"
+    ],
+    "support_criteria": [
+      "重排后线性注意力层超过同NPU全注意力路径并接近或超过同SoC GPU基线，且端到端时延与能耗同步下降"
+    ],
+    "reject_criteria": [
+      "重排后线性注意力层仍持续低于同NPU全注意力路径或GPU基线，说明失配是结构性的而非可调度修复"
+    ],
+    "limitations": [
+      "首版仅覆盖少量设备与模型族，不含训练与热降频场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "触发证据的问题+机制+目标身份与正式Idea idea_9b899f5928d24ae421c1（2026-11-02由跨期已发布证据创建，其evidence_for已收录本条）完全一致：同为边缘NPU线性注意力执行失配的softmax与张量重排机理与数据流重排修复，本条系同身份复报、无新语义，按duplicate指向该Idea，不重复立项。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_9b899f5928d24ae421c1"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_e5df6b6e4448097cc6ad",
+      "issue_date": "2026-11-02",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "Direct任务审阅触发证据，问题、机制、目标与可检验效应四要素齐备，但身份与既有正式Idea idea_9b899f5928d24ae421c1相同且该Idea证据已收录本条，按duplicate处置并指向该Idea。",
+      "evidence_item_ids": [
+        "1ce17ac6120740f77513a2da"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

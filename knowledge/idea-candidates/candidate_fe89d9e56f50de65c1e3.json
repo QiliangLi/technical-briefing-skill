@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_fe89d9e56f50de65c1e3",
+  "identity": {
+    "problem_key": "looped_model_kv_linear_growth",
+    "mechanism_key": "stochastic_depth_shared_last_loop_kv",
+    "target_key": "looped_model_inference_kv_state"
+  },
+  "idea_type": "solution_concept",
+  "title": "用随机深度让循环架构模型各轮共享末轮KV缓存",
+  "problem": "循环架构模型的KV缓存随循环次数线性增长，推理需为每轮保留独立KV导致全局显存膨胀，直接复用末轮缓存又会使质量严重退化。",
+  "hypothesis": "预训练阶段以随机深度使各轮表示收敛到共同极限，微调阶段把末轮KV广播到首轮并用轻量适配器训练，推理只保留一份跨轮共享的KV，可在不逐轮重建缓存的情况下把全局显存压回单轮量级并保持质量。",
+  "mechanism": "预训练阶段用随机深度使各轮表示收敛到共同极限；微调阶段把末轮KV广播到首轮并用4.1万-4.9万参数的rank-8适配器训练，兼容MLA和KDA。",
+  "target": "循环架构模型的推理KV缓存与全局显存",
+  "expected_effect": "较未共享基线，1.3B模型全局显存从63.82GB降至21.60GB；高负载回放下缓存命中率升8.1个百分点，p90 TTFT降至23.2秒。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-29",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "36e4859d7a9ff1088788ad27",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.31633v1"
+      ],
+      "reason": "《BeNice!让循环模型跨轮次共享KV缓存，全局显存降66.2%》给出循环KV线性增长问题、随机深度加末轮KV广播机制与显存、命中率、TTFT结果及高负载边界。",
+      "independence_group": "arxiv:2610.31633"
+    }
+  ],
+  "evidence_item_ids": [
+    "36e4859d7a9ff1088788ad27"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.31633v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.31633"
+  ],
+  "unknowns": [
+    "服务级结果来自代理模型仿真，收益集中在接近饱和的高负载，低负载下仅与基线持平",
+    "属单机KV状态压缩证据，可引用于跨域传输体积评估且与量化正交，但无跨域一致性与WAN成本数据",
+    "随机深度预训练与轻量适配器向更大规模循环模型的迁移性未证"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在循环架构模型上实现随机深度预训练加末轮KV广播微调，对比逐轮独立KV与末轮直复用，度量全局显存、任务质量与回放serving指标。",
+    "inputs": [
+      "循环架构模型与循环深度配置",
+      "长上下文推理与高负载回放trace",
+      "适配器规模与循环轮数档位"
+    ],
+    "baselines": [
+      "逐轮独立KV缓存",
+      "末轮KV直接复用不做微调"
+    ],
+    "metrics": [
+      "全局显存",
+      "下游任务质量",
+      "缓存命中率与p90 TTFT"
+    ],
+    "support_criteria": [
+      "全局显存降至接近单轮量级且任务质量不明显劣化"
+    ],
+    "reject_criteria": [
+      "低负载下收益消失或质量退化超过显存收益"
+    ],
+    "limitations": [
+      "原始serving结论来自代理模型仿真"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，身份区别于LRM思维链KV压缩与跨域传输体积候选，但仅单篇论文与单机证据，serving结果来自代理模型仿真且收益集中于高负载，缺独立支持与跨域适用边界。",
+  "related_candidate_ids": [
+    "candidate_079a62a6e119a9b1913c"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-10-29",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_c1bff0a8727c72e63766",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应完整，身份区别于LRM思维链KV压缩与跨域传输体积候选，但仅单篇论文与单机证据，serving结果来自代理模型仿真且收益集中于高负载，缺独立支持与跨域适用边界。",
+      "evidence_item_ids": [
+        "36e4859d7a9ff1088788ad27"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

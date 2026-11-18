@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_243ee6399d56d55d9a56",
+  "identity": {
+    "problem_key": "activation_outlier_calibration_cost",
+    "mechanism_key": "sensitivity_partitioned_rotation_floor_path",
+    "target_key": "llm_low_bit_serving_deployment"
+  },
+  "idea_type": "solution_concept",
+  "title": "敏感度分区旋转先行压低校准成本再按地板规则叠加稀疏",
+  "problem": "激活离群值阻碍W4A4KV4等低比特格式落地，稠密旋转校准开销高且在MoE上可能溢出，而推理格式选型又缺少把校准成本计入的低比特部署路径。",
+  "hypothesis": "仅在高敏感子空间学习旋转、其余用固定Hadamard变换，先把离群值治理的校准成本压到可承受，再按量化到地板格式后叠加结构化稀疏的规则选型，可在可控校准预算下拿到低比特核加速。",
+  "mechanism": "按敏感度把通道分成两半，高敏感子空间学习稠密旋转、其余用固定Hadamard；推理时变换与INT4量化融合进单个Triton内核；格式选型以等比特与等档口径实测并以地板格式为叠加基线。",
+  "target": "A100与H20类硬件上的LLM低比特推理部署",
+  "expected_effect": "LLaMA-3-8B在H20校准仅需25分钟与20.3GB显存，A100 prefill较FP16加速2.18至2.32倍、峰值显存节省3.3至3.55倍；FP8地板上线性层核加速1.33至1.65倍且H100 vLLM端到端prefill 74.6对58.9千token每秒、GSM8K持平。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "两条跨期记录分别贡献离群值治理的校准成本压缩与地板优先的稀疏叠加规则，联合成旋转先行、地板打底的低比特部署路径，该组合无任何单条记录陈述。"
+  },
+  "evidence": [
+    {
+      "item_id": "8002ea8ad3dc19e8bb7f6e87",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.25675v1"
+      ],
+      "reason": "LIRQuant按敏感度分区仅在高敏感子空间学习稠密旋转、其余用固定Hadamard并把变换与INT4量化融合进单个Triton内核，把W4A4KV4校准降到H20上25分钟与20.3GB。",
+      "independence_group": "arxiv:2610.25675"
+    },
+    {
+      "item_id": "0bc0413579c8b51e6e000a2b",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.28947v1"
+      ],
+      "reason": "约22万个三代GPU实测配置显示量化地板之上2:4全面落败、只有叠加在地板格式上才兑现收益，给出地板优先的选型规则。",
+      "independence_group": "arxiv:2610.28947"
+    }
+  ],
+  "evidence_item_ids": [
+    "8002ea8ad3dc19e8bb7f6e87",
+    "0bc0413579c8b51e6e000a2b"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.25675v1",
+    "https://arxiv.org/abs/2610.28947v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.25675",
+    "arxiv:2610.28947"
+  ],
+  "unknowns": [
+    "batch为1时decode加速仅0.73至0.77倍且无功耗与生产部署数据",
+    "两条证据分属W4A4KV4与FP8地板两种口径，未在同类格式上联合验证",
+    "两作者均为预印本，其中地板规则为单作者预印本",
+    "与既有格式选型候选的推进顺序需人工决定"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有A100或H20负载上复现敏感度分区旋转校准后按地板规则选型，并与稠密旋转及纯地板基线对比。",
+    "inputs": [
+      "LLaMA类模型",
+      "校准预算档位",
+      "低比特格式矩阵"
+    ],
+    "baselines": [
+      "稠密旋转W4A4KV4",
+      "纯FP8地板",
+      "地板加2:4稀疏"
+    ],
+    "metrics": [
+      "校准时间与显存",
+      "prefill与decode加速",
+      "任务精度"
+    ],
+    "support_criteria": [
+      "校准成本较稠密旋转显著下降且端到端净收益为正"
+    ],
+    "reject_criteria": [
+      "小批量decode回退吞掉prefill收益"
+    ],
+    "limitations": [
+      "跨格式口径的可比性需先统一"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制完整且效应可检验，但与既有格式选型候选语义相邻、两条证据分属不同量化口径且均为预印本，合并或分立推进需人工决定。",
+  "related_candidate_ids": [
+    "candidate_222aecf288365c09e9fc",
+    "candidate_677162bb3beb92db288b"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-23",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_3b9348199f35bd8b740b",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制完整且效应可检验，但与既有格式选型候选语义相邻、两条证据分属不同量化口径且均为预印本，合并或分立推进需人工决定。",
+      "evidence_item_ids": [
+        "8002ea8ad3dc19e8bb7f6e87",
+        "0bc0413579c8b51e6e000a2b"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

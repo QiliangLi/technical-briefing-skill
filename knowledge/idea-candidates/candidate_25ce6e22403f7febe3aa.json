@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_25ce6e22403f7febe3aa",
+  "identity": {
+    "problem_key": "cross_environment_experience_blind_reuse",
+    "mechanism_key": "compatibility_scoped_replay_gain_gate",
+    "target_key": "agent_harness_experience_library"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "Harness经验库跨环境复用须按兼容性过滤并以重放收益符号复核",
+  "problem": "Harness自进化与优化流程把采纳的编辑和配置沉淀为经验库并期望跨环境复用：Harness^2在harnessing级把采纳编辑沉淀为经验库且未报告任何环境兼容核验；InfraRSI实测跨GPU代际重放配置会因收益压缩或反号而失效。经验条目离开其产生环境后收益方向不再有保证，无门控的跨环境复用会把过期或反号经验带入新环境。",
+  "hypothesis": "经验条目在跨环境复用前先按硬件与运行环境兼容性过滤，再在目标环境以受控重放复核收益方向（收益压缩或反号即拒用），可在保持同环境收益的前提下消除跨环境反号迁移。",
+  "mechanism": "合成两条已发布机制：InfraRSI的经验按硬件兼容过滤后跨集群复用，apply阶段审计提交；Harness^2在harnessing级把采纳编辑沉淀为经验库、模型权重冻结。合成点为把前者的兼容性过滤与重放收益符号复核作为后者经验库的跨环境复用门——任何单条记录未以该一般形式陈述。",
+  "target": "Harness自进化经验库的跨环境复用门",
+  "expected_effect": "跨代际、跨集群复用时反号配置被拦截，同环境收益保持；对照无门控直接复用会出现收益压缩或反号的迁移（InfraRSI已实测该失效模式）。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "同期两条独立记录互补：InfraRSI（arxiv:2611.11558）给出兼容过滤式经验复用与跨代际重放失效实测，Harness^2（arxiv:2610.14224）给出无环境核验的经验库沉淀机制。经验库跨环境复用须经兼容过滤加重放收益符号复核的机制仅由二者联合支撑。"
+  },
+  "evidence": [
+    {
+      "item_id": "adc13b575963f065a951118a",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.11558v1"
+      ],
+      "reason": "该记录提供兼容过滤式经验复用半边：机制（init锁定可改范围与任务契约，doctor标定噪声，run组合搜索启动参数与AST校验补丁，apply审计提交；经验按硬件兼容过滤后跨集群复用）、效应（四负载几何平均加速1.83倍，平均MFU由17.4%升至30.0%，Gemma-4-26B-A4B最高2.75倍，均优于OptiCo等基线）与边界（搜索的GPU小时与token总成本未见报告；跨GPU代际重放配置会因收益压缩或反号而失效）。其经验形态为训练配置，且失效模式实测构成问题的直接证据。",
+      "independence_group": "arxiv:2611.11558"
+    },
+    {
+      "item_id": "6a5652026360aa0a3d8268be",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.14224v1"
+      ],
+      "reason": "该记录提供经验库沉淀半边：机制（任务级递归用Propose-Probe-Compose行为对比改进harness，harnessing级把采纳编辑沉淀为经验库，模型权重冻结）、效应（单步改进令四配置提升，GLM-5+OpenCode的WorkBuddy-Bench从64.2升到75.7；Gemini下k=5使JobBench增益达+7.5）与边界（增益主要来自可靠性而非提速，JobBench与LAB每任务工具调用反增约两成，递归需额外测试时算力）。其经验库沉淀未报告环境兼容核验，构成无门控复用的一面。",
+      "independence_group": "arxiv:2610.14224"
+    }
+  ],
+  "evidence_item_ids": [
+    "adc13b575963f065a951118a",
+    "6a5652026360aa0a3d8268be"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.11558v1",
+    "https://arxiv.org/abs/2610.14224v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.11558",
+    "arxiv:2610.14224"
+  ],
+  "unknowns": [
+    "收益符号复核的受控重放成本未测，可能抵消复用收益。",
+    "经验条目粒度（训练配置与harness编辑）与兼容键的映射未定义。",
+    "Harness^2经验库未报告跨环境复用实验，其编辑形态下反号失效是否同构未知。"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在自有harness经验库上按环境兼容键（硬件代际、运行时版本）为每条经验分组，对每条跨环境复用候选在目标环境做受控重放并记录收益方向，与无门控直接复用对照。",
+    "inputs": [
+      "经验库条目及其来源环境元数据",
+      "目标环境受控重放结果",
+      "收益计量（成功率、token、时延）"
+    ],
+    "baselines": [
+      "无门控直接复用全部经验",
+      "全部拒用（只用本地新积累经验）"
+    ],
+    "metrics": [
+      "跨环境反号迁移率",
+      "复用后净收益",
+      "重放复核的计算成本"
+    ],
+    "support_criteria": [
+      "门控后反号迁移率显著下降且同环境收益不降。"
+    ],
+    "reject_criteria": [
+      "重放复核成本超过复用收益，或兼容键无法区分反号与有效条目。"
+    ],
+    "limitations": [
+      "两条源记录分别来自分布式训练负载与终端Agent基准，经验形态不同构；本计划为建议，尚未执行。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "四要素完整，但身份含义与既有候选candidate_a100f27fe7e6e49c5bfa（给累积的Agent教训建全生命周期门：写入探查、可执行形态与重放退役）同义：该候选的重放退役门即在复用与续用前以重放验证累积经验的持续有效性，环境兼容性只是该重放验证门的条件维度，不构成新的机制语义；另candidate_80c1ad4772073ab741c2（采纳门按摊销回本与负载漂移衰减核算）与candidate_ef98e7486df1248c196e（跨仓库可迁移技能规则须经对比挖掘验证）覆盖同一“经验迁移须经再验证”语义族。故按重复处理并指向candidate_a100f27fe7e6e49c5bfa。",
+  "related_candidate_ids": [
+    "candidate_a100f27fe7e6e49c5bfa",
+    "candidate_80c1ad4772073ab741c2",
+    "candidate_ef98e7486df1248c196e"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a2fa8e03cd668f5f3334",
+      "issue_date": "2026-11-11",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "新合成检查：InfraRSI（adc13b575963f065a951118a）的兼容过滤式经验复用与跨代际重放失效实测、Harness^2（6a5652026360aa0a3d8268be）的经验库沉淀联合支撑跨环境复用门，但其“以重放再验证门控累积经验续用”的核心机制含义与既有candidate_a100f27fe7e6e49c5bfa同义，环境兼容性仅为该门的条件维度，按重复处理并指向该候选。",
+      "evidence_item_ids": [
+        "adc13b575963f065a951118a",
+        "6a5652026360aa0a3d8268be"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

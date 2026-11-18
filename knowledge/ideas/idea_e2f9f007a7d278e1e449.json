@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_e2f9f007a7d278e1e449",
+  "identity": {
+    "problem_key": "multi_tenant_shared_memory_write_contention",
+    "mechanism_key": "switch_coherence_with_fair_admission",
+    "target_key": "cluster_shared_cache_layer"
+  },
+  "idea_type": "solution_concept",
+  "title": "交换机一致性目录与公平准入联合的共享内存缓存层",
+  "problem": "共享解耦内存缓存层在多租户下缺一个完整解：MemChannel 在真实 CXL 交换池上实测无准入控制时满载争用使 bwaves/roms 减速 7.0×/8.8×、有准入降至 2.5×，但不提供跨节点缓存一致；Callosal 用交换机内一致性目录提供强一致集群页缓存，但冲突写与私有覆写吞吐低于 NFS、5% 写时所有权迁移无法扩展出单节点；隔离与一致两个维度尚无已发布系统同时解决（该综合为跨条目推断）。",
+  "hypothesis": "在共享解耦内存缓存层中，把按估计核到 DIMM 带宽的边缘准入与交换机内页粒度一致性目录联合调度，能在 10-30% 写混合负载下同时保持接近单写场景的吞吐扩展与有界的租户 slowdown；若准入速率控制使目录排序串行化或任何写比例下联合方案不优于单一机制，则该假设被证伪。",
+  "mechanism": "交换机侧一致性目录线速排序页粒度 MSI 失效并定向发失效，主机侧边缘按估计核到 DIMM 带宽对每通道请求准入，并把所有权迁移纳入速率控制以吸收冲突写突发，无中心协调节点。",
+  "expected_effect": "在争用混合负载下保留跨节点共享的吞吐收益（对照 Callosal 的 4.6 倍 NFS 与 1.72 倍单节点扩展），同时把无准入时 7.0×-8.8× 级的减速压缩到有界水平，并缓解冲突写下的所有权迁移失速。",
+  "topic_ids": [
+    "memory_dsa"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "ab820b3c0433c2eae0500436",
+      "issue_date": "2026-08-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.21731v1"
+      ],
+      "reason": "MemChannel 在真实 CXL 交换内存池上刻画三类性能干扰并提出 CSFQ 式传输层：按估计核到 DIMM 带宽为每 mchannel 准入请求、边缘驱动发送端速率控制、时间化速率控制应对 CXL 隐式传输，争用满载时无 mchannel 的 bwaves/roms 减速 7.0×/8.8×、有 MemChannel 仅 2.5×，多租户应用获 2-3.5× 改进；提供准入控制维度的机制与量化依据（原型绑定 XConn Apollo 与 EMR 平台、评测限单一交换拓扑、mchannel 依赖运行时侧对象）。"
+    },
+    {
+      "item_id": "3014e44ac2645ee785b867cc",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36347v1"
+      ],
+      "reason": "Callosal 把 Linux 页缓存重构为以共享解耦内存为中心的集群级缓存，页粒度 MSI 失效协议加交换机内一致性目录线速排序、无中心协调节点，10-30% 写混合读写下平均吞吐为 NFS 的 4.6 倍、99% 读均匀 KV 跨 4 节点约 4.5Mops 为单节点 1.72 倍；提供跨节点强一致维度的机制与量化依据，其边界（冲突写与私有覆写低于 NFS、5% 写时所有权迁移无法扩展出单节点、缺时延与 CPU 数据）正是本 Idea 要用准入控制补的缺口。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "联合调度下交换机内目录排序与准入速率控制的相互作用无任何已发布实证（该判断为推断）",
+    "冲突写比例超过多少时所有权迁移开销吞没共享收益",
+    "公平准入对强一致失效协议排序时延的影响",
+    "跨交换拓扑、故障与重配置场景均未覆盖"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "离散事件模拟共享解耦内存缓存层：交换机内页粒度 MSI 失效目录（线速排序）叠加按核到 DIMM 带宽估计的每通道边缘准入，回放多租户混合读写负载并扫描写比例。",
+    "inputs": [
+      "多租户混合读写负载轨迹（写比例 0-30% 扫描，含冲突写与私有覆写）",
+      "页所有权迁移率与失效流量参数",
+      "核到 DIMM 带宽估计与链路容量",
+      "租户权重"
+    ],
+    "baselines": [
+      "仅一致性目录无准入（Callosal 形态）",
+      "仅准入无跨节点一致（MemChannel 形态）",
+      "NFS 弱一致共享"
+    ],
+    "metrics": [
+      "平均吞吐",
+      "租户 slowdown 与 p99",
+      "失效与迁移流量开销",
+      "所有权迁移次数"
+    ],
+    "support_criteria": [
+      "10-30% 写混合负载下联合方案的吞吐与租户 slowdown 同时优于两个单维基线"
+    ],
+    "reject_criteria": [
+      "准入速率控制使目录排序串行化、冲突写吞吐仍低于 NFS，或任一写比例下联合方案不优于单一机制"
+    ],
+    "limitations": [
+      "模拟无法复现交换机 ASIC 线速排序与真实 CXL 器件时延",
+      "两篇原型的绝对数字分别绑定 XConn Apollo/EMR 平台与特定 RDMA 交换拓扑，未覆盖真实多交换拓扑、故障与重配置"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-08-29",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_24d2e20ded099fa00e79",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "由两篇已发布实证（MemChannel 的公平准入、Callosal 的交换机一致性目录）交叉指出同一共享内存层的互补缺口而创建；两维联合尚无任何已发布系统覆盖，状态为observing。",
+      "evidence_item_ids": [
+        "ab820b3c0433c2eae0500436",
+        "3014e44ac2645ee785b867cc"
+      ]
+    }
+  ]
+}

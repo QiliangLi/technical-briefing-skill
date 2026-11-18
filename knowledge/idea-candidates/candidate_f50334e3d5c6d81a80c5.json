@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_f50334e3d5c6d81a80c5",
+  "identity": {
+    "problem_key": "prefix_cache_metastable_collapse",
+    "mechanism_key": "pool_ratio_turn_boundary_suspension",
+    "target_key": "cross_region_agent_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "池比例预算与回合边界挂起治理前缀缓存自持续崩溃：与既有Idea同身份",
+  "problem": "闭环Agent会话的成本依赖前缀缓存，而每回合响应变慢会按Little定律推高并发驻留会话数与前缀总量：几分钟请求突发即可使共享KV池进入自持续崩溃，命中率停在约10%、积压持续增长约70分钟，常规等待与限流难恢复；跨域路由引入的每回合额外时延会放大同一驻留工作集机制，可能把同类崩溃带进跨域Agent服务。",
+  "hypothesis": "把KV池比例预算纳入跨域路由与准入决策、并在池占用超限时于回合边界（而非回合中）挂起会话并冻结其前缀驻留，可使短暂突发后前缀缓存命中率恢复到接近无突发水平且积压在分钟级受控，优于仅等待或仅准入限流。",
+  "mechanism": "按Little定律，变慢的回合响应让更多会话并发驻留，前缀总量超出共享KV池，前缀在下一回合前被逐出而几乎每回合全量重算、代价随上下文增长；网关把每回合时延对并发驻留会话与前缀总量的放大效应计入跨域路由与准入的一阶约束，控制器在池占用超阈值时于回合边界挂起会话并冻结前缀驻留，池恢复后按序放行。",
+  "target": "跨域Agent服务的共享KV池与前缀缓存的准入与挂起控制层",
+  "expected_effect": "突发后前缀缓存命中率从0.10-0.12恢复到接近无突发孪生的0.95水平，崩溃恢复时间从约70分钟量级压到分钟级：论文中按KV池比例挂起会话的控制器17次崩溃全部5分钟内恢复，仅准入限流的对照组7次中仅1次恢复。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "直发任务的单条已发布记录同时给出问题（突发触发前缀缓存自持续崩溃且等待与限流难恢复）、可解释机制（Little定律下驻留工作集超出共享KV池、回合边界挂起冻结前缀驻留）、目标对象（跨域Agent服务的共享KV池与准入控制）与可检验效应（命中率0.10-0.12对0.95、控制器17次崩溃全部5分钟内恢复对准入限流7次中1次）；但其身份与既有Idea完全一致，按查重规则记为duplicate。"
+  },
+  "evidence": [
+    {
+      "item_id": "0cbdf6cee43ed2dc690c15a0",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13412v1"
+      ],
+      "reason": "vLLM配对实验证明几分钟请求突发可触发前缀缓存自持续崩溃：突发组命中率0.10-0.12、无突发孪生为0.95，结束后命中率停在约10%、积压持续增长约70分钟且等待与限流难恢复；按KV池比例挂起会话的控制器17次崩溃全部5分钟内恢复，仅准入限流的对照组7次中1次；机制为Little定律下变慢的回合响应推高并发驻留会话与前缀总量、前缀在下一回合前被逐出而几乎每回合全量重算。证据限于单卡合成负载；控制器只恢复缓存效率，32B上到达率超过完成率时积压仍增长。",
+      "independence_group": "arxiv:2611.13412"
+    }
+  ],
+  "evidence_item_ids": [
+    "0cbdf6cee43ed2dc690c15a0"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.13412v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.13412"
+  ],
+  "unknowns": [
+    "原始证据限于单卡合成负载，未含真实WAN每回合时延与突发到达率的联合分布",
+    "到达率超过完成率时控制器无法阻止积压增长的上界条件（32B实测中仍增长）",
+    "回合边界挂起对用户可感知时延、重试与弃用率的影响未测",
+    "多区域共享池或多网关下挂起决策由谁协调、以哪一站的池水位为准未知"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "沿用既有Idea idea_f50334e3d5c6d81a80c5的验证计划：在vLLM等真实服务栈上回放闭环Agent会话负载并注入每回合跨域时延档位，实现按KV池比例在回合边界挂起会话的准入控制器，与仅等待、仅准入限流对照。",
+    "inputs": [
+      "闭环Agent会话回放负载（含几分钟突发场景）",
+      "每回合跨域时延注入档位扫描",
+      "共享KV池容量与池比例阈值配置扫描"
+    ],
+    "baselines": [
+      "无控制器仅等待恢复",
+      "仅准入限流",
+      "无突发的孪生负载"
+    ],
+    "metrics": [
+      "前缀缓存命中率随时间曲线",
+      "崩溃后命中率恢复到0.9的时间",
+      "积压会话数与每回合重算token量",
+      "回合完成时间P95"
+    ],
+    "support_criteria": [
+      "突发后5-15分钟内命中率恢复至0.9以上且积压有界，两个基线未恢复或显著更慢",
+      "跨域时延注入下未触发自持续崩溃"
+    ],
+    "reject_criteria": [
+      "挂起造成回合完成时间或弃用率恶化超过缓存节省",
+      "到达率超完成率场景中挂起无法阻止积压增长且无上界"
+    ],
+    "limitations": [
+      "与既有Idea同身份，验证应并入其计划而非另立",
+      "原证据仅单卡合成负载，未含真实WAN与多区域共享池，挂起对用户行为的影响未测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "与既有Idea idea_f50334e3d5c6d81a80c5（prefix_cache_metastable_collapse + pool_ratio_turn_boundary_suspension + cross_region_agent_serving）问题、机制、目标与含义一致；该Idea已于2026-11-13以created事件（idea_decision_eeade501b854c3bf8bc8c88a）把本触发记录吸收为创始证据（evidence_for含0cbdf6cee43ed2dc690c15a0），不另立候选。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_f50334e3d5c6d81a80c5"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_840d53905fc6ba672c36",
+      "issue_date": "2026-11-13",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "触发记录与既有Idea idea_f50334e3d5c6d81a80c5同问题（prefix_cache_metastable_collapse）同机制（pool_ratio_turn_boundary_suspension）同目标（cross_region_agent_serving）同含义，该Idea的2026-11-13 created事件已把本记录吸收为创始证据。",
+      "evidence_item_ids": [
+        "0cbdf6cee43ed2dc690c15a0"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

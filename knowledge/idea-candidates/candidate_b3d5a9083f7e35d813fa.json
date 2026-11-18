@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_b3d5a9083f7e35d813fa",
+  "identity": {
+    "problem_key": "quantized_attention_softmax_vector_unit_bottleneck",
+    "mechanism_key": "training_free_softmax_folding_into_gemm",
+    "target_key": "mi355x_mx_quantized_attention_kernels"
+  },
+  "idea_type": "solution_concept",
+  "title": "把softmax免训练折叠进矩阵核以消除MI355X量化注意力的向量单元瓶颈",
+  "problem": "MI355X上向量单元慢于矩阵核，量化注意力（MXFP8/6/4）中softmax落在向量单元执行成为瓶颈，量化格式的算力优势无法兑现为注意力吞吐，评估量化注意力时若softmax未折叠进矩阵运算，加速即受限。",
+  "hypothesis": "若以免训练内核把softmax整体折叠进矩阵运算——冻结的行最大值并入分数GEMM并设溢出回滚、用Schraudolph近似吸收指数、行和改为对全一列的矩阵乘、并在量化前以旋转分散离群值——则MI355X上MXFP8/6/4注意力内核吞吐可显著超过BF16（s=32768时达2.07至3.2倍），端到端视频生成负载获得约2倍提速且画质基准不降。",
+  "mechanism": "免训练内核：冻结的行最大值并入分数GEMM并设溢出回滚；Schraudolph近似吸收指数运算；行和改为对全一列的矩阵乘；量化前旋转分散离群值。softmax的逐元素与归约工作由此全部转为矩阵核上的GEMM，摆脱慢于矩阵核的向量单元。",
+  "target": "AMD Instinct MI355X上的量化注意力内核（MXFP8/6/4三种MX精度），含Wan2.2视频生成的端到端负载",
+  "expected_effect": "s=32768时MXFP8/6/4内核吞吐达BF16的2.07至3.2倍；Wan2.2混合调度较BF16注意力端到端提速2.05倍，VBench略高于BF16。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（MI355X向量单元慢于矩阵核、量化注意力中softmax成瓶颈）、可解释机制（免训练内核把冻结行最大值并入分数GEMM并设溢出回滚、Schraudolph近似吸收指数、行和改为全一列矩阵乘、量化前旋转分散离群值）、目标对象（MI355X上的MXFP8/6/4量化注意力内核与Wan2.2端到端负载）与可检验效应（s=32768吞吐为BF16的2.07至3.2倍、端到端提速2.05倍、VBench略高于BF16），四要素齐备且与既有候选及Idea的身份元组及含义不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "9b9afbfc9fc00c971761f38c",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09225v1"
+      ],
+      "reason": "AMD Fused-Softmax记录给出问题（MI355X上向量单元慢于矩阵核，量化注意力中softmax成瓶颈）、机制（免训练内核：冻结行最大值并入分数GEMM并设溢出回滚、Schraudolph近似吸收指数、行和改为对全一列的矩阵乘、量化前旋转分散离群值）、目标（MI355X上MXFP8/6/4量化注意力内核与Wan2.2端到端）与可检验效应（s=32768时MXFP8/6/4吞吐为BF16的2.07至3.2倍、Wan2.2混合调度端到端提速2.05倍且VBench略高于BF16），并同时给出仅单块MI355X评测、峰值条件为s=32768、短序列吞吐明显下降、MXFP4改变画面内容的边界。",
+      "independence_group": "arxiv:2611.09225"
+    }
+  ],
+  "evidence_item_ids": [
+    "9b9afbfc9fc00c971761f38c"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.09225v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.09225"
+  ],
+  "unknowns": [
+    "仅单块MI355X评测，跨硬件代际与厂商的迁移性未知",
+    "峰值条件为s=32768，短序列吞吐明显下降，序列长度适用边界未刻画",
+    "MXFP4会改变画面内容，输出保真的精度档位边界未划定",
+    "端到端仅Wan2.2视频生成负载验证，LLM等其他注意力负载未测",
+    "单一arXiv v1预印本独立分组，缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有MI355X或矩阵核与向量单元解耦的等价AMD加速器上复现Fused-Softmax免训练内核，扫描序列长度与MX精度档位，对照BF16注意力与softmax留在向量单元的量化注意力实现。",
+    "inputs": [
+      "MI355X与AITER/ROCm内核环境",
+      "MXFP8/6/4量化注意力负载与序列长度档位",
+      "Wan2.2类端到端视频生成负载与VBench评测"
+    ],
+    "baselines": [
+      "BF16注意力内核",
+      "softmax留在向量单元的MX量化注意力实现"
+    ],
+    "metrics": [
+      "注意力内核吞吐相对BF16的加速比",
+      "端到端负载时延",
+      "VBench等输出质量",
+      "短序列档位的吞吐回退幅度"
+    ],
+    "support_criteria": [
+      "s=32768档2.07至3.2倍加速复现，端到端约2倍提速且VBench不低于BF16"
+    ],
+    "reject_criteria": [
+      "短序列回退或MXFP4输出劣化超出可接受范围，或收益仅绑定特定序列长度不可迁移"
+    ],
+    "limitations": [
+      "首版仅覆盖MI355X单卡与注意力算子族"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同：解耦单元负载再平衡研究假设（candidate_354849a7e622a14673a6）覆盖TPU INT8训练与边缘NPU推理的单元级再平衡，边缘NPU线性注意力Idea（idea_9b899f5928d24ae421c1）限定端侧VLM目标且其证据注明本条目标为数据中心APU而非边缘NPU，能力保留率Idea（idea_30e35e81d5172a1e7747）是能力采用判据身份，本候选是MI355X上量化注意力内核的softmax折叠具体解法；本条证据同日亦被idea_0beeab7573d3f58b0330、idea_30e35e81d5172a1e7747与idea_9b899f5928d24ae421c1作为支持证据收录，但均系不同身份。但仅有单一arXiv v1预印本独立分组支撑，且仅单块MI355X评测、峰值条件为s=32768、短序列吞吐明显下降、MXFP4会改变画面内容，端到端仅Wan2.2视频生成负载验证，适用边界未划定、缺独立复现，先观察。",
+  "related_candidate_ids": [
+    "candidate_354849a7e622a14673a6"
+  ],
+  "related_idea_ids": [
+    "idea_9b899f5928d24ae421c1",
+    "idea_30e35e81d5172a1e7747",
+    "idea_0beeab7573d3f58b0330"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5522d677a27c79c9250e",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同：解耦单元负载再平衡研究假设（candidate_354849a7e622a14673a6）覆盖TPU INT8训练与边缘NPU推理的单元级再平衡，边缘NPU线性注意力Idea（idea_9b899f5928d24ae421c1）限定端侧VLM目标且其证据注明本条目标为数据中心APU而非边缘NPU，能力保留率Idea（idea_30e35e81d5172a1e7747）是能力采用判据身份，本候选是MI355X上量化注意力内核的softmax折叠具体解法；本条证据同日亦被idea_0beeab7573d3f58b0330、idea_30e35e81d5172a1e7747与idea_9b899f5928d24ae421c1作为支持证据收录，但均系不同身份。但仅有单一arXiv v1预印本独立分组支撑，且仅单块MI355X评测、峰值条件为s=32768、短序列吞吐明显下降、MXFP4会改变画面内容，端到端仅Wan2.2视频生成负载验证，适用边界未划定、缺独立复现，先观察。",
+      "evidence_item_ids": [
+        "9b9afbfc9fc00c971761f38c"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

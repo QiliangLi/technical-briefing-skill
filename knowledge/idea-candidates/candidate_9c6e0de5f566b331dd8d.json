@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_9c6e0de5f566b331dd8d",
+  "identity": {
+    "problem_key": "hybrid_checkpoint_cannot_restore_shorter_prefix",
+    "mechanism_key": "asymmetric_checkpoint_read_tiered_placement",
+    "target_key": "hybrid_agent_tiered_prefix_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "利用命中只读一个检查点的非对称性分层放置混合LLM的Agent前缀缓存",
+  "problem": "混合LLM的循环层检查点无法恢复更短前缀，Agent会话的回退、编辑与延迟复用击穿朴素检查点缓存，命中失败后退回整段重算预填充，Agent负载下的长前缀复用收益流失。",
+  "hypothesis": "若利用命中只需读一个大小与上下文无关检查点的非对称性，把活跃KV与循环态驻GPU、复用KV前缀放入CPU DRAM、检查点放SSD，并配合自适应检查点间隔与代价感知逐出，则真实Agent轨迹上的p95/p99 TTFT可低于朴素检查点缓存与现有分层缓存基线。",
+  "mechanism": "按访问代价分层放置：活跃KV与循环态驻GPU、复用KV前缀进CPU DRAM、检查点落SSD，命中只取一个大小与上下文无关的检查点；自适应检查点间隔与代价感知逐出控制各层占用与迁移。",
+  "target": "单机混合LLM Agent服务的GPU/DRAM/SSD三级前缀缓存管理",
+  "expected_effect": "真实编码Agent轨迹（Qwen3.5-9B、单卡H100）上p95/p99 TTFT最低，较vLLM-Marconi最高加速7.40与5.73倍；对SGLang-HiCache为5.44倍（仅摘要口径）。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发布记录同时给出问题（循环层检查点无法恢复更短前缀、回退编辑与延迟复用击穿朴素检查点缓存）、可解释机制（命中只读一个检查点的非对称性驱动的分层放置加自适应间隔与代价感知逐出）、目标对象（单机混合LLM Agent前缀缓存分层管理）与可检验效应（真实编码Agent轨迹p95/p99 TTFT最低、较vLLM-Marconi最高加速7.40与5.73倍）。"
+  },
+  "evidence": [
+    {
+      "item_id": "69cf2d7da82c483aa8c17b94",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.41508v1"
+      ],
+      "reason": "《HiState：混合LLM在Agent负载下的层级前缀缓存管理》给出问题、GPU/DRAM/SSD分层放置机制与真实编码Agent轨迹上的TTFT尾延迟和对vLLM-Marconi的7.40/5.73倍加速结果；其边界为仅单机分层缓存与编码Agent轨迹，对SGLang-HiCache的5.44倍仅见摘要。",
+      "independence_group": "arxiv:2610.41508"
+    }
+  ],
+  "evidence_item_ids": [
+    "69cf2d7da82c483aa8c17b94"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.41508v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.41508"
+  ],
+  "unknowns": [
+    "仅单机GPU/DRAM/SSD分层缓存与单卡H100验证，无跨机或WAN结果",
+    "负载仅真实编码Agent轨迹，其他Agent负载域的适用边界未证",
+    "对SGLang-HiCache的5.44倍对比仅见摘要，实验细节未核",
+    "单一预印本与单一模型（Qwen3.5-9B），缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在内部混合LLM Agent服务上实现非对称分层放置（活跃KV与循环态驻GPU、复用KV前缀进CPU DRAM、检查点落SSD，命中只读一个检查点）加自适应间隔与代价感知逐出，在真实Agent会话轨迹回放上与朴素检查点缓存及现有分层缓存基线对比。",
+    "inputs": [
+      "混合LLM（Qwen3.5级）与真实Agent会话轨迹",
+      "回退、编辑与延迟复用比例扫描",
+      "各层容量配比与检查点间隔档位"
+    ],
+    "baselines": [
+      "朴素检查点缓存（vLLM-Marconi式）",
+      "SGLang-HiCache分层缓存",
+      "无检查点缓存的全量重预填充"
+    ],
+    "metrics": [
+      "p95/p99 TTFT",
+      "缓存命中率与重算token量",
+      "各层驻留字节与逐出、迁移开销"
+    ],
+    "support_criteria": [
+      "Agent轨迹回放下p95/p99 TTFT低于分层基线，且收益随回退与延迟复用比例增长"
+    ],
+    "reject_criteria": [
+      "低回退或强局部性负载下分层放置劣于朴素检查点缓存，或检查点维护与逐出开销吞噬命中收益"
+    ],
+    "limitations": [
+      "原始证据仅覆盖单机、单模型与编码Agent轨迹"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且身份区别于既有候选与Idea（跨域传输体积压缩、多模型统一显存预算、循环态跨轮共享压缩、多区域亲和路由与键控保留治理等均非单机检查点分层放置），但证据为单一预印本，仅单机分层缓存与编码Agent轨迹、单一模型与单卡验证，对SGLang-HiCache的5.44倍仅见摘要，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_6640dfa217e4a75ed5f0",
+    "candidate_5393564e98d6d52d688e",
+    "candidate_210d01444d714b09adb7"
+  ],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f",
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ec69e27136f2b6883c1b",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且身份区别于既有候选与Idea，但证据为单一预印本、仅单机编码Agent轨迹与单一模型单卡验证，对SGLang-HiCache的5.44倍仅见摘要，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "69cf2d7da82c483aa8c17b94"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

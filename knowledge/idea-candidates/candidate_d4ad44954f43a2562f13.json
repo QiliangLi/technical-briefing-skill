@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_d4ad44954f43a2562f13",
+  "identity": {
+    "problem_key": "kv_eviction_scoring_layer_choice_unexamined",
+    "mechanism_key": "mid_deep_survival_scoring_with_calibration",
+    "target_key": "tight_budget_quality_retention"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "中深层打分层加免参数生存模型的KV缓存驱逐打分",
+  "problem": "KV缓存驱逐方法默认用被剪层自己的注意力给token打分，打分层深度从未被检视；而答案注意力随深度累积并在0.4至0.75深度达峰，默认选层在紧预算下白白损失质量。",
+  "hypothesis": "用免参数生存模型按预填注意力计算答案存活概率、从带已知答案的校准提示选中深层打分并在部署时全头共享一组保留token，可在5%-15%预算下较逐头SnapKV显著提升任务质量；若打分必须依赖问题信号而前缀缓存驱逐发生在未见未来查询的时刻，则该打分只能用于查询可见场景、不应直接进入前缀缓存驱逐路径。",
+  "mechanism": "生存模型按预填注意力计算答案存活概率；利用打分质量随深度先升后降、峰值在中深层（0.4-0.75深度）的形状，从带已知答案的校准提示选打分层；部署时全头共享一组保留token，免训练免参数。",
+  "target": "自研推理栈KVCache驱逐策略的打分层",
+  "expected_effect": "5%-15%预算下七模型中五个较逐头SnapKV高18至43个百分点、Llama持平；Llama-3.1-8B在1%预算下32K缓存3.96GB降至45MB。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发布记录同时给出问题（驱逐打分层深度从未被检视）、可解释机制（免参数生存模型从校准提示选中深层打分、全头共享保留token）、目标对象（KV缓存驱逐打分层）与可检验效应（5%-15%预算下较逐头SnapKV高18-43个百分点、1%预算下32K缓存3.96GB降至45MB）；但其身份与本期已创建的正式Idea完全相同，按重复处置。"
+  },
+  "evidence": [
+    {
+      "item_id": "f4d5ce4b47c33e5cec51ec66",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02230v1"
+      ],
+      "reason": "该预印本发现打分质量随深度先升后降、峰值在中深层（答案注意力在0.4-0.75深度达峰），用免参数生存模型从带已知答案的校准提示选层后，5%-15%预算下七模型中五个较逐头SnapKV高18-43个百分点、Llama持平，1%预算下32K缓存3.96GB降至45MB；并给出边界（选层依赖带已知答案校准提示、打分需要问题、32B以上较默认无增益）——问题、机制、目标与可检验效应同条记录齐备。",
+      "independence_group": "arxiv:2611.02230"
+    }
+  ],
+  "evidence_item_ids": [
+    "f4d5ce4b47c33e5cec51ec66"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.02230v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.02230"
+  ],
+  "unknowns": [
+    "选层依赖带已知答案的校准提示，校准数据生产可得性与跨任务迁移未验证",
+    "打分需要问题信号，前缀缓存的驱逐决策发生在未见未来查询的时刻，免问题信号缺口未解",
+    "32B以上模型较默认无增益的原因（模型容量还是标定质量）未知",
+    "单一预印本，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在统一驱逐框架中实现免参数生存模型的中深层选层打分，对照逐头SnapKV与默认层（被剪层自身注意力）打分。",
+    "inputs": [
+      "KV预算1%/5%/10%/15%/30%扫描",
+      "打分层深度扫描与校准提示数量扫描",
+      "免问题代理信号（不依赖当前查询的前向统计量）对照档"
+    ],
+    "baselines": [
+      "逐头SnapKV（论文对照口径）",
+      "默认层打分（被剪层自身注意力）"
+    ],
+    "metrics": [
+      "LongBench/RULER任务分数",
+      "1%预算下缓存体积缩减",
+      "打分与选层的prefill时间开销占比"
+    ],
+    "support_criteria": [
+      "5%-15%预算下较逐头SnapKV平均高≥10分且打分开销≤prefill时间10%"
+    ],
+    "reject_criteria": [
+      "32B级复现较默认无增益",
+      "校准选层跨任务迁移失效"
+    ],
+    "limitations": [
+      "原证据无serving级命中率与TTFT指标",
+      "免问题信号替代未验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "身份与本期（2026-11-06）已创建的正式Idea idea_d4ad44954f43a2562f13（中深层打分层加免问题信号的KV驱逐打分假设）完全相同——问题键、机制键、目标键一一对应，且该Idea的首条证据即本触发项f4d5ce4b47c33e5cec51ec66，按重复处置并指向该Idea。",
+  "related_candidate_ids": [
+    "candidate_80a11fa68bdf30c34571"
+  ],
+  "related_idea_ids": [
+    "idea_d4ad44954f43a2562f13"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_0b2d5791618800d7797d",
+      "issue_date": "2026-11-06",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "身份与本期（2026-11-06）已创建的正式Idea idea_d4ad44954f43a2562f13（中深层打分层加免问题信号的KV驱逐打分假设）完全相同——问题键、机制键、目标键一一对应，且该Idea的首条证据即本触发项f4d5ce4b47c33e5cec51ec66，按重复处置并指向该Idea。",
+      "evidence_item_ids": [
+        "f4d5ce4b47c33e5cec51ec66"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

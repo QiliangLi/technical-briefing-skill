@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_591a87327097fa49176e",
+  "identity": {
+    "problem_key": "load_blind_fixed_sampling_budget",
+    "mechanism_key": "gpu_state_aware_stepwise_sampling",
+    "target_key": "shared_gpu_llm_voting_inference"
+  },
+  "idea_type": "solution_concept",
+  "title": "按GPU实时负载自适应调节LLM测试时扩展采样预算",
+  "problem": "测试时扩展的采样投票通常采用固定采样预算，忽略GPU实时负载对成本的影响，同一查询高负载下能耗可达空闲时的4.1倍。",
+  "hypothesis": "把采样量与实时GPU状态和逐步在线更新的能耗模型联动，可在共享GPU高负载下以远低于固定预算的能耗维持全部作答下的任务精度。",
+  "mechanism": "在线模式从单样本起步逐步加采并估计多数答案稳定性，用NVML读取实时GPU状态，以每步在线更新的能耗模型决定是否继续采样。",
+  "target": "共享GPU上部署投票式测试时扩展的LLM推理服务（A100上的Phi-3-mini、GSM8K）",
+  "expected_effect": "Phi-3-mini在A100上GSM8K高负载时，在线模式全部作答且保持60.0%精度，校准模式因拒答42.4%查询降至44.0%；计入标定省48倍能耗。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-29",
+    "rationale": "单条已发表记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "c8d2675444d20d8a452e7b61",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.25519v1"
+      ],
+      "reason": "ATEST给出按实时GPU状态逐步决定采样量的机制，及Phi-3-mini/A100/GSM8K上在线模式60.0%对校准模式44.0%精度、计入标定省48倍能耗的结果。",
+      "independence_group": "arxiv:2610.25519"
+    }
+  ],
+  "evidence_item_ids": [
+    "c8d2675444d20d8a452e7b61"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.25519v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.25519"
+  ],
+  "unknowns": [
+    "GPU竞争为单卡负载注入模拟，未经真实集群验证",
+    "逐步小批执行使短任务p95时延升至两倍以上、吞吐下降",
+    "仅Phi-3-mini/A100/GSM8K单一组合，其他模型与负载未测",
+    "预印本未经同行评审，缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在共享GPU环境回放高负载场景，对比按实时GPU状态自适应采样、固定采样预算与带拒答的校准模式。",
+    "inputs": [
+      "共享GPU上的投票式测试时扩展负载",
+      "NVML实时GPU状态流",
+      "在线能耗模型标定数据"
+    ],
+    "baselines": [
+      "固定采样预算",
+      "带拒答的校准模式"
+    ],
+    "metrics": [
+      "全部作答下的任务精度",
+      "每查询能耗",
+      "p95时延与吞吐"
+    ],
+    "support_criteria": [
+      "高负载下能耗显著低于固定预算且精度不降"
+    ],
+    "reject_criteria": [
+      "时延或吞吐退化超过能耗收益，或精度低于校准模式"
+    ],
+    "limitations": [
+      "首版仅在单一模型与GPU上复现"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且与既有候选身份不同，但证据为单一预印本缺独立支持，GPU竞争系单卡负载注入模拟、未经真实集群验证，先观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-29",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_2bb475a64b95c07a3222",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且与既有候选身份不同，但证据为单一预印本缺独立支持，GPU竞争系单卡负载注入模拟、未经真实集群验证，先观察。",
+      "evidence_item_ids": [
+        "c8d2675444d20d8a452e7b61"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

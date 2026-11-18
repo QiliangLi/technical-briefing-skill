@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_7bf46e88dbc0e1cfb70d",
+  "identity": {
+    "problem_key": "non_prefix_reuse_repair_budget_unfocused",
+    "mechanism_key": "retrieval_top1_target_block_reposition_recompute",
+    "target_key": "rag_non_prefix_kv_reuse_repair"
+  },
+  "idea_type": "solution_concept",
+  "title": "非前缀KV复用的修复预算按检索Top-1定位目标块并移位重算",
+  "problem": "非前缀KVCache复用对各检索块独立编码后拼接，丢失19%至100%的上下文依赖；损伤实际分散于其余块而非拼接边界，token级修复选择器不知预算应投向哪里。",
+  "hypothesis": "复用时各块重旋转让块序可自由选择，用检索命中定位答案所在目标块，把检索器Top-1块移到紧邻问题处并以约5%预算定向重算，可在开放域QA/API设置上全面胜过token级修复选择器，且移位重算稳定优于原地重算。",
+  "mechanism": "复用时各块重旋转让块序可自由选择；以检索命中定位答案所在目标块（问题注意力最多18.8%选中目标块、BGE-M3检索器Top-1命中36%至64%），把检索Top-1块移到紧邻问题处再重算。",
+  "target": "检索增强推理中非前缀KVCache块级复用的修复路径（修复预算分配决策点）。",
+  "expected_effect": "5%预算下已知目标块重算在九个开放域QA/API设置全部胜过token级选择器；把检索Top-1块移到问题前重算则全部优于原地重算0.07至0.18。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应，但其目标块定向修复语义已被既有Idea吸收，比对后按重复处置。"
+  },
+  "evidence": [
+    {
+      "item_id": "cadc885d313b830c50aec301",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06397v1"
+      ],
+      "reason": "该记录同时给出问题（非前缀复用独立编码拼接丢失19%至100%上下文依赖、token级修复不知预算投向）、机制（复用时各块重旋转让块序可自由选择，把检索器Top-1块移到紧邻问题处再重算）、目标（非前缀KVCache复用的修复路径）与可检验效应（5%预算下已知目标块重算在九个开放域QA/API设置全部胜过token级选择器，移位重算优于原地重算0.07至0.18）。",
+      "independence_group": "arxiv:2611.06397"
+    }
+  ],
+  "evidence_item_ids": [
+    "cadc885d313b830c50aec301"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.06397v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.06397"
+  ],
+  "unknowns": [
+    "仅覆盖7B至8B模型与四个英文数据集",
+    "主表Table 1与吞吐、显存数据缺失",
+    "延迟仅在作者研究引擎测得，无独立服务栈复现",
+    "单一预印本，无第三方独立工作线佐证"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在内部RAG服务的非前缀块级KV复用引擎中实现检索Top-1目标块移位重算，对照token级修复选择器与原地重算。",
+    "inputs": [
+      "内部开放域QA/API检索负载",
+      "修复预算扫描（含5%档）",
+      "目标块定位对照：问题注意力 vs BGE-M3检索Top-1",
+      "移位重算与原地重算两档"
+    ],
+    "baselines": [
+      "token级修复选择器",
+      "检索Top-1原地重算（不移块）",
+      "全量预填充"
+    ],
+    "metrics": [
+      "任务分数（九设置口径）",
+      "修复预算占用与重算比例",
+      "TTFT",
+      "目标块定位准确率"
+    ],
+    "support_criteria": [
+      "5%预算下定向重算在全部设置胜过token级选择器且移位优于原地重算",
+      "目标块定位准确率与检索命中质量同向"
+    ],
+    "reject_criteria": [
+      "内部负载上检索Top-1命中答案所在块的比例过低，使定向重算劣于token级选择器",
+      "移位重算破坏块间依赖使任务分数下降"
+    ],
+    "limitations": [
+      "原始证据仅覆盖7B至8B模型与四个英文数据集",
+      "主表吞吐与显存数据缺失，延迟仅在作者研究引擎测得"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "与既有Idea idea_3957174660eb8129b82b（RAG段级KV复用加因果后缀修复的重算区间假设）语义同义：该Idea的problem/hypothesis/mechanism字段已包含本触发项的『损伤分散于其余块、修复预算应定向投向检索命中的目标块、把检索Top-1块移到紧邻问题处重算、5%预算九个设置全胜token级选择器且优于原地重算0.07-0.18』语义，并已于本期（2026-11-06 evidence_added）把触发项cadc885d313b830c50aec301吸收为evidence_for证据，按重复处置并指向该Idea。",
+  "related_candidate_ids": [
+    "candidate_e224444277282cc28aed"
+  ],
+  "related_idea_ids": [
+    "idea_3957174660eb8129b82b"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5849ca1752e42ba7b5e2",
+      "issue_date": "2026-11-06",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "触发项同时具备问题、机制、目标与可检验效应，但其检索定位目标块的定向修复语义已被既有Idea idea_3957174660eb8129b82b吸收（该Idea于2026-11-06 evidence_added把本触发项并入证据），按重复处置并指向该Idea。",
+      "evidence_item_ids": [
+        "cadc885d313b830c50aec301"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

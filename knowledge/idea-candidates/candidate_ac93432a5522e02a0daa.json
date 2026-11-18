@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ac93432a5522e02a0daa",
+  "identity": {
+    "problem_key": "llm_serving_memory_placement_ignores_data_movement_cost",
+    "mechanism_key": "movement_cost_driven_kv_tiering_placement",
+    "target_key": "llm_serving_heterogeneous_memory_hierarchy"
+  },
+  "idea_type": "solution_concept",
+  "title": "以逐块数据搬运成本驱动LLM serving的KV分层放置决策",
+  "problem": "LLM serving中KV与权重在HBM及其下层的放置决策以容量压力与块新旧（近期性）为准，未把已发布证据指向的主导成本——数据搬运的时间与能耗——作为显式目标：HBM–HBF–host分层的混合配置平均TPOT高于HBM-only，说明下沉搬运代价直接转化为时延损失；SK hynix转述Mutlu的主张称大型模型逾九成系统能耗用于访存与数据移动（二手引用）。",
+  "hypothesis": "把KV块的驻留、下沉与提升决策由近期性+容量改为显式的逐块搬运成本评分（访问频度×目标层级的带宽与每字节能耗代价），容量压力下按评分选择下沉对象并保留准入缓冲，可在同等HBM容量下较近期性cache-aware分层进一步降低总搬运字节数与每token能耗，并缩小或消除混合配置的TPOT退化。",
+  "mechanism": "逐块搬运成本核算驱动的KV分层放置：运行时维护每KV块的访问频度与各层级（HBM/HBF/host，未来可含CXL池化层）搬运代价（带宽、每字节能耗、延迟）之积作为放置评分，下沉与提升按评分而非块新旧执行，并保留10%准入缓冲抑制写churn；这是把『协同设计数据摆放与计算位置、以最小化数据移动为架构原则』实例化为LLM serving运行时放置策略目标的具体机制。",
+  "target": "LLM serving运行时中KV/权重跨HBM–HBF–host异构内存层次的放置与下沉决策层",
+  "expected_effect": "组合可检验效应（无任何已发布记录直接测量）：同等HBM容量与trace下，搬运成本评分放置较近期性分层降低总搬运字节数与每token能耗，且混合配置平均TPOT退化缩小或消失。已发表的支撑效应（各自单独测量）：HBM–HBF–host近期性分层在trace仿真中较HBM-only完成时间降46.0–60.0%（1× trace）、能耗降21.1–24.1%；SK hynix转述的二手数字称DRAM一次取数能耗为一次简单运算的150至2000倍、大型模型逾九成系统能耗用于访存与数据移动。",
+  "topic_ids": [
+    "ai_infra_horizontal"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-16",
+    "rationale": "2026-11-02与2026-11-16两期、两个独立组的已发布记录联合支持一个任何单一记录都未陈述的机制：arXiv论文提供LLM serving KV分层放置的具体基底、量化仿真增益与搬运代价可见的边界（混合配置平均TPOT高于HBM-only），SK hynix转述Mutlu提供数据搬运主导时间与能耗、应协同设计数据摆放与计算位置的架构原则与杠杆清单；两者组合把放置策略目标从容量/近期性推进到显式搬运成本核算，本期roadmap亦记录两者互为呼应。"
+  },
+  "evidence": [
+    {
+      "item_id": "25d720c5db52f690707e9d31",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.39131v2"
+      ],
+      "reason": "提供KV分层放置基底与量化对照：HBM–HBF–host分层加缓冲式cache-aware调度（新KV驻HBM、较久缓存下沉、预留10%准入缓冲）在trace仿真中较HBM-only完成时间降46.0–60.0%（1× trace）、能耗降21.1–24.1%；其混合配置平均TPOT高于HBM-only的边界显示下沉搬运代价直接转化为时延损失，说明放置目标存在优化空间。",
+      "independence_group": "arxiv:2609.39131"
+    },
+    {
+      "item_id": "981cfd1ec04d36f0d715b021",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://news.skhynix.com/en/ai-ecosystem-series-ep3"
+      ],
+      "reason": "提供问题与原则层支撑：AI负载转向推理与Agent后处理器中心系统的时间与能耗主要消耗在数据搬运上，应协同设计数据摆放与计算位置、以最小化数据移动为架构原则（杠杆含加速器旁置HBM、CXL扩展与池化、近内存加速、DRAM内位级计算）；其定量主张（DRAM取数能耗为简单运算150–2000倍、逾九成能耗用于访存与数据移动）为二手引用且脚注不可见，仅作方向性支撑。",
+      "independence_group": "url:https://news.skhynix.com/en/ai-ecosystem-series-ep3"
+    }
+  ],
+  "evidence_item_ids": [
+    "25d720c5db52f690707e9d31",
+    "981cfd1ec04d36f0d715b021"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.39131v2",
+    "https://news.skhynix.com/en/ai-ecosystem-series-ep3"
+  ],
+  "independence_groups": [
+    "arxiv:2609.39131",
+    "url:https://news.skhynix.com/en/ai-ecosystem-series-ep3"
+  ],
+  "unknowns": [
+    "SK hynix文章定量数字全部为二手引用且脚注不可见，引用前需回Tesseract与CENT等原始论文核实",
+    "HBF分层结果均为trace驱动仿真而非实机，搬运成本目标的增量收益未在任何已发布记录中测量",
+    "各层级每字节能耗与带宽参数未在输入证据中给出，需外部参数与敏感性分析",
+    "延迟敏感serving是否适用未知（HBF混合配置平均TPOT已高于HBM-only）",
+    "近内存执行与CXL池化杠杆在输入中仅有定性主张，未纳入本候选的可检验效应"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在HBM–HBF–host分层的trace驱动仿真中，把KV下沉/提升决策由近期性cache-aware改为逐块搬运成本评分（访问频度×层级带宽与每字节能耗代价），保留10%准入缓冲，在同等HBM容量下与原策略对照；层级能耗参数按公开规格设定并做敏感性分析",
+    "inputs": [
+      "高吞吐LLM serving trace（内部或公开）",
+      "HBM/HBF/host层级带宽与每字节能耗参数及敏感性区间",
+      "KV块访问频度画像与容量画像"
+    ],
+    "baselines": [
+      "HBM-only",
+      "近期性cache-aware分层（含10%准入缓冲）",
+      "无准入缓冲的朴素下沉"
+    ],
+    "metrics": [
+      "总搬运字节数",
+      "每token能耗",
+      "完成时间",
+      "平均TPOT（含混合配置）",
+      "HBF写入量与寿命损耗"
+    ],
+    "support_criteria": [
+      "同等HBM容量下总搬运字节数与每token能耗显著低于近期性分层，且混合配置TPOT退化缩小或消失"
+    ],
+    "reject_criteria": [
+      "搬运成本评分不优于近期性基线，或能耗参数敏感性使结论方向不稳定"
+    ],
+    "limitations": [
+      "trace仿真到实机的外推",
+      "二手能耗比率未经Tesseract与CENT等原始论文核实",
+      "近内存执行与CXL池化仅定性，未纳入模型"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份与既有候选不同，但定量支撑仅来自单一独立组的trace驱动仿真，原则层支撑来自厂商编辑部二手综述（定量数字需回Tesseract与CENT等原始论文核实），搬运成本目标的增量收益无任何已发布测量，适用边界（延迟敏感场景、层级能耗参数）未建立，先观察。",
+  "related_candidate_ids": [
+    "candidate_0cc5d88d05aa567d0a74"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_4d1be11e94b41f5fd8",
+      "issue_date": "2026-11-16",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份与既有候选不同，但定量支撑仅来自单一独立组的trace驱动仿真，原则层支撑来自厂商编辑部二手综述（定量数字需回Tesseract与CENT等原始论文核实），搬运成本目标的增量收益无任何已发布测量，适用边界（延迟敏感场景、层级能耗参数）未建立，先观察。",
+      "evidence_item_ids": [
+        "25d720c5db52f690707e9d31",
+        "981cfd1ec04d36f0d715b021"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

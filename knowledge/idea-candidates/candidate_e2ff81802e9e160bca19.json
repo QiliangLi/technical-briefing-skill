@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_e2ff81802e9e160bca19",
+  "identity": {
+    "problem_key": "shared_cache_cross_origin_reuse",
+    "mechanism_key": "source_bound_key_descriptors_with_differential_detection",
+    "target_key": "multi_tenant_prefix_cache_correctness"
+  },
+  "idea_type": "solution_concept",
+  "title": "作用域来源绑定（含执行路径维度）的共享KV缓存键与差分检测护栏",
+  "problem": "共享KV缓存层仅按token内容派生键时，适配器、权重版本/精度与租户身份不同的不兼容状态会互相复用（跨适配器冲突使精度从0.94降至0.64、省略权重版本时45页中42页冲突）；请求自适应混合模型按请求选层后，同一文本前缀又分裂为互不兼容的层缓存（常规前缀缓存命中率仅18.7%），正确性与命中率同时受损，而全量来源分离又使吞吐从42降至15请求每秒。",
+  "hypothesis": "把已知冲突维度——适配器身份、权重版本/精度、租户身份与层路由执行路径——按作用域绑入键描述符并配差分检测器护栏，可在跨来源同键异字节冲突归零的同时回收被无效复用掩盖的命中率（对照Flex绑定执行路径后命中率18.7%升至43.4%），并把吞吐损失压到远低于全量分离的水平。",
+  "mechanism": "键描述符把适配器身份、租户盐、权重精度/版本与KV表示绑入键，使键对计算与共享来源单射；差分检测器让仅差一个维度的工作进程写同一文档并标记同键异字节作护栏；请求自适应混合模型用两级基数树外层索引文本上下文、内层按层索引KV与SSM状态并校验执行路径兼容后复用；Agent场景在radix tree插入drop节点按操作历史区分缓存版本。",
+  "target": "多实例共享的前缀KV缓存服务（含请求自适应混合模型的层缓存）。",
+  "expected_effect": "恢复权重版本绑定后冲突归零（省略版本时45页中42页冲突归零）；执行路径维度绑定使PubMed共享前缀命中率从18.7%升至43.4%、TTFT从10.68秒降至5.92秒；全量分离的吞吐代价（42降至15请求每秒）为作用域分离需压低的上界。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "Flex（2026-11-02触发项）证明执行路径是缓存键身份的必要维度且绑定即回收命中率，与来源契约（2026-10-18）、vLLM 0.31.0来源标记防碰撞（2026-10-14）、AKV操作历史版本化（2026-10-23）四条独立工作线联合支持多维身份绑定缓存键机制，该组合机制任何单条记录都未陈述。"
+  },
+  "evidence": [
+    {
+      "item_id": "ac5e43456730856b45a55c92",
+      "issue_date": "2026-10-14",
+      "source_urls": [
+        "https://github.com/vllm-project/vllm/releases/tag/v0.31.0"
+      ],
+      "reason": "vLLM 0.31.0对前缀缓存额外键按来源标记防碰撞，证明引擎侧局部来源绑定可随版本升级落地，方案有现实载体。",
+      "independence_group": "github-release:vllm-project/vllm@v0.31.0"
+    },
+    {
+      "item_id": "f8c637164ffa4d998894ce4d",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.38706v1"
+      ],
+      "reason": "来源契约论文实测冲突实害（跨适配器精度0.94降至0.64、省略权重版本时45页中42页冲突）与绑定修复（恢复绑定后冲突归零），并给出全量分离代价边界（吞吐42降至15请求每秒），是问题定义与机制来源。",
+      "independence_group": "arxiv:2609.38706"
+    },
+    {
+      "item_id": "51b028770810a93bcda12391",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.28577v1"
+      ],
+      "reason": "AKV在radix tree插入drop节点按操作历史区分缓存版本（三模型四Agent基准平均成本降27.7%、平均分升1.7点），证明操作历史作为键维度对Agent负载必要。",
+      "independence_group": "arxiv:2610.28577"
+    },
+    {
+      "item_id": "b4413d2ec63271e4e832211d",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.37432v1"
+      ],
+      "reason": "Flex证明按请求选层的混合模型使同一文本前缀分裂为互不兼容的层缓存，两级基数树校验执行路径兼容后命中率从18.7%升至43.4%、TTFT从10.68秒降至5.92秒（命中率仅在PubMed共享前缀消融中报告），把执行路径确立为绑定即回收命中率的新键维度。",
+      "independence_group": "arxiv:2610.37432"
+    }
+  ],
+  "evidence_item_ids": [
+    "ac5e43456730856b45a55c92",
+    "f8c637164ffa4d998894ce4d",
+    "51b028770810a93bcda12391",
+    "b4413d2ec63271e4e832211d"
+  ],
+  "source_urls": [
+    "https://github.com/vllm-project/vllm/releases/tag/v0.31.0",
+    "https://arxiv.org/abs/2609.38706v1",
+    "https://arxiv.org/abs/2610.28577v1",
+    "https://arxiv.org/abs/2610.37432v1"
+  ],
+  "independence_groups": [
+    "github-release:vllm-project/vllm@v0.31.0",
+    "arxiv:2609.38706",
+    "arxiv:2610.28577",
+    "arxiv:2610.37432"
+  ],
+  "unknowns": [
+    "作用域分离在真实租户多样性分布下的命中率代价",
+    "适配器热更新时的键失效风暴",
+    "多主机广域共享下差分检测器的部署与开销",
+    "层路由执行路径与适配器/租户维度组合后的键空间爆炸对命中率与存储的影响",
+    "Flex命中率仅在PubMed共享前缀消融中报告，多轮系统提示复用只作图示，GPU数量与显存未说明"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "单机双引擎（vLLM加SGLang）共享独立缓存服务器，复现单主机加独立缓存服务器拓扑，并接入请求自适应混合模型做执行路径维度对照。",
+    "inputs": [
+      "2个LoRA适配器乘2个权重版本的固定文档集",
+      "租户数1-32扫描",
+      "分离作用域三档：仅内容键/全量分离/按维度作用域分离",
+      "执行路径维度开/关对照（两级基数树按层索引校验执行路径兼容性）"
+    ],
+    "baselines": [
+      "仅内容键（现状）",
+      "全量来源分离（42降至15请求每秒的损失边界口径）"
+    ],
+    "metrics": [
+      "差分检测器标记的同键异字节冲突数",
+      "命中率",
+      "吞吐（请求每秒）",
+      "目标任务精度"
+    ],
+    "support_criteria": [
+      "作用域分离下冲突数为0且吞吐损失可控",
+      "执行路径维度绑定使命中率净增而非净损"
+    ],
+    "reject_criteria": [
+      "出现任一同键异字节静默冲突",
+      "作用域分离吞吐损失接近全量分离且无预算补偿空间"
+    ],
+    "limitations": [
+      "原始实验仅单主机与独立缓存服务器",
+      "Flex命中率口径仅PubMed共享前缀消融"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "本触发项（Flex执行路径感知前缀缓存）支持的多维身份绑定综合与既有 idea_e2ff81802e9e160bca19（2026-10-29创建、2026-11-02已将Flex证据并入其evidence_for）identity与含义相同，按重复处置并指向该Idea。",
+  "related_candidate_ids": [
+    "candidate_d12cd71359d58f2356ea"
+  ],
+  "related_idea_ids": [
+    "idea_e2ff81802e9e160bca19"
+  ],
+  "first_seen_issue": "2026-10-14",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_043da3a1cc68b5b65acf",
+      "issue_date": "2026-11-02",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "本触发项（Flex执行路径感知前缀缓存）支持的多维身份绑定综合与既有 idea_e2ff81802e9e160bca19（2026-10-29创建、2026-11-02已将Flex证据并入其evidence_for）identity与含义相同，按重复处置并指向该Idea。",
+      "evidence_item_ids": [
+        "ac5e43456730856b45a55c92",
+        "f8c637164ffa4d998894ce4d",
+        "51b028770810a93bcda12391",
+        "b4413d2ec63271e4e832211d"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

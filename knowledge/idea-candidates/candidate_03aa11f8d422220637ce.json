@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_03aa11f8d422220637ce",
+  "identity": {
+    "problem_key": "layered_ocs_reconfig_decisions_evaluated_in_isolation",
+    "mechanism_key": "change_detected_amortization_gated_idle_port_activation",
+    "target_key": "llm_training_iteration_time_under_realistic_reconfig_latency"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "多层OCS重配控制的组合:变化检测触发与摊销门控下的空闲端口机会式激活",
+  "problem": "已发布证据把OCS重配决策拆在不同层各自评估:Flux按整个负载时间结构调度,把重配置摊销到计算与通信之后,训练迭代时间降至多10倍、峰值NIC缓冲需求降超三个数量级,但计划由精确MILP按已知负载求解且求解随规模指数增长、限于小规模作业;信息几何预印本以阈值策略与GLR-CUSUM变化检测决定何时重配,在每次重配按1秒计费的合成动态负载下regret为103.2秒、约为静态先验525.0秒的五分之一,但不处理端口供给;OOLS在DSN/CBN有界度数拓扑上机会式激活空闲OCS端口,p=⌈n/16⌉时两跳OOLS较SAN基线缩短makespan 66%-85%、总通信成本较DSN降低至少70%-91%,但重配开销以抽象轮次计且无需求变化检测。何时重配、重配是否摊销后净收益为正、激活哪些空闲端口三层决策的组合行为没有任何单篇记录评估,层间干扰(检测触发频率与摊销周期冲突、机会式激活破坏负载结构计划)未知。",
+  "hypothesis": "在含显式OCS重配时延与训练通信负载的离散事件仿真中,GLR-CUSUM需求变化检测触发、摊销净收益门控、一跳/两跳空闲端口激活三层组合的在线控制器,能较各单独策略层(仅检测触发重布线、仅摊销调度不检测、仅机会式激活无门控)缩短makespan并降低总通信成本,且毫秒级重配时延档下收益仍保持;若组合控制器的makespan劣于最优单独策略层,或检测触发的额外重配使重配等待时间占比超过激活带来的时间节省,则假设被证伪。",
+  "mechanism": "组合三篇已发布记录各自支持的机制层:以信息几何记录的GLR-CUSUM变化检测与阈值策略产生重配时机信号;以Flux的电路复用与重配摊销原则做净收益门控,仅当摊销重配时延后净收益为正才提交重配;以OOLS的空闲OCS端口识别、一跳/两跳激活与LRU/LFU换链供给光路。控制器运行于有界度数拓扑,检测到需求分布变化才触发重评,门控通过后才执行激活。",
+  "target": "含显式毫秒级OCS重配时延与LLM训练通信负载的离散事件仿真中的训练makespan/迭代时间与总通信成本。",
+  "expected_effect": "得到组合控制器相对三个单独策略层的makespan与通信成本对比、检测阈值与摊销门控参数的收益边界,以及逐层消融的贡献分解,为AI集群OCS控制平面是否需要分层组合提供可检验判据。",
+  "topic_ids": [
+    "optical_network"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "触发项OOLS(2026-11-02)只覆盖空闲端口机会式激活这一供给层,Flux(2026-09-28)只覆盖负载时间结构摊销调度层,信息几何预印本(2026-10-21)只覆盖重配时机检测层;三篇均未评估组合,按跨期综合提出组合控制器假设。"
+  },
+  "evidence": [
+    {
+      "item_id": "5208436edd2a9b448d709b32",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.25949v1"
+      ],
+      "reason": "Flux证明OCS重配置时延不可忽略、忽略计算时间线的重配置会阻塞通信,把重配置摊销到计算与通信之后才取得训练迭代时间降至多10倍、峰值NIC缓冲需求降超三个数量级的收益,毫秒级MEMS到微纳秒级硅光交换速度下均有效;提供摊销门控层的机制与边界(精确MILP限于小规模作业)。",
+      "independence_group": "arxiv:2609.25949"
+    },
+    {
+      "item_id": "34f0f6b9c37391db81ab267a",
+      "issue_date": "2026-10-21",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.25173v1"
+      ],
+      "reason": "信息几何预印本把OCS重配时机建模为阈值策略与GLR-CUSUM变化检测,每次重配按1秒计费的合成动态负载下regret为103.2秒、约为静态先验525.0秒的五分之一,且一次优化后不再重配反而最差;提供时机检测层的机制,边界为单作者预印本、全部实验合成、无生产trace与真实OCS硬件。",
+      "independence_group": "arxiv:2610.25173"
+    },
+    {
+      "item_id": "0a8409ebc23aa6da5b434b7f",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.38004v1"
+      ],
+      "reason": "OOLS触发项证明在DSN/CBN有界度数拓扑上实时识别空闲OCS端口并激活额外光路(含一跳与两跳调度及LRU/LFU换链变体),p=⌈n/16⌉时两跳OOLS较SAN基线缩短makespan 66%-85%、总通信成本较DSN降低至少70%-91%;提供空闲端口供给层的机制,边界为纯仿真、重配开销以抽象轮次计、无真实毫秒级OCS时延与GPU/AI负载。",
+      "independence_group": "arxiv:2610.38004"
+    }
+  ],
+  "evidence_item_ids": [
+    "5208436edd2a9b448d709b32",
+    "34f0f6b9c37391db81ab267a",
+    "0a8409ebc23aa6da5b434b7f"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.25949v1",
+    "https://arxiv.org/abs/2610.25173v1",
+    "https://arxiv.org/abs/2610.38004v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.25949",
+    "arxiv:2610.25173",
+    "arxiv:2610.38004"
+  ],
+  "unknowns": [
+    "三层策略从未在相同仿真口径下同时评估,组合是否正交互补未知",
+    "GLR-CUSUM检测延迟与摊销周期、机会式激活轮次之间的时间尺度匹配未验证",
+    "信息几何记录为单作者预印本且全部实验为合成负载,检测层在真实训练trace下的误报率未知"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在有界度数拓扑(DSN/CBN)离散事件仿真中加入显式OCS重配时延模型(毫秒级MEMS与微秒级硅光两档),实现GLR-CUSUM变化检测触发+摊销净收益门控+一跳/两跳空闲端口激活的三层组合控制器,并与各单独策略层在同一口径下对比",
+    "inputs": [
+      "OOLS口径的端口预算扫描(p=⌈n/16⌉附近及更小p),把抽象轮次重配开销替换为显式时延",
+      "每次重配1秒计费档与毫秒级MEMS、微秒级硅光档的重配成本参数",
+      "合成动态负载加至少一条公开LLM训练通信trace(如Flux使用的Llama 3 8B轨迹口径)"
+    ],
+    "baselines": [
+      "仅GLR-CUSUM检测触发加静态对称布线(信息几何口径)",
+      "仅摊销门控的负载结构调度、不做机会式激活(Flux口径)",
+      "仅机会式激活、无检测与门控(OOLS口径,抽象轮次对齐复现)",
+      "SAN/DSN自调整网络基线"
+    ],
+    "metrics": [
+      "makespan与训练迭代时间",
+      "总通信成本",
+      "重配次数与空闲端口激活率",
+      "检测延迟与误报触发的重配占比"
+    ],
+    "support_criteria": [
+      "组合控制器makespan优于全部单独策略层",
+      "毫秒级时延档下总通信成本仍较不激活基线显著降低",
+      "逐层消融显示检测、门控、激活三层各有非负贡献"
+    ],
+    "reject_criteria": [
+      "组合控制器makespan劣于最优单独策略层",
+      "检测触发的额外重配使重配等待时间占比超过激活带来的时间节省"
+    ],
+    "limitations": [
+      "全部支撑证据止于仿真,无真实OCS硬件与生产trace",
+      "信息几何记录为单作者预印本且全部合成,检测层参数迁移风险高",
+      "三层组合为本假设提出,未被任何单篇已发布记录直接验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应均有跨三个期号的三个独立性组群支撑,与现有idea_d1a94da7ed02e4533537(单层OOLS收益的真实时延保持性)和idea_9933531fde69ffb5a17c(Flux MILP可扩展启发式)在问题-机制-目标三元组上含义不同,作为新综合提出待人工晋升。",
+  "related_candidate_ids": [
+    "candidate_d1059104d9697849e82a"
+  ],
+  "related_idea_ids": [
+    "idea_d1a94da7ed02e4533537",
+    "idea_9933531fde69ffb5a17c"
+  ],
+  "first_seen_issue": "2026-09-28",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_2793cea992c0c455e22",
+      "issue_date": "2026-11-02",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应均有跨三个期号的三个独立性组群支撑,与现有idea_d1a94da7ed02e4533537(单层OOLS收益的真实时延保持性)和idea_9933531fde69ffb5a17c(Flux MILP可扩展启发式)在问题-机制-目标三元组上含义不同,作为新综合提出待人工晋升。",
+      "evidence_item_ids": [
+        "5208436edd2a9b448d709b32",
+        "34f0f6b9c37391db81ab267a",
+        "0a8409ebc23aa6da5b434b7f"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

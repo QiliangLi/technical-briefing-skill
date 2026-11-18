@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_c2c3416e4b2168d6f999",
+  "identity": {
+    "problem_key": "wafer_scale_dynamic_serving_support_gap",
+    "mechanism_key": "compile_time_per_core_schedule_governance",
+    "target_key": "wafer_scale_llm_inference_stack"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "晶圆级推理栈以编译期每核调度表治理连续批处理与MoE路由动态以兼顾低时延与高吞吐",
+  "problem": "晶圆级推理栈的SRAM驻留与静态数据流导向难以支撑连续批处理与MoE路由带来的运行时动态：要么牺牲时延、要么限制动态技术并损失吞吐，动态服务能力与晶圆级静态效率相互挤压，缺一条被实测支持的治理路径。",
+  "hypothesis": "若利用LLM内核类型封闭、动态结构可在编译期确定的特点，把连续批处理与MoE路由的动态决策接管到编译期生成的每核片上调度表中——控制消息处理织入调度表随数据流执行、重配置按资源受限的段免死锁执行——则晶圆级栈可在不放弃连续批处理与MoE路由动态的前提下兼顾低时延与高吞吐，且动态治理的每token开销有界可测（25至40µs、约7.6%至9.5%）。",
+  "mechanism": "编译期为每个核生成片上调度表并令其接管动态决策：控制消息处理织入每核调度表随数据流隐式执行；LLM内核类型封闭、动态结构在编译期确定，映射为调度表内的段；片上重配置按资源受限的段执行并保证免死锁；运行时不再为批组成与路由动态设置独立控制平面热路径。",
+  "target": "晶圆级LLM推理栈的解码路径：与同硬件WaferLLm对比的GPT-OSS-120B连续批处理与MoE路由负载",
+  "expected_effect": "同硬件下较WaferLLm解码吞吐最高提升55.8倍；动态治理每token仅增加25至40µs（约7.6%至9.5%）；对H200集群的优势为理想线性扩展的乐观投影而非实测，能耗按厂商功率预算估算，吞吐导向场景可低于GPU对比值。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "Synthesis任务审阅触发记录fdb0906f107f40f4d270dcde：其独立且完整地给出问题（晶圆级栈难支撑连续批处理与MoE路由的运行时动态）、机制（编译期每核调度表织入控制消息处理并分段免死锁重配置）、目标（晶圆级LLM推理栈）与可检验效应（对WaferLLm解码吞吐最高55.8倍、动态治理每token 25至40µs即7.6%至9.5%）；证据池中仅有的另一条晶圆级记录0c8654ce4782289447c9d885刻画GPU与WSE异构组合的收益条件与带宽需求，不陈述亦不支持编译期调度治理机理，四条触发记录之间无共同支持的联合机理，故按单证据立候选；其身份与38个既有候选及6个Idea均不同——既有同步消除族candidate_344ecdd2e672a28ef630与idea_53c8cc189b926f907071处理数据依赖同步原语的微秒级固定开销（就绪证据并入数据通路/单边写），本候选处理动态控制决策的编译期静态化，目标为晶圆级栈，属亲缘而非同身份。"
+  },
+  "evidence": [
+    {
+      "item_id": "fdb0906f107f40f4d270dcde",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08508v1"
+      ],
+      "reason": "SOSP'26论文MeshRT给出问题（晶圆级推理栈难以支撑连续批处理与MoE路由的运行时动态，只能牺牲时延或限制动态技术并损失吞吐）、机制（利用LLM内核类型封闭、动态结构可在编译期确定的特点，把控制消息处理织入每核片上调度表，并按资源受限的段执行免死锁的片上重配置）、目标（同硬件晶圆级栈上GPT-OSS-120B解码路径，对照WaferLLm）与可检验效应（解码吞吐最高提升55.8倍、动态治理每token仅增25至40µs约7.6%至9.5%），并给出边界：对H200集群的优势是理想线性扩展的乐观投影、能耗按厂商功率预算估算、吞吐导向场景可低于GPU对比值。单版本arXiv预印本，独立分组arxiv:2611.08508。",
+      "independence_group": "arxiv:2611.08508"
+    }
+  ],
+  "evidence_item_ids": [
+    "fdb0906f107f40f4d270dcde"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.08508v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.08508"
+  ],
+  "unknowns": [
+    "单一arXiv v1预印本独立分组（arxiv:2611.08508），缺独立复现",
+    "对H200集群的优势为理想线性扩展的乐观投影、能耗按厂商功率预算估算：实测数字与投影数字的适用边界须人工裁定",
+    "动态治理开销25至40µs随批组成动态性与路由熵的变化未系统扫描，重配置最坏情况的死锁回避代价未单列",
+    "与就绪证据并入数据通路（candidate_344ecdd2e672a28ef630）及单边写路径的叠加收益未测：本候选治理动态控制决策的静态化，非同步原语消除",
+    "编译期确定动态结构对模型结构演化（新内核类型、非MoE动态算子）的适配与重编译成本未刻画"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在晶圆级或众核SRAM驻留校准仿真平台（或以单节点多卡互连网格近似片上网格）上实现编译期每核调度治理与运行时动态决策基线（WaferLLm式）两版推理栈，运行GPT-OSS-120B级MoE，扫描批组成动态性与路由熵。",
+    "inputs": [
+      "编译期每核调度表生成器（控制消息织入与分段免死锁重配置）",
+      "连续批处理与MoE路由动态负载生成器",
+      "WaferLLm式运行时动态决策基线",
+      "批组成动态性与路由熵扫描配置"
+    ],
+    "baselines": [
+      "同平台运行时动态决策基线（WaferLLm式）",
+      "限制动态技术的静态流水线变体"
+    ],
+    "metrics": [
+      "解码吞吐与首token时延",
+      "每token动态治理开销（µs与占比）",
+      "稳态连续批处理与路由动态下的时延分布",
+      "仿真口径与GPU集群对比的投影区分标注"
+    ],
+    "support_criteria": [
+      "编译期调度治理在保持连续批处理与MoE路由动态的前提下，吞吐与时延同时优于运行时基线",
+      "动态治理每token开销不超40µs量级且随动态性增大有界"
+    ],
+    "reject_criteria": [
+      "动态性增大时治理开销或重配置回退吞掉吞吐收益",
+      "须限制连续批处理或MoE路由动态才能保住时延优势"
+    ],
+    "limitations": [
+      "首版仅仿真或近似平台口径，无法在真实晶圆级硬件上验证",
+      "能耗按功率预算口径估算，非实测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且与38个既有候选及6个Idea的身份与含义均不同：既有同步消除族（candidate_344ecdd2e672a28ef630、idea_53c8cc189b926f907071）消除的是数据依赖同步原语的固定开销，本候选把动态控制决策静态化进编译期每核调度表，目标是晶圆级推理栈的连续批处理与MoE路由治理。但支持证据仅单一arXiv v1独立分组、无独立复现，且其自身边界表明对H200集群的优势为乐观线性投影、能耗按厂商功率预算估算——实测与投影结论的适用边界须人工裁定，按deferred等待独立支持与人类谱系决策，不直接proposed。",
+  "related_candidate_ids": [
+    "candidate_344ecdd2e672a28ef630"
+  ],
+  "related_idea_ids": [
+    "idea_53c8cc189b926f907071"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a24e938a89a88920fc1f",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "触发记录四要素齐备且身份全新（晶圆级动态治理的编译期静态化），但证据仅单一独立分组、无独立复现，且对H200集群优势为乐观线性投影、能耗按厂商预算估算，实测与投影的适用边界待人工裁定，故deferred而非proposed。",
+      "evidence_item_ids": [
+        "fdb0906f107f40f4d270dcde"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

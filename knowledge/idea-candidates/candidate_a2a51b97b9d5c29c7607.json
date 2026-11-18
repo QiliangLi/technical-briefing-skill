@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a2a51b97b9d5c29c7607",
+  "identity": {
+    "problem_key": "gpu_side_queue_processing_warp_turnaround_cost",
+    "mechanism_key": "userspace_nvme_with_warp_role_separated_queues",
+    "target_key": "gpu_external_kv_fine_grained_io_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "在用户态NVMe直通路径上做warp角色分离的队列处理：同时压低外置KV的同步时延与SM warp占用",
+  "problem": "GPU发起的细粒度NVMe读要求高并发，而BaM式同步路径有93.1%的I/O周转时间耗在CQ轮询与门铃写上，这些轮询工作同时以I/O warp形式占据SM资源。uGDS类用户态直通把控制路径移出内核、显著降低同步时延，但其完成处理仍是用户态轮询，warp占用问题并未解决；当近GPU介质迈向千万级IOPS（GP1规格与美光路线图口径）时，队列处理的warp与周转成本将挤占推理kernel的SM预算。",
+  "hypothesis": "在uGDS式用户态NVMe命令路径上叠加PLINK式队列重构——专用SQ warp持续提交、专用CQ warp处理完成、等待方按槽位等待而不扫描CQ、门铃写按warp合并——可在保持用户态路径4KiB级同步时延收益（uGDS口径较GDS低84.1%）的同时，把使SSD饱和所需的I/O warp数降到基线的约57%（PLINK口径136对238），释放的SM占用转化为外置KV命中路径的并发与吞吐容量。",
+  "mechanism": "用户态库构建NVMe命令与PRP、直写BAR0门铃并轮询完成队列，数据经P2P DMA直达显存（uGDS）；在此直通路径上把队列处理重构为角色分离：专用SQ warp持续提交、专用CQ warp处理完成、请求方按完成槽位等待而不扫描CQ、门铃写以warp为单位合并（PLINK），替代每请求同步扫描CQ的BaM式路径。",
+  "target": "GPU外置KV缓存与细粒度读路径上的用户态NVMe队列处理组织（GPU侧SM warp预算与完成处理方式）",
+  "expected_effect": "使单盘SSD饱和所需I/O warp数由238级降至136级（-43%，4KB随机读QD1024微基准口径）；用户态路径4KiB同步写时延保持较内核GDS低84.1%量级；释放的warp/SM占用转化为KV命中并发与吞吐提升。注意：PLINK幻灯片只报告warp数量、无时延与端到端结果且基准不计完成通知开销，组合效应尚无任何记录直接测量。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "PLINK（2026-11-11）量化GPU发起细粒度NVMe读的队列处理开销（BaM式同步路径93.1%周转时间耗于CQ轮询与门铃）并给出专用SQ/CQ warp分工、槽位等待与warp级门铃合并的重构，但只报warp数量、无时延与端到端结果；uGDS（2026-10-27）给出用户态NVMe命令生命周期直通与4KiB同步写时延较GDS低84.1%的结果，但其完成处理仍为用户态轮询且未测量warp占用；两条跨期记录联合支持“用户态直通+warp角色分离队列处理”这一任一单条记录均未陈述的组合机制，且共同面向外置KV缓存目标场景。"
+  },
+  "evidence": [
+    {
+      "item_id": "9277255f427b131d07864051",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://www.hotstorage.org/2026/slides/plink_slide.pdf"
+      ],
+      "reason": "三星HotStorage '26幻灯片PLINK量化GPU发起细粒度NVMe读的队列处理开销：BaM式同步路径93.1%的I/O周转时间耗在CQ轮询和门铃上；重构为专用SQ warp持续提交、专用CQ warp处理完成、按槽位等待与warp级门铃合并后，4KB随机读队列深度1024微基准中以136个I/O warp使SSD饱和、较基线238个少43%（仅做SQ/CQ解耦反而需246个）；幻灯片只报告warp数量，无时延与端到端负载结果，基准不计完成通知开销。",
+      "independence_group": "url:https://www.hotstorage.org/2026/slides/plink_slide.pdf"
+    },
+    {
+      "item_id": "ada8f3547af65d6b8dfc29be",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.30868v2",
+        "https://arxiv.org/abs/2610.30868"
+      ],
+      "reason": "uGDS预印本给出用户态NVMe命令生命周期（构建命令与PRP、直写BAR0门铃、轮询完成队列）加P2P DMA直传显存的机制，A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%、并发256下KV吞吐50.2对约19 kTokens/s；其完成处理仍为用户态轮询、未测量warp占用（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型）。",
+      "independence_group": "arxiv:2610.30868"
+    }
+  ],
+  "evidence_item_ids": [
+    "9277255f427b131d07864051",
+    "ada8f3547af65d6b8dfc29be"
+  ],
+  "source_urls": [
+    "https://www.hotstorage.org/2026/slides/plink_slide.pdf",
+    "https://arxiv.org/abs/2610.30868v2",
+    "https://arxiv.org/abs/2610.30868"
+  ],
+  "independence_groups": [
+    "url:https://www.hotstorage.org/2026/slides/plink_slide.pdf",
+    "arxiv:2610.30868"
+  ],
+  "unknowns": [
+    "PLINK幻灯片只报告warp数量（136对238），无时延分布与端到端负载结果，基准也不计完成通知开销",
+    "warp占用指标跨GPU代际与SM预算的迁移性未验证",
+    "uGDS每句柄仅支持一块本地NVMe，错误恢复与隔离证据薄弱，多盘与远程NVMe-oF扩展未证",
+    "释放的warp在推理kernel共占SM时是否转化为服务吞吐收益，无任何数据",
+    "组合机制（用户态直通叠加warp角色分离队列处理）此前无任何记录实现或测量过"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "单块A100/H100加本地NVMe：实现或复用uGDS式用户态直通，对照三种队列处理组织（BaM式同步轮询、仅SQ/CQ解耦、PLINK式角色分离+槽位等待+warp级门铃合并），先跑4KB随机读QD1024微基准复现warp口径，再接LMCache式KV命中负载并与推理kernel共占SM。",
+    "inputs": [
+      "队列处理组织开关（同步轮询/仅SQ/CQ解耦/角色分离+槽位等待+门铃合并）",
+      "4KB随机读队列深度扫描（至1024）",
+      "KV命中率与并发扫描",
+      "推理kernel共占SM的负载组合",
+      "完成通知开销计量"
+    ],
+    "baselines": [
+      "BaM式同步轮询路径（PLINK基线238个I/O warp口径）",
+      "仅SQ/CQ解耦路径（246个warp口径）",
+      "内核GDS路径（cuFile加nvidia-fs）",
+      "uGDS原样用户态路径"
+    ],
+    "metrics": [
+      "使SSD饱和所需I/O warp数",
+      "I/O周转时间分解（CQ轮询/门铃/其他）",
+      "4KiB同步读写时延P50/P99",
+      "KV命中TTFT与并发KV吞吐",
+      "SM占用与共占推理kernel吞吐变化"
+    ],
+    "support_criteria": [
+      "角色分离组织在用户态路径上复现warp占用显著下降（43%量级）且同步时延不劣于uGDS原样",
+      "与推理kernel共占SM时，释放的warp转化为KV命中吞吐或并发容量提升"
+    ],
+    "reject_criteria": [
+      "warp节省在用户态路径或不同GPU代际上不可复现",
+      "计入完成通知开销后收益消失，或时延劣化抵消warp节省"
+    ],
+    "limitations": [
+      "PLINK为幻灯片微基准口径，仅warp数量、无时延与端到端结果",
+      "uGDS为原型且每句柄仅单盘",
+      "组合机制此前无实现，工程量与正确性风险未知",
+      "未覆盖多盘与远程NVMe-oF场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题（GPU侧队列处理的warp与周转成本）、机制（用户态NVMe直通叠加warp角色分离队列处理）、目标（外置KV细粒度I/O路径）与可检验效应（warp占用-43%口径、时延保持84.1%收益口径）齐备，且身份与既有Candidate/Idea不同（非HBM容量墙、非控制面内核穿越时延、非池化共享命名空间层）；但组合机制无任何记录直接测试：PLINK为幻灯片微基准、仅warp数量且不计完成通知开销，uGDS未测warp占用，缺独立支持与“warp节省转化为服务收益”的适用性边界，先缓议观察。",
+  "related_candidate_ids": [
+    "candidate_5793492d38cc44d3e3bd",
+    "candidate_47cb76376a9afb422662"
+  ],
+  "related_idea_ids": [
+    "idea_dadc3140f9ade3ddc59c",
+    "idea_e201a2fc3d5bd226c7fe"
+  ],
+  "first_seen_issue": "2026-10-27",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_370b0e13987ce178f2cd",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "跨期综合PLINK（warp角色分离队列处理，136对238 warp口径）与uGDS（用户态NVMe直通，4KiB同步写时延较GDS低84.1%）形成任一单条记录均未陈述的组合机制，四要素齐备且身份与既有Candidate/Idea不同；但组合无直接测试（PLINK仅幻灯片warp数量、uGDS未测warp占用），缺独立支持与适用性边界，判定deferred缓议观察。",
+      "evidence_item_ids": [
+        "9277255f427b131d07864051",
+        "ada8f3547af65d6b8dfc29be"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

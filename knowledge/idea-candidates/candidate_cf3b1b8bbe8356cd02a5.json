@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_cf3b1b8bbe8356cd02a5",
+  "identity": {
+    "problem_key": "prefix_blind_agent_shared_component_miss",
+    "mechanism_key": "compiler_recovered_lifecycle_priority_band_scheduling",
+    "target_key": "agent_serving_kv_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "用编译器恢复的组件共享与生命周期驱动Agent服务KV缓存的绑定重排与优先级带调度",
+  "problem": "代理服务系统把提示词当作“可复用前缀+不透明后缀”，KV缓存仅按前缀匹配：因前置差异，51%-92%的共享token无法命中缓存，类型化代理程序中稳定、共享、长生命周期组件的复用价值系统性流失。",
+  "hypothesis": "若服务系统不依赖运行时统计，而是由编译器从类型化代理程序静态恢复组件共享关系与生命周期（调用点模板+工作流自动机描述符），并据此重排提示词绑定、以优先级带做预算约束的保留驱逐与预取，则被前缀绑定漏掉的共享token复用可被找回，Agent负载的JCT与吞吐显著改善；跨域场景下同一信号应能区分值得传输的稳定共享组件与宜本地重算的易变尾部，但何时传输优于重算须另行核算。",
+  "mechanism": "编译器从类型化代理程序产出含调用点模板与工作流自动机的描述符，恢复组件共享与生命周期；服务端按可复用性重排提示词绑定，并以优先级带在预算约束下执行保留、驱逐与预取，使缓存调度由编译期已知的程序结构而非仅前缀位置或运行时新旧驱动。",
+  "target": "Agent服务系统（SGLang类serving）的KV缓存管理：提示词绑定重排与预算约束的保留/驱逐/预取调度层",
+  "expected_effect": "单机参照：SGLang上四代理负载几何平均JCT加速1.45倍、吞吐提升1.49倍，峰值1.99倍与1.97倍；消融显示缓存调度贡献1.30倍、绑定重排仅1.03倍，收益主要来自生命周期感知的优先级带调度而非重排。跨域放置效应（传输字节、WAN RTT下的P95）在证据中无数据，需由验证计划单独核算。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录同时给出具体问题（前缀绑定使51%-92%共享token未命中缓存）、可解释机制（类型化代理程序描述符恢复组件共享与生命周期，驱动绑定重排与优先级带调度）、目标对象（Agent服务KV缓存管理）与可检验效应（JCT/吞吐及消融归因）。"
+  },
+  "evidence": [
+    {
+      "item_id": "5c65c3bb4d6e7be2729359cb",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08638v1"
+      ],
+      "reason": "MORTIS实测代理服务把提示词当作可复用前缀加不透明后缀导致51%-92%的共享token因前置差异未命中缓存；其编译器从类型化代理程序产出含调用点模板与工作流自动机的描述符，服务端按可复用性重排提示词绑定并以优先级带做预算约束的保留、驱逐与预取；SGLang上四代理负载几何平均JCT加速1.45倍、吞吐提升1.49倍（峰值1.99倍与1.97倍），消融显示缓存调度贡献1.30倍而重排仅1.03倍；评测均为单节点，无跨域RTT与传输字节数据，项目判断仅指出稳定共享长生命周期组件值得跨域传输、易变尾部宜本地重算，不能据此判断跨域传输何时优于重算。",
+      "independence_group": "arxiv:2611.08638"
+    }
+  ],
+  "evidence_item_ids": [
+    "5c65c3bb4d6e7be2729359cb"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.08638v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.08638"
+  ],
+  "unknowns": [
+    "评测均为单节点，无跨域RTT与传输字节数据，不能据此判断跨域传输何时优于重算",
+    "峰值1.99倍加速对应的负载与并发条件论文未见指明",
+    "机制依赖类型化代理程序与编译器描述符，对无源码或非类型化Agent的适用性未知",
+    "消融显示重排仅贡献1.03倍，绑定重排与优先级带调度的收益分配在其他负载下是否稳定未知",
+    "组件生命周期信号对跨域放置（传输对重算）的判别力尚无独立证据支持"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在SGLang类Agent服务原型上实现“类型化代理程序→组件描述符→绑定重排+优先级带调度”链路：先在单机复现JCT/吞吐收益并重做调度/重排消融，再接可控WAN仿真链路，按组件生命周期信号选择跨域传输对象（稳定共享组件传输、易变尾部本地重算），在传输字节与RTT核算下评估。",
+    "inputs": [
+      "类型化代理程序或其描述符（调用点模板与工作流自动机）",
+      "Agent负载trace（含共享组件占比与生命周期分布）",
+      "缓存预算与优先级带配置",
+      "WAN时延与带宽矩阵（跨域段）"
+    ],
+    "baselines": [
+      "SGLang默认前缀缓存加LRU",
+      "仅绑定重排、无优先级带调度（消融）",
+      "仅优先级带调度、无重排（消融）",
+      "跨域段按到达序或新旧选择传输对象（不做生命周期区分）"
+    ],
+    "metrics": [
+      "共享token命中率与重算token量",
+      "几何平均JCT与吞吐",
+      "跨域段传输字节",
+      "WAN RTT下的端到端P95"
+    ],
+    "support_criteria": [
+      "单机复现消融结构：优先级带调度贡献显著高于重排",
+      "跨域仿真中按生命周期选择传输对象，在传输字节与P95核算下优于不分对象的基线"
+    ],
+    "reject_criteria": [
+      "生命周期信号与实际复用行为不相关，调度收益消失",
+      "收益绑定特定四代理负载，更换负载后不再显著",
+      "跨域段收益只能由单机结果外推、无法在RTT与传输字节核算下复现"
+    ],
+    "limitations": [
+      "原始评测仅单节点，跨域段为仿真链路而非真实WAN部署",
+      "机制依赖类型化代理程序，未覆盖无源码或非类型化Agent"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，身份含义与既有不同：non_prefix_kv_recurrence用运行时检索层做控制面、cost_oblivious_partial_hit_agent_cache_management用重算代价与恢复不对称做联合调度、idea_984fec4fcf65a75a6b1f用部署亲和路由加键控压缩保留（本条证据亦已被其吸收），均未声明“编译期程序结构恢复组件共享与生命周期”这一信号源；但候选仅由单一独立组支持，评测全为单节点、无跨域RTT与传输字节，跨域放置适用边界未验证，暂缓待独立支持。",
+  "related_candidate_ids": [
+    "candidate_ccdfa5b1ca5299f7009f",
+    "candidate_2bb19b8ae91662956d18"
+  ],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_b04fee516af94aeab9bb",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整、身份与既有候选和Idea不同；但仅单一独立组（arxiv:2611.08638）支持，评测均为单节点、无跨域RTT与传输字节，跨域放置适用边界未验证，暂缓待独立支持。",
+      "evidence_item_ids": [
+        "5c65c3bb4d6e7be2729359cb"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_aa8fbca78a3cc57d5d83",
+  "identity": {
+    "problem_key": "pd_phase_reassignment_kv_drop",
+    "mechanism_key": "online_phase_reassignment_decoupled_host_kv",
+    "target_key": "pd_disaggregated_agent_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "在线学习迭代用时并重指派PD阶段，KV常驻主机共享池免切换重启与丢弃",
+  "problem": "代理负载在预填充重与解码重之间动态摆动，主流解耦系统按节点固定阶段划分，切换节点阶段须重启推理流水线并丢弃KV缓存，摆动负载下既损失已算前缀又造成服务中断。",
+  "hypothesis": "若节点均具备预填充与解码执行能力，规划器在线学习各阶段迭代用时模型并据此在线重指派阶段，同时把KV与节点阶段解耦、常驻主机内存共享池并由集群目录按分支引用计数，请求排队期间经RDMA异步取回远端KV，则可在不弃KV的前提下跟随负载摆动，平均端到端时延与P95 TTFT显著优于固定阶段的Dynamo基线。",
+  "mechanism": "三个耦合部件：(1)全节点可跑prefill与decode，规划器以在线学习的迭代用时模型预测各配置耗时并在线重指派阶段；(2)KV与节点阶段解耦、常驻主机内存共享池，集群目录按分支引用计数管理多版本KV；(3)请求排队期间经RDMA异步取回远端KV，取回与排队重叠以隐藏传输时延。",
+  "target": "PD解耦推理服务集群中节点阶段指派与KV放置的服务层控制面（代理负载serving）",
+  "expected_effect": "在Claude Code代理负载与GLM-5.2上，平均端到端时延由54.4秒降至13.2秒（约为Dynamo基线的四分之一），P95 TTFT由142秒降至10.2秒。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录同时给出问题（阶段切换须重启并弃KV）、可解释机制（在线迭代用时模型重指派+主机KV池引用计数+排队期RDMA异步取回）、目标对象（PD解耦代理serving集群）与可检验效应（54.4秒到13.2秒、P95 TTFT 142秒到10.2秒，Dynamo基线）。其身份与既有候选均不同：candidate_9d439729d29356fd6625面向agentic RL rollout并以生命周期信号预测配比，candidate_7dbcf1f5c24bf8b8528b以排队论切分延迟预算，candidate_c8428382ea225164c364针对全量KV交接语义做重要性排序补取。"
+  },
+  "evidence": [
+    {
+      "item_id": "6a40c55e6e13c84e9e723e82",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.12304v1"
+      ],
+      "reason": "Evolving Infra给出问题（代理负载摆动下主流系统切换阶段须重启并丢KV缓存）、机制（节点均可跑两阶段、规划器在线学习迭代用时模型重指派阶段、KV驻留主机共享池并由集群目录计数分支引用、排队期经RDMA异步取回远端KV）与效应（平均端到端时延54.4秒降至13.2秒、P95 TTFT 142秒降至10.2秒，均以Dynamo为基线）。",
+      "independence_group": "arxiv:2611.12304"
+    }
+  ],
+  "evidence_item_ids": [
+    "6a40c55e6e13c84e9e723e82"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.12304v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.12304"
+  ],
+  "unknowns": [
+    "各实验未报告重复与方差，54.4秒到13.2秒的量级缺置信度",
+    "未报告聚合KV传输量与网络利用率，排队期异步取回对RDMA带宽与延迟的敏感度未知",
+    "仅以Dynamo为基线，未与静态最优PD配比或同置部署对比",
+    "规划器在线学习的收敛速度与误判代价（错误重指派引发的再切换）未刻画",
+    "收益绑定代理负载摆动特性，单轮chat等非摆动负载是否受益未知",
+    "自适应全部在服务层、网络仅作RDMA传输，对网络侧TPN的价值未评估"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在内部解耦serving集群上回放内部代理负载迹，仿真在线迭代用时模型驱动的阶段重指派与主机KV池加排队期异步取回，对比固定阶段指派的时延、KV丢弃与网络需求。",
+    "inputs": [
+      "内部代理负载请求迹（到达序列、轮次结构、prefill/decode构成随时间摆动）",
+      "节点prefill与decode迭代用时画像",
+      "主机内存容量与RDMA带宽档位"
+    ],
+    "baselines": [
+      "Dynamo式固定阶段指派（切换须重启弃KV）",
+      "静态最优PD配比",
+      "同置部署"
+    ],
+    "metrics": [
+      "平均端到端时延",
+      "P95 TTFT",
+      "KV丢弃字节量与重算开销",
+      "阶段重指派次数与再切换率",
+      "排队期KV取回被隐藏的比例与聚合KV传输量"
+    ],
+    "support_criteria": [
+      "摆动负载下平均端到端时延与P95 TTFT显著优于固定阶段基线且KV丢弃趋零，收益随摆动幅度单调"
+    ],
+    "reject_criteria": [
+      "在线迭代用时模型误差导致频繁误切换，重指派与KV取回开销抵消收益",
+      "内部负载摆动幅度小或主机内存不足以驻留KV池时收益不显著"
+    ],
+    "limitations": [
+      "原始证据未报告方差与网络侧指标，无法直接外推取回重叠的有效性",
+      "内部负载与RDMA拓扑可能偏离原文实验设置"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有候选身份不同，但证据仅单一arXiv组，原文未报告重复与方差、聚合KV传输量与网络利用率，收益是否随负载摆动幅度与主机内存容量变化未刻画，独立支持与适用边界待验证。",
+  "related_candidate_ids": [
+    "candidate_9d439729d29356fd6625",
+    "candidate_7dbcf1f5c24bf8b8528b",
+    "candidate_c8428382ea225164c364"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_932c8dbf95630f184cd4",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有候选身份不同，但证据仅单一arXiv组，原文未报告重复与方差、聚合KV传输量与网络利用率，收益是否随负载摆动幅度与主机内存容量变化未刻画，独立支持与适用边界待验证。",
+      "evidence_item_ids": [
+        "6a40c55e6e13c84e9e723e82"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_503d9e1188eb26e79ba1",
+  "identity": {
+    "problem_key": "cross_node_read_mostly_state_duplication",
+    "mechanism_key": "in_medium_slot_metadata_worm_publication",
+    "target_key": "cxl_shared_pool_read_mostly_state"
+  },
+  "idea_type": "solution_concept",
+  "title": "共享CXL池内嵌槽元数据加写一次读多次发布的跨节点只读态共享",
+  "problem": "读主导状态跨节点共享时各节点重复持有或经传输协议搬移：Serverless LLM冷启动中仅5-11%是权重加载，其余是每个服务器重复的编译与初始化；KV前缀块等可复用状态跨节点共享则依赖复制或外部元数据服务，跨节点的数据与元数据路径成本高。",
+  "hypothesis": "在共享CXL内存池中把槽/目录元数据内嵌于共享介质，把只读或内容寻址的状态写一次后发布、多节点经DAX/DMA原地读取，可在无外部元数据服务与逐节点复制的情况下把跨节点共享成本压到近同节点水平，并对引擎工件与KV块两类读主导负载同时成立；若任一负载下跨节点共享时延差或首载惩罚吞没共享收益，或并发元数据更新成为瓶颈，则该假设被证伪。",
+  "mechanism": "槽目录/索引元数据随数据驻留共享介质（Cairn以CAS加租约更新的槽表索引、Seagate把槽目录嵌入共享介质免外部元数据服务）；数据写一次后只读或按内容哈希以256 token粒度寻址，各主机以物化DAX设备/DMA原地读取，共享路径不经传输协议复制。",
+  "target": "跨节点共享CXL内存池上的读主导状态服务（Serverless LLM引擎工件、多节点KV前缀块）",
+  "expected_effect": "跨节点共享代价逼近同节点水平：Seagate证据中跨与同节点复用时延差仅1-4%、命中率95.4-99.5%；Cairn证据中六个1B-14B模型冷启动从57-85秒降至11.0-21.0秒（4.1-5.2倍）、请求流中位TTFT降64%/p90降72%。",
+  "topic_ids": [
+    "memory_dsa"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-18",
+    "rationale": "触发记录Cairn（2026-11-18）与既有已发布记录Seagate共享KV层（2026-09-24）在两个独立arXiv分组上收敛于同一结构：槽/目录元数据内嵌共享介质、数据写一次后只读或内容寻址、多节点经DAX/DMA原地读取、无外部元数据服务与传输协议复制；两记录各自只陈述自己负载下的实例，均未陈述该结构作为跨工件类别通用共享机制的判断，构成本综合。"
+  },
+  "evidence": [
+    {
+      "item_id": "6df5dbff0cb942224f410949",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.16180v1"
+      ],
+      "reason": "Cairn把Serverless LLM权重、编译代码与编译键发布到写一次后只读的共享CXL池，其余服务器经DMA原地读取，槽表索引用CAS加租约更新；六个1B-14B模型冷启动从57-85秒降至11.0-21.0秒、请求流中位TTFT降64%/p90降72%，为该综合提供引擎工件类负载的机制与量化依据（边界：未用真实CXL硬件、池以远端NUMA加两台VM模拟、集群规模结果是仿真、首次发布使首载慢22-23%）。",
+      "independence_group": "arxiv:2611.16180"
+    },
+    {
+      "item_id": "3c96b2f1d82f04d87c1ef517",
+      "issue_date": "2026-09-24",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.10790"
+      ],
+      "reason": "Seagate把CXL区域物化为各主机DAX设备，槽目录嵌入共享介质免去外部元数据服务，KV块按内容哈希以256 token粒度寻址，vLLM把同一物理区域用作跨节点共享KV层；双节点512GiB CXL加Qwen2.5-7B跨节点复用使TTFT降5.5-36.6倍、命中率95.4-99.5%、跨与同节点复用时延差仅1-4%，为该综合提供KV块类负载的机制与量化依据（边界：作者自定位可行性研究、单GPU无并发负载、无RDMA池化基线、未做P/D切换）。",
+      "independence_group": "arxiv:2609.10790"
+    }
+  ],
+  "evidence_item_ids": [
+    "6df5dbff0cb942224f410949",
+    "3c96b2f1d82f04d87c1ef517"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.16180v1",
+    "https://arxiv.org/abs/2609.10790"
+  ],
+  "independence_groups": [
+    "arxiv:2611.16180",
+    "arxiv:2609.10790"
+  ],
+  "unknowns": [
+    "Cairn池仅以远端NUMA加两台VM模拟、集群规模结果是仿真，真实CXL硬件下多服务器并发CAS加租约争用未测；首次发布使首载慢22-23%的首载惩罚边界未知",
+    "Seagate为可行性研究：单GPU、无并发负载、无RDMA池化基线、未做P/D切换，规模化未验证",
+    "该结构对两类负载分别只有单一来源实证，跨工件类别可泛化本身是跨条目推断，无任何单一已发布系统同时覆盖引擎工件与KV块",
+    "WORM加内容寻址不覆盖发布后的更新与失效路径，写路径边界未验证",
+    "两条证据均已进入idea_2f2161ae7470caca28bb的evidence_for（Cairn为本期相邻领域证据），该综合独立成Idea的谱系归属待人工决策"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "以真实CXL设备或解耦内存仿真搭建单一共享池：槽/目录元数据内嵌介质并经CAS加租约更新，发布一份1B-14B模型权重与编译工件及一份256 token粒度内容寻址KV块集，多节点经DAX/DMA原地读取，扫描节点数与并发争用。",
+    "inputs": [
+      "1B-14B模型权重与编译工件",
+      "多轮会话KV轨迹（256 token内容寻址块）",
+      "节点数与并发CAS争用参数扫描",
+      "共享池时延带宽参数"
+    ],
+    "baselines": [
+      "逐节点本地加载（sllm+vLLM形态）",
+      "外部元数据服务加传输协议复制的共享层",
+      "LMCache DAX基线"
+    ],
+    "metrics": [
+      "冷启动时间与首载惩罚",
+      "跨与同节点复用时延差",
+      "KV命中率与TTFT p50/p90",
+      "并发CAS下槽表更新时延"
+    ],
+    "support_criteria": [
+      "引擎工件与KV块两类负载下跨节点共享时延差保持个位数百分比，且无外部元数据服务时冷启动与TTFT收益保持"
+    ],
+    "reject_criteria": [
+      "多服务器并发CAS争用使槽表更新成为瓶颈，或任一负载下跨节点首载/共享成本吞没收益"
+    ],
+    "limitations": [
+      "结果绑定CXL硬件形态与租约/CAS实现",
+      "WORM结构不覆盖更新与失效路径",
+      "仿真集群规模不可直接外推到生产"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份三元组与既有候选和Idea不同（既有身份覆盖KV容量层、向量检索容量扩展、集群页缓存强一致与多租户准入联合，均非跨节点只读态共享的结构综合），两条证据来自两个独立arXiv分组；但Cairn池仅以远端NUMA加两台VM模拟、Seagate为无公平基线的可行性研究构成未定的适用边界，且两条证据均已属idea_2f2161ae7470caca28bb的证据基础（Cairn为本期刚吸收的相邻领域证据），该综合是否独立成Idea的谱系决策留待人工，故列为deferred。触发记录Cairn的身份语义未被该Idea完整覆盖（Idea自身标注为相邻领域证据、仅结构借鉴、非KV负载实证，目标对象为多轮KV容量层而非Serverless冷启动），故不走duplicate_signal的no-op路径而新建候选。",
+  "related_candidate_ids": [
+    "candidate_2f2161ae7470caca28bb"
+  ],
+  "related_idea_ids": [
+    "idea_2f2161ae7470caca28bb"
+  ],
+  "first_seen_issue": "2026-09-24",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_565deee6ce3ec8317244",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份三元组与既有候选和Idea不同（既有身份覆盖KV容量层、向量检索容量扩展、集群页缓存强一致与多租户准入联合，均非跨节点只读态共享的结构综合），两条证据来自两个独立arXiv分组；但Cairn池仅以远端NUMA加两台VM模拟、Seagate为无公平基线的可行性研究构成未定的适用边界，且两条证据均已属idea_2f2161ae7470caca28bb的证据基础（Cairn为本期刚吸收的相邻领域证据），该综合是否独立成Idea的谱系决策留待人工，故列为deferred。触发记录Cairn的身份语义未被该Idea完整覆盖（Idea自身标注为相邻领域证据、仅结构借鉴、非KV负载实证，目标对象为多轮KV容量层而非Serverless冷启动），故不走duplicate_signal的no-op路径而新建候选。",
+      "evidence_item_ids": [
+        "6df5dbff0cb942224f410949",
+        "3c96b2f1d82f04d87c1ef517"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a51116b6406edd9d5f5f",
+  "identity": {
+    "problem_key": "dp_replication_kv_capacity_tp_allreduce_tradeoff",
+    "mechanism_key": "weight_placement_kv_ownership_decoupling",
+    "target_key": "decode_pool_parallel_architecture"
+  },
+  "idea_type": "solution_concept",
+  "title": "以权重放置与KV归属解耦的解码池并行架构同时扩KV容量并消除跨节点all-reduce",
+  "problem": "长上下文高并发解码下，DP按副本复制权重挤占每节点KV容量，TP又把all-reduce推上跨节点网络，主流解码并行在KV容量与跨节点网络流量之间顾此失彼。",
+  "hypothesis": "若将权重放置与KV归属解耦——模型按平衡layer block分布到各节点、KV归属跟随请求、各节点仅对自己请求的本地KV算attention、跨节点只传scatter/gather——则八节点解码池可用KV容量可达DP的约5倍，且长上下文高并发下吞吐同时高于DP与DCP。",
+  "mechanism": "权重按平衡layer block分布到各节点而非按DP整体复制；每请求的KV归属其所在节点，attention计算只用本地KV；跨节点通信收敛为scatter/gather而非all-reduce，可选双活root微批进一步压尾。",
+  "target": "长上下文高并发LLM解码服务集群的并行架构层（vLLM实现、多节点H100解码池）。",
+  "expected_effect": "vLLM实现、最多64块H100：较DP吞吐最高2.06倍；八节点较DCP 1.53倍，加双活root微批达1.7倍（405B、32K上下文）；八节点可用KV容量约为DP的5倍。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "Direct触发项单独给出完整的问题（DP复制权重挤占KV容量、TP把all-reduce推上跨节点网络）、机制（权重按平衡layer block放置、KV归属跟随请求、跨节点仅scatter/gather）、目标（多节点解码池并行架构）与可测效应（KV容量与吞吐倍数），候选直接落在该记录的解耦放置架构上。"
+  },
+  "evidence": [
+    {
+      "item_id": "6beac1cd9683eedadf8d01e4",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13293v1"
+      ],
+      "reason": "《TKNP：解耦权重放置与KV归属的解码池并行架构》给出完整问题、机制与实测：模型权重按平衡layer block分布到各节点、各节点仅对自己请求的本地KV算attention、跨节点只剩scatter/gather；vLLM实现最多64块H100上较DP吞吐最高2.06倍、八节点较DCP 1.53倍（加双活root微批达1.7倍，405B、32K上下文），八节点可用KV容量约为DP的5倍。",
+      "independence_group": "arxiv:2611.13293"
+    }
+  ],
+  "evidence_item_ids": [
+    "6beac1cd9683eedadf8d01e4"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.13293v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.13293"
+  ],
+  "unknowns": [
+    "评估只用InfiniBand互连的H100，未覆盖以太网或其他互连下的结论",
+    "小batch或短上下文时通信开销可能超过收益，交叉点未被量化",
+    "对照只有DP与DCP，缺与跨节点TP或专家并行的直接比较",
+    "节点失效或负载漂移下的权重重放置与恢复策略未报告",
+    "本期记录已被idea_f7841984fcce6a274881吸收为交叉点假设的架构侧对照，架构手段能替代多少网络侧调度价值的量化仍属开放"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部多节点推理测试床上以vLLM原型复现权重按平衡layer block放置、attention仅算本地KV、跨节点scatter/gather的解码池，与DP/DCP/跨节点TP对照量化KV容量、吞吐与跨节点流量，并测小batch/短上下文档位的收益交叉点。",
+    "inputs": [
+      "模型规模与layer block划分（405B或缩比模型）",
+      "长上下文高并发与短上下文小batch两档请求负载（含32K上下文档）",
+      "节点数与互连参数（InfiniBand及至少一种非IB互连）"
+    ],
+    "baselines": [
+      "DP权重复制解码（vLLM数据并行）",
+      "DCP（证据内基线）",
+      "跨节点TP"
+    ],
+    "metrics": [
+      "可用KV容量与最大并发数",
+      "解码吞吐",
+      "跨节点流量字节与all-reduce消除率",
+      "TPOT与TTFT",
+      "小batch/短上下文下吞吐劣于基线的交叉点"
+    ],
+    "support_criteria": [
+      "长上下文高并发下可用KV容量与吞吐同时优于DP与DCP，且跨节点流量较TP all-reduce显著下降",
+      "能识别通信开销超过收益的负载交叉点并可用放置参数控制"
+    ],
+    "reject_criteria": [
+      "小batch或短上下文下scatter/gather时延主导使吞吐持续低于基线且交叉点不可控",
+      "KV容量收益以尾延迟非线性恶化或重放置开销不可接受为代价"
+    ],
+    "limitations": [
+      "原型规模远小于64卡H100，吞吐倍数不可直接外推",
+      "证据只覆盖InfiniBand互连，以太网下结论未知",
+      "解析流量模型参数需自建，证据未给出逐层scatter/gather数值"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea（idea_f7841984fcce6a274881本期仅将其吸收为交叉点假设的架构侧对照面而非同身份实例），但仅单一arXiv独立组，评估只覆盖InfiniBand互连的H100，小batch/短上下文下通信开销超过收益的交叉点未量化，缺独立支持与适用边界。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d00d0c2be71fb8a94133",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea（idea_f7841984fcce6a274881本期仅将其吸收为交叉点假设的架构侧对照面而非同身份实例），但仅单一arXiv独立组，评估只覆盖InfiniBand互连的H100，小batch/短上下文下通信开销超过收益的交叉点未量化，缺独立支持与适用边界。",
+      "evidence_item_ids": [
+        "6beac1cd9683eedadf8d01e4"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

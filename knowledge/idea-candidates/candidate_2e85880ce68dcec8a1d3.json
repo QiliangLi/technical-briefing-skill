@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_2e85880ce68dcec8a1d3",
+  "identity": {
+    "problem_key": "agent_visual_history_budget_round_limit",
+    "mechanism_key": "lifecycle_segmented_approximate_visual_retention",
+    "target_key": "on_device_multimodal_agent_kv_cache"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "端侧多模态智能体按轮近似保留视觉历史以突破预算轮数上限",
+  "problem": "端侧多模态智能体的历史视觉观测持续占用缓存，固定缓存预算下全历史保留仅支撑约6轮交互；按轮硬删除历史图像（PARC）虽把轮数扩到约20轮，但视觉历史被完全丢弃、无法回溯，且其工具链不导出缓存命中率与占用指标，复用收益只能间接度量。",
+  "hypothesis": "在按生命周期分段（系统提示/持久文本历史/瞬时视觉段）的按轮缓存管理中，把瞬时视觉段从轮末硬删除改为近似保留——按跨图patch熵等信号选出可近似复用的视觉KV、其余按预热注意力分数排定重算优先级，并分层放置沉到CPU或SSD层——可在固定预算下把可用轮数保持在硬删除口径的约20轮量级，同时保留可回溯的视觉历史，且任务分数不明显低于硬删除基线；若近似保留的占用增长使轮数退回全历史口径的约6轮，或近似命中在短输入轮次上反而变慢，则硬删除仍是端侧最优。",
+  "mechanism": "PARC把上下文按生命周期分为系统提示、持久文本历史与瞬时视觉段，每轮用掩码预填充在工具执行窗口提交文本状态并移除历史图像，另把注意力头数裁至可被核心数整除；VisMemo按跨图patch熵选出低熵patch复用旧缓存、用预热注意力分数排定其余patch的重算优先级、对精确与近似命中分别做三级缓存放置。联合机制：瞬时视觉段在轮末不硬删，而是降级为熵选patch的近似复用形态并经分层放置下沉，按轮掩码预填充只提交被近似保留的视觉状态——生命周期分段提供轮边界与段类型，近似复用提供保留形态。该组合任何单条记录都未陈述：PARC只证明硬删可扩轮数，VisMemo只在服务端VLM推理证明近似视觉复用可行。",
+  "target": "端侧多模态智能体运行时的按轮KV缓存管理器（边缘NPU）",
+  "expected_effect": "固定缓存预算下可用轮数接近PARC口径的约20轮（对照全历史的约6轮）且视觉历史可回溯；近似命中由CPU或SSD层提供的比例向VisMemo口径的79.4%靠拢；恢复训练后动作类型准确率与坐标命中率保持在原模型附近（PARC口径），任务分数不明显低于硬删除基线。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-06",
+    "rationale": "PARC（2026-11-06触发项）证明生命周期分段加按轮硬删视觉段可把固定预算下轮数扩3倍以上，但视觉历史完全丢失且无法直接度量命中率；VisMemo（2026-10-21）独立证明低熵patch近似视觉KV复用可在保持质量下把命中率从27.78%提到61.45%、79.4%近似命中由CPU或SSD层提供。两线联合支持『按轮近似保留视觉段替代硬删』的组合机制，任何单条记录未陈述。"
+  },
+  "evidence": [
+    {
+      "item_id": "b97a19bec4858dc590279b80",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02601v1"
+      ],
+      "reason": "PARC把上下文分为系统提示、持久文本历史与瞬时视觉段，每轮用掩码预填充在工具执行窗口提交文本状态并移除历史图像，另把注意力头数裁至可被核心数整除；固定预算下轮数从全历史约6轮增至约20轮，恢复训练后动作类型准确率与坐标命中率恢复至原模型附近；工具链不导出命中率与占用指标，验证仅限单一4B模型与单块边缘NPU上的GUI任务。",
+      "independence_group": "arxiv:2611.02601"
+    },
+    {
+      "item_id": "860372bcbab2b548b050d334",
+      "issue_date": "2026-10-21",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.25136v1"
+      ],
+      "reason": "VisMemo按跨图patch熵选低熵patch复用旧缓存、用预热注意力分数排定其余patch重算优先级、精确与近似命中分别三级缓存放置；生产负载命中率从27.78%提到61.45%，8K输入下近似命中把Qwen3-VL与GLM-4.6V的未命中预填充延迟降低30.5%至48.3%，79.4%近似命中由CPU或SSD层提供；近似复用并非总有利，GLM-4.6V-Flash在2K输入时近似命中反而更慢。",
+      "independence_group": "arxiv:2610.25136"
+    }
+  ],
+  "evidence_item_ids": [
+    "b97a19bec4858dc590279b80",
+    "860372bcbab2b548b050d334"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.02601v1",
+    "https://arxiv.org/abs/2610.25136v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.02601",
+    "arxiv:2610.25136"
+  ],
+  "unknowns": [
+    "PARC工具链不导出缓存命中率与占用指标，复用收益只能间接度量",
+    "近似保留形态下每轮缓存占用的增长率未验证",
+    "VisMemo近似复用在2K输入上反而更慢，端侧短输入轮次是否受益未知",
+    "PARC的恢复训练与VisMemo的免训练近似复用是否需要联合微调未知",
+    "验证面仅覆盖单一4B模型与单块边缘NPU的GUI任务"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在端侧多模态智能体运行时实现生命周期分段按轮缓存，把瞬时视觉段改为熵选patch近似保留加分层层放置，与硬删除和全历史两基线对比。",
+    "inputs": [
+      "GUI智能体多轮任务回放",
+      "缓存预算扫描",
+      "近似保留比例扫描",
+      "命中率与占用的直接插桩"
+    ],
+    "baselines": [
+      "PARC式按轮硬删视觉段",
+      "全历史保留",
+      "仅精确前缀复用"
+    ],
+    "metrics": [
+      "固定预算下可用轮数",
+      "动作类型准确率与坐标命中率",
+      "每轮缓存占用",
+      "近似命中率及其层级来源"
+    ],
+    "support_criteria": [
+      "轮数接近硬删口径且任务分数不显著下降",
+      "视觉历史可回溯"
+    ],
+    "reject_criteria": [
+      "近似保留占用增长使轮数退回全历史口径",
+      "任务分数显著低于硬删基线"
+    ],
+    "limitations": [
+      "原始证据分别限于单4B模型边缘NPU与服务端VLM生产负载",
+      "端侧CPU/SSD分层容量与带宽未刻画"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "组合机制完整且两线独立，但PARC无法直接度量命中率与占用、VisMemo近似复用并非总有利，两机制未在同一运行时对照且端侧分层容量未刻画，先观察。",
+  "related_candidate_ids": [
+    "candidate_36aa0ea8a107d5c426c5",
+    "candidate_90e9417774bee4c97457"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-21",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_6ab316cd9d46de3039e2",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "组合机制完整且两线独立，但PARC无法直接度量命中率与占用、VisMemo近似复用并非总有利，两机制未在同一运行时对照且端侧分层容量未刻画，先观察。",
+      "evidence_item_ids": [
+        "b97a19bec4858dc590279b80",
+        "860372bcbab2b548b050d334"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

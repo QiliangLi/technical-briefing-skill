@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_7e5f3d5ed416713cee98",
+  "identity": {
+    "problem_key": "bandwidth_provisioning_without_saturation_evidence",
+    "mechanism_key": "kernel_saturation_profile_gated_provisioning",
+    "target_key": "distributed_serving_bandwidth_provisioning"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "内核带宽饱和画像门控分布式serving的KV带宽供给",
+  "problem": "分布式serving扩KV传输带宽缺少饱和证据判据：闭环账本显示并发2048时三倍带宽令吞吐停滞、调度运行时开销减40%反增60%吞吐；单卡内核剖析又显示注意力内核在所有上下文长度未达带宽或算力roofline上限、最大上下文时线性投影占70-80%带宽而注意力仅约15%。带宽何时是有效杠杆无判据。",
+  "hypothesis": "若带宽供给决策以内核级带宽饱和画像为门控——仅当消费方内核逼近roofline时才升带宽——可在吞吐不降的前提下减少无效带宽开销并预测扩容失效点。",
+  "mechanism": "把内核级roofline饱和画像注入ServeTwin式闭环成本账本：账本按吞吐、调度器与运行时分解开销并让模拟时间反馈调度决策，画像给出消费侧带宽占用，两者联合给出升或降带宽的门控判据。",
+  "target": "分布式LLM serving的KV传输带宽供给决策",
+  "expected_effect": "可检验预期：在账本显示带宽升级吞吐停滞的工况（并发2048三倍带宽）下，饱和画像同样显示消费内核未达roofline；门控策略在相同吞吐下降低带宽配置。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "本期两条独立记录分别给出集群侧带宽扩容失效的闭环成本账本与内核侧带宽未饱和画像，联合支持饱和画像门控供给的机制，无单点来源。"
+  },
+  "evidence": [
+    {
+      "item_id": "bd2513bdc6f22c272246d5e0",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02732v1"
+      ],
+      "reason": "ServeTwin以规格驱动闭环模拟把分布式serving验证误差压至10%以内（InferenceX前沿均值3.6%、LMBenchmark多轮9.9%），成本账本按吞吐、调度器与运行时分解开销：并发2048时三倍带宽令吞吐停滞、调度运行时开销减40%反增60%吞吐；设计扫描均为模拟而非集群实测。",
+      "independence_group": "arxiv:2610.02732"
+    },
+    {
+      "item_id": "3dd51be07a45b1e941acd36f",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.28223v1"
+      ],
+      "reason": "内核级剖析三代GPU的单解码块发现注意力内核在所有上下文长度均未达带宽或算力roofline上限、仅GPT-3接近带宽界限；GPT-2最大上下文时线性投影占70-80%带宽而注意力仅约15%；仅解码阶段与单卡本地剖析，无跨节点KV传输证据。",
+      "independence_group": "arxiv:2610.28223"
+    }
+  ],
+  "evidence_item_ids": [
+    "bd2513bdc6f22c272246d5e0",
+    "3dd51be07a45b1e941acd36f"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.02732v1",
+    "https://arxiv.org/abs/2610.28223v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.02732",
+    "arxiv:2610.28223"
+  ],
+  "unknowns": [
+    "内核画像是单卡本地解码阶段，外推到集群KV传输带宽供给的适用边界未建立",
+    "账本结论来自模拟设计扫描，GB200为迁移预测，无集群实测交叉验证",
+    "饱和阈值随并发、batch与上下文长度的漂移未知"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在ServeTwin类闭环模拟器中注入内核饱和画像，扫描带宽配置并与成本账本对照门控决策。",
+    "inputs": [
+      "模型与引擎规格",
+      "带宽与并发扫描",
+      "内核级roofline饱和画像"
+    ],
+    "baselines": [
+      "无条件扩带宽策略",
+      "固定带宽预算策略"
+    ],
+    "metrics": [
+      "吞吐",
+      "带宽开销",
+      "扩容失效点预测误差"
+    ],
+    "support_criteria": [
+      "门控策略在吞吐持平下带宽开销下降，失效点预测与账本一致"
+    ],
+    "reject_criteria": [
+      "单卡画像外推失效，门控在多卡或多节点工况误判饱和"
+    ],
+    "limitations": [
+      "内核画像来自单卡解码阶段，账本来自模拟设计扫描，均非集群实测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与可检验效应完整，但内核侧证据仅单卡本地解码、不含跨节点KV传输证据，集群适用边界缺失且组合机制无独立复现，先延期观察。",
+  "related_candidate_ids": [
+    "candidate_c56cd1e6215a71f3f27f"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-29",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_fa3e0482e8e0921489d",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与可检验效应完整，但内核侧证据仅单卡本地解码、不含跨节点KV传输证据，集群适用边界缺失且组合机制无独立复现，先延期观察。",
+      "evidence_item_ids": [
+        "bd2513bdc6f22c272246d5e0",
+        "3dd51be07a45b1e941acd36f"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

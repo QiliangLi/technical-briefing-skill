@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6d20fc4bbb9bae79fbcc",
+  "identity": {
+    "problem_key": "cq_polling_doorbell_overhead_in_gpu_initiated_io",
+    "mechanism_key": "dedicated_sq_cq_warps_slot_waiting_warp_level_doorbell_coalescing",
+    "target_key": "gpu_side_nvme_queue_processing_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "PLINK重构GPU侧NVMe队列处理：专用SQ/CQ warp分工加槽位等待与warp级门铃合并，把饱和SSD所需I/O warp减少43%",
+  "problem": "GPU发起的细粒度NVMe读需要高并发，而BaM式同步路径有93.1%的I/O周转时间花在CQ轮询和门铃上；微基准中使一块SSD饱和需238个I/O warp，这些warp被队列处理占用而无法用于计算，成为GPU发起I/O方案被低估的资源成本。",
+  "hypothesis": "以专用SQ warp持续提交、专用CQ warp处理完成、等待方按槽位等待而不再扫描CQ、并以warp为单位合并写门铃来重构GPU侧NVMe队列处理，可在维持同等饱和吞吐的前提下，把使SSD饱和所需的I/O warp数从基线238个降到136个（少43%），且优于仅做SQ/CQ解耦的246个，释放的warp可回归计算。",
+  "mechanism": "PLINK让专用SQ warp持续提交、专用CQ warp处理完成，等待方按槽位等待而不再扫描CQ，并以warp为单位合并写门铃。",
+  "target": "GPU发起NVMe I/O的GPU侧队列处理路径（GPU侧客户端库中的提交/完成队列处理设计）",
+  "expected_effect": "在4KB随机读、队列深度1024的微基准中，以136个I/O warp使SSD饱和，较BaM式同步基线238个少43%；仅做SQ/CQ解耦反而需246个。幻灯片只报告warp数量，无时延与端到端负载结果，基准也不计完成通知的开销。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发表记录同时给出问题（BaM式同步路径93.1%的I/O周转时间耗在CQ轮询与门铃、饱和SSD需238个I/O warp挤占计算资源）、机制（专用SQ warp持续提交加专用CQ warp处理完成、按槽位等待、以warp为单位合并写门铃）、目标（GPU发起NVMe I/O的GPU侧队列处理路径）与可检验效应（4KB随机读队列深度1024下136个warp饱和SSD、较基线少43%、仅SQ/CQ解耦需246个），四要素齐备；身份与既有Candidate/Idea（GPU发起I/O移除CPU数据路径、uGDS内核到用户态、RDMA直连与池化共享层、细粒度闪存HBM分层等）均不同，属GPU侧队列处理warp资源成本这一新语义，故立Candidate。"
+  },
+  "evidence": [
+    {
+      "item_id": "9277255f427b131d07864051",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://www.hotstorage.org/2026/slides/plink_slide.pdf"
+      ],
+      "reason": "三星HotStorage '26幻灯片给出问题（GPU发起细粒度NVMe读需高并发，BaM式同步路径93.1%的I/O周转时间花在CQ轮询和门铃上）、机制（专用SQ warp持续提交、专用CQ warp处理完成、等待方按槽位等待而不再扫描CQ、以warp为单位合并写门铃）与微基准结果（4KB随机读、队列深度1024下用136个I/O warp使SSD饱和，较基线238个少43%，只做SQ/CQ解耦反而需246个）；边界为幻灯片只报告warp数量、无时延和端到端负载结果，基准也不计完成通知的开销。",
+      "independence_group": "url:https://www.hotstorage.org/2026/slides/plink_slide.pdf"
+    }
+  ],
+  "evidence_item_ids": [
+    "9277255f427b131d07864051"
+  ],
+  "source_urls": [
+    "https://www.hotstorage.org/2026/slides/plink_slide.pdf"
+  ],
+  "independence_groups": [
+    "url:https://www.hotstorage.org/2026/slides/plink_slide.pdf"
+  ],
+  "unknowns": [
+    "幻灯片只报告warp数量（136对238），无时延分布与端到端负载结果",
+    "基准不计完成通知的开销，warp节省的净收益未知",
+    "唯一证据为三星HotStorage '26幻灯片（单一独立组），无独立复测",
+    "warp占用作为资源成本指标在其他GPU平台、队列深度与真实负载上的迁移性未验证",
+    "时延与端到端负载收益方向未测（项目判断应补测尾时延与端到端负载）"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "单GPU节点加一块企业NVMe：实现BaM式同步队列路径与PLINK式重构（专用SQ/CQ warp分工、槽位等待、warp级门铃合并）两个GPU侧客户端对照，跑4KB随机读队列深度扫描，测饱和SSD所需warp数、时延分布，并叠加KV缓存读取与端到端推理负载。",
+    "inputs": [
+      "4KB随机读与队列深度扫描（含1024）",
+      "BaM式同步路径与PLINK式重构的对照开关",
+      "消融：仅SQ/CQ解耦、仅槽位等待、仅warp级门铃合并及完整组合",
+      "KV缓存读取与端到端推理负载",
+      "完成通知开销计入与不计入两种统计口径"
+    ],
+    "baselines": [
+      "BaM式同步队列路径（238个I/O warp口径）",
+      "仅SQ/CQ解耦（246个I/O warp口径）",
+      "主机CPU中转读路径"
+    ],
+    "metrics": [
+      "使SSD饱和所需I/O warp数",
+      "读时延P50/P99与吞吐",
+      "完成通知（CQ处理与门铃）占I/O周转时间的比例",
+      "释放warp回归计算后的端到端TTFT与吞吐"
+    ],
+    "support_criteria": [
+      "同等饱和吞吐下warp占用较同步基线显著下降（复现约43%量级），且时延P99不劣化、端到端负载收益可测"
+    ],
+    "reject_criteria": [
+      "warp节省在计入完成通知开销后消失，或时延与端到端负载劣于同步基线"
+    ],
+    "limitations": [
+      "原始证据为会议幻灯片微基准，只报warp数、无时延与端到端结果",
+      "基准不计完成通知开销，净收益需自测",
+      "warp占用指标的跨平台与跨负载迁移性未验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题（GPU侧队列处理的CQ轮询与门铃开销挤占I/O warp）、机制（专用SQ/CQ warp分工加槽位等待与warp级门铃合并）、目标（GPU发起NVMe I/O的GPU侧队列处理路径）与可检验效应（饱和SSD所需warp数136对238、少43%）齐备，身份与既有Candidate/Idea均不同；但唯一证据是三星HotStorage '26幻灯片微基准：单一独立组、只报告warp数量、无时延与端到端负载结果、基准不计完成通知开销，缺独立支持且适用边界未证，先缓议观察。",
+  "related_candidate_ids": [
+    "candidate_47cb76376a9afb422662",
+    "candidate_5793492d38cc44d3e3bd"
+  ],
+  "related_idea_ids": [
+    "idea_dadc3140f9ade3ddc59c"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_dc959644a0febc552361",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "PLINK给出GPU侧NVMe队列处理warp资源成本的完整四要素且身份与既有Candidate/Idea不同，立为独立Candidate；但唯一证据为幻灯片微基准（单一独立组、只报warp数量、无时延与端到端结果、不计完成通知开销），缺独立支持与适用边界，判定deferred缓议观察。",
+      "evidence_item_ids": [
+        "9277255f427b131d07864051"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

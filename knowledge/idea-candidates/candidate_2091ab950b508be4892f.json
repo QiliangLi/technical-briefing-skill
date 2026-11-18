@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_2091ab950b508be4892f",
+  "identity": {
+    "problem_key": "dense_attention_kv_read_length_scaling",
+    "mechanism_key": "recursive_kv_tree_pooler_layered_selection",
+    "target_key": "long_context_kv_sparse_read_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "在KVCache上建树逐层选择，把每query读取降到O(log L)以支撑长上下文外推",
+  "problem": "长上下文稠密注意力中每query的注意力计算与KV读取随上下文长度增长，读取量与缓存驻存成本随长度失控；训练长度受限（32K）的模型也无法直接服务百万token级上下文。",
+  "hypothesis": "每16个KV条目递归归组成树，节点以pooler的key与子树均值value概括，每query逐层选k=256下探到精确token并以候选序号编码RoPE，可使每query只读O(log L)个条目，把32K训练模型外推到2M token，并在长上下文任务分数与解码时延上大幅优于最佳基线与稠密读取。",
+  "mechanism": "KV缓存每16个条目递归归组成树，节点以pooler的key与均值value概括子树；推理时逐层选k=256沿树下探到精确token，每query只读O(log L)个条目；RoPE按候选序号编码以适配树形读取路径。",
+  "target": "长上下文LLM的KVCache读取路径（分层放置与稀疏注意力选择器）",
+  "expected_effect": "RULER 1M为60.5对最佳基线40.0、2M为49.3对27.6；1M解码8.35ms对稠密177ms；524K prefill快3.2倍；读取集缩至上下文约1%，精确token可常驻主机内存（GPU常驻不足全量缓存7%）（口径：单卡H200、batch 1）。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题（稠密注意力计算与KV读取随长度增长）、可解释机制（KV缓存递归建树加pooler概括加逐层k=256下探选择）、目标对象（长上下文LLM的KVCache读取路径）与可检验效应（RULER 1M/2M分数与解码、prefill时延对照）。"
+  },
+  "evidence": [
+    {
+      "item_id": "82f14ff195dbea5aecc459d7",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07232v1"
+      ],
+      "reason": "RecSA给出问题（长上下文稠密注意力计算与KV读取随长度增长）、机制（每16个KV条目递归归组成树，节点以pooler的key与均值value概括子树，逐层选k=256下探到精确token，RoPE按候选序号编码，每query只读O(log L)个条目）、目标（KVCache管理与读取路径）与可检验效应（RULER 1M 60.5对40.0、2M 49.3对27.6，1M解码8.35ms对稠密177ms，524K prefill快3.2倍）；边界为单卡H200、batch 1，无多请求与SSD数据，短上下文最多回退1.8分。",
+      "independence_group": "arxiv:2611.07232"
+    }
+  ],
+  "evidence_item_ids": [
+    "82f14ff195dbea5aecc459d7"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.07232v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.07232"
+  ],
+  "unknowns": [
+    "效率数据均为单卡H200、batch 1，无多请求并发与吞吐数据",
+    "无SSD层数据，读取集约1%时的分层收益取决于读取集与单步传输上界，未验证",
+    "短上下文最多回退1.8分，适用下界未刻画",
+    "pooler与候选序号RoPE需改动注意力前向路径，跨骨干可迁移性与训练成本未知",
+    "单一预印本，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部长上下文推理栈实现KV缓存递归建树（每16条目一组、pooler key加均值value概括）与逐层k=256下探读取路径，对照稠密读取与既有稀疏注意力基线。",
+    "inputs": [
+      "RULER口径长上下文负载（含1M与2M档）",
+      "上下文长度扫描（含短上下文回退区间）",
+      "树节点概括与每层选择宽度k的消融",
+      "精确token主机驻留加GPU小驻留的分层放置画像（读取集与单步传输上界）"
+    ],
+    "baselines": [
+      "稠密注意力全量KV读取",
+      "最佳公开稀疏注意力基线（论文对照口径）",
+      "32K训练长度直接外推（无树形读取）"
+    ],
+    "metrics": [
+      "RULER任务分数",
+      "每query解码时延与prefill时延",
+      "每query实际读取条目数与读取集占比",
+      "多请求并发下的吞吐与显存占用"
+    ],
+    "support_criteria": [
+      "1M以上上下文任务分数与时延显著优于稀疏基线且短上下文回退有界",
+      "读取集占比在上下文约1%量级，分层放置下传输量受单步上界约束"
+    ],
+    "reject_criteria": [
+      "多请求并发下树形选择开销或pooler成本吞噬读取收益",
+      "短上下文回退超过论文口径使机制需长度门控"
+    ],
+    "limitations": [
+      "原始证据仅单卡H200、batch 1形态",
+      "无SSD层与多请求数据，分层收益未验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有候选不同义，但证据为单一预印本，效率数据仅单卡H200、batch 1，无多请求与SSD分层数据，读取集约1%下的分层收益未验证，无独立支持，先观察。",
+  "related_candidate_ids": [
+    "candidate_0782d8cab828971b5f90",
+    "candidate_e6063ec3be4af707459c"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_69c88fd28b815e841a60",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有候选不同义，但证据为单一预印本，效率数据仅单卡H200、batch 1，无多请求与SSD分层数据，读取集约1%下的分层收益未验证，无独立支持，先观察。",
+      "evidence_item_ids": [
+        "82f14ff195dbea5aecc459d7"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6cee5c365c64390f2a0e",
+  "identity": {
+    "problem_key": "spilled_kv_retention_signal_gap",
+    "mechanism_key": "reference_counted_execution_signal_lifecycle",
+    "target_key": "cluster_multitier_kv_store"
+  },
+  "idea_type": "solution_concept",
+  "title": "引用计数存活性、执行信号保留与需求反馈配比联合管理集群多级KV生命周期",
+  "problem": "KV缓存外溢到主机内存与远端层级后，存储层难以凭访问与新近度信号决定保留与回收：死状态长期占用容量、活跃会话状态被提前回收，且不同复用类别之间的容量配比是静态的。",
+  "hypothesis": "若服务层集群目录以分支引用计数向存储层暴露KV对象存活性、保留与回收由工作负载/会话/会话结束三类执行信号驱动、并以幽灵命中类需求反馈自调各复用类别的容量配比，则可在同等内存预算下提高有效命中率、降低死状态占用，并经排队期异步取回支撑P95 TTFT下降。",
+  "mechanism": "集群目录对每个KV对象计数分支引用，阶段重指派与请求分叉不弃存活KV（存活性对存储层透明）；存储层按负载定制空闲TTL、会话ID计数与会话结束信号做保留/回收，替代新近度；前缀与位置无关等复用类别间的容量配比由幽灵命中反馈在线自调；排队期间对远端KV异步取回并与重算/并行预填衔接。",
+  "target": "PD解耦集群中以主机内存共享池为中心的多级KV缓存存储与生命周期管理层",
+  "expected_effect": "同等内存预算下会话内命中率上升、死状态占用下降并减少被回收后需重取或重算的KV字节；分量依据为负载定制空闲TTL较全局p90最多多保留22%会话内命中、少留40%死状态，会话ID计数少标4至700倍状态且41%至99%被复用（trace模拟值），引用计数加排队期异步取回的P95 TTFT由142秒降至10.2秒（基线Dynamo），配比反馈找回漏失token的76.1%；组合效应无任何单一系统实测，需经验证。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "同期三条独立记录各供一条机制腿且无单点来源陈述该组合：Evolving Infra给出服务层引用计数目录的存活性管理与排队期异步取回，KV缓存存储行为刻画给出工作负载/会话/会话结束三执行信号驱动的保留决策与量化收益，Nebula给出幽灵命中反馈自调容量配比；联合构成存活性+执行信号+需求反馈的集群级KV生命周期机制，任何单一记录均未陈述该组合。"
+  },
+  "evidence": [
+    {
+      "item_id": "6a40c55e6e13c84e9e723e82",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.12304v1"
+      ],
+      "reason": "提供服务层存活性与不弃KV的机制腿：集群目录对KV对象计数分支引用、KV驻留主机内存共享池、排队期间经RDMA异步取回，配合在线阶段重指派把平均端到端时延由54.4秒降至13.2秒、P95 TTFT由142秒降至10.2秒（基线Dynamo；聚合KV传输量与网络利用率未报告，未报告重复与方差）。",
+      "independence_group": "arxiv:2611.12304"
+    },
+    {
+      "item_id": "106c093ccfdf3a7b18974a2e",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10178v1"
+      ],
+      "reason": "提供保留/回收信号腿：11条trace归一化为带时间戳与执行元数据的KV块访问流，区分单会话与跨会话复用，工作负载/会话/会话结束三信号对存储透明；按负载定制的空闲TTL较全局p90（253秒）最多多保留22%会话内命中、少留40%死状态，会话ID计数比请求级少标4至700倍状态且41%至99%被复用（全部为trace驱动模拟，无TTFT/TPOT与网络指标，放置决策未量化）。",
+      "independence_group": "arxiv:2611.10178"
+    },
+    {
+      "item_id": "e196a92a7cf23d4c8fdd2524",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09474v1"
+      ],
+      "reason": "提供容量配比的需求反馈腿：以幽灵命中反馈自调前缀与位置无关缓存的容量配比，找回前缀缓存漏失token的76.1%，四模型RAG/代理负载中位TTFT较最强基线平均降61.4%（每请求仅一个输出token，TPOT、吞吐与网络利用率未报告）。",
+      "independence_group": "arxiv:2611.09474"
+    }
+  ],
+  "evidence_item_ids": [
+    "6a40c55e6e13c84e9e723e82",
+    "106c093ccfdf3a7b18974a2e",
+    "e196a92a7cf23d4c8fdd2524"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.12304v1",
+    "https://arxiv.org/abs/2611.10178v1",
+    "https://arxiv.org/abs/2611.09474v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.12304",
+    "arxiv:2611.10178",
+    "arxiv:2611.09474"
+  ],
+  "unknowns": [
+    "组合机制无任何单一记录或系统给出组合实测，三证据全部来自同一期（2026-11-11）的三个独立arXiv组。",
+    "存储刻画结论全部来自trace驱动模拟，无TTFT/TPOT与网络指标，放置决策未量化。",
+    "执行信号对存储透明的接口与引用计数目录的跨层衔接未经实现验证，引用计数更新与目录一致性开销未知。",
+    "幽灵命中反馈容量配比的收益在每请求仅一个输出token的负载下测得，多输出与多租户负载下未知。",
+    "该存储刻画研究无网络侧机制，网络侧调度相对内存侧生命周期管理的增值不能由本期证据回答。"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在多轮会话与代理负载trace上回放三层生命周期策略（引用计数存活性、三类执行信号保留/回收、需求反馈容量配比），叠加排队与跨节点异步取回的时延模型，评估组合相对单机制与纯新近度基线的增益。",
+    "inputs": [
+      "带时间戳与执行元数据的多轮会话/代理KV块访问trace",
+      "分支引用计数目录事件流（阶段重指派与请求分叉）",
+      "容量配比档位与反馈阈值",
+      "空闲TTL与信号组合策略档位"
+    ],
+    "baselines": [
+      "新近度（LRU）驱动的保留与回收",
+      "全局p90空闲TTL（证据内基线，253秒）",
+      "静态容量配比（无反馈）",
+      "请求级状态标记（无会话ID计数）"
+    ],
+    "metrics": [
+      "会话内命中率与跨会话复用率",
+      "死状态占用比例与内存占用",
+      "被回收后需重取或重算的KV字节数",
+      "模拟P95 TTFT与排队期异步取回命中比例"
+    ],
+    "support_criteria": [
+      "同等内存预算下会话内命中率提升且死状态占用下降，同时重取/重算字节不显著增加",
+      "反馈配比较静态配比在负载摆动下保持更稳定的命中率"
+    ],
+    "reject_criteria": [
+      "引用计数或执行信号维护开销抵消保留收益",
+      "服务层无法以可接受开销暴露存活性或获得会话语义，接口假设不成立"
+    ],
+    "limitations": [
+      "trace回放与排队时延模型不能覆盖真实RDMA传输抖动与目录一致性开销",
+      "信号接口与引用计数目录的组合需自行实现，无现成系统可对照"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea（与容量规划闭环candidate_15d532fcd3f21efeb738的部署前定容、会话容量定尺candidate_8db9a442e207f396e56f的闭式命中率估计、主机权威补取调度candidate_c8428382ea225164c364的传输侧重填以及热前缀复制Idea idea_08f0269ef7fd181c9968的放置侧机制均不同，核心增量是运行期存活性+执行信号+反馈配比的跨层KV生命周期管理），但组合机制无任何单一记录或系统给出组合实测，三条证据全部来自同一期，存储刻画结论仅为trace驱动模拟且无TTFT/TPOT与网络指标，执行信号接口与引用计数目录的跨层衔接未经实现验证，缺独立支持与适用边界。",
+  "related_candidate_ids": [
+    "candidate_15d532fcd3f21efeb738",
+    "candidate_8db9a442e207f396e56f",
+    "candidate_c8428382ea225164c364"
+  ],
+  "related_idea_ids": [
+    "idea_08f0269ef7fd181c9968"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_3e4c4aa143d9b32d2f1b",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且身份区别于既有候选与Idea（与容量规划闭环candidate_15d532fcd3f21efeb738的部署前定容、会话容量定尺candidate_8db9a442e207f396e56f的闭式命中率估计、主机权威补取调度candidate_c8428382ea225164c364的传输侧重填以及热前缀复制Idea idea_08f0269ef7fd181c9968的放置侧机制均不同，核心增量是运行期存活性+执行信号+反馈配比的跨层KV生命周期管理），但组合机制无任何单一记录或系统给出组合实测，三条证据全部来自同一期，存储刻画结论仅为trace驱动模拟且无TTFT/TPOT与网络指标，执行信号接口与引用计数目录的跨层衔接未经实现验证，缺独立支持与适用边界。",
+      "evidence_item_ids": [
+        "6a40c55e6e13c84e9e723e82",
+        "106c093ccfdf3a7b18974a2e",
+        "e196a92a7cf23d4c8fdd2524"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

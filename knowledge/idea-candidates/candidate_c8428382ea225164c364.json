@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_c8428382ea225164c364",
+  "identity": {
+    "problem_key": "pd_kv_handoff_full_copy_semantics",
+    "mechanism_key": "host_authoritative_ranked_refill_scheduling",
+    "target_key": "pd_disaggregated_kv_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "主机权威副本下按重要性排序的网络补取替代全量KV交接",
+  "problem": "PD解耦把跨节点KV交接当作必须整体搬运的全量拷贝：SmartGen虽按重要性分阶段传输并利用Attention期空闲后台补齐，但其对象仍是prefill侧GPU上的完整KVCache；HiSparse与FlashOffloading则证明全集放主机、足迹留GPU的分层驻留在单机内即可支撑稀疏解码甚至512k/1M长序列。没有任何记录把两者接起来：当解码侧主机DRAM可作权威副本时，网络应从全量拷贝载体降级为按需补取路径，当前交接语义浪费了已被证明的内存侧容量。",
+  "hypothesis": "若解码节点以主机DRAM持有权威KV副本、HBM仅保留阶段化热集，则把交接改为重要性排序、以接收端消费窗口为截止期的网络补取（缺失查询经反向稀疏索引并入top-k过程，prefill侧仍按SmartGen分阶段推送滚动层组），可在TTST与P95对齐全量交接的同时把跨网字节缩减为缺失比例，且收益随带宽收紧而扩大（SmartGen中网络从32降至15Gbps时改善由2.5倍增至3.3倍）。",
+  "mechanism": "prefill侧按层组滚动推送解码必需KV（SmartGen式分阶段传输）；解码侧主机DRAM持有权威副本，HBM按阶段切换驻留粒度（prefill四层滚动缓存逐层回载、decode 16k热缓存），反向稀疏索引把缺失查询并入top-k生成补取请求；网络调度器把补取请求映射为重要性排序、截止期对齐层间计算窗口的传输，并用HiSparse式跨层预取隐藏往返时延，接收端不消费的KV永不进入网络。",
+  "target": "PD解耦推理的跨节点KV交接与解码侧分层存储路径",
+  "expected_effect": "TTST与P95交接完成时间对齐全量传输，跨网字节按缺失比例缩减，512k及以上长序列在带宽受限档位仍可服务；上限由不可预取的同步缺失比例（HiSparse约27%）与补取带宽共同决定。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-09",
+    "rationale": "跨期三条记录分别给出重要性分阶段网络传输（SmartGen）、主机分层KV支撑稀疏解码（HiSparse）与主机DRAM权威副本的阶段化驻留（FlashOffloading），联合支持一个无任何单点来源的权威副本加按序网络补取交接机制。"
+  },
+  "evidence": [
+    {
+      "item_id": "081c683d89c0a8496e81e918",
+      "issue_date": "2026-08-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.28150v1"
+      ],
+      "reason": "SmartGen证明PD切换中按KV重要性分配传输时机：离线画像识别的重要KV块在Prefill期间提前推送，Decode阶段把选择结果拆成本地加载与远端GDR RPC两路并行获取，其余KV在Attention期间利用空闲CPU/NIC后台补齐；GovReport上TTST相对完整传输最高降低4.3倍，网络从32降至15Gbps时改善由2.5倍增至3.3倍，给出重要性排序网络传输及其带宽敏感性依据；其KV权威副本仍在prefill侧GPU，收益依赖KV选择与画像质量。",
+      "independence_group": "arxiv:2607.28150"
+    },
+    {
+      "item_id": "96f9b8d4b93361b40d3bb445",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.07009v1"
+      ],
+      "reason": "HiSparse证明完整KV历史放主机内存、解码足迹由固定GPU缓存限定后，融合CUDA kernel在解码图内完成命中检测、LRU替换与主机取数，对跨层共享选择的模型做精确逐层预取，三族稀疏注意力峰值吞吐最高提升4.7倍，给出主机层加跨层预取可隐藏大部分搬运的单机依据；约27%同步IO不可预取，主机内存构成第二上限。",
+      "independence_group": "arxiv:2608.07009"
+    },
+    {
+      "item_id": "7b26f3ab98225b6ba4a657f8",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07542v1"
+      ],
+      "reason": "华为FlashOffloading证明主机DRAM可持有权威KV副本并按阶段切换驻留粒度：prefill用四层滚动HBM缓存逐层回载并与计算重叠，decode用16k热缓存、反向稀疏索引把缺失查询并入top-k过程；32卡Ascend910C与GLM-5.2上prefill吞吐最高升1.38倍、decode最高1.91倍，512k与1M序列仅在双向卸载下可服务，给出权威副本侧机制依据；吞吐提升以TPOT恶化为代价、依赖模型原生稀疏性且无跨节点KV传输指标。",
+      "independence_group": "arxiv:2611.07542"
+    }
+  ],
+  "evidence_item_ids": [
+    "081c683d89c0a8496e81e918",
+    "96f9b8d4b93361b40d3bb445",
+    "7b26f3ab98225b6ba4a657f8"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2607.28150v1",
+    "https://arxiv.org/abs/2608.07009v1",
+    "https://arxiv.org/abs/2611.07542v1"
+  ],
+  "independence_groups": [
+    "arxiv:2607.28150",
+    "arxiv:2608.07009",
+    "arxiv:2611.07542"
+  ],
+  "unknowns": [
+    "FlashOffloading无任何跨节点KV传输指标，反向稀疏索引在网络往返时延下的缺失行为未知",
+    "吞吐提升以TPOT恶化为代价的权衡在补取路径下是否仍成立未验证",
+    "解码侧权威副本与prefill侧KV的一致性维护及多租户补取流隔离无记录覆盖"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在PD两节点互连仿真器上叠加主机分层存储命中模型（固定GPU足迹加反向稀疏索引缺失率）、重要性排序补取调度与层间计算窗口模型，对照全量交接与分阶段推送基线。",
+    "inputs": [
+      "长上下文解码trace与稀疏索引缺失分布",
+      "主机DRAM容量与GPU热集大小",
+      "互连带宽（32/15Gb/s档位）与RTT",
+      "不可预取同步缺失比例档位（约27%基点）"
+    ],
+    "baselines": [
+      "全量KV交接",
+      "SmartGen式重要性分阶段全量推送",
+      "HiSparse式单机分层解码（无跨节点）",
+      "FlashOffloading式双向卸载单机基线"
+    ],
+    "metrics": [
+      "TTST与P95交接完成时间",
+      "跨网传输字节",
+      "TPOT与30ms TPOT约束下吞吐",
+      "512k/1M序列可服务性"
+    ],
+    "support_criteria": [
+      "尾时延对齐全量交接且跨网字节按缺失比例缩减，带宽受限档位收益进一步扩大"
+    ],
+    "reject_criteria": [
+      "同步缺失占比或网络RTT超出层间计算窗口，使补取时延击穿TPOT约束"
+    ],
+    "limitations": [
+      "仿真无法复现真实RDMA实现与稀疏索引的交互",
+      "缺失分布与重要性画像漂移仅以档位建模"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "主机权威副本与重要性分阶段网络传输两半各自有已发布依据，但组合无任何实测；FlashOffloading无跨节点指标、收益依赖模型原生稀疏性且以TPOT恶化为代价，HiSparse约27%同步IO不可预取直接约束补取上限；与单机分层解码（candidate_b74aefcc6da4997763c0）、外存多径读取（candidate_ed74470ce5a24fb550d2）和按需稀疏传输（candidate_ac114558ae64d984a62f）的谱系边界需要人判定，故暂缓。",
+  "related_candidate_ids": [
+    "candidate_b74aefcc6da4997763c0",
+    "candidate_ed74470ce5a24fb550d2",
+    "candidate_ac114558ae64d984a62f"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-08-02",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_2d36d3a30f0bd9c7c727",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "主机权威副本与重要性分阶段网络传输两半各自有已发布依据，但组合无任何实测；FlashOffloading无跨节点指标、收益依赖模型原生稀疏性且以TPOT恶化为代价，HiSparse约27%同步IO不可预取直接约束补取上限；与单机分层解码（candidate_b74aefcc6da4997763c0）、外存多径读取（candidate_ed74470ce5a24fb550d2）和按需稀疏传输（candidate_ac114558ae64d984a62f）的谱系边界需要人判定，故暂缓。",
+      "evidence_item_ids": [
+        "081c683d89c0a8496e81e918",
+        "96f9b8d4b93361b40d3bb445",
+        "7b26f3ab98225b6ba4a657f8"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

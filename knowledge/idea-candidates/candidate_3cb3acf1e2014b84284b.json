@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_3cb3acf1e2014b84284b",
+  "identity": {
+    "problem_key": "fixed_operator_split_heterogeneous_inference",
+    "mechanism_key": "compile_time_dp_operator_host_search",
+    "target_key": "heterogeneous_accelerator_operator_placement"
+  },
+  "idea_type": "solution_concept",
+  "title": "编译期以动态规划为异构加速器间LLM推理的算子级划分选宿主",
+  "problem": "异构LLM推理沿用固定prefill/decode或注意力/FFN切分，难随负载与硬件调整，无法利用部分算子可由存算类加速器承担的异构能力。",
+  "hypothesis": "若在编译期以画像的算子执行与通信代价、设备能力与内存约束对计算图做动态规划搜索并配Pareto剪枝、为每个算子选定宿主，部分算子覆盖的加速器以子图执行器接入vLLM，则在注意力/FFN切分之上降低单步解码时延。",
+  "mechanism": "编译期以计算图动态规划逐算子选定宿主：搜索代价来自画像的算子执行与通信代价、设备能力与内存约束，配Pareto剪枝；仅覆盖部分算子的加速器以子图执行器接入vLLM。",
+  "target": "异构加速器（含存算类加速器）上LLM推理的算子级宿主选择与划分层",
+  "expected_effect": "对注意力/FFN切分，Bamba 9B单步解码约1.7-3.2倍、Llama 8B约2.2-1.1倍；大批量时传输时延掩盖收益，多数划分退回GPU。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的编译期动态规划算子宿主选择机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "f64c6bb8eabfaffd7081a26e",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06513v1"
+      ],
+      "reason": "《HELIX以编译期动态规划在异构加速器间做算子级LLM推理划分》给出机制与对照：以画像的算子执行与通信代价、设备能力与内存约束做动态规划搜索配Pareto剪枝，部分算子覆盖的加速器以子图执行器接入vLLM；对注意力/FFN切分Bamba 9B单步解码约1.7-3.2倍、Llama 8B约2.2-1.1倍，大批量时传输时延掩盖收益、多数划分退回GPU。",
+      "independence_group": "arxiv:2611.06513"
+    }
+  ],
+  "evidence_item_ids": [
+    "f64c6bb8eabfaffd7081a26e"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.06513v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.06513"
+  ],
+  "unknowns": [
+    "结果为画像估计的单步解码时延而非端到端服务指标",
+    "大批量时传输时延掩盖收益、多数划分退回GPU，收益区间的批量边界未定量",
+    "3DCIM与DRAM-PIM多为仿真，3.5倍未验证",
+    "仅单一arXiv独立组，且本文未给出网络侧与KVCache机制"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在GPU与存算类加速器混合测试床上复现编译期动态规划算子宿主选择与子图执行器接入，对照固定prefill/decode与注意力/FFN切分，补测端到端解码时延与吞吐随批量的变化。",
+    "inputs": [
+      "异构加速器组合与设备能力、内存约束画像",
+      "算子执行与通信代价画像",
+      "批量档位扫描（含传输时延主导段）",
+      "部分覆盖加速器的vLLM子图执行器接入"
+    ],
+    "baselines": [
+      "固定prefill/decode切分",
+      "注意力/FFN切分（证据内基线）",
+      "全GPU放置"
+    ],
+    "metrics": [
+      "单步解码时延",
+      "端到端解码时延与吞吐",
+      "跨设备传输时延占比",
+      "划分退回GPU的负载段"
+    ],
+    "support_criteria": [
+      "小批量段单步解码收益复现且端到端时延同向改善，大批量段退化行为与画像预测一致"
+    ],
+    "reject_criteria": [
+      "端到端口径下收益消失，或画像估计与实测偏差过大使动态规划选择失效"
+    ],
+    "limitations": [
+      "证据内结果为画像估计的单步解码时延，3DCIM与DRAM-PIM多为仿真"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv独立组，结果为画像估计的单步解码时延而非端到端指标、3DCIM与DRAM-PIM多为仿真且3.5倍未验证、大批量退化边界未定量；且该记录同日已进入idea_f7841984fcce6a274881证据链作为相邻证据，独立成案还是并入该Idea需人工世系决定。",
+  "related_candidate_ids": [
+    "candidate_4712cdbe2d8960143688"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_12a485d0ce5daa88841",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea，但证据仅单一arXiv独立组，结果为画像估计的单步解码时延而非端到端指标、3DCIM与DRAM-PIM多为仿真且3.5倍未验证、大批量退化边界未定量；且该记录同日已进入idea_f7841984fcce6a274881证据链作为相邻证据，独立成案还是并入该Idea需人工世系决定。",
+      "evidence_item_ids": [
+        "f64c6bb8eabfaffd7081a26e"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

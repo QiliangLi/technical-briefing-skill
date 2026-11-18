@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_e8ac8cc5cd625623e8dd",
+  "identity": {
+    "problem_key": "mixed_traffic_no_static_eviction_winner",
+    "mechanism_key": "shadow_replay_online_policy_switching",
+    "target_key": "shared_prefix_cache_hit_rate_and_ttft"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "混合流量下影子重放在线切换驱逐策略的命中率与端到端收益假设",
+  "problem": "单轮、多轮与 Agent 请求混合到达时没有静态驱逐策略始终占优，vLLM 默认 LRU 最多落后最优策略 22.4 个百分点；引擎侧逐个内置语义驱逐（会话引用感知、Agentic 感知 LRU）又要求预先知道流量形态，缺少请求元数据的共享推理集群无法直接采用。",
+  "hypothesis": "仅凭缓存观测（旁路影子副本加块哈希流量重放）在线切换驱逐策略，能在真实混合流量上把命中率维持在逐段最优策略 3 个百分点以内、影子副本内存开销不超过缓存容量 5%，并把至少 3 个百分点的命中率增益兑现为不低于 10% 的 TTFT P50 改善；若命中率增益无法转化为 TTFT/吞吐改善、或影子重放与切换开销抵消收益，则在线策略切换只应作为命中率工程而非服务性能方案。",
+  "mechanism": "在引擎旁运行 LRU 与 S3FIFO 等影子副本，每 15 分钟只用块哈希重放近期流量并比较模拟命中率，把在线驱逐切到模拟更优的策略，不依赖请求类型或提示内容元数据。",
+  "expected_effect": "命中率平均比默认 LRU 高约 5 个百分点、距逐段最优约 2 个百分点（对照 WAKMan 合成轨迹上 2.04 对 LRU 7.09、S3FIFO 2.53 的差距），并在真实流量上把命中率增益传导为 TTFT/吞吐改善。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "262a10b7f9c473a53e199f85",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36355v1"
+      ],
+      "reason": "WAKMan 实测混合流量下没有静态驱逐策略占优（默认 LRU 最多落后最优 22.4 个百分点），旁路 LRU/S3FIFO 影子副本加 15 分钟块哈希重放的在线切换把与最优的平均命中率差距压到 2.04 个百分点、平均命中率比 LRU 高 5 个百分点——机制与命中率收益的直接证据；其边界（全部合成轨迹、只报告命中率）正是本假设要补的端到端环节。"
+    },
+    {
+      "item_id": "8ebfdd80885029eae2fed50a",
+      "issue_date": "2026-10-14",
+      "source_urls": [
+        "https://github.com/sgl-project/sglang/releases/tag/v0.5.21"
+      ],
+      "reason": "SGLang 0.5.21 的 Agentic 感知 LRU（opt-in）在并发 32、4x B300 下把 p99 ITL 降 43.9%，证明驱逐策略选择对时延指标有实质影响且不同流量类别偏好不同策略；跨条目推断(inferred)：这构成『驱逐策略需按流量形态选择』的引擎侧佐证。"
+    },
+    {
+      "item_id": "37d70c4e94dbbab119def6ba",
+      "issue_date": "2026-09-16",
+      "source_urls": [
+        "https://github.com/sgl-project/sglang/releases/tag/v0.5.17"
+      ],
+      "reason": "SGLang v0.5.17 引入会话引用感知驱逐、活跃会话引用的前缀不被逐出，说明通用 LRU 假设在会话/agentic 流量下失灵、驱逐信号需要利用任务语义；跨条目推断(inferred)：与 Agentic LRU 共同构成静态单策略失灵的前置证据。"
+    },
+    {
+      "item_id": "44882fac832bfa84819f3cb4",
+      "issue_date": "2026-10-21",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.15366v1"
+      ],
+      "reason": "组合式离散事件模拟器显示 LRU 加 60 秒空闲 TTL 后 KV 占用降 86.9% 以上而 TTFT 升幅不超过 7.4%（仅模拟、GPU/主机两层），说明驱逐策略选择直接改变占用与时延权衡；跨条目推断(inferred)：重放式模拟同时是策略在线比选的可行载体。"
+    },
+    {
+      "item_id": "d51e96cd99400f8cb09ffe77",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02766v1"
+      ],
+      "reason": "PCR 把前缀块组留存超时化为最大权闭包、一次最小割精确求解，39,632 条 Mooncake 请求回放中相干超时在 120 个组合的 118 个达无约束最优，低价位命中率与全局 TTL 相当、平均驻留块从 715.97 降至 69.85（全部离线回放、无 TTFT/吞吐指标）；跨条目推断(inferred)：留存/驱逐维度的离线精确最优解可直接充当在线切换策略评估的 oracle 上限，重放式比选方法论与影子重放在线切换同构。"
+    },
+    {
+      "item_id": "954a38c6f86e6cf1050cee83",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09715v1"
+      ],
+      "reason": "IAC 实测意图感知驱逐把 SGLang 上 ShareChat 命中率从 LRU 的 12.2% 提到 34.6%（140K 容量）、Qwen-1.5-110B 在 5 请求/秒下 TTFT 从 6.98 秒降至 3.76 秒（回放公开对话轨迹、单一 4xA100 测试床、非在线生产验证），首次量化驱逐策略选择的命中率增益向 TTFT 的传导；跨条目推断(inferred)：支持『驱逐策略需匹配流量形态且收益可传导端到端』，但其依赖意图元数据，不能直接证明无元数据影子切换路径的传导效率。"
+    },
+    {
+      "item_id": "8f9c78115b218621b855fc32",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.39819v1"
+      ],
+      "reason": "KVTether 把消息生命周期映射为 KV 状态驱动三级放置（Harness 侧八个消息级原语异步导出、废弃 KV 直接回收、暂存 KV 按最久等待优先保留），生产轨迹重放中较 LMCache 端到端时延最高降 26.3%、任务成本平均降 40.0%、高缓存压力下命中率 49.5% 对 LRU 的 10.2%（重放用匹配 token 长度的随机提示、任务成本为估算值）；跨条目推断(inferred)：与 IAC 同读为语义信号驱逐可同时改善命中率与时延的证据，但同样依赖 Harness 导出的生命周期元数据。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "命中率增益向 TTFT/吞吐传导在无元数据影子切换路径上仍无直接证据（IAC/KVTether 已给出有语义元数据驱逐的传导：命中率 12.2%→34.6% 伴随 TTFT 6.98→3.76 秒、49.5% 对 10.2% 伴随时延最高降 26.3%，但均为回放口径）",
+    "真实生产混合流量与作者自建合成轨迹的策略排序是否一致",
+    "影子副本内存与重放 CPU 开销在高吞吐集群上的占比",
+    "策略切换瞬间的缓存部分失效与命中率抖动",
+    "多机共享缓存下策略切换的一致性与协同",
+    "离线最小割最优留存解与在线影子重放切换解在真实流量上的差距（PCR 证据全部为离线回放）"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "单节点 vLLM（或 SGLang）加旁路影子副本（LRU 与 S3FIFO），7-8B 级模型起步（如 Qwen3-8B），并在一个 30B+ 或 MoE 模型上复测；不外推逾千亿参数闭源模型",
+    "inputs": [
+      "自采真实混合流量回放（单轮/多轮/Agent 三类混合），另加 WAKMan 的 20 个合成轨迹作对照",
+      "缓存容量 0.25-4 倍工作集扫描",
+      "切换间隔 5-60 分钟扫描",
+      "影子副本策略数 2-3（LRU/S3FIFO/空闲 TTL）"
+    ],
+    "baselines": [
+      "vLLM 默认 LRU",
+      "静态 S3FIFO",
+      "离线逐段最优策略（oracle 上界）",
+      "会话引用感知或 Agentic LRU 类语义驱逐（可获得元数据时）"
+    ],
+    "metrics": [
+      "命中率",
+      "TTFT P50/P95",
+      "吞吐与 TPOT",
+      "影子副本内存与重放 CPU 开销占比",
+      "策略切换次数与切换瞬间命中率抖动"
+    ],
+    "support_criteria": [
+      "命中率距逐段最优≤3 个百分点",
+      "命中率增益≥3 个百分点时 TTFT P50 改善≥10%",
+      "影子副本内存开销≤缓存容量 5%"
+    ],
+    "reject_criteria": [
+      "命中率距逐段最优>5 个百分点",
+      "命中率增益无法转化为任何 TTFT/吞吐改善",
+      "重放与切换开销抵消命中收益"
+    ],
+    "limitations": [
+      "WAKMan 原证据全部来自作者自建合成轨迹且只报告命中率",
+      "未覆盖多机共享缓存与多租户隔离",
+      "未覆盖逾千亿参数闭源模型",
+      "模拟器证据仅验证过 GPU/主机两层且 TTL 结果为模拟值"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-16",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_deb314fd873b06821be3",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据已发布证据新建 Idea：混合流量下影子重放在线切换驱逐策略的命中率与端到端收益假设。",
+      "evidence_item_ids": [
+        "262a10b7f9c473a53e199f85",
+        "8ebfdd80885029eae2fed50a",
+        "37d70c4e94dbbab119def6ba",
+        "44882fac832bfa84819f3cb4"
+      ]
+    },
+    {
+      "event_id": "idea_decision_50527c1ffe97be3ed9c3",
+      "issue_date": "2026-11-09",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增留存超时最优解证据：PCR 用最大权闭包加一次最小割在前缀留存问题上求得精确最优，Mooncake 39,632 条请求回放 118/120 组合达无约束最优、平均驻留块 715.97 降至 69.85，为在线驱逐/留存策略切换补上离线 oracle 上限基准。",
+      "evidence_item_ids": [
+        "d51e96cd99400f8cb09ffe77"
+      ]
+    },
+    {
+      "event_id": "idea_decision_c3daac938b42b395ad73",
+      "issue_date": "2026-11-11",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增意图感知驱逐证据：IAC 在 SGLang 上按意图学习每状态回访概率与对数正态轮间延迟、按中位复用窗口/复用概率/规模字典序驱逐 RadixTree 叶子，ShareChat 命中率 34.6% 对 LRU 的 12.2%、Qwen-1.5-110B 在 5 请求/秒下 TTFT 从 6.98 秒降至 3.76 秒——首次给出驱逐策略选择的命中率增益向 TTFT 兑现的量化传导（回放口径、单一 4xA100 测试床），部分收窄本假设『命中率增益能否传导端到端』的关键未知。",
+      "evidence_item_ids": [
+        "954a38c6f86e6cf1050cee83"
+      ]
+    },
+    {
+      "event_id": "idea_decision_5c317d74751f2ebb3a09",
+      "issue_date": "2026-11-11",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增消息生命周期驱动分层证据：KVTether 把 Harness 侧八个消息级原语异步导出并翻译为 KV 状态驱动三级放置，生产轨迹重放中较 LMCache 端到端时延最高降 26.3%、高缓存压力下命中率 49.5% 对 LRU 的 10.2%，证明语义信号驱逐的命中率与时延可同时改善（重放用匹配 token 长度的随机提示、任务成本为估算值），与 IAC 互为有元数据语义驱逐的传导佐证。",
+      "evidence_item_ids": [
+        "8f9c78115b218621b855fc32"
+      ]
+    }
+  ]
+}

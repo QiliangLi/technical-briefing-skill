@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_889dca162d6c2a05239b",
+  "identity": {
+    "problem_key": "multitier_kv_retention_signal_gap",
+    "mechanism_key": "execution_signal_per_workload_idle_ttl",
+    "target_key": "tiered_kv_storage_retention"
+  },
+  "idea_type": "solution_concept",
+  "title": "以工作负载、会话与会话结束三执行信号驱动多级KV存储的空闲TTL保留与会话级状态标记",
+  "problem": "KV缓存外溢到DRAM与远端内存后，存储层仅凭访问与新近度信号难以区分仍会被复用的状态与死状态，保留与回收决策失准，死状态挤占多层容量。",
+  "hypothesis": "若把工作负载、会话ID与会话结束三个对存储透明的执行信号透出给存储层，按负载定制空闲TTL做保留、按会话而非请求计数并标记状态，可在不加网络机制的前提下比全局阈值保留更多会话内命中并显著减少死状态。",
+  "mechanism": "把KV块访问流归一化为带时间戳与执行元数据的访问序列，区分单会话与跨会话复用；存储层消费三类透明信号：按负载定制空闲TTL决定保留与回收，按会话ID计数与标记状态供后续会话复用，会话结束信号用于及时判死。",
+  "target": "多级KV存储（DRAM与远端内存层）的保留与回收决策层",
+  "expected_effect": "trace驱动模拟中，按负载定制空闲TTL比全局p90（253秒）最多多保留22%会话内命中、少留40%死状态；会话ID计数比请求级少标4至700倍状态，且41%至99%被复用。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "Direct触发项单独给出完整的问题（多级存储保留决策信号不足）、可解释机制（三执行信号加按负载空闲TTL与会话级标记）、目标对象（多级KV存储保留回收决策层）与可测效应（命中率保留、死状态与标记数量对照）。"
+  },
+  "evidence": [
+    {
+      "item_id": "106c093ccfdf3a7b18974a2e",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10178v1"
+      ],
+      "reason": "《KV缓存存储行为刻画：三个执行信号支撑多级存储决策》给出三信号接口机制与11条trace的策略对照：按负载空闲TTL比全局p90最多多保留22%会话内命中、少留40%死状态，会话ID计数比请求级少标4至700倍状态且41%至99%被复用；并明示全部结论来自trace驱动模拟、无TTFT/TPOT等网络与延迟指标、放置决策未量化。",
+      "independence_group": "arxiv:2611.10178"
+    }
+  ],
+  "evidence_item_ids": [
+    "106c093ccfdf3a7b18974a2e"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.10178v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.10178"
+  ],
+  "unknowns": [
+    "全部结论来自trace驱动模拟，未见真实serving系统验证",
+    "未见TTFT、TPOT等网络与延迟指标，保留收益对端到端时延的影响未知",
+    "放置决策未量化，信号只覆盖保留与回收、不覆盖分层放置",
+    "11条trace之外负载与模型组合下信号判别力未知",
+    "三信号接口在存储引擎内的实现与维护开销未测"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在内部多级KV存储的KV块访问trace上回放三信号驱动的按负载空闲TTL与会话级标记，对比全局p90空闲TTL与新近度保留基线，并补记TTFT、TPOT与放置迁移量。",
+    "inputs": [
+      "内部多级KV存储访问trace（含会话ID与执行元数据）",
+      "每负载空闲TTL档位",
+      "会话结束信号来源与延迟"
+    ],
+    "baselines": [
+      "全局p90空闲TTL保留（证据内基线）",
+      "访问与新近度驱动的LRU式保留"
+    ],
+    "metrics": [
+      "会话内命中率",
+      "死状态占比",
+      "标记状态数与复用率",
+      "TTFT",
+      "TPOT",
+      "放置迁移量"
+    ],
+    "support_criteria": [
+      "会话内命中率与死状态占比同时优于两条基线，且TTFT、TPOT无显著劣化"
+    ],
+    "reject_criteria": [
+      "负载漂移使按负载TTL频繁失效需重标定，或信号维护与标记开销吞噬保留收益"
+    ],
+    "limitations": [
+      "内部trace负载特征可能偏离论文11条trace",
+      "trace回放到真实存储系统的外推风险"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且区别于既有候选与Idea，但仅单一arXiv独立组，结论全部来自trace驱动模拟，未见TTFT、TPOT等时延指标且放置决策未量化，缺独立支持与适用边界。",
+  "related_candidate_ids": [
+    "candidate_8db9a442e207f396e56f",
+    "candidate_9746d7c9681dc92f4042",
+    "candidate_b74aefcc6da4997763c0"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_713adab6f86b0fa51425",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且区别于既有候选与Idea，但仅单一arXiv独立组，结论全部来自trace驱动模拟，未见TTFT、TPOT等时延指标且放置决策未量化，缺独立支持与适用边界。",
+      "evidence_item_ids": [
+        "106c093ccfdf3a7b18974a2e"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_d760270aea655f4e561c",
+  "identity": {
+    "problem_key": "wafer_scale_llm_runtime_dynamic_gap",
+    "mechanism_key": "compile_time_per_core_dynamic_scheduling",
+    "target_key": "wafer_scale_llm_inference_serving"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "编译期生成的每核调度表可低开销治理晶圆级LLM推理的运行时动态",
+  "problem": "晶圆级推理栈难以支撑连续批处理与MoE路由带来的运行时动态：现有运行时（如WaferLLM）把动态决策留给集中式协调，只能牺牲时延或限制动态技术并损失吞吐，SRAM驻留的大规模片上算力无法兑现为低时延且高吞吐的推理服务档位。",
+  "hypothesis": "若利用LLM内核类型封闭、动态结构可在编译期确定的特点，把控制消息处理织入编译期生成的每核片上调度表、由片上调度接管连续批处理与MoE路由等动态决策，并按资源受限的段执行免死锁的片上重配置，则晶圆级LLM推理可同时保住低时延与高吞吐，且动态治理每token开销稳定在25至40µs（约7.6%至9.5%）量级。",
+  "mechanism": "编译期生成的每核片上调度表接管运行时动态决策；控制消息处理被织入每核调度表而非独立协调路径；该做法依赖LLM内核类型封闭、动态结构可在编译期确定的前提；片上重配置按资源受限的段执行、免死锁。",
+  "target": "晶圆级加速器上的LLM推理运行时与服务：连续批处理与MoE路由负载（如GPT-OSS-120B解码），对照同硬件的WaferLLM运行时。",
+  "expected_effect": "同硬件对比WaferLLM，GPT-OSS-120B解码吞吐最高提升55.8倍；动态治理每token仅增加25至40µs（约7.6%至9.5%）；若机理成立，SRAM驻留推理可以竞争成本提供低时延服务档位——注意其中对H200集群的优势为理想线性扩展的乐观投影而非实测。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "单条已发布记录（SOSP'26论文MeshRT）同时给出问题（晶圆级推理栈难以支撑连续批处理与MoE路由的运行时动态，只能牺牲时延或限制动态技术并损失吞吐）、可解释机制（编译期生成的每核调度表接管动态决策、控制消息处理织入调度表、资源受限段式免死锁片上重配置）、目标对象（晶圆级LLM推理运行时，对照同硬件WaferLLM）与可检验效应（GPT-OSS-120B解码吞吐最高提升55.8倍、动态治理每token开销25至40µs约7.6%至9.5%）；与既有38个候选及6个Idea的身份元组与含义均不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "fdb0906f107f40f4d270dcde",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08508v1"
+      ],
+      "reason": "MeshRT（SOSP'26）指出晶圆级推理栈难以支撑连续批处理与MoE路由的运行时动态，只能牺牲时延或限制动态技术并损失吞吐；它利用LLM内核类型封闭、动态结构可在编译期确定的特点，把控制消息处理织入编译期生成的每核调度表、由片上调度接管动态决策，并按资源受限的段执行免死锁的片上重配置；同硬件对比WaferLLM，GPT-OSS-120B解码吞吐最高提升55.8倍，动态治理每token仅增25至40µs（约7.6%至9.5%）；同时明示对H200集群优势为理想线性扩展投影、能耗按厂商功率预算估算、吞吐导向场景可低于GPU对比值。",
+      "independence_group": "arxiv:2611.08508"
+    }
+  ],
+  "evidence_item_ids": [
+    "fdb0906f107f40f4d270dcde"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.08508v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.08508"
+  ],
+  "unknowns": [
+    "对H200集群的优势是理想线性扩展的乐观投影而非实测，能耗按厂商功率预算估算；引用与外推须区分实测数字与投影数字",
+    "吞吐导向场景可低于GPU对比值，时延导向与吞吐导向负载上的适用边界未划定",
+    "机理依赖LLM内核类型封闭、动态结构可在编译期确定的前提，超出该前提的动态负载未验证",
+    "单一arXiv v1预印本（SOSP'26论文），缺独立复现；与跨执行域同步消除（candidate_344ecdd2e672a28ef630）等其他治理杠杆的叠加关系未测"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在可及的晶圆级平台或其周期级仿真器上实现编译期生成的每核调度表治理（控制消息处理织入调度表、资源受限段式免死锁片上重配置），运行连续批处理与MoE路由负载，与同硬件WaferLLM式运行时协调基线对照，实测解码吞吐、每token治理开销与时延档位，并以实测集群与功率计口径替代线性投影与厂商功率预算。",
+    "inputs": [
+      "晶圆级加速器或周期级仿真器及其编译工具链",
+      "GPT-OSS-120B等含MoE路由的LLM负载",
+      "连续批处理与混合时延/吞吐导向请求流",
+      "实测功率计（替代厂商功率预算估算）"
+    ],
+    "baselines": [
+      "同硬件WaferLLM运行时",
+      "限制动态技术的静态调度变体",
+      "实测H200集群基准（区分实测与线性投影口径）"
+    ],
+    "metrics": [
+      "解码吞吐（token/s）",
+      "每token动态治理开销（µs与占比）",
+      "请求时延与低时延档位SLO达成率",
+      "实测每token能耗（焦耳）"
+    ],
+    "support_criteria": [
+      "编译期调度治理较运行时协调基线解码吞吐显著提升且治理开销保持在数十µs（约一成内）量级",
+      "实测（非投影）集群对比下SRAM驻留档位的低时延优势方向复现"
+    ],
+    "reject_criteria": [
+      "治理开销随批处理规模或MoE路由动态性超线性增长，或段式重配置出现死锁与资源不可行",
+      "实测时延导向与吞吐导向场景全面劣于GPU对比值且低时延档位不可达"
+    ],
+    "limitations": [
+      "晶圆级硬件可及性受限，首版或仅能在仿真器复现",
+      "对H200集群的对比与能耗须改为实测口径后结论才可比",
+      "仅覆盖LLM类内核形态负载"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且与既有38个候选及6个Idea的身份元组不同；但仅有单一arXiv预印本独立分组支撑，关键外部对比（对H200集群优势）为理想线性扩展投影、能耗按厂商功率预算估算、吞吐导向场景可低于GPU对比值，缺独立复现与实测边界，先观察。",
+  "related_candidate_ids": [
+    "candidate_344ecdd2e672a28ef630"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_8caf76a161e9fc6e9d22",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且与既有38个候选及6个Idea的身份元组不同；但仅有单一arXiv预印本独立分组支撑，关键外部对比（对H200集群优势）为理想线性扩展投影、能耗按厂商功率预算估算、吞吐导向场景可低于GPU对比值，缺独立复现与实测边界，先观察。",
+      "evidence_item_ids": [
+        "fdb0906f107f40f4d270dcde"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_305bb775021457513c1e",
+  "identity": {
+    "problem_key": "gqa_eviction_scoring_ignores_shared_kv_head_groups",
+    "mechanism_key": "shared_kv_head_group_mean_attention_retention",
+    "target_key": "gqa_kv_cache_eviction_policy"
+  },
+  "idea_type": "solution_concept",
+  "title": "GQA驱逐保留信号改用共享KV头组内query头平均注意力",
+  "problem": "KV缓存驱逐算法很少显式陈述假设，改进难以归因；GQA架构下驱逐保留打分沿用逐head口径，未利用共享同一KV头的query头组结构，压缩预算下长上下文质量低于组内平均注意力口径，且驱逐本身的时延代价未被刻画。",
+  "hypothesis": "在GQA模型KV缓存驱逐中，把保留决策改为按共享同一KV头的query头平均注意力打分，可在同等压缩预算下较母算法提升长上下文质量（RULER-4K平均+2.73分、32×压缩最高+12.0）；其收益须与64K上下文TTFT 33.0秒对不驱逐5.94秒的驱逐开销在真实多轮负载下权衡。",
+  "mechanism": "驱逐保留打分改到GQA组粒度：对共享同一KV头的query头注意力取平均，作为该KV条目的保留信号并据此排序驱逐。该变体由松弛假设搜索在Lean证明图上放松母算法单一假设得到：变体须先写新假设与假设命题再写代码，Lean检查仅改动受影响证明段。",
+  "target": "GQA架构LLM的KV缓存驱逐策略（保留打分与驱逐决策点）。",
+  "expected_effect": "RULER-4K较母算法平均+2.73分、32×压缩最高+12.0分；64K上下文TTFT 33.0秒对不驱逐5.94秒；边界为搜索只用200题子集、6500题成绩未留出，计时为单请求batch 1，形式化仍需人工核对。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "单条已发布记录同时给出问题（驱逐算法隐含假设难归因，GQA保留打分未用共享KV头组结构）、可解释机制（按共享同一KV头的query头平均注意力决定保留，松弛假设搜索产出）、目标对象（GQA模型KV缓存驱逐策略）与可检验效应（RULER-4K平均+2.73分、32×压缩最高+12.0；64K TTFT 33.0秒对5.94秒）。"
+  },
+  "evidence": [
+    {
+      "item_id": "e3a1755d2f00a1eb27855e14",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.14844v1"
+      ],
+      "reason": "AutoAssumption给出问题（驱逐算法很少显式陈述假设、改进难以归因；GQA下驱逐保留打分未利用共享同一KV头的query头组结构）、机制（RestoreKV GM把保留决策改为按共享同一KV头的query头平均注意力打分，变体须先写新假设与假设命题再写代码、Lean仅检查受影响证明段）、目标（GQA模型KV缓存驱逐策略）与可检验效应（RULER-4K较母算法平均+2.73分、32×压缩最高+12.0；64K上下文TTFT 33.0秒对不驱逐5.94秒）；边界为搜索只用200题子集、6500题成绩未留出，计时为单请求batch 1，形式化仍需人工核对。",
+      "independence_group": "arxiv:2611.14844"
+    }
+  ],
+  "evidence_item_ids": [
+    "e3a1755d2f00a1eb27855e14"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.14844v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.14844"
+  ],
+  "unknowns": [
+    "搜索只用200题子集且6500题成绩未留出，+2.73平均增益可能部分反映搜索集拟合，未污染留出集上能否复现未知",
+    "计时为单请求batch 1，64K上下文TTFT 33.0秒对不驱逐5.94秒，真实多轮并发serving负载下的驱逐路径开销未量化",
+    "Lean形式化仍需人工核对，89个算法形式化的覆盖与保真度未知",
+    "仅在RULER（4K/64K）口径测量，其他长上下文负载与模型规模的外推未知",
+    "单一预印本，无独立工作线复现",
+    "组内平均注意力信号与页粒度、层异质性预算等其他驱逐信号的组合未评估"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在统一KVCache驱逐框架中实现共享KV头组内query头平均注意力保留打分（RestoreKV GM口径），对照母算法与逐head口径驱逐。",
+    "inputs": [
+      "GQA架构模型（多规模）",
+      "RULER 4K/64K全量6500题留出集（不参与任何搜索或调参）",
+      "压缩预算扫描（含32×档）",
+      "真实多轮并发serving负载的TTFT/吞吐测量"
+    ],
+    "baselines": [
+      "母算法RestoreKV（原始保留打分口径）",
+      "逐head独立打分驱逐",
+      "不驱逐全量KV（质量与时延上界参照）"
+    ],
+    "metrics": [
+      "留出集RULER分数对压缩比曲线",
+      "多轮并发负载下TTFT与serving吞吐",
+      "驱逐打分与驱逐路径运行时开销"
+    ],
+    "support_criteria": [
+      "未参与搜索的6500题留出集上，组内平均注意力口径较母算法复现增益方向与量级（4K平均+2.73、32×最高+12.0）",
+      "多轮并发负载下TTFT开销有界且不抵消质量收益"
+    ],
+    "reject_criteria": [
+      "留出集增益消失，说明为搜索集过拟合",
+      "多轮并发负载下TTFT/吞吐代价超过质量收益",
+      "组内平均不优于全体query头平均等更简单聚合口径"
+    ],
+    "limitations": [
+      "原始证据为单一预印本，搜索子集未与评测留出分离，计时仅单请求batch 1"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有驱逐打分类候选不同义（candidate_4292b1d7d5e7493acb6c与candidate_6fd51f65a129e9c56f02为GQA组内熵权重池化加页帧对齐/冷层降级的预算构造路线、candidate_80a11fa68bdf30c34571为层形状加响应侧未来查询信号、candidate_d4ad44954f43a2562f13与idea_d4ad44954f43a2562f13为打分层深度选择、idea_18458bcb48f7ddff4d4c为驱逐即降级可召回冷层，均非按共享KV头组内query头平均注意力的保留信号），但证据为单一预印本，搜索只用200题子集且6500题成绩未留出、计时为单请求batch 1、形式化仍需人工核对，无独立支持，先观察。",
+  "related_candidate_ids": [
+    "candidate_4292b1d7d5e7493acb6c",
+    "candidate_6fd51f65a129e9c56f02",
+    "candidate_80a11fa68bdf30c34571",
+    "candidate_d4ad44954f43a2562f13"
+  ],
+  "related_idea_ids": [
+    "idea_d4ad44954f43a2562f13",
+    "idea_18458bcb48f7ddff4d4c"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a91fe8549f3b605274a9",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有驱逐打分类候选不同义（candidate_4292b1d7d5e7493acb6c与candidate_6fd51f65a129e9c56f02为GQA组内熵权重池化加页帧对齐/冷层降级的预算构造路线、candidate_80a11fa68bdf30c34571为层形状加响应侧未来查询信号、candidate_d4ad44954f43a2562f13与idea_d4ad44954f43a2562f13为打分层深度选择、idea_18458bcb48f7ddff4d4c为驱逐即降级可召回冷层，均非按共享KV头组内query头平均注意力的保留信号），但证据为单一预印本，搜索只用200题子集且6500题成绩未留出、计时为单请求batch 1、形式化仍需人工核对，无独立支持，先观察。",
+      "evidence_item_ids": [
+        "e3a1755d2f00a1eb27855e14"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

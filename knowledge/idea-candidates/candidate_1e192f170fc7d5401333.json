@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_1e192f170fc7d5401333",
+  "identity": {
+    "problem_key": "mla_kv_bytes_agentic_eviction_recompute",
+    "mechanism_key": "nvfp4_2d_block_quant_with_rope_residual",
+    "target_key": "mla_kv_cache_and_attention_compute"
+  },
+  "idea_type": "solution_concept",
+  "title": "用NVFP4二维块把MLA的KV缓存存储与注意力计算统一降至FP4：仅RoPE通道加FP4残差，等缓存预算压低agentic重算TTFT",
+  "problem": "agentic多轮会话中MLA KV缓存字节占用大，缓存驱逐与重算推高TTFT；等显存预算下FP8等既有格式可驻留的前缀仍不足，复用率受限。",
+  "hypothesis": "若把MLA的KV缓存存储与注意力计算统一量化到NVFP4——仅对误差集中的RoPE通道附加FP4残差补偿，以二维量化块让同一份缓存满足两个BMM的尺度对齐并让两个BMM都在FP4 tensor core执行——则缓存字节可缩至约三分之一、九基准平均精度持平，等缓存预算下p90 TTFT较FP8显著降低，MLA类模型的agentic前缀复用与跨域压缩原语随之获益。",
+  "mechanism": "仅对误差集中的RoPE通道附加FP4残差补偿；二维量化块让同一份缓存同时满足MLA解码两个BMM的尺度对齐；两个BMM均在FP4 tensor core上执行，缓存存储与注意力计算统一降至FP4。",
+  "target": "MLA架构模型推理引擎中的KV缓存存储格式与注意力计算路径（两个BMM），以及以其为压缩原语的agentic多轮前缀缓存复用与跨域传输载荷。",
+  "expected_effect": "对BF16 MLA压缩3.20×/3.05×（DeepSeek-R1/Kimi-K3），九基准平均精度持平；等缓存预算下p90 TTFT较FP8最高降3.5×。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "单条已发布记录同时给出问题（agentic多轮会话缓存驱逐与重算推高TTFT）、可解释机制（RoPE通道FP4残差补偿加二维量化块实现两个BMM的尺度对齐并同跑FP4 tensor core）、目标对象（MLA的KV缓存存储与注意力计算路径）与可检验效应（对BF16 MLA压缩3.20×/3.05×、九基准平均精度持平、等缓存预算下p90 TTFT较FP8最高降3.5×）。"
+  },
+  "evidence": [
+    {
+      "item_id": "30556bb92cbd295f41ff0fab",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.18972v1"
+      ],
+      "reason": "《NVFP4-MLA：MLA的KV缓存与注意力计算统一降至FP4》给出agentic多轮会话缓存驱逐与重算推高TTFT的问题，仅对误差集中的RoPE通道附加FP4残差补偿、二维量化块让同一份缓存满足两个BMM尺度对齐且两个BMM均在FP4 tensor core执行的机制，以及DeepSeek-R1/Kimi-K3上对BF16 MLA压缩3.20×/3.05×、九基准平均精度持平、等缓存预算下p90 TTFT较FP8最高降3.5×的结果；边界为结果全部来自NVIDIA作者在未发售Rubin GPU上的单厂商评估、无跨域或WAN实验。",
+      "independence_group": "arxiv:2611.18972"
+    }
+  ],
+  "evidence_item_ids": [
+    "30556bb92cbd295f41ff0fab"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.18972v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.18972"
+  ],
+  "unknowns": [
+    "单一预印本且全部结果来自NVIDIA作者在未发售Rubin GPU上的单厂商评估，无独立复现",
+    "无跨域或WAN实验，agentic前缀命中率提升与跨域压缩收益仅为项目相关性判断",
+    "九基准仅报告平均精度持平，逐基准与长上下文检索退化数据不可见",
+    "等缓存预算下p90 TTFT较FP8最高降3.5×为等预算对比，绝对吞吐与现有非Rubin硬件上的表现未知"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在开源推理引擎中为MLA实现NVFP4二维块量化与RoPE通道FP4残差补偿、两个BMM走低比特矩阵乘的解码路径；先单节点复测精度与时延，再以多档缓存预算扫描与agentic多轮回放评估前缀复用收益，跨域收益以WAN模拟核算。",
+    "inputs": [
+      "MLA架构模型（DeepSeek-R1/Kimi-K3类）",
+      "agentic多轮会话回放负载",
+      "多档缓存字节预算",
+      "BF16/FP8 MLA与NVFP4-MLA三种格式的缓存与解码路径"
+    ],
+    "baselines": [
+      "BF16 MLA",
+      "FP8量化MLA缓存",
+      "仅量化隐向量、保留位置键的既有MLA量化格式（如RAQ-MLA约2.5比特）"
+    ],
+    "metrics": [
+      "缓存字节压缩比",
+      "九基准逐基准任务精度与BF16的差距",
+      "等缓存预算下p90 TTFT与前缀命中率",
+      "解码吞吐"
+    ],
+    "support_criteria": [
+      "平均精度持平且逐基准无系统性塌陷，同时缓存字节降至BF16约三分之一",
+      "等缓存预算下p90 TTFT显著低于FP8、前缀命中率相应上升"
+    ],
+    "reject_criteria": [
+      "RoPE通道残差补偿不足导致长上下文或检索类任务精度塌陷",
+      "二维块尺度对齐在真实负载分布漂移下失效",
+      "FP4 BMM收益绑定未发售硬件、在现有GPU上不可复现"
+    ],
+    "limitations": [
+      "原始证据来自NVIDIA作者在未发售Rubin GPU上的单厂商评估，无独立复现",
+      "无跨域或WAN实验，跨域与前缀复用收益需自建回放与WAN模拟"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且身份区别于既有候选与Idea（RAQ-MLA是按张量角色拟合可逆变换的约2.5比特离线格式、AutoEMatic是运行时熵驱动的逐层精度选择、Dual-QK是互逆非正交Q/K变换、误差预算候选是残差编码，均非'同一份FP4二维块缓存同时满足两个BMM尺度对齐且仅RoPE通道加残差'的存储-计算统一量化；idea_d994d97852383184acfe为增量与残差压缩且仅将其作为相邻证据吸收），但证据为单一预印本、全部结果来自NVIDIA作者在未发售Rubin GPU上的单厂商评估且无独立复现，无跨域或WAN实验、前缀命中率与跨域收益仅为项目相关性判断，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_a9fd5a6395ecd7254f29",
+    "candidate_94e5100feeae696d7ba8",
+    "candidate_a1008f40dbda996d4400"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ae2d5c9ab18b845468ba",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且身份区别于MLA量化与精度分配类既有候选（角色分离可逆变换、运行时熵驱动精度选择、互逆非正交变换、误差预算残差编码），idea_d994d97852383184acfe仅将其作为相邻证据吸收、无需duplicate处置；但单一预印本、结果全部来自NVIDIA作者在未发售Rubin GPU上的单厂商评估，无跨域或WAN数据，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "30556bb92cbd295f41ff0fab"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

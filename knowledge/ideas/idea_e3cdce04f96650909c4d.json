@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_e3cdce04f96650909c4d",
+  "identity": {
+    "problem_key": "prefix_cache_energy_ceiling_decode_kv_read",
+    "mechanism_key": "prefix_hit_plus_kv_compression_joint_energy_reduction",
+    "target_key": "serving_energy_and_latency_joint_accounting"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "前缀缓存节能上限受解码期KV读取制约、须与KV压缩组合的能耗收益假设",
+  "problem": "大模型推理的 KVCache 收益评估长期以 TTFT/吞吐为口径、缺少解析能耗模型：SIMPLE 四参数定律把单 token 能耗解析分解为预填充摊销、KV 缓存与下一 token 计算三项（13 个稠密模型 H100 轨迹 R2=0.969 且无需逐模型拟合），前缀缓存仅按未缓存输入长度缩放预填充项，节能上限受解码期 KV 缓存读取项制约——估算约 93% 前缀命中下总能耗降 2.7 倍，而命中请求能耗仍为非 agentic 请求的 4.8 倍；命中率工程（驱逐、复用、放置）因此存在结构性能耗上限，缺一条『命中率提升×KV 体积压缩』联合优化能否突破该上限的可检验假设。",
+  "hypothesis": "在前缀命中率≥80% 的多轮/agentic 服务负载上，仅提升命中率的边际能耗收益递减（解码期 KV 读取项主导能耗），而把命中率工程与 KV 体积压缩（在线低秩截断或 FP8/4 比特量化，把 KV 读取体积压到 50% 及以下）组合后，每 token 能耗较仅缓存基线再降≥25% 且任务质量损失≤1 分；若能耗拆解显示解码期 KV 读取项占比<20%、或压缩引入的 SVD/量化计算能耗抵消读取节省，则前缀缓存的能耗收益应视为已接近上限，不应再为能耗目标追加缓存工程投入。",
+  "mechanism": "能耗按 SIMPLE 三项解析分解计量：预填充摊销、KV 缓存读取、下一 token 计算；命中率收益只作用于第一项，KV 体积压缩（按提示在线截断 SVD 或低精度 KV）按比例缩减第二项的读取字节数，两者作用项不相交因而可叠加；评估时对能耗与时延两种收益口径分别验收（低精度 KV 已有吞吐升而 TTFT 反增的先例）。",
+  "expected_effect": "高命中负载下组合方案每 token 能耗较仅缓存基线再降 25% 以上（对照 SIMPLE 估算：93% 命中降 2.7 倍、命中请求仍为非 agentic 的 4.8 倍），质量保持在全量 KV 的 1 分以内（对照 AttSVD 50% 预算 LongBench 持平、实测 KV 显存 0.502 倍），并把命中率-能耗-时延三条收益曲线分离呈现以支撑先投缓存还是先投压缩的决策。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "a9fc4d466fcba05d8952502c",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.03330v1"
+      ],
+      "reason": "直接证据：SIMPLE 四参数定律把单 token 能耗解析分解为预填充摊销、KV 缓存与下一 token 计算三项（13 个稠密模型 H100 轨迹 R2=0.969 且无需逐模型拟合），前缀缓存仅按未缓存输入长度缩放预填充项、节能上限受解码期 KV 读取项制约，估算约 93% 前缀命中下总能耗降 2.7 倍而命中请求能耗仍为非 agentic 的 4.8 倍（系数绑定 H100 与 TensorRT-LLM、不建模批大小与并发、未覆盖 MoE，焦耳数为定律估算而非实测）——同时给出命中率收益的上限与未被缓存触及的解码期项。"
+    },
+    {
+      "item_id": "d302b5fce18bcf6d3dbefb3f",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.06927v1"
+      ],
+      "reason": "KV 体积压缩杠杆证据：AttSVD 按当前提示注意力几何在线截断 SVD，不丢 token 而按保留秩成比例削减 KV 显存，50% 预算下 Phi-4-14B 与 Qwen3-8B 的 LongBench 均分与稠密缓存持平、实测 KV 显存为稠密的 0.502 倍（在线 SVD 运行时代价未给出、仅单流质量评测）；跨条目推断(inferred)：按比例缩减 KV 读取体积是作用于 SIMPLE 定律解码期 KV 读取项的候选杠杆，其能耗效果未测。"
+    },
+    {
+      "item_id": "03ef64972818234359298513",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://github.com/vllm-project/vllm/releases/tag/v0.32.0"
+      ],
+      "reason": "引擎侧低精度杠杆证据：vLLM v0.32.0 把 FP8 等低精度 KVCache 按架构设为默认，PR 基准称 SM100 上每 rank KV 显存减半、吞吐增 2.3-5.5%、TTFT 增 7-11%（全部为 PR 基准且未给方法学、无命中率或利用率实测）；跨条目推断(inferred)：不改分页逻辑倍增 KV 密度的现成杠杆与命中率工程正交，且其吞吐升而 TTFT 反增正是假设要求分离验收的能耗/时延口径冲突实例。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "解码期 KV 读取项在真实批大小与并发下的能耗占比（SIMPLE 系数不建模批大小与并发）",
+    "MoE 模型与非 H100 硬件上三项拆解是否同样成立（SIMPLE 系数绑定 H100 与 TensorRT-LLM、未覆盖 MoE）",
+    "在线截断 SVD 的计算能耗是否抵消读取节省（AttSVD 运行时代价未公开）",
+    "低秩/低精度 KV 与前缀缓存命中路径的兼容性及对命中率的反噬",
+    "能耗与时延口径反向时的目标权衡（FP8 KV 吞吐 +2.3-5.5% 而 TTFT +7-11% 的先例）"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "7B-14B 级开源稠密模型（Qwen3-8B 与 Phi-4-14B，对齐 AttSVD 口径）加一款 30B 级或 MoE 模型检验外推；SIMPLE 系数不外推闭源模型",
+    "inputs": [
+      "前缀命中率扫描 50%/80%/93%/99%（多轮 agentic 与检索混合流量回放）",
+      "KV 压缩档位：无压缩 / FP8 / 4 比特 / 在线截断 SVD 50% 秩 / 25% 秩",
+      "上下文长度 8K/32K/128K",
+      "能耗计量用 GPU 功耗采样（DCGM/nvidia-smi 口径）并区分预填充与解码阶段"
+    ],
+    "baselines": [
+      "无前缀缓存全量重算",
+      "仅前缀缓存（无压缩）",
+      "仅 KV 压缩（无缓存）",
+      "SIMPLE 定律估算值（解析对照）"
+    ],
+    "metrics": [
+      "每千 token 能耗（焦耳）",
+      "预填充/解码能耗拆解占比",
+      "TTFT P50/P95 与吞吐（与时延口径并列）",
+      "任务质量（LongBench/RULER）"
+    ],
+    "support_criteria": [
+      "命中率≥80% 时组合方案每 token 能耗较仅缓存基线再降≥25%",
+      "任务质量损失≤1 分",
+      "实测能耗与 SIMPLE 估算偏差在 2 倍以内"
+    ],
+    "reject_criteria": [
+      "解码期 KV 读取项能耗占比<20% 且压缩无显著能耗收益",
+      "压缩计算能耗抵消读取节省（组合能耗高于仅缓存基线）",
+      "任务质量损失>2 分"
+    ],
+    "limitations": [
+      "SIMPLE 焦耳数为定律估算而非实测、系数绑定 H100 与 TensorRT-LLM",
+      "AttSVD 在线 SVD 运行时代价未公开、能耗抵消风险未知",
+      "未覆盖 MoE 批处理能耗交互与多机部署"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-10-27",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_9f5f78ec0e9d2652ddd4",
+      "issue_date": "2026-11-13",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据已发布证据新建 Idea：前缀缓存节能上限受解码期KV读取制约、须与KV压缩组合的能耗收益假设。",
+      "evidence_item_ids": [
+        "a9fc4d466fcba05d8952502c",
+        "d302b5fce18bcf6d3dbefb3f",
+        "03ef64972818234359298513"
+      ]
+    }
+  ]
+}

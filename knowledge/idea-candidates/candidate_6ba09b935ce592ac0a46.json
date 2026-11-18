@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6ba09b935ce592ac0a46",
+  "identity": {
+    "problem_key": "repeated_exploration_llm_call_cost",
+    "mechanism_key": "write_verified_rule_memory_dual_speed_fallback",
+    "target_key": "coding_agent_harness_decision_loop"
+  },
+  "evidence": [
+    {
+      "item_id": "e496991ed8edb744b411a9e7",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10748v1"
+      ],
+      "reason": "直接实测写入门加双速路径：LLM提案过模式校验与五步前向推演才写入Neo4j规则记忆，2.6毫秒已验证回退承接控制路径、1.59秒补全后台执行；Highway上1000轮内LLM调用率从70.0%降至12.81%、碰撞率7.05%降至5.67%，冻结记忆对照停在9.63%，说明固化的增益来自写入前验证而非记忆本身；边界为评估限于战术决策层、感知假设干净、碰撞率并非可部署水平且PE不含1.59秒后台获取管线。",
+      "independence_group": "arxiv:2611.10748"
+    },
+    {
+      "item_id": "88371d86df6d811e269cabbd",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.11060v1"
+      ],
+      "reason": "写入前核验一侧的独立实测：异步curator用最小权限只读世界工具在写入前检查并刷新候选记忆，区分偶发答案与可复用关系，探查不在用户关键路径；CLBench通过率39%升到73%、每问查询8.8降到4.7、任务成本$3.38降到$1.68；边界为增益依赖剩余证据缺口、评测限于企业数据分析与咨询场景。",
+      "independence_group": "arxiv:2609.11060"
+    },
+    {
+      "item_id": "aa7e960b767618e9bbe78462",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10022v1"
+      ],
+      "reason": "复用时校验与回退一侧的独立实测：冷执行编译为参数化胶囊，复用前重放校验，执行器串接程序传值、失败或需判断才交还模型、原技能保留作回退；87项SkillsBench任务token均值降80.9%（Sonnet）与74.3%（Opus）且奖励持平；边界为仅SkillsBench与Claude Code、胶囊源自单次执行、检索与失效未测。",
+      "independence_group": "arxiv:2611.10022"
+    }
+  ],
+  "evidence_item_ids": [
+    "e496991ed8edb744b411a9e7",
+    "88371d86df6d811e269cabbd",
+    "aa7e960b767618e9bbe78462"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.10748v1",
+    "https://arxiv.org/abs/2609.11060v1",
+    "https://arxiv.org/abs/2611.10022v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.10748",
+    "arxiv:2609.11060",
+    "arxiv:2611.10022"
+  ],
+  "first_seen_issue": "2026-09-30",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_f169de8778c0585fd6e4",
+      "issue_date": "2026-11-16",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且三条跨期独立记录联合支撑任何单条未陈述的门控固化语义；但直接证据REINS限于Highway战术决策层（感知假设干净、碰撞率并非可部署水平、PE不含1.59秒后台获取管线），迁移到编码Agent探索循环无任何记录测量；且与既有复用族候选（candidate_60d0a7b86b01d6a58334回执激活决策图、candidate_d07fef8532bb5bcc7c10离线MDP策略、candidate_df404b46c34bf590667b技能胶囊）及本期已吸收REINS为“记忆写入前核验”一侧证据的idea_876c619ed473b24b78bc的谱系分工需人工裁定，先缓议。",
+      "evidence_item_ids": [
+        "e496991ed8edb744b411a9e7",
+        "88371d86df6d811e269cabbd",
+        "aa7e960b767618e9bbe78462"
+      ],
+      "actor": "agent"
+    }
+  ],
+  "idea_type": "solution_concept",
+  "title": "把编码Agent的探索决策固化为写入门校验的规则记忆，控制路径由已验证条目毫秒级承接",
+  "problem": "编码Agent每轮探索都在模型上下文里重新审议已定型的Read/Grep/Glob决策，LLM调用率与token随轮次累积（REINS实测实时规划器初始70.0%的决策仍要走LLM）；而未经校验就固化又会引入错误记忆——REINS的冻结记忆对照碰撞率停在9.63%，说明固化的价值来自写入前的验证而不是记忆本身。既有复用族候选（回执激活决策图、离线MDP策略、技能胶囊）都不含写入时验证门与毫秒级已验证服务路径的组合。",
+  "hypothesis": "把探索决策的固化为“提案须过结构校验与N步前向推演（或只读世界核验）才写入可检索规则记忆”的双速结构：控制路径由已验证条目毫秒级承接，未覆盖或校验失败回退模型，固化补全在后台异步执行——可在解决率不降的前提下大幅降低编码Agent探索循环的LLM调用率，且持续自进化的记忆显著优于冻结记忆。",
+  "mechanism": "组合三条已发布机制：REINS的写入门与双速路径（LLM提案过模式校验加五步前向推演才写入Neo4j规则记忆，2.6毫秒已验证回退承接控制路径，1.59秒补全后台执行）；微软curator的写入前世界核验（最小权限只读工具在写入前检查教训正确且仍新鲜）；SkillCache的复用前重放校验（执行器串接程序传值，失败或需判断才交还模型，原技能保留作回退）。合成点为任何单条记录未陈述的语义：规则、教训、技能胶囊三类固化载体共享“写入时验证、复用时校验、未覆盖回退模型”的门控结构，且控制路径不等待固化完成。",
+  "target": "编码Agent harness的探索决策循环（Read/Grep/Glob等高频工具决策的固化与执行层）",
+  "expected_effect": "参照已发布量级：REINS在Highway上1000轮内LLM调用率从70.0%降至12.81%、碰撞率7.05%降至5.67%（冻结对照停在9.63%）；微软curator通过率39%升到73%、每问查询8.8降到4.7；SkillCache在87项SkillsBench任务token均值降80.9%（Sonnet）且奖励持平。迁移到编码Agent探索循环的可检验形式：LLM调用率与探索token显著下降，定位/解决率不显著下降，自进化记忆显著优于冻结记忆对照。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-16",
+    "rationale": "三条跨期独立记录（REINS 2026-11-16、SkillCache 2026-11-11、微软curator 2026-09-30）互补联合支撑任何单条未陈述的门控固化语义：写入时验证、复用时校验、控制路径由已验证回退毫秒级承接、固化在后台异步进行；触发证据为REINS。"
+  },
+  "unknowns": [
+    "REINS的实证限于Highway战术决策层且感知假设干净，编码Agent探索决策的分布差异与碰撞口径迁移未知。",
+    "双速路径的后台补全成本（REINS的1.59秒管线）未计入其PE口径，编码Agent上固化的时延预算未知。",
+    "规则记忆的失效与退役路径在三条证据中均未测（SkillCache明确检索与失效未测；微软curator仅写入前核验）。",
+    "与既有复用族候选（回执激活决策图、离线MDP策略、技能胶囊）及吸收REINS为“记忆写入前核验”一侧证据的idea_876c619ed473b24b78bc的谱系边界需人工裁决。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在编码Agent探索循环上加装决策固化层做原型：规则记忆（带检索索引）、写入门（对固化提案做结构校验加N步可执行推演或只读世界核验）、已验证回退执行器（命中已验证条目直接执行、未命中或校验失败回退模型）；固化补全在后台异步执行；冻结记忆与无固化层为对照。",
+    "inputs": [
+      "同一批仓库任务在固化层开启/关闭下的双运行轨迹",
+      "固化层的写入、校验、检索与后台补全开销计量（token、调用数、时延）",
+      "记忆条目的写入与退役审计日志（含对被拒提案的抽检）"
+    ],
+    "baselines": [
+      "无固化层的原探索循环",
+      "冻结记忆（只写不进化）",
+      "无写入门的自由固化记忆"
+    ],
+    "metrics": [
+      "探索循环LLM调用率与每任务token",
+      "文件级定位命中率与任务解决率",
+      "错误固化率与冲突率（对照REINS冻结对照的碰撞率口径）",
+      "固化层自身开销占端到端时延比例"
+    ],
+    "support_criteria": [
+      "LLM调用率显著下降且解决率不显著下降",
+      "自进化记忆显著优于冻结记忆对照",
+      "写入门拦截的错误固化可测且为正贡献",
+      "固化层开销不吞掉节省"
+    ],
+    "reject_criteria": [
+      "调用率下降伴随解决率显著下降",
+      "写入门校验开销超过其拦截错误带来的节省",
+      "错误固化随轮次累积且无退役路径"
+    ],
+    "limitations": [
+      "三条证据分别来自战术决策、企业记忆策展与技能执行三个域，编码Agent探索域无直接实测。",
+      "碰撞率口径在编码Agent上需重新校准，REINS的碰撞率并非可部署水平。",
+      "全部检查为建议，未执行。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且三条跨期独立记录联合支撑任何单条未陈述的门控固化语义；但直接证据REINS限于Highway战术决策层（感知假设干净、碰撞率并非可部署水平、PE不含1.59秒后台获取管线），迁移到编码Agent探索循环无任何记录测量；且与既有复用族候选（candidate_60d0a7b86b01d6a58334回执激活决策图、candidate_d07fef8532bb5bcc7c10离线MDP策略、candidate_df404b46c34bf590667b技能胶囊）及本期已吸收REINS为“记忆写入前核验”一侧证据的idea_876c619ed473b24b78bc的谱系分工需人工裁定，先缓议。",
+  "related_candidate_ids": [
+    "candidate_60d0a7b86b01d6a58334",
+    "candidate_d07fef8532bb5bcc7c10",
+    "candidate_df404b46c34bf590667b"
+  ],
+  "related_idea_ids": [
+    "idea_876c619ed473b24b78bc"
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a7843920cea22c6b1550",
+  "identity": {
+    "problem_key": "kv_offload_cpu_side_scheduling_dependency",
+    "mechanism_key": "independent_cpu_engine_schedule_with_gpu_assist",
+    "target_key": "kv_offload_engine_decode_scheduler"
+  },
+  "idea_type": "solution_concept",
+  "title": "CPU解码引擎独立调度KV卸载驻留请求以压低P99尾延迟",
+  "problem": "现有KV卸载中CPU侧请求须等GPU调度让位，解码进展突发且推高P99尾延迟，瓶颈从容量转为调度权。",
+  "hypothesis": "让AMX CPU解码引擎以自有队列独立调度驻留请求、GPU专注prefill，并按离线profiling阈值按需借用GPU算力，可在固定P99 TPOT SLO下较GPU门控调度（NEO式）提升可服务请求率；主机KV池容量收益受CPU解码吞吐与内存带宽上限约束，超过上限后扩容收益持平。",
+  "mechanism": "CPU引擎以自有队列独立推进驻留解码，GPU引擎负责prefill，按离线profiling阈值选择本地执行或GPU Dense Assist。",
+  "target": "带GPU显存加主机内存两层的KVCache卸载引擎的解码调度器",
+  "expected_effect": "1.5秒P99 TPOT下请求率较NEO高61%（8B单卡）至3%（32B四卡）；主机KV池在120~240 GiB间收益持平，CPU算力与带宽成为新瓶颈。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发布记录同时给出问题（CPU侧请求须等GPU调度让位并推高P99）、可解释机制（CPU引擎自有队列独立推进加按需GPU Dense Assist）、目标对象（GPU显存加主机内存两层的KV卸载引擎）与可检验效应（固定P99 TPOT下请求率较NEO的对照区间）。"
+  },
+  "evidence": [
+    {
+      "item_id": "7fcabc4e54e77f51ba45316e",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.33501v1"
+      ],
+      "reason": "DualPace给出问题（现有KV卸载中CPU侧请求须等GPU调度让位，解码突发推高P99尾延迟）、机制（AMX CPU引擎以自有队列独立推进驻留解码，GPU负责prefill，按离线profiling阈值选本地执行或GPU Dense Assist）、目标（GPU显存加主机内存两层的KV卸载引擎）与可检验效应（1.5秒P99 TPOT下请求率较NEO高61%至3%，主机KV池120~240GiB间收益持平，CPU算力与带宽成为新瓶颈）。",
+      "independence_group": "arxiv:2610.33501"
+    }
+  ],
+  "evidence_item_ids": [
+    "7fcabc4e54e77f51ba45316e"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.33501v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.33501"
+  ],
+  "unknowns": [
+    "吞吐区间属摘要级声明且容量实验配置未说明",
+    "分层仅GPU显存加主机内存，无SSD层",
+    "单一预印本，无第三方独立实现复现",
+    "CPU算力与带宽成为新瓶颈的结论缺少硬件配置画像，主机KV池容量上限无法直接换算"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在内部KV卸载引擎上实现CPU引擎独立调度与按需GPU Dense Assist，对照GPU门控调度基线；先测AMX CPU解码吞吐与内存带宽上限，再据此定主机KV池容量。",
+    "inputs": [
+      "8B单卡与32B多卡两档模型规模",
+      "主机KV池容量扫描（含120~240GiB区间与CPU带宽饱和点）",
+      "离线profiling阈值扫描（本地执行对GPU Dense Assist的切换点）",
+      "固定P99 TPOT SLO的到达率递增负载"
+    ],
+    "baselines": [
+      "NEO式GPU门控卸载调度",
+      "全GPU驻留（无卸载）"
+    ],
+    "metrics": [
+      "固定P99 TPOT下的可服务请求率",
+      "P99 TPOT与TPOT分布",
+      "CPU解码吞吐与主机内存带宽占用",
+      "主机KV池命中率与容量收益曲线"
+    ],
+    "support_criteria": [
+      "独立调度在固定P99下请求率高于GPU门控基线",
+      "容量收益持平拐点与CPU吞吐或带宽上限对应可复现"
+    ],
+    "reject_criteria": [
+      "多卡大模型下增益消失或独立调度反向干扰GPU prefill",
+      "CPU带宽饱和前主机KV池扩容即无收益，机制前提不成立"
+    ],
+    "limitations": [
+      "原始吞吐区间为摘要级声明且容量实验配置未说明",
+      "原始分层仅GPU显存加主机内存，无SSD层"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有候选不同义，但证据为单一预印本，吞吐区间属摘要级声明且容量实验配置未说明，无独立复现，先观察。",
+  "related_candidate_ids": [
+    "candidate_827f27dbafeac04e8d94",
+    "candidate_1a75d7dd024c14c38c88"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_47f348089cd2d28d1b6",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有候选不同义，但证据为单一预印本，吞吐区间属摘要级声明且容量实验配置未说明，无独立复现，先观察。",
+      "evidence_item_ids": [
+        "7fcabc4e54e77f51ba45316e"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

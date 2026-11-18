@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_0782d8cab828971b5f90",
+  "identity": {
+    "problem_key": "sparse_kv_host_recall_io_bottleneck",
+    "mechanism_key": "pq_code_gated_staged_recall_scheduling",
+    "target_key": "sparse_attention_tiered_serving_recall_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "PQ码粗筛门控召回量、异步事件调度治理召回时机的稀疏KV主机召回全路径",
+  "problem": "稀疏注意力LLM把索引键与KV全历史下放主机后，召回路径在两个阶段分别成为瓶颈：prefill期需按层取回全历史索引键与KV（LeanSparse以双buffer流式加载加每条32字节PQ码粗筛缓解，但解码期中位TPOT由66.4毫秒升至81.7毫秒，主机内存与带宽代价未量化）；解码期召回I/O本身成为主导成本——同步召回系统GPU利用率仅约35%，逐头选择把传输碎成8KB小包、PCIe有效带宽仅约6GB/s（PulseInfer实测）。召回量与召回时机两个自由度从未被同一机制同时治理。",
+  "hypothesis": "在同一主机分层稀疏注意力serving召回路径中，先用索引键的PQ压缩码粗筛门控召回集合（压低取回量与碎片），再把幸存者回取作为异步事件与普通批交错执行、按IO积压自适应准入并用聚散传输合并碎片（治理取回时机与形态），可在200K至950K上下文保持LeanSparse口径的并发收益与0.6秒量级多轮回放TTFT，同时把解码TPOT劣化显著收窄、GPU利用率显著高于同步召回的约35%口径；若码级粗筛的幸存集合不小于逐头选择集合，或异步调度开销在prefill流式路径反噬TTFT，则两机制只能分别部署。",
+  "mechanism": "LeanSparse把索引键与KV全历史驻留主机、prefill按层经双buffer流式加载，索引键压成每条32字节PQ码粗筛、仅对幸存候选回取原始键精排；PulseInfer以中断式层间调度把召回当异步事件与普通批交错执行、IO自适应准入在运行时定普通/卸载批次配比、SoloHead选择加聚散传输引擎合并8KB碎片。联合机制：以PQ码级粗筛界定每层召回集合（同时压低召回量与传输碎片），幸存者回取进入事件化调度与准入控制通道，prefill期按层流水、解码期与普通批交错——召回量与召回时机同时受控。该组合机制任何单条记录都未陈述，且两条记录的边界恰好互补：LeanSparse未治理解码召回I/O，PulseInfer的评估跳过prefill阶段。",
+  "target": "主机分层稀疏注意力LLM serving引擎（SGLang类）的KV与索引键召回路径及其传输调度器",
+  "expected_effect": "组合后在200K至950K上下文保持对HiSparse的2.05至2.95倍并发与950K解码吞吐2.14倍口径，多轮回放TTFT保持0.6秒量级（对照ECHO的21.6秒）；解码期中位TPOT劣化显著小于66.4升至81.7毫秒的口径，GPU利用率显著高于约35%的同步召回口径，PCIe有效带宽摆脱约6GB/s的碎片上限。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-06",
+    "rationale": "LeanSparse（2026-11-06触发项）给出索引键与KV主机驻留、按层双buffer流式加载与PQ码粗筛回取的prefill期机制，但解码TPOT劣化且主机带宽代价未量化；PulseInfer（2026-09-30）独立证明召回I/O的事件化调度、自适应准入与碎片合并主导解码期利用率与吞吐，但评估跳过prefill。两线边界互补，联合支持『召回量门控加召回时机调度』的全路径组合机制，任何单条记录未陈述。"
+  },
+  "evidence": [
+    {
+      "item_id": "8c0def0e57f08fdcb6c19d5f",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04671v1"
+      ],
+      "reason": "LeanSparse把索引键与KV全历史下放主机、prefill按层双buffer流式加载，索引键压成每条32字节PQ码粗筛、仅对幸存候选回取原始键精排；对比HiSparse在200K至950K上下文并发2.05至2.95倍、950K解码吞吐2.14倍、多轮回放TTFT从21.6秒降至0.6秒；边界：中位TPOT由66.4毫秒升至81.7毫秒、主机内存与带宽代价未量化、收益依赖CSA稀疏模型。",
+      "independence_group": "arxiv:2611.04671"
+    },
+    {
+      "item_id": "8580ae5c27679496d453025f",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.34555v1"
+      ],
+      "reason": "PulseInfer实测同步召回系统GPU利用率仅约35%、逐头选择把传输碎成8KB小包致PCIe有效带宽仅约6GB/s、召回量层间中位差可达5倍；中断式层间调度把召回当异步事件与普通批交错、IO自适应准入在运行时定普通/卸载批次配比、SoloHead加聚散传输合并碎片后，SGLang解码吞吐较全KV基线升1.5至4.7倍、TPOT最多降76%；评估跳过prefill阶段。",
+      "independence_group": "arxiv:2609.34555"
+    }
+  ],
+  "evidence_item_ids": [
+    "8c0def0e57f08fdcb6c19d5f",
+    "8580ae5c27679496d453025f"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.04671v1",
+    "https://arxiv.org/abs/2609.34555v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.04671",
+    "arxiv:2609.34555"
+  ],
+  "unknowns": [
+    "LeanSparse主机内存与带宽代价未量化",
+    "PulseInfer评估跳过prefill阶段，收益依赖普通批提供可重叠计算且MoE模型下缩小",
+    "两机制未在同一引擎框架对照，PQ码粗筛与SoloHead选择界定的召回集合是否相容未验证",
+    "LeanSparse收益依赖CSA稀疏模型，其他稀疏注意力骨干可迁移性未知",
+    "PQ码本构建与粗筛计算自身的GPU开销未报告"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在SGLang类稀疏注意力serving引擎的主机分层召回路径实现PQ码粗筛门控（索引键32字节码级）加异步事件化召回、IO自适应准入与聚散传输合并，与同步召回及纯逐头选择召回基线对比。",
+    "inputs": [
+      "200K至950K长上下文负载",
+      "多轮会话回放（对齐TTFT口径）",
+      "门控（PQ码粗筛开/关）与调度（异步交错/同步）的2x2对照",
+      "PCIe带宽与召回字节量画像"
+    ],
+    "baselines": [
+      "主机驻留无门控同步召回（LeanSparse边界形态）",
+      "仅调度治理无码级门控（PulseInfer形态）",
+      "全KV HBM驻留"
+    ],
+    "metrics": [
+      "固定TTFT/TPOT预算下的并发数",
+      "TTFT与中位TPOT",
+      "GPU利用率",
+      "PCIe有效带宽与召回字节数"
+    ],
+    "support_criteria": [
+      "组合在200K以上上下文并发高于两个单机制基线",
+      "解码TPOT劣化显著小于66.4毫秒升至81.7毫秒的口径"
+    ],
+    "reject_criteria": [
+      "PQ粗筛幸存集合过大使门控失效",
+      "异步调度开销在prefill流式路径反噬TTFT"
+    ],
+    "limitations": [
+      "原始证据分别限于CSA稀疏模型与跳过prefill的解码评估",
+      "主机内存与带宽代价两侧均未量化"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "两条独立证据线边界互补且机制可组合，但两机制未在同一引擎框架对照，LeanSparse主机内存与带宽代价未量化且收益依赖CSA稀疏模型，PulseInfer跳过prefill评估，先观察组合验证。",
+  "related_candidate_ids": [
+    "candidate_72af15691dc45ce846eb"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-09-30",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a4ec95a7be06ef7e6de8",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "两条独立证据线边界互补且机制可组合，但两机制未在同一引擎框架对照，LeanSparse主机内存与带宽代价未量化且收益依赖CSA稀疏模型，PulseInfer跳过prefill评估，先观察组合验证。",
+      "evidence_item_ids": [
+        "8c0def0e57f08fdcb6c19d5f",
+        "8580ae5c27679496d453025f"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

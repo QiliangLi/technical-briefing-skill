@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a3452ab66b5ff7c4a45e",
+  "identity": {
+    "problem_key": "fixed_representation_kv_handoff",
+    "mechanism_key": "per_axis_fragment_deadline_scheduling",
+    "target_key": "cross_node_kv_state_handoff"
+  },
+  "idea_type": "solution_concept",
+  "title": "按表示轴分解的跨节点KV/隐状态交接分片调度",
+  "problem": "跨节点交接把KV/隐状态当作粒度固定的全精度、全宽、全内容单一流：网络侧的压缩数据路径只优化整块KV的传输执行（FastKVComp），而内存侧与发送侧已分别证明交接对象本身沿三条相互独立的轴弹性——精度轴（StrataFlux按重要性流式补取高精度位）、秩轴（BasisKV用共享Value低秩潜变量同时压缩缓存与通信宽度）、内容轴（SelectKV/HyLaMAS在发送端裁剪交接状态）。三条轴的弹性均未被任何跨节点传输机制利用，交接字节与完成时间被固定表示粒度锁死。",
+  "hypothesis": "若精度位、低秩潜变量与裁剪后内容在交接时刻仍可分别按消费时机排序，则把交接对象分解为按轴分类的分片（融合压缩基础层、重要性排序的精度位补片、低秩基底加残余宽度、发送端裁剪后内容），并由网络调度器按分片类赋予优先级与计算重叠截止期，可在解码精度持平下同时降低跨网交接字节与P95交接完成时间，收益超过任一单轴方案。",
+  "mechanism": "发送端先把待交接KV分解为互补的表示分片：完整KV经分布变换加量化的单核融合压缩成基础层先行传输；高精度位按信道与token组重要性排序成补片，用提前或滞后距离使补片传输与接收端计算重叠；Value宽度先以联合优化的低秩潜变量通信、残余宽度后台补齐；继承前缀之外的新生成区域在进入网络前按选择式压缩裁剪。网络调度器按分片类而非单一大象流分配带宽、优先级与路径，使每类分片的截止期对齐接收端的消费窗口。",
+  "target": "分离式推理与多智能体交接共用的跨节点KV/隐状态传输路径",
+  "expected_effect": "在解码精度持平（RULER/LongBench口径）下，交接字节缩减为基础层加补片的体量，P95交接完成时间与TPOT相对全量传输、仅压缩传输、仅发送端裁剪与仅低秩传输四类基线均有可测增量收益。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-09",
+    "rationale": "跨期四条记录分别给出网络侧压缩数据路径、精度轴流式补位、秩轴潜变量压缩与内容轴发送端裁剪，联合支持一个无任何单点来源的按表示轴分片的交接调度机制。"
+  },
+  "evidence": [
+    {
+      "item_id": "7f0b0c6b2aa5f613daa8fe33",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04382v2"
+      ],
+      "reason": "FastKVComp证明把分布变换与量化融合为单个TileLang核并以可搜索LC后端替换nvCOMP后，压缩执行不再抵消通信节省，双节点200-Gb/s InfiniBand上JCT降低30.2%至38.6%、输出吞吐提升44.2%至62.6%，给出基础层分片可直接复用的网络侧压缩数据路径；其压缩对象始终是全部KV张量，未做表示分解。",
+      "independence_group": "arxiv:2611.04382"
+    },
+    {
+      "item_id": "131a5cafc84bcebccc2048c3",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08363v1"
+      ],
+      "reason": "StrataFlux证明高精度位可按重要信道与token组从主机RAM或SSD流式补取，并用提前或滞后距离使传输与计算重叠，2比特权重下Llama-3.1-8B混淆度由9.46恢复到8.40并保留量化吞吐95.4%，给出精度轴分片及其重叠调度的已发布依据；其传输仅到单机RAM或SSD，无跨节点与TTFT/TPOT数据。",
+      "independence_group": "arxiv:2611.08363"
+    },
+    {
+      "item_id": "bd0f1f579c8ae3920130bb62",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02583v1"
+      ],
+      "reason": "BasisKV证明单个共享Value低秩潜变量可同时压缩Value缓存、张量并行通信与Key路由：每卡注意力输出先投影成低维潜变量再经保源AllGather通信，8卡L40S端到端最高1.42倍于稠密、TTFT由34.6秒降至24.7秒，给出秩轴分片（低维潜变量先行、全宽后台补齐）的已发布依据；实验全部单机且AllGather通信字节数未披露。",
+      "independence_group": "arxiv:2611.02583"
+    },
+    {
+      "item_id": "c1d02abf4e06c53a69c9fcbd",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.37779v1"
+      ],
+      "reason": "SelectKV在交接点只压缩新生成的KV区并保护继承前缀（SelectKV-90降KV负载9.7%-9.9%），HyLaMAS让全注意力KV与GDN循环、卷积状态跨智能体持续传递并较文本传递少解码74%-80% token，给出内容轴在发送端裁剪交接状态的已发布依据；每基准仅100例、计时不含跨设备传输，作者明言逻辑负载减少不等于网络节省。",
+      "independence_group": "arxiv:2610.37779"
+    }
+  ],
+  "evidence_item_ids": [
+    "7f0b0c6b2aa5f613daa8fe33",
+    "131a5cafc84bcebccc2048c3",
+    "bd0f1f579c8ae3920130bb62",
+    "c1d02abf4e06c53a69c9fcbd"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.04382v2",
+    "https://arxiv.org/abs/2611.08363v1",
+    "https://arxiv.org/abs/2611.02583v1",
+    "https://arxiv.org/abs/2610.37779v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.04382",
+    "arxiv:2611.08363",
+    "arxiv:2611.02583",
+    "arxiv:2610.37779"
+  ],
+  "unknowns": [
+    "精度位补片与低秩残余在真实RDMA时延抖动下的重叠窗口是否成立，四条记录均无跨节点实测",
+    "SelectKV作者自述逻辑负载减少不等于网络节省，裁剪后分片是否退化为难以调度的小流未知",
+    "四个分片类的组合接口与误差叠加（量化、低秩、裁剪误差相互传播）无任何记录给出实测或界"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在双节点200-Gb/s级互连仿真器上叠加融合压缩吞吐模型、按重要性排序的精度位补片流模型与低秩/裁剪比例参数，对照全量传输与三类单轴基线评估按轴分片调度。",
+    "inputs": [
+      "长上下文解码trace与逐层重要性画像",
+      "量化位宽、低秩秩与裁剪keep-ratio档位",
+      "互连带宽、RTT与并发交接流数",
+      "接收端每层消费窗口（提前/滞后距离档位）"
+    ],
+    "baselines": [
+      "ECMP全量全精度KV交接",
+      "FastKVComp式融合压缩全量传输",
+      "SelectKV式仅发送端裁剪后全精度传输",
+      "BasisKV式仅低秩潜变量传输"
+    ],
+    "metrics": [
+      "P95/P99交接完成时间与TTST",
+      "跨网传输字节",
+      "TPOT",
+      "解码精度（RULER/LongBench）"
+    ],
+    "support_criteria": [
+      "相对四类基线同时降低交接字节与尾时延且精度不降，多个带宽档位下收益保持"
+    ],
+    "reject_criteria": [
+      "分片化使流失去大象流特征导致调度失效，或轴间误差叠加使精度跌破质量门限"
+    ],
+    "limitations": [
+      "仿真不能复现真实NIC与vLLM页调度的交互",
+      "重要性画像漂移与各轴误差仅以档位建模"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "三条表示轴的记录全部为单机或不含跨设备计时，组合机制无任何实测；SelectKV作者明言逻辑负载减少不等于网络节省，分片化后的流特征与轴间误差叠加界未知；与覆盖度需求门控的按需稀疏传输（candidate_ac114558ae64d984a62f）谱系相近但调度轴不同（表示粒度而非页需求），边界需要人判定，故暂缓。",
+  "related_candidate_ids": [
+    "candidate_ac114558ae64d984a62f",
+    "candidate_6d4e0b92fba3433de649",
+    "candidate_12d1fbd40f0591dbe67d"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_691dc21d764da968714f",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "三条表示轴的记录全部为单机或不含跨设备计时，组合机制无任何实测；SelectKV作者明言逻辑负载减少不等于网络节省，分片化后的流特征与轴间误差叠加界未知；与覆盖度需求门控的按需稀疏传输（candidate_ac114558ae64d984a62f）谱系相近但调度轴不同（表示粒度而非页需求），边界需要人判定，故暂缓。",
+      "evidence_item_ids": [
+        "7f0b0c6b2aa5f613daa8fe33",
+        "131a5cafc84bcebccc2048c3",
+        "bd0f1f579c8ae3920130bb62",
+        "c1d02abf4e06c53a69c9fcbd"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ebc0facd0d8e3da9def8",
+  "identity": {
+    "problem_key": "rl_posttrain_phase_blind_dvfs_energy_waste",
+    "mechanism_key": "phase_aware_online_dvfs_throughput_guard",
+    "target_key": "h100_llm_rl_posttraining"
+  },
+  "idea_type": "solution_concept",
+  "title": "RL后训练按生成/训练两阶段在线选频，以每有效token能耗为指标压低GPU功耗",
+  "problem": "LLM强化学习后训练在生成与训练两阶段间交替，默认调速器让两阶段都近峰值频率运行，访存受限的生成阶段多耗能量而无吞吐收益，RL后训练的每有效token能耗因此被白白抬高。",
+  "hypothesis": "若控制器对生成与训练两阶段分别在线选频，以每有效训练token的能耗为指标，用短时频率试验对比调速器的吞吐预测，只保留吞吐不低于预测98%的最低能耗设置并随负载调整，即可在吞吐基本不受损的前提下持续压低RL后训练的每有效token能耗。",
+  "mechanism": "EE-RL控制器为生成与训练两阶段分别在线选择频率：以每有效训练token的能耗为指标，用短时频率试验实测吞吐并与调速器预测对比，只保留吞吐不低于预测98%的最低能耗频率设置，并随负载变化在线调整。",
+  "target": "H100 GPU上的LLM强化学习后训练",
+  "expected_effect": "H100上八个锁定后对比中每有效token能耗节省4.56%至22.44%（成对调速器基线，吞吐-1.70%至+4.99%），全部对比实现节能。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发表记录同时给出问题（默认调速器使RL后训练两阶段均近峰值频率、访存受限阶段多耗能量无吞吐收益）、可解释机制（按阶段在线选频、以每有效训练token能耗为指标、98%吞吐护栏）、目标对象（H100上的LLM RL后训练）与可检验效应（八个锁定后对比每有效token能耗节省4.56%至22.44%、吞吐-1.70%至+4.99%）。"
+  },
+  "evidence": [
+    {
+      "item_id": "132d6af3479d10384becf2ac",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.05748v1"
+      ],
+      "reason": "EE-RL预印本给出问题（RL后训练在生成与训练阶段间交替、默认调速器令两阶段近峰值频率运行、访存受限阶段多耗能量无吞吐收益）、机制（控制器以每有效训练token能耗为指标、短时频率试验对比调速器预测吞吐、只保留吞吐不低于预测98%的最低能耗设置并随负载调整）、目标（H100上的LLM RL后训练）与可检验效应（八个锁定后对比每有效token能耗节省4.56%至22.44%、吞吐-1.70%至+4.99%、全部实现节能），并同时给出所有对比仅单一种子且无组件消融、摘要28.2%与16.9%的达成配置未找到、实测表仅覆盖H100的边界。",
+      "independence_group": "arxiv:2611.05748"
+    }
+  ],
+  "evidence_item_ids": [
+    "132d6af3479d10384becf2ac"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.05748v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.05748"
+  ],
+  "unknowns": [
+    "所有对比仅用单一种子且无组件消融，节能构成未分解",
+    "摘要28.2%与16.9%的达成配置未找到，实测表仅覆盖H100",
+    "单一NVIDIA arXiv预印本独立分组，缺独立复现",
+    "属GPU运行时能效软件而非芯片架构证据，未验证H100之外硬件与RL后训练之外负载"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有H100上以RL后训练负载复现按阶段在线选频（每有效训练token能耗指标加98%吞吐护栏的短时频率试验），与成对调速器基线对照并补多种子与阶段消融。",
+    "inputs": [
+      "LLM强化学习后训练负载（含生成与训练两阶段）",
+      "GPU频率控制接口与调速器吞吐预测",
+      "每有效训练token能耗的测量口径"
+    ],
+    "baselines": [
+      "成对锁定调速器基线",
+      "默认调速器"
+    ],
+    "metrics": [
+      "每有效训练token能耗节省",
+      "吞吐变化",
+      "两阶段频率轨迹与护栏触发率"
+    ],
+    "support_criteria": [
+      "多种子下每有效token能耗稳定下降且吞吐不低于预测的98%"
+    ],
+    "reject_criteria": [
+      "频率试验开销或吞吐回退吞掉能耗收益，或单种子方差盖过组间差异"
+    ],
+    "limitations": [
+      "首版仅覆盖H100与RL后训练负载，其他加速器与负载类别需另行验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且与既有候选及Idea的身份元组不同（推理侧能耗自适应采样与集群功率帽调度均属推理/调度侧，本候选是RL后训练训练侧的阶段感知DVFS）；但仅有单一NVIDIA arXiv预印本独立分组支撑，所有对比仅单一种子且无组件消融、摘要28.2%与16.9%的达成配置未找到、实测表仅覆盖H100，缺独立复现与适用边界，先观察。",
+  "related_candidate_ids": [
+    "candidate_8e0203f56fb21207565a",
+    "candidate_f2acadceb4759ed12598"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_44a1594f661b0ee0db96",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且与既有候选及Idea的身份元组不同（推理侧能耗自适应采样与集群功率帽调度均属推理/调度侧，本候选是RL后训练训练侧的阶段感知DVFS）；但仅有单一NVIDIA arXiv预印本独立分组支撑，所有对比仅单一种子且无组件消融、摘要28.2%与16.9%的达成配置未找到、实测表仅覆盖H100，缺独立复现与适用边界，先观察。",
+      "evidence_item_ids": [
+        "132d6af3479d10384becf2ac"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

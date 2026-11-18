@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_df404b46c34bf590667b",
+  "identity": {
+    "problem_key": "reusable_skill_repeated_reinterpretation_token_cost",
+    "mechanism_key": "cold_execution_compiled_replayable_program_capsule",
+    "target_key": "agent_skill_execution_layer"
+  },
+  "idea_type": "solution_concept",
+  "title": "把一次技能冷执行编译为可重放参数化胶囊，复用时仅判断不重排工具调用",
+  "problem": "可复用技能每次调用都要求模型重新解读技能并重排工具调用，token与模型调用随调用次数累积，技能复用并未省去重复推理。",
+  "hypothesis": "把一次技能的冷执行连同原技能编译为参数化程序胶囊，复用前经重放校验，由执行器串接程序传值执行、仅在失败或需判断处交还模型、原技能保留作回退，可在奖励持平的前提下大幅降低每次调用的token与模型调用次数。",
+  "mechanism": "编译器不看评测即可把冷执行与原技能编译为程序加步骤的参数化胶囊；复用前重放校验；执行器串接程序传值，失败或需判断才交还模型，原技能保留作回退。",
+  "target": "编码Agent的技能执行层（如Claude Code式Skills的调用—执行链）",
+  "expected_effect": "参照已发布量级：87项SkillsBench任务上token均值降80.9%（Sonnet）与74.3%（Opus）且奖励持平；Sonnet每次执行模型调用均值由23.6降至5.6。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "aa7e960b767618e9bbe78462",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10022v1"
+      ],
+      "reason": "《SkillCache把一次技能执行编译为可重放的程序胶囊》同时给出问题（可复用技能每次调用都要求模型重新解读并重排工具调用，token随调用次数累积）、机制（编译器不看评测即可把冷执行与原技能编译为参数化胶囊，复用前重放校验；执行器串接程序传值，失败或需判断才交还模型，原技能保留作回退）、目标（编码Agent的技能执行链）与可检验效应（87项SkillsBench任务上token均值降80.9%（Sonnet）与74.3%（Opus）且奖励持平，Sonnet模型调用均值23.6降至5.6），并给出边界（仅SkillsBench与Claude Code，胶囊源自单次执行可硬编码取值，检索与失效未测）。",
+      "independence_group": "arxiv:2611.10022"
+    }
+  ],
+  "evidence_item_ids": [
+    "aa7e960b767618e9bbe78462"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.10022v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.10022"
+  ],
+  "unknowns": [
+    "胶囊源自单次执行，可能硬编码该次取值，参数化在多变请求下的泛化未验证。",
+    "检索与失效未测：技能更新或环境变化后过期胶囊的检出与回退行为未知。",
+    "评测仅限SkillsBench与Claude Code单一栈，跨harness与跨技能形态的迁移未知。",
+    "与回执激活决策图复用、离线MDP策略、重发复用门、语义执行树回放等既有复用族候选的谱系边界需人工裁决。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部编码Agent的机械性技能环节上复现胶囊编译与重放执行：一次冷执行编译为参数化胶囊，复用时经重放校验后由执行器串接传值执行并与原技能每次模型重解读对比。",
+    "inputs": [
+      "可复用技能集与冷执行轨迹",
+      "胶囊编译器（程序加步骤、参数化）",
+      "重放校验与程序间传值执行器",
+      "原技能回退路径"
+    ],
+    "baselines": [
+      "原技能每次由模型解读并逐步调用",
+      "无参数化的整段录制回放"
+    ],
+    "metrics": [
+      "每次技能调用token均值",
+      "每次技能调用模型调用次数",
+      "任务奖励或成功率",
+      "硬编码取值导致的跨参数请求失败率",
+      "技能变更后过期胶囊的检出与回退率"
+    ],
+    "support_criteria": [
+      "token与模型调用次数显著下降且奖励持平，跨参数请求失败率不高于回退阈值。"
+    ],
+    "reject_criteria": [
+      "奖励下降，或硬编码取值使多变参数请求失败率上升且过期胶囊无法检出回退。"
+    ],
+    "limitations": [
+      "原始证据仅覆盖SkillsBench与Claude Code，检索与失效未测。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份区别于既有复用族候选（回执激活决策图、离线MDP策略、重发复用门、语义执行树回放、快照投机宏提交、协程持久worker）与既有Idea，但证据仅一个独立来源组：胶囊源自单次执行可硬编码取值，检索与失效未测，评测仅限SkillsBench与Claude Code，请求多变时的适用边界待验证，故缓议。",
+  "related_candidate_ids": [
+    "candidate_60d0a7b86b01d6a58334",
+    "candidate_d07fef8532bb5bcc7c10",
+    "candidate_6c12a27f1bd22b05003a",
+    "candidate_82694673e9654740abb2",
+    "candidate_18837338031d6887b26f",
+    "candidate_2d2155f62e0bb4dc1f0d"
+  ],
+  "related_idea_ids": [
+    "idea_6e6886675f61e74dd472"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a950d2586e7a187d5b",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份区别于既有复用族候选（回执激活决策图、离线MDP策略、重发复用门、语义执行树回放、快照投机宏提交、协程持久worker）与既有Idea，但证据仅一个独立来源组：胶囊源自单次执行可硬编码取值，检索与失效未测，评测仅限SkillsBench与Claude Code，请求多变时的适用边界待验证，故缓议。",
+      "evidence_item_ids": [
+        "aa7e960b767618e9bbe78462"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_9933531fde69ffb5a17c",
+  "identity": {
+    "problem_key": "milp_workload_structure_ocs_scheduling_fails_at_cluster_scale",
+    "mechanism_key": "amortized_circuit_reuse_heuristic_workload_scheduling",
+    "target_key": "large_scale_llm_training_iteration_time"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "负载结构级OCS调度MILP的可扩展启发式替代",
+  "problem": "Flux证明按整个负载时间结构调度OCS可把训练迭代时间降至多10倍、峰值NIC缓冲需求降超三个数量级,但其精确MILP求解随规模指数增长,当前限于小规模作业,大规模集群缺乏可扩展的负载结构级OCS调度器。",
+  "hypothesis": "基于电路复用与重配摊销的多项式时间启发式在大规模集群与多作业下能保持MILP最优解的大部分迭代时间收益,且求解时间随规模多项式增长;若大规模下启发式劣于周期调度器,或求解时间仍随规模指数增长而在目标规模不可解,则假设被证伪。",
+  "mechanism": "保留Flux的负载时间结构建模,把精确MILP替换为分段贪心:沿计算-通信时间线复用已建电路、仅当摊销后净收益为正时重配,并以RingStitch式三段评分处理多租户放置与机架排序。",
+  "expected_effect": "得到可扩展到大规模集群的OCS调度启发式及其相对小规模MILP最优解的收益保留率与求解时间曲线,为内部OCS方案的调度器选型提供可实现的判据。",
+  "topic_ids": [
+    "optical_network"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "5208436edd2a9b448d709b32",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.25949v1"
+      ],
+      "reason": "Flux按整个负载时间结构调度OCS,训练迭代时间降至多10倍、峰值NIC缓冲需求降超三个数量级、Llama 3 8B轨迹仿真中始终最低迭代时间,且毫秒级MEMS到微纳秒级硅光交换速度下均有效;但其MILP求解随规模指数增长、当前限于小规模作业,作者明确大规模需启发式(future work),直接给出本假设要填补的可扩展性缺口。"
+    },
+    {
+      "item_id": "2f5d128be8a57dba04aa6cc1",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.37627v1"
+      ],
+      "reason": "RingStitch以三段评分启发式(选紧凑机架集合、碎片优先分配芯片、机架排序为低代价逻辑环)在95%负载的大规模离散事件仿真中把利用率最多升5.2pp、阻塞率从6.9%降到0.4%,说明评分式启发OCS调度在规模上可行;其与本假设中大集群负载结构调度的关联为跨条目推断,且其环代价是3D-torus模型度量而非实测。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "启发式相对MILP最优的收益保留率在多大集群规模内成立未知",
+    "多租户公平性与故障恢复未纳入Flux与RingStitch的已发布结果",
+    "环/缝合代价的3D-torus模型度量与真实布线成本的差距未量化"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在Flux的负载时间结构调度框架上实现多项式时间启发式(电路复用+仅摊销净收益为正时重配的分段贪心),先在小规模与精确MILP对齐,再扩展集群与作业规模",
+    "inputs": [
+      "Flux实验口径:毫秒级MEMS与微纳秒级硅光两档交换速度、周期调度器参数、Llama 3 8B训练轨迹",
+      "集群规模扫描(如64至数千GPU)与多并发作业负载",
+      "RingStitch式95%高负载多租户场景"
+    ],
+    "baselines": [
+      "小规模上Flux精确MILP最优解(对齐参照)",
+      "传统周期重配置调度器",
+      "静态布线不重配"
+    ],
+    "metrics": [
+      "训练迭代时间",
+      "峰值NIC缓冲需求",
+      "求解时间随规模的扩展曲线",
+      "重配置次数与换来有用电路的比例"
+    ],
+    "support_criteria": [
+      "大规模下启发式迭代时间与小规模MILP外推参照差距在10%以内",
+      "求解时间随规模多项式增长且在目标规模可完成",
+      "峰值NIC缓冲仍较周期调度器低至少一个数量级"
+    ],
+    "reject_criteria": [
+      "大规模下迭代时间劣于周期调度器或静态布线",
+      "求解时间仍随规模指数增长、目标规模不可解"
+    ],
+    "limitations": [
+      "MILP最优参照仅在小规模可得,大规模对照为外推",
+      "仿真不含真实OCS硬件时延与控制平面开销",
+      "多租户负载为构造场景,未含生产trace"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-28",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_2ebaee506e0fc10a6925",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据Flux明确的MILP规模边界(求解随规模指数增长、限于小规模作业,大规模启发式为作者future work)与RingStitch评分启发式在大规模仿真可行的信号创建该假设;两者均为仿真证据,未做任何验证。",
+      "evidence_item_ids": [
+        "5208436edd2a9b448d709b32",
+        "2f5d128be8a57dba04aa6cc1"
+      ]
+    }
+  ]
+}

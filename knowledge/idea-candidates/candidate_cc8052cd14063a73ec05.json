@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_cc8052cd14063a73ec05",
+  "identity": {
+    "problem_key": "gpu_ssm_inference_dependency_latency_bottleneck",
+    "mechanism_key": "sm_subpartition_dedicated_recurrence_unit",
+    "target_key": "a100_class_gpu_mamba3_inference"
+  },
+  "idea_type": "solution_concept",
+  "title": "RescuCore把Mamba-3循环计算折进GPU SM子分区专用执行单元：以约5.9%面积吸收顺序依赖与kernel碎片化",
+  "problem": "Mamba-3类SSM在GPU上推理时，瓶颈是顺序状态更新的依赖延迟与kernel碎片化而非带宽：离散化、RoPE、MIMO与状态更新等逐通道循环计算分散在多个kernel中，落在以Tensor Core为中心的数据通路之外，SSM的理论效率优势在现有GPU微架构上难以兑现，缺少承载循环扫描的执行单元。",
+  "hypothesis": "若在GPU SM子分区内集成与CUDA核心、Tensor Core并列且共享寄存器堆的SSM专用执行单元，把离散化、RoPE、MIMO与状态更新折叠为每通道1周期的组合BF16流水线，则Mamba-3推理可在约5.9%的A100面积开销下获得prefill 1.4-9.4倍、decode 1.3-2.8倍加速，A100上每步解码从融合kernel实测14.2µs进一步降至仿真10.4µs。",
+  "mechanism": "在SM子分区内新增专用执行单元：与CUDA核心、Tensor Core并列共享寄存器堆，状态不经全局内存往返；把离散化、RoPE、MIMO与状态更新合并为每通道1周期的流水线并选用组合BF16原语，以约5.9%的A100面积代价吸收顺序依赖延迟与kernel碎片化。",
+  "target": "A100类GPU的SM子分区微架构上运行的Mamba-3推理（prefill与decode）",
+  "expected_effect": "仿真口径下prefill加速1.4-9.4倍、decode加速1.3-2.8倍；A100上Mamba-3每步解码官方kernel 48.7µs、融合kernel 14.2µs（实测），集成专用单元后仿真降至10.4µs；面积开销约5.9%。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（Mamba-3在GPU上推理的瓶颈是顺序依赖延迟与kernel碎片化而非带宽）、可解释机制（SM子分区内与CUDA、Tensor Core并列共享寄存器堆的专用执行单元，把离散化、RoPE、MIMO与状态更新折为每通道1周期的组合BF16流水线，约5.9%的A100面积开销）、目标对象（A100类GPU SM子分区上的Mamba-3推理）与可检验效应（仿真prefill 1.4-9.4倍、decode 1.3-2.8倍，每步解码14.2µs降至10.4µs），四要素齐备且与既有候选及Idea的身份元组及含义不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "3eed0d89be4827333468a821",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.20409v1"
+      ],
+      "reason": "RescuCore记录给出问题（Mamba-3在GPU上推理的瓶颈是顺序依赖延迟与kernel碎片化而非带宽）、机制（SM子分区内与CUDA、Tensor Core并列共享寄存器堆的专用执行单元，把离散化、RoPE、MIMO与状态更新折为每通道1周期的组合BF16流水线，估计约5.9%的A100面积开销）、目标（A100类GPU上的Mamba-3推理）与可检验效应（仿真中prefill加速1.4-9.4倍、decode加速1.3-2.8倍，A100实测官方kernel每步解码48.7µs、融合kernel 14.2µs，仿真降至10.4µs），并同时给出结论全部来自仿真与RTL综合外推、仅测B=1、无流片数据、BF16精度损失未量化的边界。",
+      "independence_group": "arxiv:2611.20409"
+    }
+  ],
+  "evidence_item_ids": [
+    "3eed0d89be4827333468a821"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.20409v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.20409"
+  ],
+  "unknowns": [
+    "全部加速与面积结论来自仿真与RTL综合外推，无流片或硅后数据",
+    "仅测B=1，batch与并发服务下的收益未量化",
+    "组合BF16原语的精度损失未量化",
+    "约5.9%面积开销按A100外推，其他GPU代际与厂商的适配未验证",
+    "单一arXiv v1预印本独立分组，缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在A100类GPU SM子分区的RTL/周期级仿真模型上集成RescuCore式专用循环单元（与CUDA核心、Tensor Core共享寄存器堆，离散化、RoPE、MIMO与状态更新折为每通道1周期流水线），运行Mamba-3 prefill与decode负载，对照官方与融合kernel实测基线，并扫描batch档位与精度原语。",
+    "inputs": [
+      "Mamba-3 checkpoint与prefill/decode负载（含B=1及以上batch档位）",
+      "A100类SM子分区RTL/周期级仿真模型与综合流程",
+      "A100实测基线（官方kernel每步48.7µs、融合kernel每步14.2µs）",
+      "BF16组合原语与高精度参考原语对照实现"
+    ],
+    "baselines": [
+      "A100官方CUDA kernel的Mamba-3 decode（每步48.7µs）",
+      "融合kernel实现（每步14.2µs）",
+      "无专用单元的等面积标量/SIMD增强配置"
+    ],
+    "metrics": [
+      "prefill与decode加速比及每步解码时延（µs）",
+      "专用单元面积开销（占A100比例）与时序影响",
+      "BF16组合原语相对高精度参考的输出偏差",
+      "B>1时收益保持率"
+    ],
+    "support_criteria": [
+      "仿真复现decode 1.3-2.8倍、prefill 1.4-9.4倍量级加速且面积开销约5.9%",
+      "batch>1下仍保持显著加速，BF16精度偏差可量化且不劣于Mamba-3已知容差"
+    ],
+    "reject_criteria": [
+      "加速仅在B=1或特定序列长度成立，或面积与时序代价吞掉收益",
+      "BF16组合原语精度损失不可接受"
+    ],
+    "limitations": [
+      "本验证计划仅为建议，未执行任何测量",
+      "RTL仿真到流片间存在综合后时序、布线与工艺偏差，结论需硅后复检"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同：解耦单元负载再平衡（candidate_354849a7e622a14673a6）讲软件侧单元级负载再平衡且其未知项明确矩阵核与向量通路共驻同一SM的GPU场景未覆盖，本候选是在GPU SM子分区内新增硬件专用执行单元；边缘NPU线性注意力Idea（idea_9b899f5928d24ae421c1）本期已把本条作为跨硬件类印证（inferred）收录，但其身份限定端侧NPU软件数据流重排，其未知项亦把硬件专用单元路径与软件重排路径的收益上界对比列为未测项，两者身份与含义不同，不构成duplicate；量化收益代数折叠（candidate_baef9b8116be660eca0c）为软件内核折叠身份，本候选为微架构硬件单元身份。但仅有单一arXiv v1预印本独立分组支撑，全部结论来自仿真与RTL综合外推、无流片数据、仅测B=1、BF16精度损失未量化，缺独立复现且适用边界未划定，先观察。",
+  "related_candidate_ids": [
+    "candidate_354849a7e622a14673a6",
+    "candidate_baef9b8116be660eca0c"
+  ],
+  "related_idea_ids": [
+    "idea_9b899f5928d24ae421c1"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_188bd9030d4b8aa7aab7",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同：解耦单元负载再平衡（candidate_354849a7e622a14673a6）讲软件侧单元级负载再平衡且其未知项明确矩阵核与向量通路共驻同一SM的GPU场景未覆盖，本候选是在GPU SM子分区内新增硬件专用执行单元；边缘NPU线性注意力Idea（idea_9b899f5928d24ae421c1）本期已把本条作为跨硬件类印证（inferred）收录，但其身份限定端侧NPU软件数据流重排，其未知项亦把硬件专用单元路径与软件重排路径的收益上界对比列为未测项，两者身份与含义不同，不构成duplicate；量化收益代数折叠（candidate_baef9b8116be660eca0c）为软件内核折叠身份，本候选为微架构硬件单元身份。但仅有单一arXiv v1预印本独立分组支撑，全部结论来自仿真与RTL综合外推、无流片数据、仅测B=1、BF16精度损失未量化，缺独立复现且适用边界未划定，先观察。",
+      "evidence_item_ids": [
+        "3eed0d89be4827333468a821"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

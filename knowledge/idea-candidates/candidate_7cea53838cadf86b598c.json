@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_7cea53838cadf86b598c",
+  "identity": {
+    "problem_key": "post_edit_reread_token_cost",
+    "mechanism_key": "function_flow_graph_delta_verification",
+    "target_key": "coding_agent_token_efficiency"
+  },
+  "idea_type": "solution_concept",
+  "title": "以单函数CFG/DFG流图增量核对替代编码Agent编辑后全文重读",
+  "problem": "Claude Code式编码Agent修一个issue动辄数百万token（Haiku 4.5在SWE-bench Verified达3.41M），FlowPlan实测基线96-98%的token是缓存重读、73-75%的降幅空间来自编辑后结构化验证环节，而现有harness普遍以编辑后全文重读复核改动。",
+  "hypothesis": "可证伪问题：把编辑后复查从全文重读改为单函数CFG/DFG流图重建与结构增量核对（修复表达为显式图增量、改完重建同图核对结构变化再整体验证），能在解决率不显著下降的前提下显著降低每任务token（对原生基线token比0.32-0.94倍），且该结论在Claude Code与单一厂商模型之外可复现、流图维护成本不吞掉token收益。",
+  "mechanism": "以单函数控制流/数据流图为抽象层：定位阶段在图上找故障点并把修复表达为显式图增量；编辑后重建同一张图，用结构差异核对该改的结构变化确实发生，最后再做整体验证，以一次图重建替代编辑后的全文重读。",
+  "target": "编码Agent harness的编辑后复查（验收）环节",
+  "expected_effect": "每任务token显著下降：对原生基线六设置token比为0.32-0.94倍、五处显著且解决率无显著变化；Haiku 4.5在SWE-bench Verified由3.41M降至1.09M；缓存重读类token大幅减少，编辑后复查成本变为可预算的图重建加结构diff。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "1782d8af7c3ca590267f8aa5",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13241v1"
+      ],
+      "reason": "FlowPlan直接实测该机制：以单函数CFG/DFG为抽象，在图上定位故障并把修复表达为显式图增量，改完重建同图核对结构变化再整体验证；对原生基线六设置token比0.32-0.94倍、五处显著且解决率无显著变化，Haiku 4.5在Verified由3.41M降至1.09M；基线96-98%的token是缓存重读、73-75%降幅来自编辑后结构化验证；边界为仅Claude Code与单一厂商两个模型、每实例单次运行，端到端时延与流图构建更新成本未验证。",
+      "independence_group": "arxiv:2611.13241"
+    }
+  ],
+  "evidence_item_ids": [
+    "1782d8af7c3ca590267f8aa5"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.13241v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.13241"
+  ],
+  "unknowns": [
+    "端到端时延未报告，图机制可能以时延换token。",
+    "流图构建与增量更新的自身成本未报告，token节省可能被图维护开销吃掉。",
+    "仅Claude Code与单一厂商两个模型、每实例单次运行，跨harness与跨厂商复现未知。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在Claude Code兼容harness上实现单函数CFG/DFG抽取、显式图增量表达与编辑后同图重建核对，替换编辑后全文重读复查环节，其余流程不变。",
+    "inputs": [
+      "SWE-bench Verified等长程编码任务集",
+      "tree-sitter或LSP驱动的单函数CFG/DFG抽取与图diff工具",
+      "原生harness的token、调用与缓存重读日志"
+    ],
+    "baselines": [
+      "原生编辑后全文重读复查",
+      "仅缓存复用、不做结构核对的重读复查"
+    ],
+    "metrics": [
+      "每任务总token与缓存重读token占比",
+      "解决率（配对检验）",
+      "流图构建与重建耗时",
+      "端到端时延"
+    ],
+    "support_criteria": [
+      "解决率无显著下降（配对检验）且每任务总token降至基线0.7倍以下，流图构建与重建成本不吞掉token收益。"
+    ],
+    "reject_criteria": [
+      "解决率显著下降，或流图构建更新成本使总成本与端到端时延不降反升，或结构核对漏检使回归率上升。"
+    ],
+    "limitations": [
+      "原始证据仅Claude Code与单一厂商两个模型、每实例单次运行，跨harness与跨厂商复现未知。",
+      "仅覆盖编辑后复查环节，定位阶段的图上检索收益未单独验证。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "四要素完整，但身份含义与本期（2026-11-13）已创建的正式Idea idea_7cea53838cadf86b598c（把编辑后复查从全文重读改为函数级流图重建与增量核对）同义：该Idea的机制即为以单函数CFG/DFG流图重建与结构增量核对替代编辑后全文重读，且本条触发证据（1782d8af7c3ca590267f8aa5，arxiv:2611.13241）已于同日收录为该Idea的首条证据（其evidence_for首条与created决策事件均引用本条），不构成该Idea之外的新机制语义，故按重复处理并指向该Idea。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_7cea53838cadf86b598c"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_1a4a75d4745154e67452",
+      "issue_date": "2026-11-13",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "四要素完整，但身份含义与本期（2026-11-13）已创建的正式Idea idea_7cea53838cadf86b598c（把编辑后复查从全文重读改为函数级流图重建与增量核对）同义：该Idea的机制即为以单函数CFG/DFG流图重建与结构增量核对替代编辑后全文重读，且本条触发证据（1782d8af7c3ca590267f8aa5，arxiv:2611.13241）已于同日收录为该Idea的首条证据（其evidence_for首条与created决策事件均引用本条），不构成该Idea之外的新机制语义，故按重复处理并指向该Idea。",
+      "evidence_item_ids": [
+        "1782d8af7c3ca590267f8aa5"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

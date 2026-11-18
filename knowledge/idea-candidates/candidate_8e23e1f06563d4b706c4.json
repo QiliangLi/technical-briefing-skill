@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8e23e1f06563d4b706c4",
+  "identity": {
+    "problem_key": "cpu_host_relay_in_managed_cloud_storage_path",
+    "mechanism_key": "managed_lustre_gpudirect_storage_rdma_to_gpu_memory",
+    "target_key": "a5x_bare_metal_managed_lustre_datapath"
+  },
+  "idea_type": "solution_concept",
+  "title": "Managed Lustre将支持GPUDirect Storage：RDMA直入GPU显存的数据路径进入公有云托管并行文件系统（公告侧实例）",
+  "problem": "存储数据默认要经CPU与主机内存中转，主机资源被占用且限制GPU到存储的数据路径；在公有云托管并行文件系统场景下，租户此前无法获得绕过主机中转的直达路径。",
+  "hypothesis": "在Google Cloud已GA的A5X裸金属实例上，Managed Lustre以GPUDirect Storage提供绕过CPU与系统内存、RDMA直达GPU显存的存储数据路径，可把CPU与主机内存移出GPU到存储的数据路径；该机制语义与既有加速器直连/发起I/O候选同义，本条为GPUDirect Storage进入公有云托管并行文件系统并绑定GA裸金属实例的部署成熟度实例，收益待官方文档或基准验证。",
+  "mechanism": "公告句说明Managed Lustre将提供绕过CPU与系统内存、经RDMA直入GPU显存的GPUDirect Storage路径；承载平台为Vera Rubin NVL72平台的A5X裸金属实例（A5X已于2026-11-06附注标GA并将扩展EMEA数据驻留区）。",
+  "target": "公有云托管并行文件系统（Google Cloud Managed Lustre on A5X裸金属实例）的GPU到存储数据路径",
+  "expected_effect": "定性方向为CPU与主机内存退出存储数据路径、存储数据经RDMA直达GPU显存；公告未给任何IOPS、时延或利用率数据，也无基线，路径收益待官方文档或基准检验。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发表记录同时给出问题（存储数据默认经CPU与主机内存中转）、机制（Managed Lustre以GPUDirect Storage经RDMA绕过CPU与系统内存直入GPU显存，承载于GA的A5X裸金属实例）、目标（公有云托管并行文件系统的GPU到存储数据路径）与可检验的效应方向（CPU与主机内存退出数据路径、直达显存），四要素齐备故立Candidate；但其机制语义与既有加速器直连存储路径候选同义，本条为公有云托管文件系统平台的公告侧部署成熟度实例，且该支持为将来时表述、无生效日期与版本配置细节。"
+  },
+  "evidence": [
+    {
+      "item_id": "3274c14e77ab4342a6682ca5",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://cloud.google.com/blog/topics/ai-infrastructure/google-cloud-infrastructure-at-nvidia-gtc-berlin-2026"
+      ],
+      "reason": "Google Cloud公告（GTC Berlin 2026）宣布GA的A5X裸金属实例上Managed Lustre将支持GPUDirect Storage，机制为绕过CPU与系统内存、RDMA直达GPU显存的存储路径，并给出A5X为Vera Rubin NVL72平台裸金属实例、已于2026-11-06附注标GA并扩展EMEA数据驻留区的成熟度信息；公告未给IOPS、时延或利用率数据，也无基线，该支持为将来时表述，无生效日期与版本配置细节，亦无隔离、权限与错误恢复信息；项目判断为部署成熟度信号（GPUDirect Storage进入公有云托管并行文件系统并绑定GA裸金属实例），不能作为路径收益证据。",
+      "independence_group": "url:https://cloud.google.com/blog/topics/ai-infrastructure/google-cloud-infrastructure-at-nvidia-gtc-berlin-2026"
+    }
+  ],
+  "evidence_item_ids": [
+    "3274c14e77ab4342a6682ca5"
+  ],
+  "source_urls": [
+    "https://cloud.google.com/blog/topics/ai-infrastructure/google-cloud-infrastructure-at-nvidia-gtc-berlin-2026"
+  ],
+  "independence_groups": [
+    "url:https://cloud.google.com/blog/topics/ai-infrastructure/google-cloud-infrastructure-at-nvidia-gtc-berlin-2026"
+  ],
+  "unknowns": [
+    "该支持为将来时表述，无生效日期与版本配置细节",
+    "公告无任何IOPS、时延或利用率数据，也无基线，路径收益未经验证",
+    "无隔离、权限与错误恢复信息",
+    "Managed Lustre上GDS路径的复制次数与隐性回退行为未说明"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "待该支持正式生效后，在A5X裸金属实例上以Managed Lustre的GPUDirect Storage路径对照经CPU与主机内存中转的默认路径，跑GPU到存储读写负载，用cuFile计数器核实真实数据路径并量化收益方向。",
+    "inputs": [
+      "Managed Lustre GPUDirect Storage路径与主机中转路径的对照开关",
+      "GPU到存储读写混合负载",
+      "队列深度与块大小扫描",
+      "cuFile nvfs/posix计数器与CPU路径A/B审计"
+    ],
+    "baselines": [
+      "经CPU与主机内存中转的默认存储数据路径",
+      "主机POSIX缓存I/O路径"
+    ],
+    "metrics": [
+      "数据路径主机CPU核占用与主机内存中转流量",
+      "实测IOPS与时延P50/P99",
+      "nvfs DMA计数与兼容回退次数",
+      "GPU设备利用率"
+    ],
+    "support_criteria": [
+      "计数器显示数据全部绕过主机直达显存，且IOPS/时延不劣于主机中转基线、主机CPU占用下降"
+    ],
+    "reject_criteria": [
+      "生效后存在隐性主机回退，或路径收益不可复现"
+    ],
+    "limitations": [
+      "公告侧证据，无任何量化数字与基线",
+      "支持为将来时表述，生效日期与版本配置未知，验证需待正式可用",
+      "隔离、权限与错误恢复行为未公开"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "机制语义与既有候选相同：以直连/RDMA数据路径把CPU与主机内存移出GPU到存储的传输（绕过主机中转、数据直达GPU显存），面向加速器存储数据路径；本条为Google Cloud Managed Lustre on A5X的公告侧实例，仅新增部署成熟度信号（GPUDirect Storage进入公有云托管并行文件系统并绑定GA裸金属实例），无新的问题或机制语义，且该支持为将来时表述、无生效日期与量化数据，指向candidate_47cb76376a9afb422662。",
+  "related_candidate_ids": [
+    "candidate_47cb76376a9afb422662"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_f51fca492e1ecac94a17",
+      "issue_date": "2026-11-09",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "Google Cloud公告的Managed Lustre GPUDirect Storage支持与既有候选同义：以直连/RDMA数据路径绕过CPU与主机内存、数据直达GPU显存，面向加速器存储数据路径；本条仅新增公有云托管文件系统的部署成熟度信号（绑定GA裸金属实例），无新机制语义，且为将来时表述、无量化数据，判定为duplicate并指向candidate_47cb76376a9afb422662。",
+      "evidence_item_ids": [
+        "3274c14e77ab4342a6682ca5"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

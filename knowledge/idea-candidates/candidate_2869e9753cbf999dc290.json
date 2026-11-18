@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_2869e9753cbf999dc290",
+  "identity": {
+    "problem_key": "mac_unified_memory_cluster_training_backend_gap",
+    "mechanism_key": "unified_memory_inplace_bucketed_allreduce",
+    "target_key": "m4_max_10gbe_pytorch_training_cluster"
+  },
+  "idea_type": "solution_concept",
+  "title": "以统一内存原地桶式all-reduce补齐Mac集群的PyTorch分布式训练后端",
+  "problem": "PyTorch在苹果MPS上缺少可用的分布式训练后端，Mac统一内存集群虽提供大容量统一内存与廉价算力，却无法用于多机训练，训练算力选型将其排除在外。",
+  "hypothesis": "梯度按约25MB桶在统一内存原地归约、以Metal共享事件协调网络线程与异步GPU流的顺序、大桶走环形all-reduce且全程无需CPU暂存，可在10GbE交换网络下的M4 Max集群上实现高并行效率的实测分布式训练，使Mac统一内存集群进入训练算力选型的实测对比。",
+  "mechanism": "梯度按约25MB桶在统一内存原地归约；Metal共享事件协调网络线程与异步GPU流的顺序；大桶走环形all-reduce；数据无需暂存CPU。",
+  "target": "10GbE交换网络下（实测止于单交换机24节点）M4 Max统一内存集群上的PyTorch分布式训练",
+  "expected_effect": "113.5M参数ViT训练从单机198样本/秒扩展到24台4568样本/秒，24节点并行效率95.9%；5.5台M4 Max约合一台A100 80GB的TF32吞吐。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发表记录同时给出问题（MPS缺分布式训练后端）、可解释机制（统一内存原地桶式归约加Metal共享事件协调）、目标对象（10GbE下M4 Max集群）与可检验效应（24节点95.9%并行效率的实测扩展）。"
+  },
+  "evidence": [
+    {
+      "item_id": "b4358b173083f366f17fc9d8",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.39029v1"
+      ],
+      "reason": "MCCL记录给出问题（PyTorch在苹果MPS上缺少可用分布式训练后端）、机制（梯度按约25MB桶在统一内存原地归约、Metal共享事件协调网络线程与异步GPU流、大桶环形all-reduce、无需CPU暂存）、目标（10GbE交换网络下M4 Max集群）与可检验效应（113.5M参数ViT从单机198样本/秒扩展到24台4568样本/秒、并行效率95.9%、5.5台M4 Max约合一台A100 80GB TF32吞吐），并给出收益依赖反向计算长于梯度通信量、小消息受10GbE往返时延限制、实测止于单交换机24节点的边界。",
+      "independence_group": "arxiv:2610.39029"
+    }
+  ],
+  "evidence_item_ids": [
+    "b4358b173083f366f17fc9d8"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.39029v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.39029"
+  ],
+  "unknowns": [
+    "收益依赖反向计算时长长于梯度通信量，通信受限负载下能否与反向重叠未验证",
+    "小消息受10GbE往返时延限制，实测止于单交换机24节点，跨交换机与更高带宽网络未测",
+    "单一arXiv预印本的工程实测，缺独立复现，且仅覆盖ViT类训练负载"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有M4 Max集群上以MCCL复现统一内存原地桶式all-reduce分布式训练，先按梯度体积与批量核算10GbE下通信能否与反向计算重叠，再实测多节点扩展性。",
+    "inputs": [
+      "10GbE单交换机M4 Max集群",
+      "代表性训练负载与批量档位",
+      "梯度桶大小与环形归约阈值配置"
+    ],
+    "baselines": [
+      "单机MPS训练",
+      "经CPU暂存的梯度归约路径（gloo类）"
+    ],
+    "metrics": [
+      "多节点扩展吞吐（样本/秒）",
+      "并行效率",
+      "相对A100 80GB的TF32吞吐当量"
+    ],
+    "support_criteria": [
+      "24节点并行效率接近95.9%且吞吐扩展线性度可复现"
+    ],
+    "reject_criteria": [
+      "反向计算短于梯度通信量的负载下扩展失效，或时延主导使并行效率显著低于报告值"
+    ],
+    "limitations": [
+      "结论绑定10GbE单交换机、M4 Max统一内存架构与ViT类负载"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且与既有训练池选型、内核闭环、显存压缩等候选及Idea身份不同；但仅有单一arXiv预印本独立分组支撑，收益依赖反向计算长于梯度通信量、小消息受10GbE时延限制且实测止于单交换机24节点，适用边界待独立验证，先观察。",
+  "related_candidate_ids": [
+    "candidate_d83ad1410507694d893e"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_9a467aba3b382190f34",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且与既有训练池选型、内核闭环、显存压缩等候选及Idea身份不同；但仅有单一arXiv预印本独立分组支撑，收益依赖反向计算长于梯度通信量、小消息受10GbE时延限制且实测止于单交换机24节点，适用边界待独立验证，先观察。",
+      "evidence_item_ids": [
+        "b4358b173083f366f17fc9d8"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

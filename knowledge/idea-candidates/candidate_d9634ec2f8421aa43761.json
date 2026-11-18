@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_d9634ec2f8421aa43761",
+  "identity": {
+    "problem_key": "harness_resource_overhead_uncharacterized",
+    "mechanism_key": "fixed_capability_resource_pricing",
+    "target_key": "agent_harness_call_granularity"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "按固定模型能力的资源计价比较harness调用粒度：依赖路由加验证优于重放与整链单调用",
+  "problem": "同一语言模型配不同harness时，调用次数与上下文流量可相差一个量级，且这种资源开销没有理论刻画，harness改造无法按调用、token、内存与验证代价相互比较，整任务粗粒度调用省token但正确性下降的风险也被排除在比较之外。",
+  "hypothesis": "固定模型语义能力并按调用、token流量、内存读写与验证计价后，harness调用粒度可在代价—正确性平面上被预测与比较：依赖路由加验证的中间粒度应以远低于逐步重放的token取得不低于它的正确率，并纠正整链单调用的正确率损失；该计价排序在编码Agent的Read/Grep负载上同样成立。",
+  "mechanism": "LAM固定语言模型语义能力，把harness差异归约为可计价的资源项：调用、token流量、内存读写、容量C/S与失败率，四条定律分别约束通信、访问、重算与验证开销；依赖路由仅按依赖传递中间结果并在顶点处验证，16步链式MATH上每链3217输入token解70/70，逐步重放需35124 token仅65/70，整链单调用更省但64/70。",
+  "target": "Agent harness的调用粒度设计与改造核算，含编码Agent的Read/Grep等工具调用负载。",
+  "expected_effect": "受控链式任务上复现依赖路由加验证对重放与整链单调用的代价—正确性优势排序；在编码Agent负载上，按计价预测的粒度排序与实测token、调用数、正确率和时延排序一致，使harness改造可按计价口径比较后再采纳。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "单条已发布记录（arxiv:2610.02488）同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "4a9a46bf4dbb8e5bc05148dc",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.02488v2"
+      ],
+      "reason": "《LAM理论：固定模型能力，为harness资源开销计价》给出同模型不同harness开销差一个量级且无理论刻画的问题、固定能力对四类资源计价的机制，以及16步MATH链上依赖路由、重放与整链单调用三种粒度的对照结果。",
+      "independence_group": "arxiv:2610.02488"
+    }
+  ],
+  "evidence_item_ids": [
+    "4a9a46bf4dbb8e5bc05148dc"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.02488v2"
+  ],
+  "independence_groups": [
+    "arxiv:2610.02488"
+  ],
+  "unknowns": [
+    "实证限于合成任务与MATH链，编码Agent的Read/Grep负载与时延未测",
+    "顶点粒度理论不覆盖整任务单调用的正确性损失来源",
+    "四条资源定律在长时程多工具真实工作流上的拟合误差未知",
+    "内存读写与验证失败率等价格参数在内部部署的取值未标定"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "实现LAM口径的资源计价核算器（调用、token流量、内存读写、验证失败率），在16步链式任务与内部编码Agent任务上对整链单调用、逐步重放、依赖路由加验证三种调用粒度做配对执行对比。",
+    "inputs": [
+      "16步链式MATH任务集",
+      "内部编码Agent任务轨迹（含Read/Grep调用）",
+      "LAM四定律资源计价核算器",
+      "三种调用粒度的harness实现"
+    ],
+    "baselines": [
+      "整链单调用（最粗粒度）",
+      "逐步重放（最细粒度）",
+      "现harness的既有调用粒度"
+    ],
+    "metrics": [
+      "每链/每任务输入token",
+      "调用次数",
+      "解决率",
+      "端到端时延",
+      "验证开销"
+    ],
+    "support_criteria": [
+      "依赖路由加验证的token显著低于重放且解决率不低于重放",
+      "计价预测的粒度代价排序与实测排序一致，编码Agent负载上同样成立"
+    ],
+    "reject_criteria": [
+      "计价预测排序与实测显著不符或中间粒度无优势",
+      "验证开销与时延失控抵消token节省"
+    ],
+    "limitations": [
+      "原始实证基于合成任务与MATH链",
+      "顶点粒度理论未覆盖整任务单调用",
+      "内部价格参数需另行标定"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份与既有对象不同：按前缀缓存价格比门控上下文策略的候选（candidate_fb9acc51f933f50a67e7）只核算token服务经济性，摊销回本采纳门候选（candidate_80c1ad4772073ab741c2）核算的是加速机制采纳回本，均非固定模型能力下对调用、token、内存与验证的harness资源计价；但证据仅arxiv:2610.02488单一独立组，实证限于合成任务与MATH链，编码Agent的Read/Grep负载与时延未测，向编码Agent的适用边界未定，先挂起观察。",
+  "related_candidate_ids": [
+    "candidate_fb9acc51f933f50a67e7",
+    "candidate_80c1ad4772073ab741c2"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_57773bba42dec3e499d1",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份与既有对象不同：按前缀缓存价格比门控上下文策略的候选（candidate_fb9acc51f933f50a67e7）只核算token服务经济性，摊销回本采纳门候选（candidate_80c1ad4772073ab741c2）核算的是加速机制采纳回本，均非固定模型能力下对调用、token、内存与验证的harness资源计价；但证据仅arxiv:2610.02488单一独立组，实证限于合成任务与MATH链，编码Agent的Read/Grep负载与时延未测，向编码Agent的适用边界未定，先挂起观察。",
+      "evidence_item_ids": [
+        "4a9a46bf4dbb8e5bc05148dc"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

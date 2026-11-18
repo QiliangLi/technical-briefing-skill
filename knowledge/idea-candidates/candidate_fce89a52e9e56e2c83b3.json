@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_fce89a52e9e56e2c83b3",
+  "identity": {
+    "problem_key": "kv_handoff_deadline_budget_gap",
+    "mechanism_key": "quantile_slo_budget_value_ordered_fec",
+    "target_key": "lossy_edge_kv_handoff_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "排队论分位SLO预算驱动价值排序与FEC保护的KV交接传输",
+  "problem": "解耦与边缘KV交接的截止期预算与传输调度相互割裂：排队论分配只给到阶段级延迟预算且传输模型未经实测，价值排序与纠错传输的截止期又靠外生给定，有损窄带链路上无人把两者接成闭环。",
+  "hypothesis": "若把三阶段排队模型在分位SLO约束下推出的KV传输阶段延迟预算作为传输层截止期，交给按效用画像排序并以自适应FEC保护的传输层执行，则同等有损窄带链路下分位SLO达标率不降、传输字节进一步减少且任务质量保持。",
+  "mechanism": "以SARA式M/G/k、M/G/1与广义生灭过程按边际成本相等分配预填充、KV传输与解码的分位SLO延迟预算；KV传输预算作为PriorityFEC式传输层的截止期输入，按KV清零效用画像排定发送顺序，GF(2^8)流式FEC加反馈驱动的修复包调度在预算内送达最高价值前缀。",
+  "target": "有损窄带链路上的解耦与边缘KV交接传输",
+  "expected_effect": "价值排序加纠错在约8.4%丢包、截止期只容八成KV串行传输时已使六组任务平均token F1约43%对最强基线约8%；排队预算在七天Azure轨迹回放中与穷举搜索最大差距3.8%。联合机制的可检验预期是同等链路条件下分位SLO达标率不低于外生截止期基线且传输字节更少。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "SARA的分位SLO预算解析分配与PriorityFEC的截止期感知价值排序FEC传输在本期同题出现，联合机制（解析预算驱动传输调度与纠错）无单点来源；ImpactHO跨期独立支持价值排序部分传输元素。"
+  },
+  "evidence": [
+    {
+      "item_id": "139b36854d37dc64123fb27d",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.26763v1"
+      ],
+      "reason": "SARA把预填充、KV传输与解码分别建为M/G/k、M/G/1与广义生灭过程，按边际成本相等在分位SLO约束下分配各阶段延迟预算，回放七天Azure推理轨迹时goodput与穷举搜索最大差距3.8%；传输模型未见硬件实测。",
+      "independence_group": "arxiv:2609.26763"
+    },
+    {
+      "item_id": "ed4d6f4a29231c530ddb5255",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.21390v1"
+      ],
+      "reason": "PriorityFEC按KV清零效用画像排定发送顺序，以GF(2^8)流式FEC与Double-DQN修复包调度守截止期，约8.4%丢包且截止期只容八成KV串行传输时六组任务平均token F1约43%对最强基线约8%；其截止期为外生给定，可见指标是任务F1而非TTFT或TPOT时延。",
+      "independence_group": "arxiv:2610.21390"
+    },
+    {
+      "item_id": "4882c0b452abae6d423f4a05",
+      "issue_date": "2026-09-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.10545v1"
+      ],
+      "reason": "ImpactHO以Fast KVzip逐条效用打分排序并把多用户回传分配建模为注水问题，支持按重要性只传最有价值部分（500ms窗口平均准确率超93.7%、距全cache上限0.5pp），为价值排序部分传输提供跨期独立证据；不覆盖纠错与SLO预算。",
+      "independence_group": "arxiv:2608.10545"
+    }
+  ],
+  "evidence_item_ids": [
+    "139b36854d37dc64123fb27d",
+    "ed4d6f4a29231c530ddb5255",
+    "4882c0b452abae6d423f4a05"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.26763v1",
+    "https://arxiv.org/abs/2610.21390v1",
+    "https://arxiv.org/abs/2608.10545v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.26763",
+    "arxiv:2610.21390",
+    "arxiv:2608.10545"
+  ],
+  "unknowns": [
+    "SARA传输队列未经硬件实测，分位SLO预算映射为链路层截止期的误差未知",
+    "联合机制无已发布复现：PriorityFEC可见指标是任务F1而非TTFT或TPOT，无法直接对照SLO达标率",
+    "宽截止期下FLEC-RT多项反超PriorityFEC，预算与纠错联合调度的适用区间未划出"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "离散事件模拟把三阶段排队预算接到有损链路KV传输模拟器，预算内按效用画像排序调度FEC修复包。",
+    "inputs": [
+      "Azure类推理轨迹回放",
+      "丢包率与带宽扫描",
+      "KV效用画像",
+      "分位SLO目标"
+    ],
+    "baselines": [
+      "外生固定截止期的价值排序FEC传输",
+      "等量字节FEC传输",
+      "完整KV传输"
+    ],
+    "metrics": [
+      "分位SLO达标率",
+      "任务token F1",
+      "传输字节",
+      "TTFT与TPOT"
+    ],
+    "support_criteria": [
+      "同等链路条件下分位SLO达标率不低于外生截止期基线且传输字节减少"
+    ],
+    "reject_criteria": [
+      "排队模型误差使预算误导排序，达标率或任务质量低于外生截止期基线"
+    ],
+    "limitations": [
+      "模拟无法复现真实无线丢包时间相关性与内核干扰"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与可检验效应完整且无同身份前例，但预算与传输调度的耦合仅本期两组独立来源支撑、无跨期对耦合本身的复现，且两条触发记录已进入idea_f7841984fcce6a274881证据链，独立成案还是并入该Idea需人工世系决定。",
+  "related_candidate_ids": [
+    "candidate_8fab1b37d95800b51284"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-09-06",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_69a0f73c5bfebacc3e8",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与可检验效应完整且无同身份前例，但预算与传输调度的耦合仅本期两组独立来源支撑、无跨期对耦合本身的复现，且两条触发记录已进入idea_f7841984fcce6a274881证据链，独立成案还是并入该Idea需人工世系决定。",
+      "evidence_item_ids": [
+        "139b36854d37dc64123fb27d",
+        "ed4d6f4a29231c530ddb5255",
+        "4882c0b452abae6d423f4a05"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

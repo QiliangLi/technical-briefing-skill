@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_baef9b8116be660eca0c",
+  "identity": {
+    "problem_key": "post_quantization_elementwise_transform_bottleneck",
+    "mechanism_key": "algebraic_folding_into_matrix_dataflow",
+    "target_key": "commodity_gpu_low_precision_llm_inference_kernels"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "量化收益被逐元素辅助变换吃掉：把softmax、反量化与熵解码按代数恒等式折叠进矩阵数据流",
+  "problem": "低精度推理把权重、激活或KV缓存压到MXFP8/6/4、INT2/INT4或2.1-bit熵编码后，GEMM与注意力主算子本身变快，但配套的逐元素辅助变换——softmax归一化、逐值反量化s·q+z、熵解码——仍以独立逐元素通道执行，落在慢于矩阵核的向量单元或增长缓慢的指令发射上，把量化省下的带宽与算力吃掉，低比特格式无法兑现为内核与端到端加速。",
+  "hypothesis": "在低精度LLM推理内核中，量化/压缩之后残余的逐元素辅助变换构成新的吞吐瓶颈；把它们按代数恒等式或受控近似折叠进矩阵数据流——组尺度与偏置折入另一操作数或矩阵积输出、行和改写为对全一列的矩阵乘、指数用Schraudolph近似并入分数GEMM、熵解码融合进batch-1矩阵向量乘——可在免训练且语义保持或近似保持的前提下，把低精度格式兑现为相对BF16或最快基线约1.5至3.4倍的吞吐，且端到端精度不劣化超出各格式已知边界。",
+  "mechanism": "以精确代数恒等式（仿射折叠在精确算术下不改变输出）或受控近似（Schraudolph指数、量化前旋转分散离群值）把逐元素辅助工作并入稠密矩阵运算：常量尺度与偏置随量化方案折入另一操作数或矩阵积输出，归约改写为对全一列的矩阵乘，非线性并入分数GEMM并设溢出回滚，解码与矩阵向量乘融合为单内核，使辅助工作不再以独立逐元素通道出现在热路径上。",
+  "target": "商品加速器上的低精度LLM推理内核：MI355X的MXFP8/6/4量化注意力、H100/B200的INT2/INT4 KV缓存解码注意力、消费级GPU的batch-1权重熵解码。",
+  "expected_effect": "若折叠机理成立：MXFP8/6/4量化注意力内核吞吐达BF16的2.07至3.2倍（MI355X，峰值条件s=32768）且混合调度端到端提速约2.05倍、VBench略高于BF16；INT2/INT4 KV解码较FlashInfer BF16几何平均快2.67至3.36倍且H100上INT4有效KV吞吐达峰值带宽91.3%；batch-1熵解码权重较最快基线最高提速2.52倍（4060 Ti）；三类内核上逐元素辅助通道占临界路径的比例随精度降低而上升，折叠后该比例显著下降。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "三条2026-11-11同日、分属三个独立arXiv组的已发布记录，分别在softmax归一化、逐值反量化、权重熵解码三类逐元素辅助变换与三类商品硬件上共同支持同一机理：量化省下的资源被残余逐元素辅助通道吃掉、按代数恒等式或受控近似折叠进矩阵数据流可恢复1.5至3.4倍吞吐；该跨算子一般化未被任何单条记录陈述，任何单条记录只覆盖其中一种变换。"
+  },
+  "evidence": [
+    {
+      "item_id": "9b9afbfc9fc00c971761f38c",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09225v1"
+      ],
+      "reason": "AMD Fused-Softmax证明量化注意力中softmax落在慢于矩阵核的向量单元上成为瓶颈：免训练内核把冻结行最大值并入分数GEMM并设溢出回滚、用Schraudolph近似吸收指数、行和改为对全一列的矩阵乘、量化前旋转分散离群值，MI355X上MXFP8/6/4内核吞吐达BF16的2.07至3.2倍、Wan2.2混合调度端到端提速2.05倍且VBench略高于BF16——支持归一化类逐元素变换可折叠进GEMM数据流并兑现量化收益。",
+      "independence_group": "arxiv:2611.09225"
+    },
+    {
+      "item_id": "5f0b3a320c99019dca435bac",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09722v1"
+      ],
+      "reason": "FOSCAR证明2/4位KV缓存省下的HBM流量被逐值反量化（s·q+z重建）的指令发射瓶颈吃掉：把组尺度与偏移按量化方案仿射折入另一操作数或矩阵积输出（精确算术下不改变输出）后，INT2内核较FlashInfer BF16几何平均快3.36倍（H100）与2.67倍（B200），H100上INT4有效KV吞吐达峰值带宽91.3%——支持反量化类逐元素变换可按代数恒等式折入矩阵积。",
+      "independence_group": "arxiv:2611.09722"
+    },
+    {
+      "item_id": "1457b432889301c766397e89",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09424v2"
+      ],
+      "reason": "MINE对量化后仍非均匀的权重做无损熵编码（dtANS-LLM），batch-1用融合核把解码并入矩阵向量乘并按GPU与checkpoint自整定超参数，Llama 3.1 8B的2.1-bit checkpoint较最快基线提速2.52倍（4060 Ti，81.6 tok/s）与1.48倍（5090）——支持解码类逐元素变换可融合进矩阵向量乘数据流。",
+      "independence_group": "arxiv:2611.09424"
+    }
+  ],
+  "evidence_item_ids": [
+    "9b9afbfc9fc00c971761f38c",
+    "5f0b3a320c99019dca435bac",
+    "1457b432889301c766397e89"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.09225v1",
+    "https://arxiv.org/abs/2611.09722v1",
+    "https://arxiv.org/abs/2611.09424v2"
+  ],
+  "independence_groups": [
+    "arxiv:2611.09225",
+    "arxiv:2611.09722",
+    "arxiv:2611.09424"
+  ],
+  "unknowns": [
+    "三条证据均为2026-11-11同日未评审arXiv预印本，无独立复现",
+    "峰值收益依赖特定条件（s=32768长序列、H100/B200指令发射预算、Llama 3.1 8B单模型两张消费卡），短序列与小模型下折叠收益未量化",
+    "折叠中受控近似对端到端精度的影响仅部分验证：FOSCAR 2比特KV端到端精度未验证、MINE端到端精度验证缺失、MXFP4会改变画面内容",
+    "跨硬件统一判据（辅助逐元素开销占临界路径比例）未被任何记录直接测量",
+    "服务端+341%吞吐声明缺评估细节（FOSCAR边界）"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在同一推理栈上对softmax归一化、KV逐值反量化、权重熵解码三类内核各实现两个版本（独立逐元素通道 vs 折叠进矩阵数据流），在MI355X、H100/B200与消费级GPU三类硬件上测量折叠前后的内核吞吐、指令发射数与临界路径构成。",
+    "inputs": [
+      "量化/压缩格式档位（MXFP8/6/4、INT2/INT4 KV、2.1-bit熵编码权重）",
+      "序列长度与batch配置（含s=32768峰值条件与短序列）",
+      "三类硬件的内核计时与指令发射/向量单元占用计数"
+    ],
+    "baselines": [
+      "BF16未量化内核",
+      "未折叠的独立逐元素通道低精度实现",
+      "FlashInfer BF16与各记录开源基线"
+    ],
+    "metrics": [
+      "内核吞吐相对BF16或最快基线的倍数",
+      "逐元素通道占临界路径的比例与指令发射数",
+      "有效HBM带宽利用率",
+      "端到端时延与精度指标（VBench/困惑度）"
+    ],
+    "support_criteria": [
+      "至少两类不同辅助变换在两类不同硬件上，折叠后吞吐达基线1.8倍以上且精度劣化在各格式已知边界内",
+      "辅助通道占临界路径比例随精度降低而上升的直接测量成立，且折叠后显著下降"
+    ],
+    "reject_criteria": [
+      "折叠收益仅在单一硬件或单一辅助变换上成立",
+      "折叠后端到端精度劣化超出各格式已知边界",
+      "短序列/小batch下收益消失且无法由临界路径占比解释"
+    ],
+    "limitations": [
+      "本验证计划仅为建议，未执行任何测量",
+      "跨硬件的指令级计数口径不一致，需先统一计时与计数方法"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备；三个同日独立arXiv来源在三类不同逐元素辅助变换（softmax归一化、逐值反量化、权重熵解码）与三类商品硬件（MI355X、H100/B200、消费级GPU）上共同支持\"量化省下的资源被残余逐元素辅助通道吃掉、按代数恒等式或受控近似折叠进矩阵数据流可恢复吞吐\"的跨算子机理，该一般化未被任何单条记录陈述；与既有候选及Idea的身份和含义均不同（candidate_354849a7e622a14673a6讲解耦矩阵/向量单元上的单元级负载再平衡并横跨训练与推理，本候选讲低精度推理中残余逐元素变换的代数折叠，问题与机制均不同；candidate_6323fce8732010f20bef以压缩驻留换显存容量为目标，本候选以折叠辅助变换兑现低精度吞吐为目标；candidate_04af8f5a62d2db2fff9f仅覆盖INT8训练随机舍入的向量单元瓶颈）。",
+  "related_candidate_ids": [
+    "candidate_354849a7e622a14673a6",
+    "candidate_6323fce8732010f20bef",
+    "candidate_04af8f5a62d2db2fff9f"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d9da42c3defe55130198",
+      "issue_date": "2026-11-11",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应齐备；三个同日独立arXiv来源在三类不同逐元素辅助变换（softmax归一化、逐值反量化、权重熵解码）与三类商品硬件（MI355X、H100/B200、消费级GPU）上共同支持\"量化省下的资源被残余逐元素辅助通道吃掉、按代数恒等式或受控近似折叠进矩阵数据流可恢复吞吐\"的跨算子机理，该一般化未被任何单条记录陈述；与既有候选及Idea的身份和含义均不同（candidate_354849a7e622a14673a6讲解耦矩阵/向量单元上的单元级负载再平衡并横跨训练与推理，本候选讲低精度推理中残余逐元素变换的代数折叠，问题与机制均不同；candidate_6323fce8732010f20bef以压缩驻留换显存容量为目标，本候选以折叠辅助变换兑现低精度吞吐为目标；candidate_04af8f5a62d2db2fff9f仅覆盖INT8训练随机舍入的向量单元瓶颈）。",
+      "evidence_item_ids": [
+        "9b9afbfc9fc00c971761f38c",
+        "5f0b3a320c99019dca435bac",
+        "1457b432889301c766397e89"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

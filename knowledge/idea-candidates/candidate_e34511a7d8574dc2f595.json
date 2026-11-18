@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_e34511a7d8574dc2f595",
+  "identity": {
+    "problem_key": "block_diffusion_kv_reread_memory_bound",
+    "mechanism_key": "recoverable_tier_sparse_attention_shared_read_plan",
+    "target_key": "block_diffusion_lm_kv_decode_read_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "用优先/可恢复双档准入与块内共享读取计划削减块扩散解码的KV重读",
+  "problem": "块扩散语言模型每个去噪步都要重读不断增长的历史KV，长上下文推理受访存带宽制约；删除式驱逐换取容量会损失信息，CPU/SSD卸载又不解决块内重复读取本身，块扩散解码缺少按读取语义分层（而非删除）管理KV读取的机制。",
+  "hypothesis": "新KV经宽限期后按读取语义准入到优先或可恢复档（两档常驻GPU、按优先级而非删除区分），并由种子查询建立有界的块内共享读取计划复用读取结果、块提交后全前缀终算，可在不改骨干与解码器的前提下显著削减块扩散长上下文解码的KV重复读取：512 token解码窗口内较密集注意力提速1.06–1.40倍且28个基线点KL均不更高；代价为峰值显存上升（64K上下文44.20对39.27 GiB），读取节省与显存代价的权衡须在更长上下文、自由轨迹与自回归迁移中另行检验。",
+  "mechanism": "新KV经宽限期后划入优先或可恢复两档之一，两档均常驻GPU、按优先级而非删除区分；种子查询为块内建立有界共享读取计划供各去噪步复用，减少对历史KV的重复读取；块提交后另有全前缀终算对齐输出；机制不改动骨干与解码器。",
+  "target": "块扩散语言模型解码的KVCache读取路径（档位准入与块内读取计划调度）",
+  "expected_effect": "定轨迹512 token解码窗口内较密集注意力提速1.06–1.40倍，28个基线点均有更快且KL不更高的对应；峰值显存64K上下文44.20对39.27 GiB（显存反升）。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "单条已发布记录同时给出问题（块扩散每步去噪重读增长的历史KV、长上下文受访存制约）、可解释机制（宽限期后准入优先/可恢复双档、按优先级而非删除区分、种子查询建立块内有界共享读取计划、提交后全前缀终算）、目标对象（块扩散语言模型解码的KVCache读取路径）与可检验效应（512 token窗口1.06–1.40倍提速、28个基线点KL不更高、峰值显存44.20对39.27 GiB对照）。"
+  },
+  "evidence": [
+    {
+      "item_id": "fe0df82b7d265fa9ec6355a4",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.22191v1"
+      ],
+      "reason": "RISA给出问题（块扩散语言模型每步去噪重读增长的历史KV，长上下文推理受访存制约）、机制（新KV经宽限期后划入优先或可恢复双档，两档常驻GPU、按优先级而非删除区分；种子查询建立有界共享读取计划供块内复用；提交后全前缀终算；不改骨干与解码器）、目标（块扩散解码的KVCache读取路径）与可检验效应（定轨迹512 token窗口1.06–1.40倍提速、28个基线点均更快且KL不更高、64K上下文峰值显存44.20对39.27 GiB）；边界为两档驻GPU、无CPU/SSD卸载且显存反升，结论限于块扩散解码与多为固定轨迹测量。",
+      "independence_group": "arxiv:2611.22191"
+    }
+  ],
+  "evidence_item_ids": [
+    "fe0df82b7d265fa9ec6355a4"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.22191v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.22191"
+  ],
+  "unknowns": [
+    "两档均驻GPU且显存反升（64K上下文44.20对39.27 GiB），无CPU/SSD卸载，不解决分层容量问题",
+    "结论限于块扩散解码，测量多为固定轨迹，自由/可变轨迹与生成式负载行为未验证",
+    "迁移到自回归服务需另行验证：宽限期、档位准入与逐token解码及连续批处理的交互未知",
+    "KL不更高仅为输出分布对齐代理，证据无下游任务分数口径",
+    "档位准入与读取计划的超参（宽限期长度、共享计划界、优先级判据）无消融数据",
+    "单一预印本，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部推理栈复现块扩散解码的RISA式机制：宽限期后优先/可恢复双档准入加种子查询驱动的块内有界共享读取计划，对照密集全前缀重读与既有稀疏注意力基线，并做自回归解码路径的移植探针。",
+    "inputs": [
+      "块扩散语言模型长上下文负载（含64K及以上上下文扫描）",
+      "固定轨迹与自由/可变轨迹两类生成口径",
+      "宽限期长度、优先级判据与共享读取计划界的消融",
+      "自回归解码路径的移植探针（逐token解码、batch>1）"
+    ],
+    "baselines": [
+      "密集注意力全前缀重读",
+      "论文口径稀疏注意力基线（28个对照点）",
+      "无恢复档的删除式稀疏注意力（仅优先档）"
+    ],
+    "metrics": [
+      "512 token解码窗口墙钟时间与相对密集注意力的提速比",
+      "与密集注意力的KL散度及下游任务分数",
+      "每去噪步实际读取的KV量与读取去重率",
+      "峰值显存占用与自回归移植探针下的吞吐"
+    ],
+    "support_criteria": [
+      "自由/可变轨迹与batch>1下仍保持≥1.06倍提速且KL不高于密集基线",
+      "KV重复读取量按共享读取计划界成比例下降，显存代价有界且可由读取节省摊销"
+    ],
+    "reject_criteria": [
+      "提速只出现在固定轨迹，自由轨迹下增益消失或KL越界",
+      "显存反升在更长上下文或自回归移植中放大并吞噬读取收益"
+    ],
+    "limitations": [
+      "原始证据为单一预印本，限于块扩散解码且多为固定轨迹测量",
+      "两档驻GPU、显存反升，与分层容量目标方向相反",
+      "自回归迁移仅为推测，无serving数据"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有候选/Idea不同义：既有『驱逐即降级』家族（candidate_18458bcb48f7ddff4d4c、candidate_6fd51f65a129e9c56f02、idea_18458bcb48f7ddff4d4c）面向自回归服务中不可逆驱逐的质量损伤，以量化冷层加预取召回为目标；本候选面向块扩散解码每步重读历史KV的访存瓶颈，机制为宽限期后优先/可恢复双档准入加块内共享读取计划，问题、机制、目标均不同；idea_18458bcb48f7ddff4d4c 本期仅把本项吸收为跨域证据并在其unknowns中把块扩散迁移列为未知，未覆盖本身份语义。但证据为单一arXiv预印本（单一独立组）无独立支持，两档均驻GPU且显存反升（64K上下文44.20对39.27 GiB）、无CPU/SSD卸载，测量多为固定轨迹并限于块扩散解码，自回归服务迁移与serving行为未验证，适用边界未定，先deferred观察。",
+  "related_candidate_ids": [
+    "candidate_18458bcb48f7ddff4d4c",
+    "candidate_6fd51f65a129e9c56f02",
+    "candidate_2091ab950b508be4892f"
+  ],
+  "related_idea_ids": [
+    "idea_18458bcb48f7ddff4d4c"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_8a6e112e0b203f34a841",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有候选/Idea不同义：既有『驱逐即降级』家族（candidate_18458bcb48f7ddff4d4c、candidate_6fd51f65a129e9c56f02、idea_18458bcb48f7ddff4d4c）面向自回归服务中不可逆驱逐的质量损伤，以量化冷层加预取召回为目标；本候选面向块扩散解码每步重读历史KV的访存瓶颈，机制为宽限期后优先/可恢复双档准入加块内共享读取计划，问题、机制、目标均不同；idea_18458bcb48f7ddff4d4c 本期仅把本项吸收为跨域证据并在其unknowns中把块扩散迁移列为未知，未覆盖本身份语义。但证据为单一arXiv预印本（单一独立组）无独立支持，两档均驻GPU且显存反升（64K上下文44.20对39.27 GiB）、无CPU/SSD卸载，测量多为固定轨迹并限于块扩散解码，自回归服务迁移与serving行为未验证，适用边界未定，先deferred观察。",
+      "evidence_item_ids": [
+        "fe0df82b7d265fa9ec6355a4"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

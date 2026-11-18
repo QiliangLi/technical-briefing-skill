@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_90e9417774bee4c97457",
+  "identity": {
+    "problem_key": "agent_multiturn_kv_staleness_and_versioning",
+    "mechanism_key": "chain_cache_history_keyed_targeted_pruning",
+    "target_key": "agent_loop_kv_cache_engine"
+  },
+  "idea_type": "solution_concept",
+  "title": "生命周期契约引擎内按操作历史键控的Agent跨轮KV保留与定向剪枝",
+  "problem": "长程 Agent 多轮轨迹的 KV 复用存在双重错位：旧工具结果长期驻留使跨轮缓存陈旧并挤占显存，而 drop/repos 与摘要等操作又让朴素前缀复用无法区分缓存版本，触发重填充或错配重用。",
+  "hypothesis": "在统一生命周期契约的引擎内，把 Chain Cache 式跨轮压缩 KV 保留与 radix drop 节点式操作历史键控版本化、旧工具结果定向剪枝组合，可在 Agent 多轮负载中同时获得跨轮复用加速（对照 1.57-2.24 倍）与版本正确性下的成本下降（对照 27.7%），且两收益不互相抵消。",
+  "mechanism": "引擎以生命周期契约为边界共享调度与容量接口，方法自持 KV 表示并保持连续批处理与前缀缓存；Chain Cache 跨轮保留压缩 KV 并按工具结果生命周期定向剪枝；radix tree 插入 drop 节点以操作历史区分缓存版本，剪枝与版本化共用同一操作历史信号。",
+  "target": "长上下文 Agent 推理引擎的跨轮 KV 缓存层",
+  "expected_effect": "Agent 回放加速 1.57 至 2.24 倍（SparseEngine 口径）与平均成本降 27.7%、平均分升 1.7 点（AKV 口径）在同一引擎内同时成立，且不出现同键异版本错配或误删导致的分数下降。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "SparseEngine（2026-10-29 触发项）给出跨轮压缩 KV 保留与定向剪枝的引擎载体，AKV（2026-10-23）独立证明操作历史版本化对正确性的必要性，两线联合支持任何单条记录未陈述的机制组合。"
+  },
+  "evidence": [
+    {
+      "item_id": "5f259cb3ff24288516bac4f7",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.39068v1"
+      ],
+      "reason": "SparseEngine 以生命周期契约统一 15 种 KV 稀疏方法并保持前缀缓存，Chain Cache 跨轮保留压缩 KV、定向剪枝删除旧工具结果，Agent 回放加速 1.57-2.24 倍（回放模拟工具等待）。",
+      "independence_group": "arxiv:2609.39068"
+    },
+    {
+      "item_id": "51b028770810a93bcda12391",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.28577v1"
+      ],
+      "reason": "AKV 证明 Agent 对 KVCache 执行 drop/repos 后需按操作历史区分缓存版本：三模型四 Agent 基准平均成本降 27.7%、平均分升 1.7 点（未报告命中率与显存利用率）。",
+      "independence_group": "arxiv:2610.28577"
+    }
+  ],
+  "evidence_item_ids": [
+    "5f259cb3ff24288516bac4f7",
+    "51b028770810a93bcda12391"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.39068v1",
+    "https://arxiv.org/abs/2610.28577v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.39068",
+    "arxiv:2610.28577"
+  ],
+  "unknowns": [
+    "SparseEngine 的 Agent 回放模拟工具等待而非真实并发负载",
+    "AKV 未报告缓存命中率与显存利用率，drop 节点累积对树开销未知",
+    "两条机制未在同一引擎框架对照，组合收益与相互干扰未验证",
+    "激进稀疏预算下 AIME 正确率降至 18.3% 的质量边界"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在统一 KV 缓存引擎内实现 Chain Cache 式跨轮压缩保留、操作历史键控 drop 节点与旧工具结果定向剪枝，接入多轮 Agent 基准。",
+    "inputs": [
+      "多轮 Agent 轨迹基准（含 drop/repos 与摘要操作流）",
+      "跨轮压缩 KV 保留预算扫描",
+      "剪枝触发策略对照（时间衰减对操作历史）"
+    ],
+    "baselines": [
+      "朴素前缀缓存（无跨轮保留、无版本键）",
+      "仅 Chain Cache 跨轮保留（无版本键）",
+      "仅 drop 节点版本化（无跨轮压缩保留）"
+    ],
+    "metrics": [
+      "回放加速比",
+      "API 成本与重填充次数",
+      "任务分数",
+      "同键异版本错配数",
+      "命中率与显存占用"
+    ],
+    "support_criteria": [
+      "两机制叠加收益显著高于任一单独机制且零版本错配",
+      "任务分数不因剪枝误删下降"
+    ],
+    "reject_criteria": [
+      "操作历史键使命中率大幅下降",
+      "剪枝误删活跃工具结果导致分数显著退化"
+    ],
+    "limitations": [
+      "原始证据分别限于模拟回放与三模型四基准",
+      "未覆盖真实生产 Agent 流量"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "跨轮保留与操作历史版本化两条独立证据线互补，但未在同一引擎框架对照且回放为模拟工具等待，先观察组合验证。",
+  "related_candidate_ids": [
+    "candidate_8fc8416fea27e4c4cbd9"
+  ],
+  "related_idea_ids": [
+    "idea_e2ff81802e9e160bca19"
+  ],
+  "first_seen_issue": "2026-10-23",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_4964b62f2534f9fe4fdd",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "跨轮保留与操作历史版本化两条独立证据线互补，但未在同一引擎框架对照且回放为模拟工具等待，先观察组合验证。",
+      "evidence_item_ids": [
+        "5f259cb3ff24288516bac4f7",
+        "51b028770810a93bcda12391"
+      ],
+      "actor": "agent"
+    }
+  ]
+}
