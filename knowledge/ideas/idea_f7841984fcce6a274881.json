@@ -312,13 +312,46 @@
         "https://arxiv.org/abs/2610.16890v1"
       ],
       "reason": "FORGE以片上转子种子重生成三成MoE层专家权重，释放28-29%参数显存（4096上下文KV容量扩至1.2-2.6倍）并以单机化消除跨机专家all-to-all；把交叉点假设的非网络对照面扩展到权重/显存侧重生成基线——网络侧传输与调度的增量收益须在该单机化容量边界之外量化（每专家8token时FFN内核较cuBLASLt FP8快2.28-3.23倍为内核实测，但系统级吞吐与时延为模拟器投影、RGU未流片、替换后下游精度降幅未量化）。"
+    },
+    {
+      "item_id": "936feafaf401f83509429a23",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.22086v1"
+      ],
+      "reason": "HyCoInfer按带宽、质量下限与时延预算在线选择RVQ压缩深度并把KV逐层流水传输隐藏在prefill内，给出传输粒度随带宽条件变化的广域云边实例（500Mbps下相对云上vLLM平均时延降32.0-61.1%、Qasper吞吐4.11倍、100Mbps协同吞吐3.45倍）；限于整形带宽试验台、单模型单FPGA，无下游精度保持与P95数据。"
+    },
+    {
+      "item_id": "5fada44e930635ca19459904",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.22206v1"
+      ],
+      "reason": "推断：TAILROLL以无跨引擎KV传输的纯调度（chunk边界无状态迁移加一次re-prefill、GRPO组内充分性终止）在RL rollout取得每步省23.6-33.9%、p95 TTFT最多降88.4%、吞吐最高增33.3%，构成传输策略必须超越的重算侧调度上限基线；其迁移本身依赖重新预填，恰为KV位置感知传输的价值差所在，但未见交互式推理服务评估、短步多模态负载几乎不降。"
+    },
+    {
+      "item_id": "0a483abc380e6011336e91b9",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.18459v1"
+      ],
+      "reason": "推断：Callo以失效KV投机解码把编辑型请求重预填充等待折叠进解码空闲算力（SWE-agent未命中请求1.06-1.24倍、折叠47%未命中惩罚），且收益不随100-400Gb/s接口变化，为带宽不敏感的就地计算/重算对照点；依赖会话亲和路由、缓存未淘汰与空闲解码算力、接近饱和时退化，集群规模为校准仿真。"
+    },
+    {
+      "item_id": "b570802a9191a1d54298c8a2",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.20893v1"
+      ],
+      "reason": "星上分解式推理解析研究量化了带宽轴：星间链路100→800 Gbps使KVCache传输占TTFT由约24-31%降至3.8-5.8%（Qwen3-235B代入Mooncake地面基线），只给PDD/AFD容量-距离可行域而非调度机制，可作交叉点的解析输入（无真实负载仿真与实测、吞吐与P95未见、AFD假设传输无重叠）。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
     "多租户 P95/P99 下的交叉点是否稳定。",
     "代价预测错误与画像漂移会造成多大回退。",
-    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）、主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）、放置架构基线（TKNP八节点KV容量约为DP的5倍、较DCP 1.53倍）、单卡KV内存调度基线（cμ-backfill平均时延9.47秒对vLLM默认35.49秒）与片上权重重生成单机化基线（FORGE释放28-29%参数显存、KV容量扩至1.2-2.6倍并消除跨机专家all-to-all）的增量收益尚无对照数据。"
+    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）、主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）、放置架构基线（TKNP八节点KV容量约为DP的5倍、较DCP 1.53倍）、单卡KV内存调度基线（cμ-backfill平均时延9.47秒对vLLM默认35.49秒）与片上权重重生成单机化基线（FORGE释放28-29%参数显存、KV容量扩至1.2-2.6倍并消除跨机专家all-to-all）、带宽不敏感纯调度基线（TAILROLL不做跨引擎KV传输、rollout每步省23.6-33.9%、p95 TTFT最多降88.4%）与失效KV投机解码基线（Callo折叠47%重预填充未命中惩罚、收益不随100-400Gb/s接口变化）的增量收益尚无对照数据。",
+    "带宽自适应压缩深度与容量-距离可行域作为调度输入的外推有效性未验证：HyCoInfer的RVQ深度选择限于整形带宽试验台、单模型单FPGA且无精度保持与P95，星上PDD/AFD为纯解析口径（AFD假设传输无重叠），到集群内多租户实测的迁移未经验证。"
   ],
   "validation_plan": {
     "mode": "simulation",
@@ -332,7 +365,8 @@
     "baselines": [
       "完整 KV 传输",
       "始终重算",
-      "固定请求放置"
+      "固定请求放置",
+      "无KV传输的纯调度迁移基线（如TAILROLL式chunk边界无状态迁移加一次re-prefill）"
     ],
     "metrics": [
       "P50/P95/P99 TTFT",
@@ -352,7 +386,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-02",
-  "last_updated_issue": "2026-11-16",
+  "last_updated_issue": "2026-11-18",
   "decision_log": [
     {
       "event_id": "idea_decision_4f7da6ed9342bd9a8339",
@@ -579,6 +613,20 @@
       "evidence_item_ids": [
         "bd2b49eeff5341c458da618a",
         "2e8c5f6524d462c8d1d442b1"
+      ]
+    },
+    {
+      "event_id": "idea_decision_d8c46081ec7314e1171a",
+      "issue_date": "2026-11-18",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增带宽不敏感纯调度与投机解码对照组（TAILROLL、Callo）、带宽自适应压缩深度实例（HyCoInfer）与星上容量-距离解析边界（PDD/AFD）：交叉点假设的重算与就地计算对照面扩展到带宽不敏感基线，压缩深度成为传输粒度的一个维度；状态保持observing，传输、重算与就地计算在统一负载下的完整对照仍缺失。",
+      "evidence_item_ids": [
+        "936feafaf401f83509429a23",
+        "5fada44e930635ca19459904",
+        "0a483abc380e6011336e91b9",
+        "b570802a9191a1d54298c8a2"
       ]
     }
   ]

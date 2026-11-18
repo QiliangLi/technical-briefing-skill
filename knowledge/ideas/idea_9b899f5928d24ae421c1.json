@@ -56,13 +56,22 @@
         "https://arxiv.org/abs/2611.09225v1"
       ],
       "reason": "MI355X实测给出softmax瓶颈机理的跨硬件类印证（inferred）：AMD同样发现量化注意力中softmax落在慢于矩阵核的向量单元成瓶颈，将其免训练折叠进GEMM后MXFP8/6/4吞吐达BF16的2.07至3.2倍；与边缘NPU上softmax占计算密集kernel时延最高89.4%、矩阵单元空转的实测同族，说明该失配机理不限于边缘NPU，但本条目标为数据中心APU上的注意力内核而非边缘NPU线性注意力，不能直接回答跨NPU厂商与代际的未知项（仅单块MI355X、峰值条件s=32768、短序列吞吐明显下降）。"
+    },
+    {
+      "item_id": "3eed0d89be4827333468a821",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.20409v1"
+      ],
+      "reason": "RescuCore把Mamba-3在GPU上的瓶颈定位为顺序依赖时延与kernel碎片化而非带宽，将离散化、RoPE、MIMO与状态更新折成SM子分区内每通道1周期的专用流水线单元后仿真中decode加速1.3至2.8倍，与『线性注意力/SSM理论优势未兑现源于标量侧与执行结构而非矩阵算力』同族（inferred：为GPU仿真+RTL外推的硬件专用单元路径、非边缘NPU软件数据流重排，仅测B=1、无流片数据）。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
     "失配与修复效果是否跨NPU厂商与代际成立（现有证据绑定Hexagon、RKNPU、Ascend 310P与XDNA两代）",
     "decode与prefill两相位的失配构成是否不同，现有实测以prefill为主",
-    "功耗与热降频约束下的净收益未测"
+    "功耗与热降频约束下的净收益未测",
+    "硬件专用单元路径（RescuCore仿真估计约5.9%面积）与软件数据流重排路径的收益上界对比未测（仿真仅B=1、无流片、BF16精度损失未量化）"
   ],
   "validation_plan": {
     "mode": "prototype",
@@ -95,7 +104,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-17",
-  "last_updated_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-18",
   "decision_log": [
     {
       "event_id": "idea_decision_4c9778ed63ff2f9e7704",
@@ -120,6 +129,17 @@
       "reason": "新增MI355X Fused-Softmax作为softmax落在向量单元、折叠进矩阵核即可恢复吞吐的同族跨硬件类印证（inferred，目标为数据中心APU而非边缘NPU）；Idea状态保持observing，边缘NPU上的数据流重排修复收益仍未直接复测。",
       "evidence_item_ids": [
         "9b9afbfc9fc00c971761f38c"
+      ]
+    },
+    {
+      "event_id": "idea_decision_f7435db540f952f27d9b",
+      "issue_date": "2026-11-18",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增RescuCore作为SSM执行结构失配的跨硬件类印证（inferred，GPU仿真路径）：串行依赖与标量侧工作折进流水线专用单元即恢复收益，与softmax/张量重排落向量单元的失配构成互补证据；Idea状态保持observing，边缘NPU上的软件侧修复收益仍未直接复测、仿真结论无流片数据。",
+      "evidence_item_ids": [
+        "3eed0d89be4827333468a821"
       ]
     }
   ]

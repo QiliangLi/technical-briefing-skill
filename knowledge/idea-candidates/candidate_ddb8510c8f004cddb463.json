@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ddb8510c8f004cddb463",
+  "identity": {
+    "problem_key": "chunked_prefill_online_eviction_partial_history_and_peak_memory",
+    "mechanism_key": "layer_end_deferred_eviction_with_pluggable_shared_head_scoring",
+    "target_key": "long_context_chunked_prefill_kv_eviction_path"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "层末延迟驱逐配可插拔共享头打分：驱逐时机与打分质量的组合假设",
+  "problem": "长上下文分块prefill期间驱逐决策受两个未组合验证的失败面夹击：其一，层内在线驱逐在只见局部历史时就做不可逆决策而伤质量，保留全量KV到prefill结束又推高构建期瞬时峰值显存（TideKV口径：在线驱逐只见局部历史而伤质量、瞬时显存口径降83.89%的前提即全量prefill峰值仍高）；其二，打分侧按共享同一KV头的query头平均注意力决定保留的驱逐器（RestoreKV GM）较母算法RULER-4K平均+2.73分，却只在离线口径验证。驱逐时机与打分质量两轴从未在同一框架组合评估。",
+  "hypothesis": "在分块prefill引擎内把驱逐时机统一延迟到各层处理完全部prompt分块的层末（仅活跃层保留全量KV、调度与选择器解耦），并在该决策点插入按共享KV头query平均注意力打分的保留器：层末时机使打分器可利用该层完整prompt注意力统计，这是层内在线驱逐不具备的信息条件；据此等保留预算下较『层内在线驱逐+SnapKV类局部统计打分』同时保持构建期瞬时峰值降幅（TideKV复现口径83.89%量级）与RULER质量不低于该基线、TTFT代价不超过16.74%口径；若层末集中驱逐自身形成新瞬时峰值使降幅塌陷、或完整层统计打分不优于在线局部统计打分，则时机与打分应视为不可加的两轴，延迟框架只保留工程峰值收益而不叠加质量收益。",
+  "mechanism": "时机轴（TideKV）：Transformer层内流式处理prompt全部分块、仅活跃层保留全量KV、层末统一驱逐，调度与选择器解耦、可配对任意打分器。打分轴（AutoAssumption/RestoreKV GM）：保留由共享同一KV头的query头平均注意力决定，该打分器经Lean假设松弛搜索产出、RULER-4K较母算法平均+2.73分。组合机制：层末决策点恰在该层全prompt注意力可得之后，使共享头平均注意力这类需要完整query集合的统计量在驱逐决策时可计算——任一单条记录未陈述该组合。",
+  "target": "长上下文分块prefill引擎的KV驱逐决策点（驱逐时机与打分器的接口）。",
+  "expected_effect": "组合目标：64K-128K长上下文构建期瞬时峰值显存保持TideKV复现口径降幅（83.89%量级、进程级43.86%量级）、TTFT代价不超过16.74%口径，且等保留预算下RULER分数不低于『在线驱逐+SnapKV』基线并趋向RestoreKV GM的+2.73分口径；两轴增益可加性幅度待验证。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-18",
+    "rationale": "同期两条独立证据互补覆盖驱逐决策的两轴：TideKV（2026-11-18）给出层末延迟驱逐的时机机制并显式声明调度与选择器解耦、可与SnapKV等配对，但只配了SnapKV类打分且限batch 1；AutoAssumption（2026-11-18）以Lean假设松弛搜索产出按共享KV头query平均注意力决定保留的更强打分器，但未在任何延迟框架内验证。两线联合支持『层末时机×可插拔共享头打分』这一任一单条记录未陈述的组合机制。"
+  },
+  "evidence": [
+    {
+      "item_id": "95acb09fe1bc6fd4ec5f702a",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.24499v1"
+      ],
+      "reason": "TideKV给出问题（长上下文KV压缩需全量prefill、构建期瞬时峰值显存仍高，层内在线驱逐只见局部历史而伤质量）、时机机制（Transformer层内流式处理prompt全部分块、仅活跃层保留全量KV、层末统一驱逐，调度与选择器解耦、可与SnapKV等打分器配对）、目标对象（分块prefill构建期KV路径）与可检验效应（构建期瞬时显存降83.89%；A100 128K上TTFT增4.17%、进程级峰值降43.86%；4090上RULER 64K/128K为76.65/65.93，SnapKV为74.82/OOM）；边界为默认batch 1单请求、无并发吞吐评估、TTFT代价最高16.74%、128K进程级降幅依赖分配器。",
+      "independence_group": "arxiv:2610.24499"
+    },
+    {
+      "item_id": "e3a1755d2f00a1eb27855e14",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.14844v1"
+      ],
+      "reason": "AutoAssumption给出打分轴改进：把89个ML系统算法写成Lean证明图、每次只松弛一个假设来搜索新算法，产出RestoreKV GM——保留由共享同一KV头的query头平均注意力决定，RULER-4K较母算法平均+2.73分、32×压缩最高+12.0；跨条目组合点(inferred)：层末决策点在该层全prompt注意力可得之后，共享头平均注意力这类需要完整query集合的统计量此时才可计算，与TideKV的延迟时机互补且任一单条记录未陈述该组合；边界为搜索只用200题子集、6500题成绩未给出、计时为batch 1、64K上下文TTFT 33.0秒对不驱逐5.94秒、形式化仍需人工核对。",
+      "independence_group": "arxiv:2611.14844"
+    }
+  ],
+  "evidence_item_ids": [
+    "95acb09fe1bc6fd4ec5f702a",
+    "e3a1755d2f00a1eb27855e14"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.24499v1",
+    "https://arxiv.org/abs/2611.14844v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.24499",
+    "arxiv:2611.14844"
+  ],
+  "unknowns": [
+    "组合从未同框架验证：层末统一驱逐自身可能形成新的瞬时峰值，83.89%量级降幅能否保持未知",
+    "TideKV仅batch 1单请求、无并发吞吐评估；AutoAssumption计时亦为batch 1，其64K TTFT 33.0秒级代价需先在真实多轮负载评估",
+    "RestoreKV GM仅200题子集口径，6500题全量成绩未给出",
+    "共享头平均注意力打分与GQA组内熵池化页对齐打分（candidate_4292b1d7d5e7493acb6c口径）的相对优劣未对照",
+    "两条均为本期单篇预印本，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在分块prefill引擎（vLLM/SGLang类）内实现层末统一驱逐接口，分别插入SnapKV类局部统计打分与共享KV头query平均注意力打分（RestoreKV GM口径），GQA骨干7B级模型（Qwen2.5-7B或Llama级），64K-128K上下文。",
+    "inputs": [
+      "RULER 4K-128K与LongBench负载",
+      "保留预算扫描（含20%档）",
+      "batch 1复现口径与并发批对照",
+      "瞬时显存与进程级峰值两种口径采样",
+      "打分器消融：局部统计vs完整层统计、SnapKV vs RestoreKV GM"
+    ],
+    "baselines": [
+      "层内在线驱逐+SnapKV打分",
+      "层末延迟驱逐+SnapKV打分（TideKV复现口径）",
+      "不驱逐全量KV（质量上界与峰值下界参照）"
+    ],
+    "metrics": [
+      "构建期瞬时峰值显存与进程级峰值显存",
+      "TTFT及TTFT代价百分比",
+      "RULER/LongBench等预算分数",
+      "并发吞吐"
+    ],
+    "support_criteria": [
+      "层末+共享头打分较在线+SnapKV基线：瞬时峰值降幅保持TideKV复现口径量级且等预算RULER不低于该基线",
+      "TTFT代价不超过16.74%口径"
+    ],
+    "reject_criteria": [
+      "层末集中驱逐造成新瞬时峰值使降幅显著低于TideKV复现口径",
+      "完整层统计打分的质量不优于在线局部统计打分（两轴不可加）"
+    ],
+    "limitations": [
+      "两条原始证据均为batch 1单期预印本，并发与serving级吞吐未验证",
+      "RestoreKV GM口径仅200题子集，外推到全量与serving负载未验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "时机与打分两轴互补、组合语义为任一单条记录未陈述，且与既有候选不同义（candidate_827f27dbafeac04e8d94为解码前分层放置预测、candidate_80a11fa68bdf30c34571为层形状加未来查询打分信号、candidate_4292b1d7d5e7493acb6c为GQA组内熵池化页对齐打分、idea_d4ad44954f43a2562f13为打分层深度选择，均非prefill构建期驱逐时机与打分的组合）；但组合本身无任何直接验证，TideKV限batch 1无并发吞吐、AutoAssumption仅200题子集且64K TTFT 33秒级，缺独立支持与并发适用边界，先观察。",
+  "related_candidate_ids": [
+    "candidate_827f27dbafeac04e8d94",
+    "candidate_80a11fa68bdf30c34571",
+    "candidate_4292b1d7d5e7493acb6c"
+  ],
+  "related_idea_ids": [
+    "idea_d4ad44954f43a2562f13"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_39ed9c5b66b25fbff87b",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "时机与打分两轴互补、组合语义为任一单条记录未陈述，但组合本身无任何直接验证：TideKV限batch 1无并发吞吐、AutoAssumption仅200题子集且64K TTFT 33秒级，缺独立支持与并发适用边界，先观察。",
+      "evidence_item_ids": [
+        "95acb09fe1bc6fd4ec5f702a",
+        "e3a1755d2f00a1eb27855e14"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

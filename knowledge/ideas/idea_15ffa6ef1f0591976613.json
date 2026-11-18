@@ -56,6 +56,14 @@
         "https://arxiv.org/abs/2609.18110v1"
       ],
       "reason": "SSD-LLaMA把SSD-内存-显存组织为专家流水线：专家权重重排为对齐块实现O(1)偏移读取、异步I/O重叠、RAM与显存作缓存并按逐专家代价选择执行位置，1T MoE在RTX 5090与32GB内存上解码1.03 token/s、较llama.cpp 1.35至3.44倍、SSD带宽利用率77.7%对最好基线43.2%，首次在消费级真实硬件上验证该机理的可用下限与规模劣化斜率（2.8T的Kimi-K3解码仅0.465 token/s；属系统软件而非新芯片、自身能耗未测、被引研究提示SSD卸载每token能耗最高可增12倍）。"
+    },
+    {
+      "item_id": "edab69cf5dfad558b3a9bd4e",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.14776v1"
+      ],
+      "reason": "SlipStream以需求序预取加16至40MB缓冲在周期级仿真中把HBF慢层权重存储恢复到理想性能的92.4%，支持『容量受限推理的吞吐上限由慢速层时延隐藏与I/O-计算重叠度决定而非容量本身』的机理（inferred：对象为稠密模型只读权重与HBF假设介质、非MoE专家权重，且全部为仿真口径、无HBF实物系统）。"
     }
   ],
   "evidence_against": [],
@@ -64,7 +72,8 @@
     "能耗边界未刻画：SSD-LLaMA自身能耗未测，被引研究提示SSD卸载每token能耗最高可增12倍，分层推理可能以能耗换容量",
     "decode与prefill两相位收益不对称（EStream仅prefill，SSD-LLaMA解码1.03 token/s接近可用下限）",
     "仿真证据（ThAME、DynaNDE）与真实硬件证据（SAEM、EStream、SSD-LLaMA）之间的量级差距尚未对齐",
-    "路由局部性与阶段可预测性（SAEM按阶段缓存、DynaNDE驻留复用）相对盲分层流式的增量收益未量化"
+    "路由局部性与阶段可预测性（SAEM按阶段缓存、DynaNDE驻留复用）相对盲分层流式的增量收益未量化",
+    "需求序预取依赖数据无关kernel的稳定页需求序，MoE动态专家路由下的可预测性与真实HBF介质的实测收益未验证（SlipStream为周期级仿真、仅只读权重）"
   ],
   "validation_plan": {
     "mode": "prototype",
@@ -102,7 +111,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-11",
-  "last_updated_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-18",
   "decision_log": [
     {
       "event_id": "idea_decision_b61e77e3d02da265f95a",
@@ -117,6 +126,17 @@
         "e041762630a5be09f348c000",
         "a69ffd0d55a889b50d65e3c1",
         "f356968039545b01ff980787"
+      ]
+    },
+    {
+      "event_id": "idea_decision_c5a415af45e1ce0d4775",
+      "issue_date": "2026-11-18",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增SlipStream作为慢速层时延隐藏的同族证据（inferred，稠密模型+HBF仿真口径）：16倍容量慢层的可用性由缓冲大小与预取序决定，扩展『容量墙可用分层驻留+流式重叠绕过』机理的证据面；Idea状态保持observing，MoE专家路由可预测性与真实HBF系统数据仍缺。",
+      "evidence_item_ids": [
+        "edab69cf5dfad558b3a9bd4e"
       ]
     }
   ]

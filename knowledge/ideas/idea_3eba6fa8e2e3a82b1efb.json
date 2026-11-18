@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_3eba6fa8e2e3a82b1efb",
+  "identity": {
+    "problem_key": "retrieval_benchmark_setting_bias",
+    "mechanism_key": "fair_bm25_query_expansion_baseline",
+    "target_key": "coding_agent_repo_retrieval_selection"
+  },
+  "idea_type": "solution_concept",
+  "title": "仓库检索选型先用公平BM25加查询扩写基线把关，再决定是否维护稠密索引",
+  "problem": "稠密编码器在代码检索基准上对BM25的表面优势与编码Agent用grep即可工作的实践相互冲突：REPOPREMIUM的控制变量评测显示该优势大半来自评测设定——整文件BM25索引把策划池上稠密优势从+0.121压到+0.034 nDCG@10，LLM扩写标识符后grep在全部Python池反超稠密检索，按基准总分直接选稠密索引会付出不必要的索引构建与维护成本。",
+  "hypothesis": "可证伪问题：在同一仓库检索负载上，先建立整文件BM25加标识符查询扩写加固定RRF融合的公平基线、仅当稠密检索在公平口径下优势超过阈值且该仓库检索频次够高时才引入稠密索引，能否在文件级定位质量不降的前提下显著减少需要维护稠密索引的仓库比例与总检索成本。",
+  "mechanism": "选型管线分三层：默认整文件BM25检索；查询侧用LLM扩写标识符后交给grep/BM25；仅当公平基线下稠密检索的nDCG@10优势超过预设阈值且该仓库检索频次够高时才引入稠密索引，并与词法结果做固定RRF融合，同时记录索引构建、更新与检索成本供回本核算。",
+  "expected_effect": "文件级定位质量不明显低于稠密方案的同时，减少需要维护稠密索引的仓库数量与索引运维成本，使检索选型由基准总分驱动改为由公平基线加检索频次驱动。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "09a8f2f98dbc3e6486dde708",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.20455v1"
+      ],
+      "reason": "REPOPREMIUM在真实仓库的策划与原始PR查询上做控制变量评测并在预注册锁箱一次性评分：整文件BM25把策划池稠密优势从+0.121压到+0.034 nDCG@10，LLM扩写标识符后grep在全部Python池反超稠密检索，直接支持“稠密优势大半来自评测设定、选型前先建公平词法基线”；边界为核心仅十个Python仓库、函数与行级目标未测、96任务Agent评测的条件与结果未见于证据。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "结论在函数级与行级定位目标及非Python语言仓库上是否成立（核心池仅十个Python仓库）。",
+    "96任务Agent评测的条件与结果未见于证据，端到端Agent任务上的检索选型影响未测。",
+    "查询扩写自身的LLM调用成本与时延未计入对比。",
+    "固定RRF融合权重的最优性及其在不同查询类型上的稳定性未知。"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在受控仓库检索基准上并置四种检索配置（整文件BM25、稠密代码编码器、BM25加LLM标识符查询扩写、固定RRF融合），用REPOPREMIUM式策划池与原始PR查询并预注册评分口径。",
+    "inputs": [
+      "至少十个真实仓库的策划查询池与原始PR查询（补入非Python仓库）",
+      "整文件BM25索引与一个公开稠密代码编码器",
+      "LLM标识符查询扩写提示词与固定RRF融合权重",
+      "各配置的索引构建、更新与检索成本计量"
+    ],
+    "baselines": [
+      "原始策划池口径下的稠密编码器检索",
+      "整文件BM25（无查询扩写）",
+      "grep加人工标识符查询"
+    ],
+    "metrics": [
+      "文件级nDCG@10与Recall@k（加测函数级）",
+      "每千次查询的索引构建与维护成本",
+      "查询扩写的LLM调用成本与时延"
+    ],
+    "support_criteria": [
+      "整文件BM25加扩写把稠密优势压到+0.05 nDCG@10以内，且固定RRF融合不劣于两种单路检索。"
+    ],
+    "reject_criteria": [
+      "整文件BM25加扩写后稠密优势仍大于+0.08 nDCG@10，或扩写与融合在非标识符查询上系统性失效。"
+    ],
+    "limitations": [
+      "策划查询池分布可能不代表真实Agent查询分布。",
+      "稠密编码器代际更新可能改变差距，结论需随编码器复测。",
+      "未覆盖行级定位与多语言混排仓库。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_836ff3b4a2ebc3ace4df",
+      "issue_date": "2026-11-18",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "REPOPREMIUM给出评测设定偏置的直接证据，建为检索选型方案概念；尚无独立复现与Agent端到端评测，保持seed。",
+      "evidence_item_ids": [
+        "09a8f2f98dbc3e6486dde708"
+      ]
+    }
+  ]
+}

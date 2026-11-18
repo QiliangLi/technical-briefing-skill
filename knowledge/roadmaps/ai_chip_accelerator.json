@@ -3,8 +3,8 @@
   "topic_id": "ai_chip_accelerator",
   "topic_name": "AI芯片与加速器",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-16",
-  "summary": "AI芯片证据继续收敛于『可用算力由软件栈、执行资源映射与数据通路执行结构决定』的判断：上期『低比特与压缩收益须把softmax、反量化重建等标量/向量侧工作折叠进矩阵数据流才兑现』『小批量MoE时延由每层dispatch/combine微秒级固定开销主导、可经单边NVLink远程写去除』『专家权重容量墙可以SSD-内存-显存分层驻留绕过』（52bf64e6777327522d956d96，https://arxiv.org/abs/2611.13188v1；f356968039545b01ff980787，https://arxiv.org/abs/2609.18110v1）等位置维持不变，本期在精度默认值、并行策略与评估口径三处外推同一原理——AI气象模型仅把网络权重转fp16、物理状态保留fp32即可在单块RTX 5080上提速1.3至3.5倍、能耗降1.4至3.7倍而全球RMSE变化不超1.4%（3564ca4127aabaa55664416c，https://arxiv.org/abs/2611.09573v1），说明大量16位算力闲置源于精度默认选择而非硬件缺失（inferred，单卡消费级GPU、未经同行评审、fp16范围余量须逐模型核查）；并行策略正从专家手工配方转向解析模型驱动的自动搜索，AutoParallel以整数规划在前后向联合图上搜算子放置、8至128卡H100上14组配置9组快于TorchTitan专家基线（16B MoE 8卡吞吐+18.3%、最差-3.6%）（79e9feb1300c64fbe1c131f3，https://arxiv.org/abs/2611.08660v1），RPEG把RL后训练管线结构与执行计划作为单一对象联合搜索、受控对比每步时间较VERL最高降2.48倍（12c9cee67de133ad814ca54b，https://arxiv.org/abs/2611.09207v1），但收益含负尾且其利用率为调度占用率，替换手工配方前须按模型逐一实测并区分实测与解析投影；评估口径上Helix在FPGA以公共原语核复用HBM通道、对RTX PRO 6000取得47.5-96.9%吞吐与2.29-4.66倍能效，支持以带宽归一吞吐与能效替代峰值算力评估（b002baad08bd06cb5011c481，https://arxiv.org/abs/2610.21096v1；负载为科学计算稀疏求解器而非AI、功耗测量方法未说明）。当前判断：选型与采用应按开销构成与负载形态核算——精度档位先按上下文条件实测（权重/状态分离、数值范围余量）、并行配方先按模型验证收益区间、引用跨域加速器结论先核对负载与评估口径，而不是按峰值带宽与规格表决策。",
+  "updated_by_issue": "2026-11-18",
+  "summary": "AI芯片证据继续收敛于『可用算力由软件栈、执行资源映射与数据通路执行结构决定、而非峰值规格表』的判断，本期在评测口径、执行结构与容量-时延折衷三处给出同原理的新外推：其一，连部署超十亿台的成熟引擎其真实包络也被默认调度路径掩盖——绕开CoreML直接对Apple神经引擎逐引擎实测发现24GB/s激活通路与112GB/s权重流构成的双有效带宽、权重流ridge约71 FLOP/B低于GPU的134、ResNet类卷积能效为GPU的13倍（a7f1631484402e02b552aec0，https://arxiv.org/abs/2611.19101v1），端侧选型应按算术强度与利用率选引擎、两常数预测器可在自有设备快速标定（数据来自单台M5 Pro、int4无GPU对照、不适用训练）；其二，Mamba-3在GPU上的瓶颈被定位为顺序依赖时延与kernel碎片化而非带宽，把离散化、RoPE、MIMO与状态更新折成SM子分区内每通道1周期的专用流水线单元、估计仅占A100约5.9%面积即可在仿真中取得prefill 1.4至9.4倍、decode 1.3至2.8倍加速（3eed0d89be4827333468a821，https://arxiv.org/abs/2611.20409v1；全部为仿真与RTL外推、仅测B=1、无流片数据），说明SSM类模型并入GPU的收益位置在执行结构而非算力堆叠；其三，多die/Chiplet GPU上软件仍假设设备同构——GPU内跨XCD叠加正交分片维度、通信按GPU内USR与跨GPU XGMI分层后MI300X上Llama3-405B低batch最高1.41倍（7dc5411880dfa7aadd67548a，https://arxiv.org/abs/2611.15951v1），与此前裸片不对称实测（远程HBM访问时延最高拉高67%、不对称感知调度避免至多1.33倍波动）同族（369ee9744aeb77d4efa8bd3b，https://arxiv.org/abs/2609.24270v1），框架须显式感知芯片内带宽与NUMA层级；其四，HBF类大容量慢层权重存储的可用性由访问时延隐藏决定而非容量——离线记录kernel的每CTA页需求序并按4KB页重放预取，40MB缓冲即可在仿真中恢复理想HBF性能的92.4%、流重放实测开销仅1至3%（edab69cf5dfad558b3a9bd4e，https://arxiv.org/abs/2611.14776v1；周期级仿真、无HBF实物、仅只读权重），与既有专家权重分层驻留判断同向。当前判断：选型与优化应先测默认栈之外的引擎真实包络（双带宽roofline两常数）、按芯片内带宽层级重排分片与通信、按已知访问序做慢层预取，把『峰值TOPS、规格表容量』口径换成『实测包络+执行结构修复』口径；观察升级条件是SSM专用单元与HBF预取出现流片或实物系统数据、且双带宽roofline在跨厂商引擎上可复现。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -727,6 +727,30 @@
             "https://arxiv.org/abs/2611.09207v1"
           ],
           "reason": "2026-11-16 已发布日报收录：ETH苏黎世RPEG针对推理语言模型RL后训练耦合生成、评估与训练异构阶段难以扩展的问题，以图中间表示把有界异步结构与设备并行计划作为整体搜索、依据自动校准的解析性能模型选优并在运行时忠实执行所选计划，实验规模至256块GH200、受控同步对比每步时间较VERL最高降2.48倍（中位数1.488倍）、精度差在0.47%内（最高值数字的达成配置未见披露、弱扩展与消融结果多为模型预测、利用率指调度占用率而非算术利用率）；按架构分支记录为管线结构与执行计划联合优化的系统软件协同证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "3eed0d89be4827333468a821",
+          "issue_date": "2026-11-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.20409v1"
+          ],
+          "reason": "2026-11-18 已发布日报收录：RescuCore把Mamba-3的离散化、RoPE、MIMO与状态更新合并为GPU SM子分区内每通道1周期的专用执行单元、与CUDA核及Tensor Core并列共享寄存器堆，估计约5.9%的A100面积开销，仿真中prefill加速1.4至9.4倍、decode 1.3至2.8倍；瓶颈被定位为顺序依赖时延与kernel碎片化而非带宽；结论全部来自仿真与RTL综合外推、仅测B=1、无流片数据、BF16精度损失未量化，按架构分支记录为SSM执行结构证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "7dc5411880dfa7aadd67548a",
+          "issue_date": "2026-11-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.15951v1"
+          ],
+          "reason": "2026-11-18 已发布日报收录：Starscream指出既有LLM框架把分区出的虚拟GPU当作独立同构设备、忽视GPU内外约十倍带宽差，带来KV冗余与算术强度坍缩；保持GPU间分片并在GPU内跨XCD叠加正交维度、二维GEMM切分保持瓦片算术强度、GPU内走USR跨GPU走XGMI后，MI300X上CPX/NPS4对SPX/NPS1在Llama3-405B低batch最高1.41倍、中batch约1.08倍，朴素分片部分batch下OOM；摘要的4倍与1.43倍缺逐点数值、仅推理与kernel评测、无端到端吞吐与功耗，按架构分支记录为Chiplet NUMA感知软件证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "a7f1631484402e02b552aec0",
+          "issue_date": "2026-11-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.19101v1"
+          ],
+          "reason": "2026-11-18 已发布日报收录：aneforge绕开CoreML把算子图编译为单一融合ANE程序并经e5rt运行时提交、控制batch与精度并校验确在ANE运行、能耗按逐引擎扣除idle计量，实测Apple神经引擎存在24GB/s激活通路与112GB/s权重流双有效带宽、权重流ridge约71 FLOP/B低于GPU的134、ResNet类卷积能效为GPU的13倍；通行认知反映调度器默认而非硬件包络；核心数据来自单台M5 Pro、跨代仅单次或双次点估计、int4无GPU对照、不适用训练场景，按架构分支记录为评测口径证据，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -819,7 +843,10 @@
         "f79c4d41b0c9252603b482ac",
         "f8a4056414ccef6da2f81412",
         "f8f301ea0089ea93988b7609",
-        "fdb0906f107f40f4d270dcde"
+        "fdb0906f107f40f4d270dcde",
+        "3eed0d89be4827333468a821",
+        "7dc5411880dfa7aadd67548a",
+        "a7f1631484402e02b552aec0"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2608.05033v1",
@@ -909,7 +936,10 @@
         "https://arxiv.org/abs/2610.21096v1",
         "https://arxiv.org/abs/2611.08660v1",
         "https://arxiv.org/abs/2611.09573v1",
-        "https://arxiv.org/abs/2611.09207v1"
+        "https://arxiv.org/abs/2611.09207v1",
+        "https://arxiv.org/abs/2611.20409v1",
+        "https://arxiv.org/abs/2611.15951v1",
+        "https://arxiv.org/abs/2611.19101v1"
       ]
     },
     {
@@ -1088,6 +1118,14 @@
             "https://arxiv.org/abs/2611.09722v1"
           ],
           "reason": "2026-11-11 已发布日报收录：FOSCAR发现2/4位KV缓存省下的HBM流量被逐值反量化（s·q+z重建）的指令发射瓶颈吃掉，仿射折叠把组尺度与偏移按量化方案折入另一操作数或矩阵积输出（精确算术下不改变输出），INT2内核较FlashInfer BF16几何平均快3.36倍（H100）与2.67倍（B200）、H100上INT4有效KV吞吐达峰值带宽91.3%（未评审预印本、服务端+341%吞吐声明缺评估细节、2比特KV端到端精度未验证）；按内存接口与协同分支记录为数据搬移收益向指令发射转移的实测证据，不据此改变阶段判断。"
+        },
+        {
+          "item_id": "edab69cf5dfad558b3a9bd4e",
+          "issue_date": "2026-11-18",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.14776v1"
+          ],
+          "reason": "2026-11-18 已发布日报收录：HBF容量为HBM的16倍但读时延约20µs、按需访问使推理最多慢12.8倍，SlipStream离线记录数据无关kernel的每CTA页需求序、由staging warp按4KB页重放预取、表项到首次需求访问才释放（跟踪状态减少32倍），仿真中40MB缓冲在七个稠密模型达理想HBF性能的92.4%、16MB达88.8%、H3配320MB仅43.1%，流重放实测开销1至3%；主要数字来自周期级仿真并以理想HBF为基线、无HBF实物系统、HBF仅存只读权重，按内存接口分支记录为慢层时延隐藏证据，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -1112,7 +1150,8 @@
         "cda619f1f98933dd41e737d0",
         "5c8313fdb9163c2a11ea5240",
         "02d505da249588037229d17d",
-        "5f0b3a320c99019dca435bac"
+        "5f0b3a320c99019dca435bac",
+        "edab69cf5dfad558b3a9bd4e"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.08786v1",
@@ -1135,7 +1174,8 @@
         "https://arxiv.org/abs/2610.14244v1",
         "https://arxiv.org/abs/2610.32695v1",
         "https://arxiv.org/abs/2611.06634v1",
-        "https://arxiv.org/abs/2611.09722v1"
+        "https://arxiv.org/abs/2611.09722v1",
+        "https://arxiv.org/abs/2611.14776v1"
       ]
     },
     {
@@ -1581,6 +1621,19 @@
         "3564ca4127aabaa55664416c",
         "79e9feb1300c64fbe1c131f3",
         "b002baad08bd06cb5011c481"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_5739d13b3f4fed104df7",
+      "issue_date": "2026-11-18",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "3eed0d89be4827333468a821",
+        "7dc5411880dfa7aadd67548a",
+        "a7f1631484402e02b552aec0",
+        "edab69cf5dfad558b3a9bd4e"
       ]
     }
   ]

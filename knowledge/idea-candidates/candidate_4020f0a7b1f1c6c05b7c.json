@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_4020f0a7b1f1c6c05b7c",
+  "identity": {
+    "problem_key": "single_roofline_peak_tops_misprediction",
+    "mechanism_key": "dual_effective_bandwidth_energy_roofline",
+    "target_key": "apple_ane_ondevice_engine_selection"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "ANE双有效带宽能耗roofline支撑按算术强度而非峰值TOPS的端侧引擎选型",
+  "problem": "ANE部署超十亿台却只能经CoreML间接表征，通行认知反映调度器默认而非硬件包络；单roofline模型无法预测ANE逐引擎能耗，端侧推理选型看峰值TOPS会在ANE/GPU/CPU之间误导引擎选择，真实包络与可计算的选型判据双双缺失。",
+  "hypothesis": "若绕开CoreML默认栈直接编程ANE——aneforge把算子图编译为单一融合ANE程序并经e5rt运行时提交，控制batch与精度并校验确在ANE运行，能耗按逐引擎扣除idle计量——则ANE呈现双有效带宽结构：24GB/s激活通路与112GB/s权重流、权重流ridge约71 FLOP/B（低于GPU的134）；两常数roofline即可预测逐引擎能耗与能效，按算术强度与利用率选引擎优于按峰值TOPS选型，且两常数可在自有设备快速标定。",
+  "mechanism": "双有效带宽能耗roofline：激活通路（24GB/s）与权重流（112GB/s）构成两条有效带宽路径，权重流ridge点约71 FLOP/B使低算术强度算子落在权重流受限区而ResNet类卷积兑现高能效；实测口径以aneforge单融合程序经e5rt直接提交、逐引擎扣除idle计能耗，把硬件包络与CoreML调度器默认分离。",
+  "target": "Apple silicon（实测单台M5 Pro）上以ANE为候选的端侧推理引擎选择：按算术强度与利用率在ANE/GPU/CPU间为算子选引擎。",
+  "expected_effect": "双常数roofline对逐引擎能耗的预测与实测一致；ResNet类卷积在ANE上能效为GPU的13倍；权重流ridge约71 FLOP/B解释卷积与低算术强度算子的能效分界；选型口径从峰值TOPS切换到算术强度与利用率后，引擎误选与能耗浪费减少。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（ANE只能经CoreML间接表征、通行认知反映调度器默认而非硬件包络、单roofline模型需修正且峰值TOPS口径误导端侧选型）、可解释机制（双有效带宽能耗roofline：24GB/s激活通路与112GB/s权重流、权重流ridge约71 FLOP/B，经aneforge单融合程序加e5rt直接编程并逐引擎扣除idle计能耗测得）、目标对象（Apple silicon上ANE端侧推理引擎选择）与可检验效应（ResNet类卷积能效为GPU的13倍、两常数预测器可在自有设备快速标定并按算术强度选引擎），四要素齐备且与既有候选及Idea的身份元组及含义不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "a7f1631484402e02b552aec0",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.19101v1"
+      ],
+      "reason": "ANE实测记录给出问题（ANE部署超十亿台却只能经CoreML间接表征，通行认知反映调度器默认而非硬件包络，单roofline模型需修正）、机制（aneforge将算子图编译为单一融合ANE程序并经e5rt运行时提交，控制batch与精度并校验确在ANE运行，能耗按逐引擎扣除idle计量；测得24GB/s激活通路与112GB/s权重流双有效带宽、权重流ridge约71 FLOP/B、ResNet类卷积能效为GPU的13倍）、目标（Apple silicon端侧推理按算术强度与利用率选引擎）与可检验效应（两常数预测器可在自有设备快速标定），并同时给出核心数据来自单台M5 Pro、跨代仅单次或双次点估计、int4无GPU对照、不适用训练场景的边界。",
+      "independence_group": "arxiv:2611.19101"
+    }
+  ],
+  "evidence_item_ids": [
+    "a7f1631484402e02b552aec0"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.19101v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.19101"
+  ],
+  "unknowns": [
+    "核心数据来自单台M5 Pro，跨代仅单次或双次点估计，双带宽常数跨代际与厂商稳定性未知",
+    "int4精度无GPU对照，低比特档位的引擎间对比缺失",
+    "实测为推理口径，不适用训练场景",
+    "单一arXiv v1预印本独立分组，缺独立复现",
+    "两常数在自有设备的快速标定误差与标定成本未刻画"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在至少两代Apple silicon（含一台M5 Pro级与一台旧代机型）上以aneforge加e5rt直接编程路径复现双有效带宽roofline标定，扫描batch与精度档位，对照CoreML默认调度路径、单带宽roofline模型预测与GPU/CPU同算子实测。",
+    "inputs": [
+      "aneforge编译的单融合ANE程序与e5rt运行时环境",
+      "激活/权重双带宽常数标定脚本与逐引擎扣除idle的能耗计量",
+      "ResNet类卷积与低/高算术强度算子集",
+      "GPU（含int8对照档）与CPU同算子基线实测"
+    ],
+    "baselines": [
+      "CoreML默认调度路径的ANE实测",
+      "单带宽（单roofline）模型预测",
+      "按峰值TOPS的引擎选择规则",
+      "GPU/CPU同算子能效"
+    ],
+    "metrics": [
+      "逐引擎能耗（扣除idle）与每焦耳吞吐",
+      "双常数roofline对逐算子能耗的预测误差",
+      "按算术强度选引擎与按峰值TOPS选引擎的选择不一致率及能效差",
+      "双带宽常数跨代漂移幅度与标定耗时"
+    ],
+    "support_criteria": [
+      "双带宽roofline跨设备逐算子能耗预测误差显著低于单带宽模型",
+      "ResNet类卷积ANE能效优势方向可复现，按算术强度选型的端到端能效收益成立",
+      "两常数在单设备上可快速标定且误差有界"
+    ],
+    "reject_criteria": [
+      "激活/权重带宽常数跨代际大幅无规律漂移，或双带宽模型不优于单roofline模型",
+      "直接编程路径与CoreML默认路径的包络差值不稳定，调度器默认掩盖效应不可分离"
+    ],
+    "limitations": [
+      "首版仅覆盖Apple silicon端侧推理，不含训练场景与int4无对照档"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同：能力保留率Idea（idea_30e35e81d5172a1e7747）是量化-稀疏能力采用判据身份，其收录本条证据时已注明对象为端侧引擎带宽/能效包络与调度器默认层、非量化-稀疏能力保留率本身，本候选是ANE双有效带宽roofline与端侧引擎选型这一具体机理与判据；GPU配置空间预测候选（candidate_8a514effa54f3eef44c8）重用实测固定延迟属GPU设计空间探索身份，解析模型选优候选（candidate_7cff5ee16498ebde140f）是跨层结构可搜索身份，均不相同。但仅有单一arXiv v1预印本独立分组支撑，且核心数据来自单台M5 Pro、跨代仅单次或双次点估计、int4无GPU对照、不适用训练场景，独立复现与适用边界缺失，先观察。",
+  "related_candidate_ids": [
+    "candidate_8a514effa54f3eef44c8",
+    "candidate_7cff5ee16498ebde140f"
+  ],
+  "related_idea_ids": [
+    "idea_30e35e81d5172a1e7747"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_f8c37535768cdbb93e33",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同：能力保留率Idea（idea_30e35e81d5172a1e7747）是量化-稀疏能力采用判据身份，其收录本条证据时已注明对象为端侧引擎带宽/能效包络与调度器默认层、非量化-稀疏能力保留率本身，本候选是ANE双有效带宽roofline与端侧引擎选型这一具体机理与判据；GPU配置空间预测候选（candidate_8a514effa54f3eef44c8）重用实测固定延迟属GPU设计空间探索身份，解析模型选优候选（candidate_7cff5ee16498ebde140f）是跨层结构可搜索身份，均不相同。但仅有单一arXiv v1预印本独立分组支撑，且核心数据来自单台M5 Pro、跨代仅单次或双次点估计、int4无GPU对照、不适用训练场景，独立复现与适用边界缺失，先观察。",
+      "evidence_item_ids": [
+        "a7f1631484402e02b552aec0"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

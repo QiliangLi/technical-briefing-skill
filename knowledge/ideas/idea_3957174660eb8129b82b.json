@@ -48,6 +48,14 @@
         "https://arxiv.org/abs/2610.05833v1"
       ],
       "reason": "滚动 Agent 证据把修复预算投向从目标块定向推进到连续 span 形态：长运行 Agent 滚动更新文档窗口使精确前缀缓存失效、选择性复用加重算的输出质量依赖请求历史，文档对齐的连续 span 重算在 5% 预算下把跨请求顺序答案变化率从 token top-k 的 69.0% 降到 26.1%、中位 TTFT 从全量 prefill 的 2408 毫秒降至 415 毫秒（仅单一模型与单一 L4 GPU 评测金融抽取负载、无命中率与吞吐数据）；跨条目推断(inferred)：修复应装入完整连续 span 而非散布选点，与目标块定向修复证据同向并补充顺序敏感性维度。"
+    },
+    {
+      "item_id": "6f9f030feea772db2218d230",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.21920v1"
+      ],
+      "reason": "非前缀 KV 级复用的新域证据：LLM 推荐器打分路径 prefill 占引擎工作量 86% 且画像被不同前置文本包裹使前缀缓存只能回收开头指令段，KVUse 冻结 reader 只训 LoRA 写入器、画像更新解码时同步产出可复用 KV、打分调用在新位置直接读取并以 re-rotation 修正位置误差，单张 MI300X 上打分路径饱和吞吐较全量 prefill 升 3.96-4.49 倍、画像更新路径 1.43-1.91 倍且 NDCG@10 持平（写入器需逐数据集训练且跨域多不迁移、上传隐藏仅适用离线批任务、KV 每 token 达 128KiB 远大于文本）；跨条目推断(inferred)：位置重对齐的非前缀 KV 复用在推荐打分负载上以质量持平兑现吞吐收益，与 KV-Repurpose 段级复用、SemPIC 位置无关编译同向，收窄『越过精确前缀复用是否可行』的疑问；但其无多跳与因果一致性口径，不触及修复区间变量。"
     }
   ],
   "evidence_against": [
@@ -66,7 +74,8 @@
     "闭源超大模型（逾千亿参数）上段级复用行为是否随规模改变",
     "SemPIC 式离线编译成本未计入 TTFT 口径的影响",
     "检索器 Top-1 命中答案所在目标块的比例随语料与检索器变化的稳定性（BGE-M3 口径为 36%-64%）",
-    "连续 span 与目标块定向两种修复取向在多跳负载上的相对收益与组合方式（滚动 Agent 证据为单一模型金融抽取负载）"
+    "连续 span 与目标块定向两种修复取向在多跳负载上的相对收益与组合方式（滚动 Agent 证据为单一模型金融抽取负载）",
+    "被包裹内容 KV 级复用的存储与训练成本对总收益的侵蚀（KVUse 口径 KV 每 token 128KiB、写入器逐数据集训练且跨域多不迁移）"
   ],
   "validation_plan": {
     "mode": "benchmark",
@@ -112,7 +121,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-09-28",
-  "last_updated_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-18",
   "decision_log": [
     {
       "event_id": "idea_decision_395e4cd43c6e07064f05",
@@ -147,6 +156,17 @@
       "reason": "新增滚动 Agent 连续 span 修复证据：5% 预算文档对齐连续 span 重算把跨请求顺序答案变化率从 token top-k 的 69.0% 降到 26.1%、中位 TTFT 从 2408 毫秒降至 415 毫秒，把修复预算的形态从散布选点收紧为完整连续 span，与目标块定向修复证据同向。",
       "evidence_item_ids": [
         "4238f9e8771a68ae2dd0e959"
+      ]
+    },
+    {
+      "event_id": "idea_decision_7d3b5e91c204a6f8b026",
+      "issue_date": "2026-11-18",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增非前缀 KV 级复用的跨域证据：KVUse 把被动态前置文本包裹的用户画像改为 LoRA 写入器产出的可复用 KV、新位置读取加 re-rotation 修正，打分路径吞吐升 3.96-4.49 倍且 NDCG@10 持平，与段级复用、位置无关编译同向支持复用侧上限，但不含修复口径且 KV 每 token 128KiB 的存储成本为新约束。",
+      "evidence_item_ids": [
+        "6f9f030feea772db2218d230"
       ]
     }
   ]
