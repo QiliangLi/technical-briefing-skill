@@ -64,6 +64,14 @@
         "https://arxiv.org/abs/2611.14776v1"
       ],
       "reason": "SlipStream以需求序预取加16至40MB缓冲在周期级仿真中把HBF慢层权重存储恢复到理想性能的92.4%，支持『容量受限推理的吞吐上限由慢速层时延隐藏与I/O-计算重叠度决定而非容量本身』的机理（inferred：对象为稠密模型只读权重与HBF假设介质、非MoE专家权重，且全部为仿真口径、无HBF实物系统）。"
+    },
+    {
+      "item_id": "60c8ba8630635de9b8152f26",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.14848v1"
+      ],
+      "reason": "Tideway在真实消费级硬件上给出该机理继SSD-LLaMA之后的第二个系统实测：现有引擎把显存、内存与SSD当作独立缓存而反复换页，Tideway把显存加内存构成统一池、SSD仅作出核后备、驻留表跨层去重专家、按预填充与解码阶段维护不同布局并以分段CUDA图在换页时保留图回放，RTX 5090加16–128GiB内存上端到端较最强基线平均1.97倍、最高3.18倍，TTFT平均2.40倍、TPOT约1.61倍（单卡RTX 5090与三个MoE模型、无功耗数据、逐项最快基线的身份未披露）；相对SSD-LLaMA把重心从慢速层流式换入前移到统一池与跨层去重以先减少换页需求，且预填充与解码两相位均有收益（inferred：与SSD-LLaMA是否同口径对比未知）。"
     }
   ],
   "evidence_against": [],
@@ -73,7 +81,8 @@
     "decode与prefill两相位收益不对称（EStream仅prefill，SSD-LLaMA解码1.03 token/s接近可用下限）",
     "仿真证据（ThAME、DynaNDE）与真实硬件证据（SAEM、EStream、SSD-LLaMA）之间的量级差距尚未对齐",
     "路由局部性与阶段可预测性（SAEM按阶段缓存、DynaNDE驻留复用）相对盲分层流式的增量收益未量化",
-    "需求序预取依赖数据无关kernel的稳定页需求序，MoE动态专家路由下的可预测性与真实HBF介质的实测收益未验证（SlipStream为周期级仿真、仅只读权重）"
+    "需求序预取依赖数据无关kernel的稳定页需求序，MoE动态专家路由下的可预测性与真实HBF介质的实测收益未验证（SlipStream为周期级仿真、仅只读权重）",
+    "统一池加跨层去重加阶段化布局（Tideway）相对SSD专家流水线（SSD-LLaMA）的增量收益未拆解：Tideway逐项最快基线身份未披露、无功耗数据、仅单卡RTX 5090与三个MoE模型，记录未给绝对解码token/s，两相位收益（TTFT平均2.40倍、TPOT约1.61倍）能否外推到万亿级模型未知"
   ],
   "validation_plan": {
     "mode": "prototype",
@@ -111,7 +120,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-11",
-  "last_updated_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-25",
   "decision_log": [
     {
       "event_id": "idea_decision_b61e77e3d02da265f95a",
@@ -137,6 +146,17 @@
       "reason": "新增SlipStream作为慢速层时延隐藏的同族证据（inferred，稠密模型+HBF仿真口径）：16倍容量慢层的可用性由缓冲大小与预取序决定，扩展『容量墙可用分层驻留+流式重叠绕过』机理的证据面；Idea状态保持observing，MoE专家路由可预测性与真实HBF系统数据仍缺。",
       "evidence_item_ids": [
         "edab69cf5dfad558b3a9bd4e"
+      ]
+    },
+    {
+      "event_id": "idea_decision_b40e3a1176e7561e2442",
+      "issue_date": "2026-11-25",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增Tideway作为MoE专家权重容量墙在消费级真实硬件上的第二个系统实测：显存加内存统一池、SSD仅作出核后备、跨层专家去重与按预填充/解码阶段维护不同布局，端到端较最强基线平均1.97倍（最高3.18倍）、TTFT平均2.40倍、TPOT约1.61倍；其与SSD-LLaMA专家流水线收敛于分层驻留加换页与I/O开销控制同一机理属跨记录推断(inferred)；Idea状态保持observing，能耗、逐项最快基线身份与绝对解码速率仍缺。",
+      "evidence_item_ids": [
+        "60c8ba8630635de9b8152f26"
       ]
     }
   ]

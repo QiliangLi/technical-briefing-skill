@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_9c17ba40debb80e00f87",
+  "identity": {
+    "problem_key": "sparse_attention_full_kv_hbm_concurrency_limit",
+    "mechanism_key": "kv_k_index_scale_up_pool_offload_yielding_dma_prefetch",
+    "target_key": "single_node_sparse_attention_decode_kv_residency"
+  },
+  "idea_type": "solution_concept",
+  "title": "XM-Sparse：KV与K-index缓存卸载到scale-up内存池，以让位于按需检索与模型通信的DMA预取用互连带宽换HBM容量",
+  "problem": "稀疏注意力服务仍须保留全量KV历史，HBM容量限制并发。",
+  "hypothesis": "若把稀疏注意力须保留的全量KV与K-index缓存激进卸载到scale-up内存池——动态选中的KV用TMA检索并与注意力计算tile级流水融合，K-index全量扫描改用GPU发起DMA预取且让位于按需检索与模型通信——则可用互连带宽换HBM容量支撑更大batch，在匹配batch下降低TBT并较HiSparse提升吞吐。",
+  "mechanism": "把KV与K-index缓存激进卸载到scale-up内存池，用互连带宽换HBM容量支撑更大batch；动态选中的KV用TMA检索并与注意力计算tile级流水融合；K-index全量扫描改用GPU发起DMA预取，且让位于按需检索与模型通信。",
+  "target": "单节点稀疏注意力解码的KV与K-index缓存驻留路径（HBM与scale-up内存池之间）",
+  "expected_effect": "matched batch下，DeepSeek-V3.2/GLM-5.3的TBT较PCIe基线降35.8%/45.8%，吞吐较HiSparse最高4.52×。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-25",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的KV与K-index缓存卸载到scale-up内存池、以让位于按需检索与模型通信的GPU发起DMA预取服务K-index全量扫描这一机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "4ac578e519611f62caa30461",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.22280v1"
+      ],
+      "reason": "《XM-Sparse：稀疏注意力KV与K-index缓存卸载到scale-up内存池》给出机制与对照结果：稀疏注意力服务仍须保留全量KV历史、HBM容量限制并发，XM-Sparse把KV与K-index缓存激进卸载到scale-up内存池、用互连带宽换HBM容量支撑更大batch；动态选中的KV用TMA检索并与注意力计算tile级流水融合，K-index全量扫描改用GPU发起DMA预取且让位于按需检索与模型通信；matched batch下DeepSeek-V3.2/GLM-5.3的TBT较PCIe基线降35.8%/45.8%、吞吐较HiSparse最高4.52×；边界为scale-up内存池为模拟而非真实X-Mem硬件、未见TTFT与分位时延、限于单节点。",
+      "independence_group": "arxiv:2611.22280"
+    }
+  ],
+  "evidence_item_ids": [
+    "4ac578e519611f62caa30461"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.22280v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.22280"
+  ],
+  "unknowns": [
+    "scale-up内存池为模拟而非真实X-Mem硬件，真实硬件上的收益是否成立未知",
+    "未见TTFT与分位时延，TBT与吞吐收益在尾部分位上的表现未知",
+    "限于单节点且论文未提供网络侧机制，预取让位于按需检索与模型通信的仲裁形态迁移到跨节点KV传输的适用边界未建立",
+    "仅单一arXiv独立组（arxiv:2611.22280）",
+    "该记录已于2026-11-25进入idea_f7841984fcce6a274881证据链并被定位为scale-up内存池卸载对照基线与传输代价建模的原语参考，独立成案还是并入该Idea需人工世系决定"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在带宽可调的模拟scale-up内存池（按证据中TBT与吞吐量级校准）上复现KV与K-index缓存卸载：动态选中KV的TMA检索与注意力计算tile级流水融合、K-index全量扫描的GPU发起DMA预取，并实现预取让位于按需检索与模型通信的优先级仲裁；先在无背景流量下对照，再叠加模型通信背景流量复测。",
+    "inputs": [
+      "稀疏注意力模型（DeepSeek-V3.2与GLM-5.3）",
+      "batch档位（含证据中的matched batch）",
+      "互连带宽档位（scale-up内存池与PCIe两档）",
+      "模型通信背景流量档位（含无背景流量）"
+    ],
+    "baselines": [
+      "全HBM驻留（受容量上限约束）",
+      "PCIe主机卸载基线（证据内基线）",
+      "HiSparse式主机分层稀疏KV解码",
+      "不让行的DMA预取（关闭优先级仲裁的消融）"
+    ],
+    "metrics": [
+      "TBT与吞吐",
+      "TTFT与P95/P99时延（证据未报告，需补测）",
+      "HBM占用与可支撑的最大batch",
+      "互连带宽占用拆分：DMA预取、按需检索与模型通信三类流量及其相互挤占"
+    ],
+    "support_criteria": [
+      "匹配batch下TBT较PCIe基线的降幅与相对HiSparse的吞吐增量按证据量级复现，且补测的TTFT与分位时延不劣化",
+      "模型通信背景流量下，让行的预取相对不让行预取减少对模型通信的挤占且TBT不显著回升"
+    ],
+    "reject_criteria": [
+      "收益仅在模拟内存池的带宽假设下成立，带宽降档或贴近真实互连后TBT与吞吐优势消失",
+      "关闭预取让行对模型通信挤占无可测影响（带宽仲裁形态不是收益来源），或吞吐增益伴随分位时延明显恶化"
+    ],
+    "limitations": [
+      "证据的scale-up内存池为模拟而非真实X-Mem硬件，原型同样依赖带宽与延迟模型校准",
+      "证据限于单节点且未提供网络侧机制，预取让行的仲裁形态迁移到跨节点KV传输属外推，本原型不覆盖",
+      "未运行任何仿真或实验，以上仅为建议"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea（与HiSparse的主机分层固定GPU足迹、UlaCache的统一逻辑寻址、FlashOffloading的主机DRAM权威副本按阶段双向卸载及VERKV的误差证书门控主机补取均不同，核心增量是把KV与K-index缓存一并卸载到scale-up内存池、以互连带宽换HBM容量支撑更大batch，并让K-index全量扫描的GPU发起DMA预取让位于按需检索与模型通信），但证据仅单一arXiv独立组，scale-up内存池为模拟而非真实X-Mem硬件、未见TTFT与分位时延、限于单节点且论文未提供网络侧机制，对TPN核心场景（跨节点KVCache传输调度）的适用边界未建立；且该记录已于2026-11-25进入idea_f7841984fcce6a274881证据链，被定位为scale-up内存池卸载对照基线与传输代价建模的原语参考，该Idea的传输/重算/就地交叉点身份不覆盖本候选身份，独立成案还是并入该Idea需人工世系决定。",
+  "related_candidate_ids": [
+    "candidate_b74aefcc6da4997763c0",
+    "candidate_dd166315cf32699a83fb",
+    "candidate_26fa5d23636135a24c51",
+    "candidate_12df5b1aae499cb6ba3e"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-25",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_2977eb206bbb8ff55b89",
+      "issue_date": "2026-11-25",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可测效应完整且身份区别于既有候选与Idea（与HiSparse的主机分层固定GPU足迹、UlaCache的统一逻辑寻址、FlashOffloading的主机DRAM权威副本按阶段双向卸载及VERKV的误差证书门控主机补取均不同，核心增量是把KV与K-index缓存一并卸载到scale-up内存池、以互连带宽换HBM容量支撑更大batch，并让K-index全量扫描的GPU发起DMA预取让位于按需检索与模型通信），但证据仅单一arXiv独立组，scale-up内存池为模拟而非真实X-Mem硬件、未见TTFT与分位时延、限于单节点且论文未提供网络侧机制，对TPN核心场景（跨节点KVCache传输调度）的适用边界未建立；且该记录已于2026-11-25进入idea_f7841984fcce6a274881证据链，被定位为scale-up内存池卸载对照基线与传输代价建模的原语参考，该Idea的传输/重算/就地交叉点身份不覆盖本候选身份，独立成案还是并入该Idea需人工世系决定。",
+      "evidence_item_ids": [
+        "4ac578e519611f62caa30461"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -3,8 +3,8 @@
   "topic_id": "accelerator_io_datapath",
   "topic_name": "加速器直连I/O与存储数据路径",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-18",
-  "summary": "加速器直连I/O与存储数据路径的主线仍是把I/O发起与控制权推向加速器侧、数据经DMA直达显存：uGDS用户态NVMe路径在A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型），五节点PoC以gds_stats计数器证实124012次I/O全部走nvfs DMA、零次兼容回退、聚合读132.1 GiB/s（厂商自测、未测能耗与端到端负载），AWS以GDS把KV缓存分层单客户端吞吐上限提到1200 Gbps（架构文规格口径、仅限NVIDIA实例且需同可用区），PLINK量化BaM式同步路径93.1%的I/O周转时间耗在CQ轮询与门铃、专用SQ/CQ warp分工加槽位等待与warp级门铃合并后以136个I/O warp使SSD饱和、较基线238个少43%（幻灯片只报告warp数量、无时延与端到端负载结果），SSCAD 2026论文提出基于Linux原生io_uring的跨厂商GPU发起I/O（仅出版事实可证、无机制与性能数据），供给侧美光AI级NAND路线图把GPU发起小块访问写入头部介质厂商优先路线（下一代SSD目标25M-100M IOPS与512TB均为前瞻目标无实测），KIOXIA演示512字节随机读20+ MIOPS的近GPU SSD（无测试条件的器件演示），VDURA V12 GA并经Supermicro认证、Google Cloud GA的A5X裸金属实例Managed Lustre将支持GPUDirect Storage（规模与收益数字均无基线或属将来时表述），本期FS-SSD预印本进一步提出SSD设备内文件语义与NFS-over-NVMe协议让外设不经主机CPU直接做文件I/O、若主张成立则直接改变I/O发起者并触及SSD控制器协同，与美光路线同向充实细粒度I/O与存储控制器协同分支，但其可见证据仅arXiv收录元数据、设计描述未经一手来源核验；当前判断：直连数据路径仍处于计数器可自证、供给侧全面跟进但量化口径仍以厂商宣称为主的工程验证期，评估方案时应把warp占用与nvfs/posix路径计数列为资源成本与路径自证指标，uGDS类控制面出内核可试点KV缓存或向量检索外置但须先评估错误恢复语义并补齐POSIX适配，FS-SSD、SSCAD与FlatCake等主源缺失条目维持待复核、不作为架构决策依据；待FS-SSD与SSCAD论文全文或FS-SSD评估数据补取、PLINK时延与端到端负载结果、第三方复测、uGDS错误恢复与多盘扩展证据，或美光/KIOXIA细粒度器件实测交付出现，即应上调直连路径、细粒度介质层与控制器协同分支的成熟度判断。",
+  "updated_by_issue": "2026-11-25",
+  "summary": "加速器直连I/O与存储数据路径当前应按数据经DMA直达显存已成主线、I/O发起与控制权正离开主机内核（移入用户态或加速器自身）、但带实测数字的证据仍集中在少数结果的工程验证期来看待：uGDS用户态NVMe路径在A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型），五节点PoC以gds_stats计数器证实124012次I/O全部走nvfs DMA、零次兼容回退（厂商自测、未测能耗与端到端负载），PLINK在4KB随机读微基准中测得BaM式同步路径93.1%的I/O周转时间耗在CQ轮询与门铃、队列重构后使SSD饱和所需I/O warp由238个降至136个（仅warp数量、无时延与端到端结果），这些实测全部落在加速器发起I/O与加速器存储栈两支，而细粒度I/O与存储控制器协同一支至今没有任何实测，只有美光25M-100M IOPS的前瞻路线图、FS-SSD与最新收录的GNoF（提出GPU原生执行、低SM开销的NVMe-oF完成路径）等止于路线图或题录的信号；厂商口径的峰值IOPS（GRAID 1亿、KIOXIA 20+ MIOPS演示、美光25M-100M目标）不能替代成熟度证据，当前的制约因素是GPU侧I/O处理的warp占用与脱离主机路径后的错误恢复语义这两处尚缺实测，所以评估任何方案都应把使SSD饱和所需I/O warp数和nvfs/posix路径计数列为必测指标，uGDS类控制面出内核的路径可以试点KV缓存或向量检索外置但须先通过错误恢复与POSIX适配评估，而AWS 1200 Gbps的规格上限、VDURA V12 GA与Google Cloud Managed Lustre将支持GDS等部署信号，以及SSCAD、FlatCake等主源缺失条目同样不足以单独支撑架构决策；一旦PLINK的时延与端到端负载结果、GNoF、FS-SSD或SSCAD的全文与评测数据、第三方对uGDS和厂商IOPS数字的复测出现，就应上调对应分支的成熟度判断。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -335,6 +335,14 @@
             "https://arxiv.org/abs/2611.06071"
           ],
           "reason": "2026-11-18 已发布日报收录：FS-SSD预印本针对块语义SSD迫使外设存储访问经主机CPU中转的问题，提出在设备内暴露文件抽象、让外设经NFS-over-NVMe协议扩展直接做文件I/O、不经主机CPU，若主张成立则直接改变I/O发起者并触及SSD控制器协同；可见证据仅确认arXiv以2611.06071v1收录该文于cs.OS并分配DOI，机制描述按标题与发现元数据转述、未经一手来源核验，未捕获任何实验、基线或性能数据；按细粒度I/O与存储控制器协同分支记录其出现并跟踪其评估数据，待摘要或正文可见后再复评，不据此强行划分阶段。"
+        },
+        {
+          "item_id": "3ff0cd9d65c5cf58953ab06e",
+          "issue_date": "2026-11-25",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.21288"
+          ],
+          "reason": "2026-11-25 已发布日报收录：GNoF预印本提出GPU原生执行、低SM开销的NVMe-oF完成路径，按标题表述，完成处理在GPU侧原生执行而非宿主中介，以压低SM开销；可见证据仅含arXiv著录，即2611.21288、2026年11月16日提交、9页、5图、4表、分类cs.DC与cs.AR，摘要、基线与任何IOPS、时延或CPU占用数字均不可见，门铃搬运与无锁完成队列轮询等细节仅见于发现摘要、绑定证据无法核实，发现摘要里的性能说法只能当作未经证实的元数据；按其发布方向归入细粒度I/O与存储控制器协同分支，仅作线索记录，不据此强行划分阶段，也不改变分支状态；取得摘要与评测数据后再评估宿主CPU是否退出完成关键路径、SM占用与部署成熟度，并核对它与加速器发起I/O分支中PLINK所量化的GPU侧队列处理开销是否属于同一类资源成本，据此复核其分支归属。"
         }
       ],
       "open_questions": [
@@ -343,11 +351,13 @@
       ],
       "evidence_item_ids": [
         "e39d7c409d0069a974468b8c",
-        "de5e3a9ca7ce9f0e40636899"
+        "de5e3a9ca7ce9f0e40636899",
+        "3ff0cd9d65c5cf58953ab06e"
       ],
       "source_urls": [
         "https://s25.q4cdn.com/621799436/files/doc_downloads/2026/10/MU-TP-Webinar.pdf",
-        "https://arxiv.org/abs/2611.06071"
+        "https://arxiv.org/abs/2611.06071",
+        "https://arxiv.org/abs/2611.21288"
       ]
     }
   ],
@@ -531,6 +541,16 @@
       "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
       "evidence_item_ids": [
         "de5e3a9ca7ce9f0e40636899"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_f739c138dbddc33d4334",
+      "issue_date": "2026-11-25",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "3ff0cd9d65c5cf58953ab06e"
       ]
     }
   ]

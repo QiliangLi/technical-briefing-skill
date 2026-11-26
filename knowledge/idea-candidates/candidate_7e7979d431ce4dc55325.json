@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_7e7979d431ce4dc55325",
+  "identity": {
+    "problem_key": "wide_beam_shared_prompt_decoding_redundant_kv_access",
+    "mechanism_key": "tree_attention_static_kv_allocation_single_execution_graph",
+    "target_key": "ascend_npu_generative_recommendation_inference"
+  },
+  "idea_type": "solution_concept",
+  "title": "树注意力加静态KV区分配与单图解码消除昇腾宽束生成式推荐推理的冗余KV访问",
+  "problem": "生成式推荐推理的输入长且被整个beam共享，束宽极大（论文为512）而输出仅数个token；通用引擎把各beam当作独立序列批处理，导致对共享输入的冗余KV访问。",
+  "hypothesis": "对输入被整个beam共享、束宽极大而输出仅数个token的解码负载，把束搜索改写为树注意力（各步选中token追加到单一提示实例，每个token只关注自身、祖先路径与共享提示）、静态分配KV区并把解码循环展开为单张NPU执行图，可在注意力kernel本身不占优的条件下把算子总时延降到通用引擎按独立序列批处理路径的约37%（论文为76.3毫秒对vLLM 209.0毫秒），并与手写定制版持平（76.4毫秒）。",
+  "mechanism": "树注意力把每步选中的token追加到单一提示实例之后，每个token只关注自身、祖先路径与共享提示，以消除通用引擎按独立序列批处理带来的冗余KV访问；KV区采用静态分配；解码循环展开为单张NPU执行图。论文实现中注意力kernel本身慢于手写定制kernel，时延靠掩码KV管理补齐。",
+  "target": "昇腾NPU上的生成式推荐束搜索解码（OpenOneRec-1.7B、束宽512）；记录建议的可评估推广对象是束宽大、输出短的解码负载",
+  "expected_effect": "已发表对照：OpenOneRec-1.7B、束宽512下算子总时延76.3毫秒，vLLM为209.0毫秒（降至约37%）、定制版为76.4毫秒；注意力kernel慢于手写定制kernel，靠掩码KV管理补齐。记录给出的边界：端到端最多快25倍的说法缺可见表格支撑，结果限于昇腾与单一推荐负载，无吞吐数据。",
+  "topic_ids": [
+    "ai_infra_horizontal"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-25",
+    "rationale": "单条已发表记录同时给出具体问题、可解释机制、目标对象与带对照的量化效应（束宽512下算子总时延76.3毫秒对vLLM 209.0毫秒、定制版76.4毫秒），且身份与输入内既有候选及Idea不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "357cf5ceda39eff6bac4a19e",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.23339v1"
+      ],
+      "reason": "该记录给出问题（输入长且全束共享、束宽512、输出仅数token，通用引擎按独立序列批处理导致冗余KV访问）、机制（树注意力：各步选中token追加到单一提示实例、每个token只关注自身/祖先路径/共享提示；KV区静态分配；解码循环展开为单张NPU执行图）与对照结果（OpenOneRec-1.7B束宽512下算子总时延76.3毫秒，vLLM 209.0毫秒、定制版76.4毫秒）。",
+      "independence_group": "arxiv:2611.23339"
+    }
+  ],
+  "evidence_item_ids": [
+    "357cf5ceda39eff6bac4a19e"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.23339v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.23339"
+  ],
+  "unknowns": [
+    "单一厂商（华为）预印本、仅一个独立来源，无独立复现",
+    "结果限于昇腾与单一推荐负载（OpenOneRec-1.7B、束宽512），向GPU、其他模型与负载的可迁移性未知",
+    "仅有算子总时延，无吞吐、并发与成本数据",
+    "端到端最多快25倍的说法缺可见表格支撑，引用前需核对原文数据",
+    "树注意力掩码、静态KV分配与单张执行图三项各自对时延的贡献在已发表记录中未拆分",
+    "注意力kernel本身慢于手写定制kernel，在更长输出或更小束宽下掩码KV管理能否补齐未知"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在昇腾上复现树注意力掩码、静态KV区分配与循环展开为单张执行图三项，并在一种GPU服务引擎上做可迁移性对照；用同一个约1.7B生成式推荐模型（如OpenOneRec-1.7B）与通用束搜索解码路径，束宽取64/128/512、输出数个token",
+    "inputs": [
+      "全束共享同一长提示的生成式推荐请求集，输出长度数个token",
+      "束宽梯度64/128/512（论文配置为512）",
+      "三类实现共用的同一模型权重、分词器与束搜索打分配置"
+    ],
+    "baselines": [
+      "通用引擎按独立序列批处理的束搜索（论文对照中的vLLM路径）",
+      "厂商手写定制融合注意力kernel的版本（论文对照中的定制版）",
+      "仅启用树注意力掩码、不启用静态KV分配与单图展开的消融配置"
+    ],
+    "metrics": [
+      "算子总时延与端到端解码时延（毫秒）",
+      "吞吐（请求/秒）与并发下的P50/P95时延",
+      "KV读取字节数与每步注意力计算量（profiler采样或解析估算）",
+      "束搜索输出与独立序列批处理基线的结果一致率",
+      "HBM/显存占用与执行图编译耗时"
+    ],
+    "support_criteria": [
+      "算子总时延相对通用引擎独立序列批处理路径显著下降（论文量级为76.3毫秒对209.0毫秒），且束搜索输出与基线一致",
+      "相对手写定制kernel处于同一量级（论文为76.3毫秒对76.4毫秒），无需逐负载手写kernel",
+      "收益随束宽增大、输出变短而扩大，与冗余KV访问的解释一致"
+    ],
+    "reject_criteria": [
+      "收益只在昇腾或只在该推荐负载上出现，换硬件、模型或负载后消失",
+      "端到端时延不降，收益被执行图编译、掩码构建或调度开销抵消",
+      "束搜索输出与基线不一致",
+      "消融显示时延收益主要来自与本候选无关的其他工程改动"
+    ],
+    "limitations": [
+      "全部已发表数字来自单一厂商预印本，仅昇腾与单一推荐负载，未经独立复现",
+      "仅有算子总时延，无吞吐、并发与成本数据",
+      "端到端最多快25倍的说法缺可见表格支撑，引用前需核对原文数据",
+      "树注意力掩码、静态KV分配与单张执行图三项各自的贡献在已发表记录中未拆分"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份与输入内既有候选及Idea均不同，但证据为单一厂商预印本（仅一个独立组、无独立复现），结果限于昇腾与单一推荐负载、只有算子总时延而无吞吐数据，端到端最多25倍的说法缺可见表格支撑，缺独立支持且适用边界（硬件、模型、负载与束宽范围）未建立，先观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-25",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_2065ad8377f293f34dff",
+      "issue_date": "2026-11-25",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份与输入内既有候选及Idea均不同，但证据为单一厂商预印本（仅一个独立组、无独立复现），结果限于昇腾与单一推荐负载、只有算子总时延而无吞吐数据，端到端最多25倍的说法缺可见表格支撑，缺独立支持且适用边界（硬件、模型、负载与束宽范围）未建立，先观察。",
+      "evidence_item_ids": [
+        "357cf5ceda39eff6bac4a19e"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

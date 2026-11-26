@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_af78b332e84144086f1c",
+  "identity": {
+    "problem_key": "cross_hardware_optimization_decision_non_portability",
+    "mechanism_key": "triton_stack_superoptimizer_port_formal_verification",
+    "target_key": "ascend_910b3_npu_fused_kernels"
+  },
+  "idea_type": "solution_concept",
+  "title": "Mirage超级优化器经Triton栈移植到昇腾910B3：融合内核收益强依赖形状且部分配置回退",
+  "problem": "同一张量图的优化决策难以跨硬件迁移：Mirage超级优化器原带CUDA相关构建依赖，须移植后方能在非CUDA的昇腾910B3上运行，而非CUDA加速器的实测性能很大程度由编译与优化栈决定；昇腾上需经移植才能获得超级优化生成的融合内核，只看峰值算力的选型评估不足以反映真实内核表现。",
+  "hypothesis": "若把超级优化器经Triton编译栈移植到非CUDA的NPU——分离CUDA相关构建依赖、把Triton升级至3.2.0以上并扩展算子覆盖，候选图先经规则式形式化验证器验证再在NPU上执行——则同一张量图可在昇腾910B3上获得明显高于参考内核的融合内核收益；但由于优化决策难以跨硬件迁移，收益强依赖张量形状，部分较大配置会明显回退，须按形状逐配置做内核实测而非只看峰值算力。",
+  "mechanism": "移植层分离CUDA相关构建依赖、把Triton升级至3.2.0以上并扩展算子覆盖，使Mirage针对同一张量图生成的候选图可在昇腾910B3上落地；候选图先经规则式形式化验证器验证，再在NPU上执行并按配置与参考内核对比。由于优化决策难以跨硬件迁移，候选须在目标NPU上执行；记录同时指出收益强依赖张量形状、Triton后端缺少线程块融合与在线softmax专门处理，回退源于后端缺失还是形状本身尚未拆解。",
+  "target": "昇腾910B3（Ascend NPU）上由Mirage生成的融合内核：融合RMSNorm+MatMul、门控MLP与FNN张量图。",
+  "expected_effect": "相对参考内核，融合RMSNorm+MatMul七种配置快27.6%–87.0%，门控MLP九种配置快4.2%–58.4%，融合负载最高快87.0%；FNN两个较大配置反而慢51.5%与151.8%，收益与回退按配置并存。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-25",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（同一张量图的优化决策难以跨硬件迁移，非CUDA加速器的实测性能很大程度由编译与优化栈决定）、可解释机制（移植分离CUDA相关构建依赖、把Triton升级至3.2.0以上并扩展算子覆盖，候选图经规则式形式化验证器验证后在NPU上执行）、目标对象（昇腾910B3上的融合RMSNorm+MatMul、门控MLP与FNN内核）与可检验效应（相对参考内核的逐配置加速比，含FNN两个较大配置的回退），四要素齐备。"
+  },
+  "evidence": [
+    {
+      "item_id": "bc38a5a9fe31e353a5114eb8",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.22844v1"
+      ],
+      "reason": "《Mirage超级优化器移植到昇腾910B3，内核收益与回退并存》给出问题（同一张量图的优化决策难以跨硬件迁移；非CUDA加速器的实测性能很大程度由编译与优化栈决定）、机制（移植分离CUDA相关构建依赖、把Triton升级至3.2.0以上并扩展算子覆盖，候选图经规则式形式化验证器验证后在NPU上执行）、目标（昇腾910B3上的融合RMSNorm+MatMul、门控MLP与FNN内核）与可检验效应（融合RMSNorm+MatMul七种配置快27.6%–87.0%、门控MLP九种配置快4.2%–58.4%、FNN两个较大配置反而慢51.5%与151.8%），并给出边界：收益强依赖张量形状、Triton后端缺少线程块融合与在线softmax专门处理、无端到端与功耗数据。该条同日已被idea_0beeab7573d3f58b0330作为『通过正确性验证的自动优化内核仍须按形状在真实设备上验收』的支持证据收录。",
+      "independence_group": "arxiv:2611.22844"
+    }
+  ],
+  "evidence_item_ids": [
+    "bc38a5a9fe31e353a5114eb8"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.22844v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.22844"
+  ],
+  "unknowns": [
+    "单一arXiv v1预印本独立分组，缺独立复现",
+    "收益强依赖张量形状：形状依赖边界由Triton后端缺失（线程块融合、在线softmax专门处理）还是形状本身决定未拆解，回退配置的事前判别条件未给出",
+    "实测仅覆盖昇腾910B3单款设备，能否推广到昇腾其他型号或其他非CUDA加速器未知",
+    "仅内核级数据，无端到端与功耗数据",
+    "参考内核的具体来源与强度，以及移植后候选生成、验证与计时的搜索开销，在已发布记录中未说明",
+    "与idea_0beeab7573d3f58b0330（硬件感知内核优化闭环）的血缘关系（并入该Idea还是独立立项）待人工判定"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有昇腾910B3与Triton 3.2.0以上环境复现Mirage移植流程：对融合RMSNorm+MatMul、门控MLP与FNN三类张量图扫描形状配置，候选图经规则式形式化验证器验证后在NPU上计时，对照参考内核，并补测端到端与功耗。",
+    "inputs": [
+      "Mirage移植实现与规则式形式化验证器",
+      "Triton 3.2.0以上的昇腾910B3运行环境",
+      "融合RMSNorm+MatMul、门控MLP与FNN张量图的形状配置集（含记录中回退的较大FNN配置）",
+      "可取得时的同一张量图GPU侧Mirage优化结果"
+    ],
+    "baselines": [
+      "记录所用参考内核",
+      "未融合的逐算子基线内核",
+      "同一张量图在GPU上的Mirage优化内核（跨硬件对照）"
+    ],
+    "metrics": [
+      "逐配置内核加速比与回退配置占比",
+      "候选图验证通过率与验证耗时",
+      "端到端时延/吞吐与功耗",
+      "GPU与NPU上最优候选图的一致率（衡量优化决策的可迁移程度）"
+    ],
+    "support_criteria": [
+      "融合RMSNorm+MatMul与门控MLP多数配置相对参考内核提速，方向与报告一致",
+      "较大FNN配置的回退可复现，且可按形状或后端特征把配置划分为收益区与回退区"
+    ],
+    "reject_criteria": [
+      "收益主要来自参考内核偏弱，换用更强基线后消失",
+      "回退与形状、后端特征均无规律，收益无法事前判别"
+    ],
+    "limitations": [
+      "首版仅覆盖昇腾910B3与三类融合张量图，不含训练负载与其他非CUDA加速器",
+      "GPU侧对照依赖可取得的Mirage原结果"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有48个候选及8个Idea均不同：本条同日已被idea_0beeab7573d3f58b0330（generated_kernel_deployment_gap + hardware_aware_closed_loop_optimization + gpu_and_npu_kernels）作为『通过正确性验证的自动优化内核仍须按形状在真实设备上验收』的支持证据收录，但该Idea是按目标设备注入硬件知识、以真实部署验收迭代的内核优化闭环身份，本候选是超级优化器经Triton栈跨硬件移植到昇腾910B3融合内核这一具体机制，记录未涉及硬件知识注入且无端到端数据，问题、机制与目标三键及含义均不同，故非同一身份；主题相邻的candidate_cf2a2e504c58dbc374de是以智能体抽取GPU编译意图生成昇腾训练程序重写，candidate_95c2137683341e45b684是昇腾SpMM内核设计，机制与目标均不同，经related字段标注血缘待人工判定。但仅有单一arXiv v1预印本独立分组支撑，收益强依赖张量形状、回退配置的事前判别条件与回退源于后端缺失还是形状本身的归因未拆解，仅910B3单款设备、仅内核级数据而无端到端与功耗，独立复现与适用边界缺失，先观察。",
+  "related_candidate_ids": [
+    "candidate_cf2a2e504c58dbc374de",
+    "candidate_95c2137683341e45b684"
+  ],
+  "related_idea_ids": [
+    "idea_0beeab7573d3f58b0330"
+  ],
+  "first_seen_issue": "2026-11-25",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5daa334d4c0fcdf4f75d0956",
+      "issue_date": "2026-11-25",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有48个候选及8个Idea均不同：本条同日已被idea_0beeab7573d3f58b0330（generated_kernel_deployment_gap + hardware_aware_closed_loop_optimization + gpu_and_npu_kernels）作为『通过正确性验证的自动优化内核仍须按形状在真实设备上验收』的支持证据收录，但该Idea是按目标设备注入硬件知识、以真实部署验收迭代的内核优化闭环身份，本候选是超级优化器经Triton栈跨硬件移植到昇腾910B3融合内核这一具体机制，记录未涉及硬件知识注入且无端到端数据，问题、机制与目标三键及含义均不同，故非同一身份；主题相邻的candidate_cf2a2e504c58dbc374de是以智能体抽取GPU编译意图生成昇腾训练程序重写，candidate_95c2137683341e45b684是昇腾SpMM内核设计，机制与目标均不同，经related字段标注血缘待人工判定。但仅有单一arXiv v1预印本独立分组支撑，收益强依赖张量形状、回退配置的事前判别条件与回退源于后端缺失还是形状本身的归因未拆解，仅910B3单款设备、仅内核级数据而无端到端与功耗，独立复现与适用边界缺失，先观察。",
+      "evidence_item_ids": [
+        "bc38a5a9fe31e353a5114eb8"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

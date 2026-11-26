@@ -488,8 +488,8 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     index = read_json(REPO_ROOT / "knowledge" / "index.json")
     assert index["schema_version"] == 1
     assert len(index["roadmaps"]) == 11
-    assert len(index["ideas"]) == 48
-    assert len(index["idea_candidates"]) == 299
+    assert len(index["ideas"]) == 51
+    assert len(index["idea_candidates"]) == 316
     # The store has been re-materialized issue by issue through the bounded
     # task queue (2026-08-23/26/29 backfill, the 2026-09-03 issue that added
     # the optical_network roadmap, the 2026-09-04/06/10/14 backfill that
@@ -506,7 +506,8 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     # the 2026-11-11 stage that added five ideas and thirty-three candidates,
     # the 2026-11-13 stage that added five ideas and twenty-four candidates,
     # the 2026-11-16 stage that added three ideas and fourteen candidates,
-    # and the 2026-11-18 stage that added two ideas and fourteen
+    # the 2026-11-18 stage that added two ideas and fourteen candidates,
+    # and the 2026-11-25 stage that added three ideas and seventeen
     # candidates), so four more category clusters joined the five seed
     # clusters; all of them remain temporary.
     assert len(index["frontier_clusters"]) == 9
@@ -531,7 +532,7 @@ def test_committed_seed_is_public_path_resolvable_and_honest():
     assert all(not str(node["data"]["id"]).startswith("candidate_") for node in graph["nodes"])
     manifest = read_json(REPO_ROOT / "knowledge" / "manifest.json")
     assert manifest["candidate_analysis_state"] == "complete"
-    assert manifest["candidate_counts"] == {"proposed": 24, "accepted": 5, "duplicate": 35, "deferred": 235, "dismissed": 0}
+    assert manifest["candidate_counts"] == {"proposed": 26, "accepted": 5, "duplicate": 35, "deferred": 250, "dismissed": 0}
     backfill = read_json(REPO_ROOT / "knowledge" / "candidate-backfill.json")
     audited = [row for issue in backfill["issues"] for row in issue["items"]]
     assert len(audited) == 264

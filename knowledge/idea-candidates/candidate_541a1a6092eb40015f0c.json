@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_541a1a6092eb40015f0c",
+  "identity": {
+    "problem_key": "nvcc_omitted_sass_scheduling_fields",
+    "mechanism_key": "post_compile_cubin_scheduling_marker_rewrite",
+    "target_key": "nvidia_gpu_vllm_llm_inference_kernels"
+  },
+  "idea_type": "solution_concept",
+  "title": "编译后改写cubin放置未公开SASS调度标记：让用户程序用上闭源库在用的warp调度优化",
+  "problem": "NVIDIA闭源库使用nvcc从不输出的SASS调度字段，用户程序用不上这类硬件调度优化，公开编译路径与闭源库之间留有一层warp调度控制落差。",
+  "hypothesis": "若由优化器在编译后直接改写cubin、按逆向得到的语义放置调度标记（EXEMPT使被延迟barrier挡住的指令提前发射，START等标记在三级优先级间移动warp），则无需改源码或编译器，量产推理框架中的NVIDIA内核相对未标记基线即可获得可测提速：vLLM MarlinMoE在H20提速最高5.4%，Qwen3-30B MoE端到端32路解码最高+3.6%、H100上+2.3%；issue槽已满时EXEMPT未必缩短内核。",
+  "mechanism": "两类逆向出的调度机制：EXEMPT使被延迟barrier挡住的指令提前发射；START等标记在三级优先级间移动warp。优化器不改源码与编译器，在编译后改写cubin放置这些标记。",
+  "target": "NVIDIA GPU（实测H20与H100）上量产推理框架vLLM中的LLM推理内核（MarlinMoE与Qwen3-30B MoE解码）",
+  "expected_effect": "相对未标记基线：vLLM MarlinMoE在H20提速最高5.4%；Qwen3-30B MoE端到端32路解码最高+3.6%，H100上+2.3%。issue槽已满时EXEMPT未必缩短内核；摘要所称31.9%内核提速缺可见证据支撑。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-25",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（nvcc从不输出闭源库在用的SASS调度字段，用户程序用不上这类硬件调度优化）、可解释机制（EXEMPT让被延迟barrier挡住的指令提前发射、START等标记在三级优先级间移动warp，由优化器在编译后改写cubin放置标记）、目标对象（NVIDIA GPU上量产框架vLLM中的MarlinMoE与Qwen3-30B MoE解码内核）与可检验效应（相对未标记基线，vLLM MarlinMoE在H20提速最高5.4%，Qwen3-30B MoE端到端32路解码最高+3.6%，H100上+2.3%），四要素齐备且与既有候选及Idea的身份元组及含义不同。同一记录本期已被idea_30e35e81d5172a1e7747作为inferred跨域支持收录，但其身份不覆盖本候选的调度标记放置机制，故按独立身份建候选并挂关联，而非duplicate。"
+  },
+  "evidence": [
+    {
+      "item_id": "44b498ded86e1240b8c3d5f8",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.24437v1"
+      ],
+      "reason": "该记录给出问题（NVIDIA闭源库使用nvcc从不输出的SASS调度字段，用户程序用不上这类硬件调度优化）、机制（EXEMPT使被延迟barrier挡住的指令提前发射，START等标记在三级优先级间移动warp，优化器在编译后改写cubin放置这些标记）、目标（NVIDIA GPU上量产框架vLLM中的MarlinMoE与Qwen3-30B MoE解码内核，实测H20与H100）与可检验效应（相对未标记基线，vLLM MarlinMoE在H20提速最高5.4%，Qwen3-30B MoE端到端32路解码最高+3.6%，H100上+2.3%），并给出边界：摘要的31.9%内核提速缺可见证据支撑，仅限NVIDIA，issue槽已满时EXEMPT未必缩短内核。",
+      "independence_group": "arxiv:2611.24437"
+    }
+  ],
+  "evidence_item_ids": [
+    "44b498ded86e1240b8c3d5f8"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.24437v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.24437"
+  ],
+  "unknowns": [
+    "仅单一arXiv v1预印本独立分组，调度字段系逆向得到，缺独立复现",
+    "摘要所称31.9%内核提速缺可见证据支撑，记录可见的是MarlinMoE在H20最高5.4%、端到端32路解码最高+3.6%与H100上+2.3%",
+    "issue槽已满时EXEMPT未必缩短内核：发射余量与收益之间的定量边界未刻画，缺少事前判别条件",
+    "仅限NVIDIA，实测只覆盖H20与H100，跨NVIDIA架构代际的可复现性未知",
+    "调度字段未公开：SASS编码或工具链版本变化后改写是否仍有效、如何维护，记录未说明",
+    "优化器放置标记的搜索代价与改写后内核的正确性校验方式，记录未说明",
+    "与idea_30e35e81d5172a1e7747的谱系归属待人工判定：该Idea把本条作为执行上下文条件的inferred跨域支持，本候选的调度标记放置机制独立于该Idea的评估判据"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有NVIDIA GPU（H20、H100或自有代际）上，对vLLM中的MarlinMoE与Qwen3-30B MoE解码内核复现编译后改写cubin放置调度标记，对照同一内核的未标记基线，测量内核级与端到端时延和吞吐，并按issue槽占用档位扫描收益。",
+    "inputs": [
+      "vLLM中MarlinMoE与Qwen3-30B MoE解码内核的cubin及其未标记基线",
+      "逆向得到的EXEMPT、START等调度标记的编码与放置规则",
+      "NVIDIA GPU环境（H20、H100或自有代际）与vLLM推理负载（含32路解码档位）"
+    ],
+    "baselines": [
+      "同一内核不带调度标记的未标记基线（nvcc原始输出）",
+      "仅用公开编译器调度选项调优后的同一内核（用于区分未公开字段的增量）"
+    ],
+    "metrics": [
+      "内核级执行时间与提速比例",
+      "端到端解码吞吐与时延（32路解码档位）",
+      "issue槽占用与提速的对应关系",
+      "改写后内核与未标记基线的输出一致性"
+    ],
+    "support_criteria": [
+      "在自有GPU与vLLM负载上复现同量级提速（MarlinMoE在H20最高5.4%，端到端+2.3%至+3.6%量级），且输出与未标记基线一致",
+      "能给出issue槽占用与收益的定量关系，即EXEMPT在多大发射余量以上才缩短内核"
+    ],
+    "reject_criteria": [
+      "复现收益落在测量噪声内，或仅在个别内核上成立",
+      "常见负载下issue槽已满、EXEMPT不再缩短内核，且找不到事前判别条件",
+      "改写后内核输出不一致，或标记编码在所用工具链版本上失效"
+    ],
+    "limitations": [
+      "本验证计划仅为建议，未执行任何测量",
+      "结论依赖未公开的SASS调度字段，跨NVIDIA架构代际与工具链版本的外推未验证",
+      "首版仅覆盖vLLM中两类MoE推理内核，不含训练相位与其他框架"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同：硬件能力栈内保留率Idea（idea_30e35e81d5172a1e7747）本期已把本条作为执行上下文条件的跨域支持（inferred）收录，但其身份是能力增益保留率的执行上下文条件化评估、目标为量化稀疏内核采用，其收录理由亦注明对象是warp调度控制而非数值格式能力；本候选的身份是nvcc从不输出的SASS调度字段缺口，机制是编译后改写cubin放置调度标记，该机制不在该Idea的评估判据之内，两者身份与含义不同，不构成duplicate；跨执行域同步固定开销候选（candidate_344ecdd2e672a28ef630）以就绪证据并入数据通路消除跨域显式同步原语，本候选以调度标记在三级优先级间移动warp并让被延迟barrier挡住的指令提前发射，杠杆与对象不同。但仅有单一arXiv v1预印本独立分组支撑，调度字段系逆向得到、缺独立复现；摘要所称31.9%内核提速缺可见证据支撑，记录可见的是最高5.4%与端到端2.3%至3.6%量级；仅限NVIDIA，issue槽已满时EXEMPT未必缩短内核而发射余量边界未量化；与该Idea的谱系归属待人工判定，先观察。",
+  "related_candidate_ids": [
+    "candidate_344ecdd2e672a28ef630"
+  ],
+  "related_idea_ids": [
+    "idea_30e35e81d5172a1e7747"
+  ],
+  "first_seen_issue": "2026-11-25",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5eeef707a39ca2c98cf0",
+      "issue_date": "2026-11-25",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且身份元组与既有候选及Idea不同：硬件能力栈内保留率Idea（idea_30e35e81d5172a1e7747）本期已把本条作为执行上下文条件的跨域支持（inferred）收录，但其身份是能力增益保留率的执行上下文条件化评估、目标为量化稀疏内核采用，其收录理由亦注明对象是warp调度控制而非数值格式能力；本候选的身份是nvcc从不输出的SASS调度字段缺口，机制是编译后改写cubin放置调度标记，该机制不在该Idea的评估判据之内，两者身份与含义不同，不构成duplicate；跨执行域同步固定开销候选（candidate_344ecdd2e672a28ef630）以就绪证据并入数据通路消除跨域显式同步原语，本候选以调度标记在三级优先级间移动warp并让被延迟barrier挡住的指令提前发射，杠杆与对象不同。但仅有单一arXiv v1预印本独立分组支撑，调度字段系逆向得到、缺独立复现；摘要所称31.9%内核提速缺可见证据支撑，记录可见的是最高5.4%与端到端2.3%至3.6%量级；仅限NVIDIA，issue槽已满时EXEMPT未必缩短内核而发射余量边界未量化；与该Idea的谱系归属待人工判定，先观察。",
+      "evidence_item_ids": [
+        "44b498ded86e1240b8c3d5f8"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

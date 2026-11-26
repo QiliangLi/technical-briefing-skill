@@ -3,8 +3,8 @@
   "topic_id": "ai_infra_horizontal",
   "topic_name": "AI Infra横向动态",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-16",
-  "summary": "AI Infra横向当前最可执行的判断仍是推理优化收益必须在目标硬件与端到端链路上重测后再采用：跨硬件实测已两次出现收益翻转（INT8在无点积指令CPU上反慢1.65–1.76倍且千张固定输入top-1一致数降到958–965，Apple Silicon上六种投机解码方法单请求主基准全部负收益、KV剪枝却最高1.75倍而RTX 4090至多1.02倍），kernel级加速也不代表服务收益（PhyAI配对加速1.40–4.65倍下Cosmos3吞吐随batch仅增14.3%，投机解码唯一例外解码+1.1%而端到端−13.8%）；serving_runtime_compiler仍是证据最密集主线，杠杆已从kernel与稀疏化延伸到预填充检索摊销（SCR检索调用8959→1165、InfiniteBench平均TTFT约降35%）、推理微调混部（DeltaServe微调吞吐2.9倍且SLO百分之百达标）与全局容量调度（TRE在2节点8卡A100上P95时延降11.9%–79.0%）；加速器内存分支本期新增SK hynix转述Mutlu的以内存为中心架构主张（协同设计数据摆放与计算位置，杠杆含加速器旁置HBM、CXL池化、近内存加速与DRAM内计算），与HBF分层仿真46.0–60.0%完成时间降幅互为呼应，但两者分别为厂商二手综述与trace仿真且混合配置平均TPOT高于HBM-only；当前限制因素是验证规模与证据层级（单卡实测、双服务器真值、trace仿真、二手引用），若出现多卡实机复现或生产trace上的TPOT/P95与成本数据、且近内存定量主张经Tesseract与CENT等原始论文核实，应把对应观察项升级为可复用结论，在此之前延迟敏感场景不应采用HBF混合分层配置。",
+  "updated_by_issue": "2026-11-25",
+  "summary": "AI Infra横向当前最可执行的判断仍是推理优化收益必须在目标硬件、目标负载结构与端到端链路上重测后再采用：跨硬件实测已两次出现收益翻转（INT8在无点积指令CPU上反慢1.65–1.76倍且千张固定输入top-1一致数降到958–965，Apple Silicon上六种投机解码方法单请求主基准全部负收益、KV剪枝却最高1.75倍而RTX 4090至多1.02倍），kernel级加速也不代表服务收益（PhyAI配对加速1.40–4.65倍下Cosmos3吞吐随batch仅增14.3%）；本期华为在昇腾上以树注意力掩码加静态KV区把OpenOneRec-1.7B、束宽512的生成式推荐负载算子总时延降到vLLM约37%（76.3毫秒对209.0毫秒）并与定制版76.4毫秒持平，但注意力核本身慢于定制核、靠掩码KV管理补齐，端到端最多快25倍的说法缺可见表格支撑且无吞吐数据，应读作「长输入全束共享、输出仅数token」负载结构上的冗余KV访问消除而非可照搬的内核提速；因此束宽大、输出短的解码负载可把树注意力掩码加静态KV区列为待测候选，采用前须在自有硬件上核对原文数据并测端到端时延、多请求吞吐与输出质量；serving_runtime_compiler主线的杠杆已从kernel与稀疏化延伸到负载结构、预填充检索摊销（SCR检索调用8959→1165、InfiniteBench平均TTFT约降35%）、推理微调混部（DeltaServe在Nutanix生产trace上微调吞吐较LLMStation高2.9倍且SLO百分之百达标）与全局容量调度（TRE在2节点8卡A100上P95时延降11.9%–79.0%），加速器内存分支的HBF分层仿真（权重驻HBM时1× trace完成时间降46.0–60.0%）与SK hynix转述的以内存为中心架构主张互为呼应，但两者分别是trace仿真与二手综述，且混合配置平均TPOT高于HBM-only；当前限制因素仍是验证规模与证据层级（单卡实测、双服务器真值、trace仿真、二手引用），若出现多卡实机复现或生产trace上的TPOT/P95与成本数据、且近内存定量主张经Tesseract与CENT等原始论文核实，应把对应观察项升级为可复用结论，在此之前延迟敏感场景不应采用HBF混合分层配置。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -123,6 +123,14 @@
             "https://arxiv.org/abs/2609.31568v1"
           ],
           "reason": "SCR对相似的查询块只按簇做一次检索，把选择性稀疏注意力的检索开销从子块粒度摊销到簇粒度并继承TokenSelect的选择缓存；较TokenSelect基线检索调用从8959次降到1165次，InfiniteBench平均TTFT降约35%、RULER在128K降32.9%（评测在单张H100完成而非动机所述消费级GPU，吞吐、利用率与成本数据缺失；属预填充时延优化而非全链路加速，收益主要来自检索阶段）。"
+        },
+        {
+          "item_id": "357cf5ceda39eff6bac4a19e",
+          "issue_date": "2026-11-25",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.23339v1"
+          ],
+          "reason": "华为针对生成式推荐推理输入长且全束共享、束宽极大而输出仅数token的特点，指出通用引擎按独立序列批处理导致冗余KV访问，并在昇腾上改用树注意力（把各步选中token追加到单一提示实例，每个token只关注自身、祖先路径与共享提示）与KV区静态分配，解码循环展开为单张NPU执行图；OpenOneRec-1.7B、束宽512下算子总时延76.3毫秒，vLLM为209.0毫秒、定制版76.4毫秒，即约为vLLM的37%，其中注意力核慢于定制核、靠掩码KV管理补齐（端到端最多快25倍的说法缺可见表格支撑，结果限于昇腾与单一推荐负载，无吞吐数据）；本条为单一负载的算子级结果，应读作负载结构上的冗余KV访问消除而非内核提速，与既有「收益须在目标硬件与端到端链路重测」的判断一致，作为束宽大、输出短解码负载的待测候选收录，不据此强行划分阶段。"
         }
       ],
       "open_questions": [],
@@ -135,7 +143,8 @@
         "263a374ba902253630bd8971",
         "d0a71d37f14bb457e1c88b46",
         "3b4ec69da9e2508829f66968",
-        "705bd31af4b4ee2d93f86497"
+        "705bd31af4b4ee2d93f86497",
+        "357cf5ceda39eff6bac4a19e"
       ],
       "source_urls": [
         "https://arxiv.org/abs/2607.21985v1",
@@ -146,7 +155,8 @@
         "https://arxiv.org/abs/2609.16085v1",
         "https://arxiv.org/abs/2610.31479v1",
         "https://arxiv.org/abs/2609.29160v1",
-        "https://arxiv.org/abs/2609.31568v1"
+        "https://arxiv.org/abs/2609.31568v1",
+        "https://arxiv.org/abs/2611.23339v1"
       ]
     },
     {
@@ -269,6 +279,16 @@
       "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
       "evidence_item_ids": [
         "981cfd1ec04d36f0d715b021"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_29423c8ab348d25322a7",
+      "issue_date": "2026-11-25",
+      "change_type": "no_material_change",
+      "version": 2,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "357cf5ceda39eff6bac4a19e"
       ]
     }
   ]

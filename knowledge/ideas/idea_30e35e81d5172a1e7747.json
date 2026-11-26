@@ -72,6 +72,14 @@
         "https://arxiv.org/abs/2611.19101v1"
       ],
       "reason": "ANE实测显示通行认知反映CoreML调度器默认而非硬件包络：绕开默认栈直接编程并逐引擎计量后，双有效带宽（24GB/s激活与112GB/s权重流）与权重流ridge约71 FLOP/B方可测得，支持『能力兑现口径由执行路径条件决定、选型应按实测包络而非峰值TOPS』（inferred：对象为端侧推理引擎的带宽/能效包络与调度器默认层，非量化-稀疏能力保留率本身）。"
+    },
+    {
+      "item_id": "44b498ded86e1240b8c3d5f8",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.24437v1"
+      ],
+      "reason": "NVIDIA SASS调度字段实测为保留率的执行上下文条件再添一项（inferred：对象是warp调度控制而非数值格式能力）——闭源库使用的SASS调度字段nvcc从不输出、用户程序用不上这类硬件调度优化，逆向出EXEMPT与START等标记并由优化器在编译后改写cubin放置标记后才在量产框架兑现，vLLM MarlinMoE在H20最高提速5.4%、Qwen3-30B MoE端到端32路解码最高+3.6%（H100上+2.3%）；且issue槽已满时EXEMPT未必缩短内核，说明该能力兑现以发射余量为条件（摘要的31.9%内核提速缺可见证据支撑、仅限NVIDIA）。"
     }
   ],
   "evidence_against": [],
@@ -79,7 +87,8 @@
     "保留率能否跨硬件代际与厂商迁移（现有实测覆盖三代NVIDIA GPU与单颗MI300A）",
     "共享设备与多租户条件下保留率的退化曲线未刻画",
     "精度地板格式与稀疏支撑叠加时收益边界（Blackwell 4:8精度在预算内未恢复）",
-    "端侧引擎上『默认调度路径vs直接编程路径』的包络差是否跨代际与厂商稳定（ANE实测仅单台M5 Pro、跨代仅单次或双次点估计、int4无GPU对照）"
+    "端侧引擎上『默认调度路径vs直接编程路径』的包络差是否跨代际与厂商稳定（ANE实测仅单台M5 Pro、跨代仅单次或双次点估计、int4无GPU对照）",
+    "SASS调度标记收益仅在NVIDIA上由逆向得到：端到端仅+2.3%至3.6%而摘要的31.9%内核提速缺可见证据支撑，issue槽已满（发射余量不足）时的收益边界未量化，跨架构代际与工具链版本的可复现性未知"
   ],
   "validation_plan": {
     "mode": "benchmark",
@@ -114,7 +123,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-10-23",
-  "last_updated_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-25",
   "decision_log": [
     {
       "event_id": "idea_decision_9d9eb4b6fafbd99d3472",
@@ -161,6 +170,17 @@
       "reason": "新增ANE双有效带宽能耗roofline实测作为执行上下文条件判据的跨域支持（inferred）：默认运行时路径（CoreML调度器）掩盖引擎包络、直接编程路径方可测得真实包络，把『峰值宣传口径vs栈内兑现口径』的失配来源扩展到端侧引擎的调度器默认层；Idea状态保持observing，数据来自单台M5 Pro、跨厂商与跨代际迁移未验证。",
       "evidence_item_ids": [
         "a7f1631484402e02b552aec0"
+      ]
+    },
+    {
+      "event_id": "idea_decision_e12b0b8888a6eb322943",
+      "issue_date": "2026-11-25",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增NVIDIA SASS调度字段实测作为执行上下文条件判据的跨域支持（inferred）：默认编译路径（nvcc）不输出闭源库在用的调度字段、用户程序用不上硬件调度优化，编译后改写cubin放置标记才在vLLM兑现2.3%至3.6%的端到端收益，且收益以issue槽未满为条件，把『默认栈掩盖硬件能力』的失配来源从端侧调度器默认层扩展到编译器输出层；Idea状态保持observing，发射余量条件尚未量化成判据、仅限NVIDIA。",
+      "evidence_item_ids": [
+        "44b498ded86e1240b8c3d5f8"
       ]
     }
   ]

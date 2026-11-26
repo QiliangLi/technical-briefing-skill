@@ -344,14 +344,31 @@
         "https://arxiv.org/abs/2611.20893v1"
       ],
       "reason": "星上分解式推理解析研究量化了带宽轴：星间链路100→800 Gbps使KVCache传输占TTFT由约24-31%降至3.8-5.8%（Qwen3-235B代入Mooncake地面基线），只给PDD/AFD容量-距离可行域而非调度机制，可作交叉点的解析输入（无真实负载仿真与实测、吞吐与P95未见、AFD假设传输无重叠）。"
+    },
+    {
+      "item_id": "4ac578e519611f62caa30461",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.22280v1"
+      ],
+      "reason": "XM-Sparse把稀疏注意力须保留的全量KV与K-index缓存卸载到scale-up内存池、以互连带宽换HBM容量支撑更大batch，K-index全量扫描改为GPU发起DMA预取且让位于按需检索与模型通信；匹配batch下DeepSeek-V3.2/GLM-5.3的TBT较PCIe基线降35.8%/45.8%、吞吐较HiSparse最高4.52倍，把节点内卸载这一对照策略的基线抬到scale-up内存池，并给出“后台预取让位于按需检索与模型通信”的带宽仲裁形态，可作交叉点假设中传输代价建模的原语参考；但内存池为模拟而非真实X-Mem硬件、限于单节点、未见TTFT与分位时延，论文无网络侧机制。"
+    },
+    {
+      "item_id": "fc9a2fdbed7013ff0b3040c8",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.16072v1"
+      ],
+      "reason": "KVPath把token的KV沿深度连成路径——第0层缓存全维基KV、其余各层由自身隐状态生成低维delta KV，参数匹配时GQA缓存减少67.19%至68.65%（ResGQA困惑度低2.88%至3.48%）、MLA缓存降至标准的45%至47%且困惑度不高于基线；支持“传输字节量可在模型侧预先压缩”的判断，压缩后的残余字节应作为传输代价估算与交叉点扫描的输入；但实验止于约0.6B参数、未开发专用注意力内核、结果是解析缓存体积而非实测服务吞吐，无网络机制与端到端验证。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
     "多租户 P95/P99 下的交叉点是否稳定。",
     "代价预测错误与画像漂移会造成多大回退。",
-    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）、主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）、放置架构基线（TKNP八节点KV容量约为DP的5倍、较DCP 1.53倍）、单卡KV内存调度基线（cμ-backfill平均时延9.47秒对vLLM默认35.49秒）与片上权重重生成单机化基线（FORGE释放28-29%参数显存、KV容量扩至1.2-2.6倍并消除跨机专家all-to-all）、带宽不敏感纯调度基线（TAILROLL不做跨引擎KV传输、rollout每步省23.6-33.9%、p95 TTFT最多降88.4%）与失效KV投机解码基线（Callo折叠47%重预填充未命中惩罚、收益不随100-400Gb/s接口变化）的增量收益尚无对照数据。",
-    "带宽自适应压缩深度与容量-距离可行域作为调度输入的外推有效性未验证：HyCoInfer的RVQ深度选择限于整形带宽试验台、单模型单FPGA且无精度保持与P95，星上PDD/AFD为纯解析口径（AFD假设传输无重叠），到集群内多租户实测的迁移未经验证。"
+    "网络侧KV传输与调度相对GPU侧覆盖度自适应稀疏解码基线（MOIRA单卡TPOT降2.2至2.5倍）、主机内存全量卸载基线（FlashOffloading 512k与1M序列仅双向卸载可服务）、放置架构基线（TKNP八节点KV容量约为DP的5倍、较DCP 1.53倍）、单卡KV内存调度基线（cμ-backfill平均时延9.47秒对vLLM默认35.49秒）与片上权重重生成单机化基线（FORGE释放28-29%参数显存、KV容量扩至1.2-2.6倍并消除跨机专家all-to-all）、带宽不敏感纯调度基线（TAILROLL不做跨引擎KV传输、rollout每步省23.6-33.9%、p95 TTFT最多降88.4%）与失效KV投机解码基线（Callo折叠47%重预填充未命中惩罚、收益不随100-400Gb/s接口变化）、scale-up内存池卸载基线（XM-Sparse匹配batch下TBT较PCIe基线降35.8%/45.8%、吞吐较HiSparse最高4.52倍，内存池为模拟且限于单节点、无TTFT与分位）的增量收益尚无对照数据。",
+    "带宽自适应压缩深度与容量-距离可行域作为调度输入的外推有效性未验证：HyCoInfer的RVQ深度选择限于整形带宽试验台、单模型单FPGA且无精度保持与P95，星上PDD/AFD为纯解析口径（AFD假设传输无重叠），到集群内多租户实测的迁移未经验证。",
+    "模型侧跨层压缩后的残余字节作为传输量输入尚未验证：KVPath的GQA缓存减少67.19%至68.65%、MLA降至标准的45%至47%均为约0.6B参数上的解析缓存体积，无专用注意力内核与服务实测，压缩后残余字节在真实PD交接中占多少、交叉点如何随之下移均无数据。"
   ],
   "validation_plan": {
     "mode": "simulation",
@@ -360,7 +377,8 @@
       "RTT 与带宽扫描",
       "KV 大小与可选比例",
       "缓存命中率",
-      "Prefill/Decode 到达率"
+      "Prefill/Decode 到达率",
+      "KV压缩后残余字节比例（模型侧压缩后的实际传输量）"
     ],
     "baselines": [
       "完整 KV 传输",
@@ -386,7 +404,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-02",
-  "last_updated_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-25",
   "decision_log": [
     {
       "event_id": "idea_decision_4f7da6ed9342bd9a8339",
@@ -627,6 +645,18 @@
         "5fada44e930635ca19459904",
         "0a483abc380e6011336e91b9",
         "b570802a9191a1d54298c8a2"
+      ]
+    },
+    {
+      "event_id": "idea_decision_26de2b8b50c6c8183231",
+      "issue_date": "2026-11-25",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增scale-up内存池卸载（XM-Sparse）与模型侧跨层KV压缩（KVPath）两条节点内与模型侧对照证据：前者把卸载策略族的基线抬到scale-up内存池并给出预取让位于按需检索与模型通信的带宽仲裁形态，后者支持传输字节可在模型侧预先压缩、残余字节应进入传输代价估算；状态保持observing，传输、重算与就地计算在统一负载下的完整对照仍缺失。",
+      "evidence_item_ids": [
+        "4ac578e519611f62caa30461",
+        "fc9a2fdbed7013ff0b3040c8"
       ]
     }
   ]

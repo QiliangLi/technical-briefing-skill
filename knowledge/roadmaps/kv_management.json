@@ -3,8 +3,8 @@
   "topic_id": "kv_management",
   "topic_name": "KVCache管理与复用",
   "evidence_scope": "published_archive_only",
-  "updated_by_issue": "2026-11-18",
-  "summary": "本期四条新增证据——TideKV 把驱逐时机延迟到层末、构建期瞬时显存降 83.89% 而 TTFT 代价 4.17%（95acb09fe1bc6fd4ec5f702a，batch 1 边缘口径）、KVUse 把被动态前置文本包裹的用户画像改存可复用 KV 使打分路径吞吐升 3.96-4.49 倍且 NDCG@10 持平（6f9f030feea772db2218d230）、AutoAssumption 以 Lean 松弛假设搜索产出较母算法平均 +2.73 分的驱逐变体但 64K TTFT 达 33 秒（e3a1755d2f00a1eb27855e14）、RISA 双档可恢复读取省时不省显存且限于块扩散（fe0df82b7d265fa9ec6355a4）——把『驱逐时机』与『被包裹内容的 KV 级复用』补进证据图景但不改变判断：自研 KV 栈下一轮改造仍应优先『流量自适应/语义感知驱逐＋含执行路径与操作历史的多维来源绑定缓存键』，被包裹重复内容参照 KVUse/SemPIC 口径评估 KV 级复用而非只依赖前缀缓存；会改变判断的观察点维持『语义驱逐命中率→时延传导的在线生产验证』『跨来源/跨适配器复用质量代价边界』『命中率×KV 压缩的联合能耗收益』三处。",
+  "updated_by_issue": "2026-11-25",
+  "summary": "自研 KV 栈下一轮改造仍应优先『流量自适应/语义感知驱逐＋含执行路径与操作历史的多维来源绑定缓存键』（回放口径下意图感知驱逐把命中率从 LRU 的 12.2% 提到 34.6%、TTFT 从 6.98 秒降到 3.76 秒，954a38c6f86e6cf1050cee83；省略权重版本的缓存键 45 页中 42 页冲突、恢复绑定后归零，f8c637164ffa4d998894ce4d），被包裹重复内容参照 KVUse/SemPIC 口径评估 KV 级复用而非只依赖前缀缓存；本期新增的 K=V 合并存储（d4b721befbfddff4ee664cd6）是不丢信息的容量杠杆而非驱逐或复用机制，不改变这一排序：Gemma 4 全局层每 KV 头每 token 只存一行、原版分页内核经交叠视图读取，16 位下每请求解码 KV 内存缩小 1.34 至 1.40 倍且 432 个答案仅 2 个不同，但只在解码池满时才换成每步多解 1.24 至 1.38 倍 token，并依赖 Gemma 4 等宽 K=V 结构、仅 16 位缓存适用、等批量 eager 步慢 4% 至 9%；对它应先排查后立项——确认自有模型是否存在可互推的 K/V 冗余、生产解码池是否常态打满，两者都成立再投入，并注意按现有证据它不能与 vLLM v0.32.0 已按架构设为默认的 FP8 低精度 KV（03ef64972818234359298513）叠加（跨条目推断）；会改变判断的观察点维持『语义驱逐命中率→时延传导的在线生产验证』『跨来源/跨适配器复用质量代价边界』『命中率×KV 压缩的联合能耗收益』三处，并新增『自有模型 K/V 冗余排查与解码池饱和度』一处。",
   "view_mode": "evidence_timeline",
   "branches": [
     {
@@ -339,6 +339,14 @@
             "https://github.com/vllm-project/vllm/releases/tag/v0.32.0"
           ],
           "reason": "vLLM v0.32.0将FP8等低精度KVCache按架构设为默认（SM100上GLM-5.x用FP8、NVFP4覆盖多代架构），并改进块释放队列与前缀缓存正确性、清除过期前缀块哈希；PR基准称SM100上每rank KV显存减半、吞吐增2.3至5.5%、TTFT增7至11%，B200上HiSparse长上下文吞吐至多增58%（全部为PR基准，58%未说明基线，无命中率或利用率实测）。"
+        },
+        {
+          "item_id": "d4b721befbfddff4ee664cd6",
+          "issue_date": "2026-11-25",
+          "source_urls": [
+            "https://arxiv.org/abs/2611.23035v1"
+          ],
+          "reason": "2026-11-25 已发布日报收录：vLLM 原型把 Gemma 4 全局层 K=V 缓存合并为单份存储，每 KV 头每 token 只存一行 640 值、K 视图取 0 至 511 段、V 视图取 128 至 639 段，原版分页内核以两个交叠视图读同一显存、无需新内核；与原布局算术仿真逐位一致，432 个答案仅 2 个不同且在噪声内，16 位下每请求解码 KV 内存缩小 1.34 至 1.40 倍，双 A100 上 16K 提示每步解码 token 数为原引擎 1.38 倍、8K 为 1.24 倍（依赖 Gemma 4 特有等宽 K=V 结构、仅 16 位缓存适用、等批量 eager 步慢 4% 至 9%）；按分页与块管理分支记录，不据此改变阶段判断。"
         }
       ],
       "open_questions": [],
@@ -348,7 +356,8 @@
         "ac5e43456730856b45a55c92",
         "c9dabd5a5896d7fa5c997bec",
         "dfdc97891d87a34b6d9b4a17",
-        "03ef64972818234359298513"
+        "03ef64972818234359298513",
+        "d4b721befbfddff4ee664cd6"
       ],
       "source_urls": [
         "https://github.com/vllm-project/vllm/releases/tag/v0.28.0",
@@ -356,7 +365,8 @@
         "https://github.com/vllm-project/vllm/releases/tag/v0.31.0",
         "https://arxiv.org/abs/2610.16144v1",
         "https://arxiv.org/abs/2609.38981v1",
-        "https://github.com/vllm-project/vllm/releases/tag/v0.32.0"
+        "https://github.com/vllm-project/vllm/releases/tag/v0.32.0",
+        "https://arxiv.org/abs/2611.23035v1"
       ]
     },
     {
@@ -954,6 +964,16 @@
         "95acb09fe1bc6fd4ec5f702a",
         "e3a1755d2f00a1eb27855e14",
         "fe0df82b7d265fa9ec6355a4"
+      ]
+    },
+    {
+      "event_id": "roadmap_change_3fa89c9ecd762547f413",
+      "issue_date": "2026-11-25",
+      "change_type": "no_material_change",
+      "version": 1,
+      "summary": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_item_ids": [
+        "d4b721befbfddff4ee664cd6"
       ]
     }
   ]

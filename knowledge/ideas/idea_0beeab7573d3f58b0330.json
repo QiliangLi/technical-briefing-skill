@@ -184,12 +184,21 @@
         "https://arxiv.org/abs/2611.09424v2"
       ],
       "reason": "《MINE：无损熵编码加速消费级GPU上的单流LLM解码》把dtANS-LLM解码融合进batch-1矩阵向量乘且超参数按GPU与checkpoint自整定，Llama 3.1 8B的2.1-bit checkpoint上较最快基线提速2.52倍（4060 Ti，81.6 tok/s）与1.48倍（5090）；其『须在目标GPU重跑调参并自测精度』的部署要求直接支撑按目标设备调参与部署内验收的前提（仅一个模型与两张消费级GPU、无数据中心与多卡结果、端到端精度验证缺失）。"
+    },
+    {
+      "item_id": "bc38a5a9fe31e353a5114eb8",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.22844v1"
+      ],
+      "reason": "《Mirage超级优化器移植到昇腾910B3，内核收益与回退并存》显示同一张量图的优化决策难以跨硬件迁移：华为分离CUDA相关构建依赖、把Triton升级至3.2.0以上并扩展算子覆盖，候选图经规则式形式化验证器验证后在NPU上执行，融合RMSNorm+MatMul七种配置较参考内核快27.6%–87.0%、门控MLP九种配置快4.2%–58.4%，而FNN两个较大配置反而慢51.5%与151.8%；直接支撑『通过正确性验证的自动优化内核仍须按形状在真实设备上验收』的前提（收益强依赖张量形状、Triton后端缺线程块融合与在线softmax专门处理、无端到端与功耗数据）。"
     }
   ],
   "evidence_against": [],
   "unknowns": [
     "跨设备硬件知识能否复用",
-    "真实服务验收所需的最小流量和计数器集合"
+    "真实服务验收所需的最小流量和计数器集合",
+    "昇腾上超优化融合收益的形状依赖边界由后端缺失（Triton后端缺线程块融合与在线softmax专门处理）还是形状本身决定未拆解，回退配置的事前判别条件未给出，且仅内核级数据、无端到端与功耗（Mirage移植仅测910B3）"
   ],
   "validation_plan": {
     "mode": "prototype",
@@ -221,7 +230,7 @@
     "execution_status": "suggestion_only"
   },
   "first_seen_issue": "2026-08-10",
-  "last_updated_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-25",
   "decision_log": [
     {
       "event_id": "idea_decision_bd6ef4f8e56095302a86",
@@ -382,6 +391,17 @@
         "9b9afbfc9fc00c971761f38c",
         "5f0b3a320c99019dca435bac",
         "1457b432889301c766397e89"
+      ]
+    },
+    {
+      "event_id": "idea_decision_07247424a568196dad95",
+      "issue_date": "2026-11-25",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增Mirage移植昇腾910B3作为NPU上自动优化内核须按形状做真机验收的证据：候选图经形式化验证后在NPU执行，融合负载较参考内核最高快87.0%但FNN两个较大配置反而慢51.5%与151.8%，说明验证通过不等于性能达标、优化决策难以跨硬件迁移；Idea状态保持observing，仍缺跨设备硬件知识复用、可用内核比例与模型级收益的直接度量。",
+      "evidence_item_ids": [
+        "bc38a5a9fe31e353a5114eb8"
       ]
     }
   ]
