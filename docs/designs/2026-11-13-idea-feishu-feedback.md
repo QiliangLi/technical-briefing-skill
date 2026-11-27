@@ -1,8 +1,8 @@
 # 飞书群 Idea 反馈回路（idea-feishu-feedback）
 
-- Status: draft
+- Status: superseded by `2026-11-27-feishu-group-assistant.md`
 - Created: 2026-11-13
-- Last updated: 2026-11-13
+- Last updated: 2026-11-27
 
 ## Problem and evidence
 
@@ -126,3 +126,4 @@ python briefing.py feedback status
   - D4 卡片文案：有界 Agent 任务生成通俗文案（推荐，回应可读性痛点）vs 纯模板拼接。
   - D5 推送门禁：首 2 期逐期确认后转常设授权（仅限配置的单一 chat_id，推荐，类比 gh-pages 预览页常设授权）vs 永久逐期确认。
   - D6 聚合是否公开：v1 不公开（推荐）vs 公开匿名计数到 IdeaHub。
+- 2026-11-27：本文被 `2026-11-27-feishu-group-assistant.md` 取代，用户在同日提出讨论感知推荐的需求。D1 / D2 / D4 在新设计里重新裁决（卡片按钮、事件驱动收集、文案仍由宿主任务生成）；D3 / D5 / D6 原样并入新设计的待裁决项。本文其余内容不再维护。
