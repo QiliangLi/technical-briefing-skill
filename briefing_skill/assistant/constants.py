@@ -18,8 +18,11 @@ ANCHORED_MIN_MESSAGES = 1
 # Explicit answers.
 EXPLICIT_RATE_PER_MINUTE = 10
 ANSWER_MAX_ITEMS = 3
+
+# Replies. Cards follow a template and are not counted against the word limit.
 IM_WORD_LIMIT = 100
 ROADMAP_PER_ANSWER = 1
+OUTBOX_MAX_ATTEMPTS = 5
 
 # Semantic tasks.
 REFINE_TTL_SECONDS = 600
@@ -33,7 +36,9 @@ WINDOW_MAX_MESSAGES = 20
 MESSAGE_CHAR_LIMIT = 400
 CONTEXT_NEIGHBOURS = 5
 
-# Intake.
+# Intake. A message first seen this long after it was written is recorded but
+# not answered: the platform redelivers what was missed while the machine slept.
+STALE_SECONDS = 30 * 60
 BACKFILL_INTERVAL_SECONDS = 60
 BACKFILL_REWIND_SECONDS = 5
 SWEEP_INTERVAL_SECONDS = 5
