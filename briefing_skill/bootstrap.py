@@ -161,6 +161,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # projections; their gates keep "schema valid" from being mistaken for
     # "knowledge caught up with the archive".
     install_knowledge_publication()
+    # The Feishu group assistant is outside the pipeline. It reads only published
+    # records and emits semantic work as task files for a host session.
+    from .assistant import install_assistant
+
+    install_assistant()
     from .cli import main as cli_main
 
     return int(cli_main(list(argv) if argv is not None else None))
