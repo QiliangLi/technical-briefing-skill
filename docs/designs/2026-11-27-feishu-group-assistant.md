@@ -105,6 +105,7 @@ lark-cli 1.0.60：
 - `briefing.py assistant serve` 是唯一的常驻进程，由 launchd 保活。它按「一个 EventKey 一个子进程」拉起 `lark-cli event consume`，读取 stdout 的 NDJSON。
 - 子进程在 stderr 输出 `[event] ready` 表示就绪，监督进程据此开始读取。监督进程为每个子进程保持 stdin 打开：无界 consume 遇到 stdin EOF 会自行退出。停止只用 SIGTERM，不用 `kill -9`，否则会泄漏服务端订阅。
 - 心跳写入本地状态。子进程非零退出按退避重启；`missing_scope` 这类鉴权错误不重试，直接在 `status` 里报出。
+- 监督进程退出时先对子进程发 SIGTERM，再执行 `lark-cli event stop`。两次冒烟里监听全部退出约 30–40 秒后总线仍在运行，不能指望它自动退出。
 - 断线期间的事件会被补送，所以按 `event_id` 去重；补送的消息按创建时间判断是否已过时。
 - 拉取只用于对账：`feedback collect` 按消息 ID 重查已推送消息上的表情，群内也成立。群历史和话题列表在现有权限下不可读，见下一节。
 
