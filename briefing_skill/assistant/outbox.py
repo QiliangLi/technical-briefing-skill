@@ -27,9 +27,9 @@ PENDING_CARD = "pending:"
 
 
 class Transport(Protocol):
-    """Sends one message. An empty ``reply_to`` opens a new message in the chat."""
+    """Sends one queued message. An empty ``reply_to`` opens a new message in the chat."""
 
-    def send(self, chat_id: str, reply_to: str, text: str, idempotency_key: str) -> "SendResult": ...
+    def send(self, chat_id: str, reply_to: str, text: str, idempotency_key: str, kind: str) -> "SendResult": ...
 
 
 @dataclass(frozen=True)
@@ -126,7 +126,7 @@ def flush(store: Store, transport: Transport, now: float) -> dict[str, int]:
             store.execute("UPDATE outbox SET status='refused', last_error=? WHERE id=?", (reason, row["id"]))
             summary["refused"] += 1
             continue
-        result = transport.send(row["chat_id"], row["reply_to"], row["text"], row["id"])
+        result = transport.send(row["chat_id"], row["reply_to"], row["text"], row["id"], row["kind"])
         attempts = int(row["attempts"]) + 1
         sent_at, message_id, error = row["sent_at"], row["message_id"], row["last_error"]
         if result.status == "sent":

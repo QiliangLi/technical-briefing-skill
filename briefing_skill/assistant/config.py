@@ -34,7 +34,7 @@ def _read_mapping(path: Path) -> dict[str, Any]:
     return data
 
 
-def _chat_id(value: Any) -> str:
+def normalize_chat_id(value: Any) -> str:
     text = str(value or "").strip()
     if not CHAT_ID_PATTERN.match(text):
         raise AssistantConfigError(f"Invalid chat id: {text!r}")
@@ -78,7 +78,7 @@ class AssistantConfig:
         base = str(data.get("site_base_url") or cls.site_base_url).rstrip("/") + "/"
         return cls(
             site_base_url=base,
-            chat_whitelist=tuple(_chat_id(chat) for chat in chats),
+            chat_whitelist=tuple(normalize_chat_id(chat) for chat in chats),
             lark_cli=str(data.get("lark_cli") or cls.lark_cli),
             working_start_hour=start,
             working_end_hour=end,
@@ -97,6 +97,6 @@ def write_local_chats(state_dir: Path, chats: list[str]) -> None:
 
     path = state_dir / "config.local.yaml"
     data = _read_mapping(path)
-    data["chat_whitelist"] = [_chat_id(chat) for chat in chats]
+    data["chat_whitelist"] = [normalize_chat_id(chat) for chat in chats]
     state_dir.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=True), encoding="utf-8")

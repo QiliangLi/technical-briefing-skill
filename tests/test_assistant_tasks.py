@@ -28,7 +28,7 @@ def world(tmp_path):
 def wait(world, timeout):
     """``tasks wait`` on the world's clock: sleeping advances the fake time."""
 
-    return tasks.wait(world.store, discover_root(), timeout=timeout, clock=lambda: world.now, sleep=world.advance)
+    return tasks.wait(world.store, world.root, timeout=timeout, clock=lambda: world.now, sleep=world.advance)
 
 
 def queue(world, key, kind, reply_to, text, thread_key=None):
@@ -48,7 +48,7 @@ def test_task_01_a_task_has_its_input_a_reserved_output_and_a_card(world):
     assert list(world.task_input(task)) == ["_task", "question", "candidates", "fallback_doc_ids"]
     assert Path(task["output_path"]).parent.is_dir() and not Path(task["output_path"]).exists()
 
-    card = tasks.card(task, discover_root())
+    card = tasks.card(task, world.root)
     assert (card["steps"], card["input"], card["output"]) == (tasks.CARD_STEPS, task["input_path"], task["output_path"])
     assert Path(card["prompt"]).is_file() and Path(card["schema"]).is_file()
 
@@ -193,7 +193,7 @@ def test_out_04_a_restart_does_not_resend(world):
     world.say(CONFIDENT, mention=True)
     world.flush()
     restarted = FakeTransport()
-    Engine(world.store, world.index, world.config, discover_root(), world.state, bot_ids=(BOT,), clock=lambda: world.now)
+    Engine(world.store, world.index, world.config, world.root, world.state, bot_ids=(BOT,), clock=lambda: world.now)
     assert outbox.flush(world.store, restarted, world.now)["sent"] == 0
     assert restarted.calls == 0
 

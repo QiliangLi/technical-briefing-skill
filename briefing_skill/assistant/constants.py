@@ -46,6 +46,16 @@ CONSUMER_READY_TIMEOUT_SECONDS = 45
 CONSUMER_MIN_STABLE_SECONDS = 60
 CONSUMER_MAX_BACKOFF_SECONDS = 60
 BACKFILL_MAX_ROUNDS_PER_TICK = 4
+# A chat's history lists a thread's root but not its replies, so the threads
+# active in the last week are polled every third backfill round.
+THREAD_POLL_EVERY = 3
+THREAD_POLL_MAX = 10
+THREAD_POLL_WINDOW_SECONDS = 7 * 24 * 3600
+
+# The resident process.
+SERVICE_TICK_SECONDS = 1
+STOP_TIMEOUT_SECONDS = 30
+INDEX_CHECK_INTERVAL_SECONDS = 3600
 
 # Self-check and retention.
 RETENTION_DAYS = 30

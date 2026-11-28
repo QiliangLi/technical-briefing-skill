@@ -91,6 +91,12 @@ class Engine:
 
     # ---- intake -----------------------------------------------------------------
 
+    def reindex(self, index: LexicalIndex) -> None:
+        """Swap in a rebuilt index; tasks in flight keep the candidates they were cut from."""
+
+        self.index = index
+        self.known_urls = frozenset(doc["url"] for doc in index.docs)
+
     def ingest(self, trigger: Trigger) -> dict[str, str]:
         """Run one message through Source filters, admission and the answer path."""
 
@@ -177,15 +183,20 @@ class Engine:
             connection.execute("UPDATE threads SET anchor_idea_id=? WHERE thread_key=?", (anchor["idea_id"], thread_key))
 
     def _touch_thread(self, connection: Any, thread_key: str, trigger: Trigger, now: float) -> None:
-        """Track the message a discussion is named by and when it was last active."""
+        """Track the message a discussion is named by, its Feishu thread and when it was last active."""
 
         connection.execute(
             """
-            INSERT INTO threads(thread_key, chat_id, root_message_id, last_activity_ms, updated_at) VALUES(?, ?, ?, ?, ?)
+            INSERT INTO threads(thread_key, chat_id, root_message_id, thread_id, last_activity_ms, updated_at)
+            VALUES(?, ?, ?, ?, ?, ?)
             ON CONFLICT(thread_key) DO UPDATE SET
+                thread_id=COALESCE(threads.thread_id, excluded.thread_id),
                 last_activity_ms=MAX(threads.last_activity_ms, excluded.last_activity_ms), updated_at=excluded.updated_at
             """,
-            (thread_key, trigger.chat_id, thread_key.split(":", 1)[1], trigger.created_ms, iso(now)),
+            (
+                thread_key, trigger.chat_id, thread_key.split(":", 1)[1], trigger.thread_id or None,
+                trigger.created_ms, iso(now),
+            ),
         )
 
     def _set_disposition(
@@ -604,20 +615,29 @@ class Engine:
         emoji = reaction.get("emoji") or ""
         choice = {EMOJI_THUMBS_UP: "up", EMOJI_THUMBS_DOWN: "down"}.get(emoji)
         message_id = reaction.get("message_id") or ""
+        if choice is None or reaction.get("operator_is_bot"):
+            return {"recorded": False}
         # Outbox and registry have different columns, so look them up in turn.
         message = self.store.fetchone("SELECT * FROM outbox WHERE message_id=?", (message_id,)) or self.store.fetchone(
             "SELECT * FROM registry WHERE message_id=?", (message_id,)
         )
-        if choice is None or not message:
+        if message is None:
             return {"recorded": False}
+        feedback_id = f"{message_id}:{reaction.get('operator_id') or ''}:{choice}"
         with self.store.transaction() as connection:
+            if reaction.get("removed"):
+                removed = connection.execute("DELETE FROM feedback WHERE id=?", (feedback_id,)).rowcount
+                return {"removed": removed > 0}
             connection.execute(
                 "INSERT OR IGNORE INTO feedback(id, message_id, idea_id, choice, operator_id, source, created_at) VALUES(?, ?, ?, ?, ?, 'reaction', ?)",
-                (f"{message['message_id']}:{reaction.get('operator_id')}:{choice}", message["message_id"],
-                 message.get("idea_id") or None, choice, reaction.get("operator_id") or "", iso(now)),
+                (
+                    feedback_id, message_id, message.get("idea_id") or None, choice, reaction.get("operator_id") or "", iso(now),
+                ),
             )
             if choice == "down" and message.get("thread_key"):
-                connection.execute("UPDATE threads SET muted_at=? WHERE thread_key=? AND muted_at IS NULL", (iso(now), message["thread_key"]))
+                connection.execute(
+                    "UPDATE threads SET muted_at=? WHERE thread_key=? AND muted_at IS NULL", (iso(now), message["thread_key"])
+                )
         paused = self._pause_on_dislikes(now)
         return {"recorded": True, "choice": choice, "paused": paused}
 

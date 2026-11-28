@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS threads (
     thread_key TEXT PRIMARY KEY,
     chat_id TEXT NOT NULL,
     root_message_id TEXT,
+    thread_id TEXT,
     anchor_idea_id TEXT,
     muted_at TEXT,
     last_activity_ms INTEGER,

@@ -117,7 +117,7 @@ def test_idx_06_ask_only_prints_a_draft(tmp_path, capsys):
     root = repository(tmp_path / "repo")
     state = tmp_path / "state"
     install_assistant()
-    assert cli.main(["--root", str(root), "assistant", "ask", "KV cache 分层卸载", "--state-dir", str(state)]) == 0
+    assert cli.main(["--root", str(root), "assistant", "--state-dir", str(state), "ask", "KV cache 分层卸载"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["state"] == "confident"
     assert payload["draft"].startswith("日报库里相关的：")

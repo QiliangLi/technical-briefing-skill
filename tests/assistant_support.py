@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -44,8 +45,18 @@ def _item(item_id: str, title: str, conclusion: str, keywords: list[str]) -> dic
     }
 
 
+ASSET_NAMES = ("assistant-refine", "assistant-assess", "assistant-card-copy")
+
+
 def repository(root: Path) -> Path:
-    """A minimal published repository plus decoys that must never be indexed."""
+    """A miniature of the real checkout: a published corpus, the assistant's own
+    prompts and schemas, and decoys that must never be indexed."""
+
+    for name in ASSET_NAMES:
+        for folder, suffix in (("prompts", ".md"), ("schemas", ".schema.json")):
+            target = root / folder / f"{name}{suffix}"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(discover_root() / folder / f"{name}{suffix}", target)
 
     date = "2026-10-01"
     issue_dir = root / "archive" / "issues" / date
@@ -107,14 +118,14 @@ class FakeTransport:
         self.failures = 0
         self.gone = False
 
-    def send(self, chat_id: str, reply_to: str, text: str, idempotency_key: str) -> outbox.SendResult:
+    def send(self, chat_id: str, reply_to: str, text: str, idempotency_key: str, kind: str) -> outbox.SendResult:
         self.calls += 1
         if self.gone:
             return outbox.SendResult("gone", error="message not found")
         if self.failures > 0:
             self.failures -= 1
             return outbox.SendResult("retry", error="network error")
-        self.sent.append({"chat_id": chat_id, "reply_to": reply_to, "text": text, "key": idempotency_key})
+        self.sent.append({"chat_id": chat_id, "reply_to": reply_to, "text": text, "key": idempotency_key, "kind": kind})
         return outbox.SendResult("sent", message_id=f"sent_{idempotency_key}")
 
 
@@ -129,7 +140,7 @@ class World:
         self.store = Store(self.state / "assistant.sqlite")
         self.transport = FakeTransport()
         self.engine = Engine(
-            self.store, self.index, self.config, discover_root(), self.state, bot_ids=(BOT,), clock=lambda: self.now
+            self.store, self.index, self.config, self.root, self.state, bot_ids=(BOT,), clock=lambda: self.now
         )
         self.policy()
 
