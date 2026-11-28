@@ -7,6 +7,7 @@ This file is an index. Load only the guidance needed for the current task. `SKIL
 | Task | Read |
 | --- | --- |
 | Run or resume a briefing | `SKILL.md`, then only the Prompt, input, context card, and Schema named by `python briefing.py tasks next --run latest` |
+| Start, check or stop the Feishu group assistant (运行群助手 / 查看群助手 / 停止群助手) | the "飞书群助手会话" section of `SKILL.md`; it runs in a session of its own and may run beside a briefing |
 | Discuss or propose a non-trivial design | `docs/designs/README.md` and `docs/contracts/change-governance.md` |
 | Change Agent workflow, evidence scope, or briefing task order | `SKILL.md`, `docs/contracts/change-governance.md`, and the relevant current contract |
 | Implement, refactor, change configuration, or move files | `docs/contracts/change-governance.md`; also read `docs/contracts/code-review-invariants.md` when pipeline state or publication behavior is involved |

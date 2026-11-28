@@ -49,7 +49,7 @@ python briefing.py assistant status
 
 ## 会话循环
 
-用一个专门的 ZCode 会话，不能是跑简报定时任务的那个，权限模式要不弹确认。
+用一个专门的 ZCode 会话，不能是跑简报定时任务的那个，权限模式要不弹确认。在这个仓库里新开会话，说「运行群助手」即可：`AGENTS.md` 把这句话路由到 `SKILL.md` 的「飞书群助手会话」，和「运行端到端」是同一种接法。下面是它执行的内容；想自己盯着每一步时也可以照着做。
 
 1. 拉起进程：把 `.venv/bin/python3 briefing.py assistant serve` 作为后台任务运行。
 2. 等待：把 `.venv/bin/python3 briefing.py assistant tasks wait` 也作为后台任务运行。
@@ -67,7 +67,7 @@ python briefing.py assistant status
 输入、写三份文案、逐个 apply 用了约三分钟；三个任务全部采纳，再 `wait` 在
 超时后返回 `no_tasks`。整个过程会话没有调用 lark-cli。
 
-给新会话的启动语，在仓库根目录开会话后直接粘贴：
+新会话没有照做时，把下面这段作为启动语粘贴给它：
 
 ```text
 你是飞书群助手的宿主会话，只做下面这件事，不运行简报流程。命令一律用

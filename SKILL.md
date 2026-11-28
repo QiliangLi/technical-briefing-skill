@@ -185,7 +185,7 @@ python briefing.py feedback push --issue <date> --confirm-send
 python briefing.py feedback collect                  # 对账，可随时手动跑
 ```
 
-`prepare` 排出的 `card_copy` 任务由群助手的宿主会话执行（`assistant tasks wait` → 写输出 → `assistant tasks apply`），和简报的任务队列不是一回事。宿主会话要用一个专门的 ZCode 会话，不能是跑简报的这个；它不调用 lark-cli。操作步骤见 `docs/operations/group-assistant.md`，选卡规则与发送门禁见 `docs/contracts/group-assistant.md`。
+`prepare` 排出的 `card_copy` 任务由群助手的宿主会话执行，和简报的任务队列不是一回事。怎么开这个会话见下文「飞书群助手会话」一节；操作细节见 `docs/operations/group-assistant.md`，选卡规则与发送门禁见 `docs/contracts/group-assistant.md`。
 
 ## ZCode workflow 执行模式
 
@@ -207,6 +207,19 @@ CreateWorkflow saved: { name: "briefing-run", args: { mode: "resume", concurrenc
 不变量：子代理只读执行卡引用的输入、只写自己的输出文件，禁止运行 briefing.py 子命令；`tasks list`/`tasks card`/`advance`/`reopen-invalid`/`render`/`validate` 全部由编排脚本执行。所有质量门禁、证据边界硬规则与 cache 语义与手动路径完全一致：同时 PENDING 的任务由创建时机保证互相独立，任务输入在创建时冻结，阶段完整性门（如 facts 只在 relevance 清空后创建）全部在 Python 内部评估。
 
 第四步发送不在编排内：先按上文发布预览页，用户人工阅读预览与 `validation.json` 后，仍在主会话执行 `send --confirm-send` 两步确认；第五步知识阶段（发送归档后）同样在主会话执行。回退与调试：停止或放弃 workflow，按上文手动循环接手（状态只在盘上，无需迁移）；单任务调试用 `tasks next-single`。运行、恢复与故障处置见 `docs/operations/zcode-workflow-run.md`。
+
+## 飞书群助手会话
+
+用户说「运行群助手」或「开始监控群」时，在一个新会话里执行下面的循环。这个会话不跑简报；两者可以同时进行，群助手对日报的产物只读。它不是一个有始有终的 workflow，而是一直挂着的循环，所以不做成 `CreateWorkflow`。细则与故障处置见 `docs/operations/group-assistant.md`。
+
+1. 启动：把 `.venv/bin/python3 briefing.py assistant serve` 作为后台任务运行，再运行 `.venv/bin/python3 briefing.py assistant status`。`service.running` 为 true、`service.consumers` 四项都是 ready、`self_check.ok` 为 true 才继续；否则把输出发给用户并停下。
+2. 等待：把 `.venv/bin/python3 briefing.py assistant tasks wait` 作为后台任务运行。它只在有语义任务时退出，退出时会话被叫醒。必须后台运行，前台命令十分钟就会超时；不要加 `--timeout` 轮询，空闲时那会白白消耗 token。
+3. 执行：对每张执行卡，只读卡上列的提示词、Schema 和输入文件，按提示词写一个 JSON 对象到卡上的输出路径，然后 `.venv/bin/python3 briefing.py assistant tasks apply --task <task_id>`。apply 返回 `ok: false` 时不重试、不手改输出，把 `errors` 原样报告。
+4. 全部 apply 后回到第 2 步。
+
+用户说「查看群助手」时运行 `assistant status`，逐块解释它的含义。用户说「停止群助手」时先 `.venv/bin/python3 briefing.py assistant stop`，再结束后台任务。
+
+不变量：宿主会话不调用 `lark-cli`，不向任何群发送消息，不改任务的输入文件，除上面列出的命令外不运行其他 `assistant` 或 `feedback` 命令；它要判断的内容只来自执行卡列出的输入。
 
 ## 上下文与成本硬规则
 
