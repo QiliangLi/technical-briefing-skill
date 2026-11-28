@@ -192,7 +192,7 @@ def compose_alert(issue_date: str, picks: list[dict[str, Any]]) -> str | None:
         text = _fit(
             lambda limit: "\n".join(
                 [f"新一期日报（{issue_date}）里有 {len(kept)} 条和你们最近的讨论相关："]
-                + [f"• {pick['why']}\\n  {_line(pick['doc'], limit)[2:]}" for pick in kept]
+                + [f"• {pick['why']}\n  {_line(pick['doc'], limit)[2:]}" for pick in kept]
             ),
             "alert",
         )

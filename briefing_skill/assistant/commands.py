@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
+import sys
 import time
 from datetime import date
 from pathlib import Path
@@ -22,7 +24,7 @@ from .engine import Engine, candidate
 from . import discussions, feedback
 from .lark import LarkClient, LarkTransport
 from .policy import MODES, Policy
-from .service import AlreadyRunning, Service, overview, request_stop
+from .service import AlreadyRunning, Service, overview, process_alive, request_stop
 from .store import Store
 from .timeutil import iso
 
@@ -64,6 +66,8 @@ def _nested(rows: list[dict[str, Any]], outer: str, inner: str) -> dict[str, dic
 
 def cmd_serve(args: argparse.Namespace) -> int:
     root, config, state_dir = context(args)
+    if args.detach:
+        return _start_detached(root, state_dir)
     service = Service(root, config, state_dir, client=LarkClient(config))
     try:
         code = service.run()
@@ -73,6 +77,26 @@ def cmd_serve(args: argparse.Namespace) -> int:
     if code:
         emit({"error": service.store.get_meta("service", {}).get("error") or "the resident process stopped with an error"})
     return code
+
+
+def _start_detached(root: Path, state_dir: Path) -> int:
+    """Start the resident process on its own, so that it outlives any session that launched it."""
+
+    pid_path = state_dir / "service.pid"
+    if pid_path.exists():
+        pid = int(pid_path.read_text().strip() or 0)
+        if pid and process_alive(pid):
+            emit({"error": f"assistant serve is already running (pid {pid})"})
+            return 1
+    state_dir.mkdir(parents=True, exist_ok=True)
+    log_path = state_dir / "serve.log"
+    with log_path.open("a", encoding="utf-8") as log:
+        child = subprocess.Popen(
+            [sys.executable, str(root / "briefing.py"), "assistant", "--state-dir", str(state_dir), "serve"],
+            cwd=root, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True,
+        )
+    emit({"started": True, "pid": child.pid, "log": str(log_path), "stop": "python briefing.py assistant stop"})
+    return 0
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
@@ -375,7 +399,8 @@ def add_parsers(actions: argparse._SubParsersAction) -> None:
         parser.set_defaults(func=func)
         return parser
 
-    command("serve", "run the resident process until it is stopped", cmd_serve)
+    serve = command("serve", "run the resident process until it is stopped", cmd_serve)
+    serve.add_argument("--detach", action="store_true", help="start it on its own and return at once")
     command("stop", "stop the resident process", cmd_stop)
     command("status", "heartbeat, consumers, index, today's counts and the self-check", cmd_status)
 

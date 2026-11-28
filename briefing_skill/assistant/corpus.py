@@ -208,6 +208,16 @@ def load_corpus(root: Path, site_base_url: str) -> tuple[list[dict[str, Any]], l
     return docs, inputs
 
 
+def head_issue(root: Path) -> str:
+    """The date of the newest published issue, or an empty string before the first one."""
+
+    index_path = root / "archive" / "index.json"
+    if not index_path.exists():
+        return ""
+    issues = _load(index_path).get("issues") or []
+    return _text(issues[-1].get("date")) if issues else ""
+
+
 def input_digest(root: Path, inputs: list[Path], site_base_url: str) -> str:
     """Digest of everything that can change the index content."""
 

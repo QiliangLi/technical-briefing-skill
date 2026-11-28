@@ -227,6 +227,12 @@ def assess(index: LexicalIndex, query: str, limit: int = 20) -> dict[str, Any]:
     return {"hits": hits, "state": state, "top_strength": strength, "top_score": best["score"] if best else 0.0, "top_coverage": explained, "top_units": units}
 
 
+# A discussion is answered best by a concrete published item or idea. A
+# judgement is long and general, a radar entry is a bare title, and both match
+# many a message on common words; they are kept but rank below.
+DISCUSSION_KIND_WEIGHTS = {"item": 1.0, "idea": 1.0, "roadmap": 0.8, "radar": 0.7, "judgement": 0.5}
+
+
 def search_discussion(index: LexicalIndex, messages: list[str], limit: int) -> list[dict[str, Any]]:
     """Search for a discussion: each message on its own, then fuse the rankings.
 
@@ -242,7 +248,11 @@ def search_discussion(index: LexicalIndex, messages: list[str], limit: int) -> l
         for rank, hit in enumerate(index.search(text, limit * 2), start=1):
             scores[hit["doc_index"]] = scores.get(hit["doc_index"], 0.0) + 1.0 / (60 + rank)
             found_by[hit["doc_index"]] = found_by.get(hit["doc_index"], 0) + 1
-    ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    weighted = [
+        (doc_index, score * DISCUSSION_KIND_WEIGHTS.get(index.docs[doc_index]["kind"], 1.0))
+        for doc_index, score in scores.items()
+    ]
+    ranked = sorted(weighted, key=lambda item: (-item[1], item[0]))[:limit]
     return [
         {"doc": index.docs[doc_index], "doc_index": doc_index, "score": round(score, 4), "strength": found_by[doc_index] / len(texts)}
         for doc_index, score in ranked

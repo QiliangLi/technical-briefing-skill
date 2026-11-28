@@ -45,7 +45,7 @@ def _item(item_id: str, title: str, conclusion: str, keywords: list[str]) -> dic
     }
 
 
-ASSET_NAMES = ("assistant-refine", "assistant-contribute", "assistant-card-copy")
+ASSET_NAMES = ("assistant-refine", "assistant-contribute", "assistant-alert", "assistant-card-copy")
 
 
 def repository(root: Path) -> Path:

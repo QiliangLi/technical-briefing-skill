@@ -18,6 +18,7 @@ from typing import Any, Callable
 from . import lark, outbox
 from .backfill import backfill
 from .config import AssistantConfig
+from .corpus import head_issue
 from .constants import (
     BACKFILL_INTERVAL_SECONDS,
     CONSUMER_MAX_BACKOFF_SECONDS,
@@ -160,11 +161,19 @@ class Service:
         )
         # The index was just built from the corpus and members are refreshed by the daily pass.
         self._next["index"] = self.clock() + INDEX_CHECK_INTERVAL_SECONDS
+        # An issue published while the process was down is still news to the group.
+        last = self.store.get_meta("index", {}).get("head_issue", "")
+        current = head_issue(self.root)
+        if last and last != current:
+            self.engine.queue_alert(current, self.clock())
         for event_key in lark.EVENT_KEYS:
             self._start_consumer(event_key)
         self.store.set_meta(
             "service",
             {"pid": os.getpid(), "started_at": iso(self.clock()), "bot": identity, "chats": list(self.config.chat_whitelist)},
+        )
+        self.store.set_meta(
+            "index", {"input_digest": self.index.input_digest, "documents": self.index.n, "head_issue": head_issue(self.root)}
         )
 
     def _load_index(self) -> None:
@@ -322,10 +331,17 @@ class Service:
 
     def _refresh_index(self, now: float) -> None:
         if is_stale(self.root, self.config, self.state_dir):
+            # What the previous build was cut from; the files on disk are already the new issue.
+            before = self.store.get_meta("index", {}).get("head_issue", "")
             index, _ = ensure_index(self.root, self.config, self.state_dir, created_at=iso(now))
             self.index = index
             self.engine.reindex(index)
-            self.store.set_meta("index", {"input_digest": index.input_digest, "documents": index.n, "rebuilt_at": iso(now)})
+            after = head_issue(self.root)
+            if before != after:
+                self.engine.queue_alert(after, now)
+            self.store.set_meta(
+                "index", {"input_digest": index.input_digest, "documents": index.n, "head_issue": after, "rebuilt_at": iso(now)}
+            )
 
     def _daily(self, now: float) -> None:
         self.store.purge(RETENTION_DAYS, now, self.engine.tasks_dir)

@@ -13,6 +13,7 @@ from briefing_skill.assistant.constants import INDEX_RETRY_SECONDS, TICK_FAILURE
 from briefing_skill.assistant.retrieval import LexicalIndex
 from briefing_skill.assistant.service import AlreadyRunning, Service, overview, request_stop, self_check
 from briefing_skill.assistant.timeutil import iso
+from briefing_skill.utils import write_json
 
 CONFIDENT = "KV cache 分层卸载怎么做"
 OTHER = "oc_" + "9" * 32
@@ -82,6 +83,10 @@ class FakeClient:
 
     def push(self, event_key: str, event: dict) -> None:
         self.queues[event_key].append(event)
+
+
+def _item(item_id: str, title: str, conclusion: str) -> dict:
+    return {"brief_item_id": item_id, "title": title, "core_conclusion": conclusion, "keywords": []}
 
 
 def message_event(message_id, created_ms, text, *, sender=ALICE, mention=False, chat=CHAT, chat_type="group"):
@@ -391,3 +396,29 @@ def test_status_reads_the_ledger_without_touching_the_process(world):
     assert report["today"] == {"dispositions": {"answered": 1}, "sent": {"answer": 1}, "decisions": {"answer:answered": 1}}
     assert report["outbox"] == {"sent": 1} and report["tasks"] == {"wakes": 0} and report["reports"] == {}
     assert report["self_check"]["ok"] and report["index"]["documents"] == world.index.n
+
+
+def test_a_new_issue_is_offered_to_the_group_once_and_only_when_it_is_new(world):
+    def publish(date: str) -> None:
+        index_path = world.root / "archive" / "index.json"
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        index["issues"].append({"date": date, "papers_file": f"issues/{date}/papers.json"})
+        write_json(index_path, index)
+        write_json(world.root / "archive" / "issues" / date / "issue.json", {"items": [_item("c" * 24, "新一期的一条", "新一期的结论。")]})
+        write_json(world.root / "archive" / "issues" / date / "reader.json", {"headline": "新一期", "items": {}, "judgements": []})
+
+    service = world.service
+    service._open()
+    try:
+        assert world.tasks(kind="alert") == []  # the first start is not news
+        service._refresh_index(world.now)
+        assert world.tasks(kind="alert") == []
+
+        publish("2026-10-20")
+        service._refresh_index(world.now)
+        assert [task["thread_key"] for task in world.tasks(kind="alert")] == ["alert:2026-10-20"]
+        service._refresh_index(world.now + 3600)
+        assert len(world.tasks(kind="alert")) == 1
+        assert world.store.get_meta("index")["head_issue"] == "2026-10-20"
+    finally:
+        service._shutdown()

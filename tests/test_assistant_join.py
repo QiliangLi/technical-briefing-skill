@@ -300,6 +300,49 @@ def test_below_the_breaker_nothing_is_paused(world):
     assert world.look(KV)["kind"] == "contribute"
 
 
+# ---- a new issue ----
+
+
+def test_an_alert_offers_the_new_issue_beside_the_groups_discussions(world):
+    world.discuss([(ALICE, "KV cache 卸载之后吞吐怎么样")])
+    world.advance(DEBOUNCE_SECONDS + 1)
+    world.engine.sweep()
+    look = world.tasks(kind="contribute")[0]
+    world.apply(look, world.contribution(look, act="none"))
+    assert world.engine.queue_alert("2026-10-01", world.now) and not world.engine.queue_alert("2026-10-01", world.now)
+
+    task = world.tasks(kind="alert")[0]
+    payload = world.task_input(task)
+    assert {item["id"] for item in payload["items"]} == {"item:" + "a" * 24, "item:" + "b" * 24}
+    assert [message["text"] for message in payload["discussions"]] == ["KV cache 卸载之后吞吐怎么样"]
+    outside = {"schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "alert"},
+               "picks": [{"doc_id": "radar:radar-1", "quote": "KV cache", "why": "不在这期里"}]}
+    assert world.apply(task, outside)["errors"] == ["doc_id is not from this issue: radar:radar-1"]
+
+
+def test_an_alert_is_one_message_with_what_the_session_picked(world):
+    look = world.look([(ALICE, "KV cache 卸载之后吞吐怎么样")])
+    world.apply(look, world.contribution(look, act="none"))
+    world.engine.queue_alert("2026-10-01", world.now)
+    task = world.tasks(kind="alert")[0]
+    pick = {"doc_id": "item:" + "a" * 24, "quote": "KV cache 卸载", "why": "命中之后吞吐能提升，和你们问的对得上。"}
+    assert world.apply(task, {"schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "alert"}, "picks": [pick]})["outcome"] == "said"
+    world.flush()
+    sent = world.transport.sent[-1]
+    assert (sent["kind"], sent["reply_to"], sent["chat_id"]) == ("alert", "", CHAT)
+    lines = sent["text"].split("\n")
+    assert lines[0] == "新一期日报（2026-10-01）里有 1 条和你们最近的讨论相关："
+    assert lines[1] == "• 命中之后吞吐能提升，和你们问的对得上。"
+    assert lines[2].startswith("  📄 **KV cache 分层卸载到内存与 SSD**（2026-10-01）：") and within_limit(sent["text"], "alert")
+
+
+def test_nothing_relevant_in_a_new_issue_means_no_message(world):
+    world.engine.queue_alert("2026-10-01", world.now)
+    task = world.tasks(kind="alert")[0]
+    quiet = {"schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "alert"}, "picks": []}
+    assert world.apply(task, quiet) == {"ok": True, "outcome": "silent", "picks": 0} and world.outbox_rows() == []
+
+
 # ---- policy ----
 
 

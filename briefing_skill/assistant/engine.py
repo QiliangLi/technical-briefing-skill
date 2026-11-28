@@ -46,7 +46,7 @@ from .constants import (
 )
 from .events import Trigger
 from .policy import Policy, admit
-from .replies import NO_MATCH_TEXT, URL, compose_add, compose_answer, compose_review
+from .replies import NO_MATCH_TEXT, URL, compose_add, compose_alert, compose_answer, compose_review
 from .retrieval import LexicalIndex, assess, search_discussion
 from .store import Store, text_hash
 from .timeutil import day_start, iso, local
@@ -448,6 +448,54 @@ class Engine:
             payload["anchored_idea"] = candidate(self.index.get(f"idea:{thread['anchor_idea_id']}") or {"id": "", "kind": "idea", "title": ""})
         return payload
 
+    def queue_alert(self, issue_date: str, now: float) -> bool:
+        """A new issue is out: ask the session which of it matters to this group. At most once an issue."""
+
+        key = f"alert:{issue_date}"
+        policy = Policy.load(self.store)
+        with self.store.transaction() as connection:
+            done = connection.execute(
+                "SELECT 1 FROM tasks WHERE kind='alert' AND thread_key=? UNION SELECT 1 FROM decisions WHERE kind='alert' AND thread_key=?",
+                (key, key),
+            ).fetchone()
+            if done:
+                return False
+            tasks.create(
+                connection, self.state_dir, kind="alert", thread_key=key, policy_version=policy.version, now=now,
+                payload=self._alert_payload(issue_date, now),
+            )
+        return True
+
+    def _alert_payload(self, issue_date: str, now: float) -> dict[str, Any]:
+        """A new issue beside what the group has been discussing, so the session can tie them together."""
+
+        issue = [doc for doc in self.index.docs if doc["kind"] in ("item", "judgement") and doc.get("issue_date") == issue_date]
+        discussions: list[dict[str, Any]] = []
+        threads = self.store.fetchall(
+            "SELECT thread_key FROM threads WHERE anchor_idea_id IS NULL ORDER BY last_activity_ms DESC LIMIT 12"
+        )
+        for thread in threads:
+            discussions += self._discussion_window(thread["thread_key"])[0][-3:]
+        for message in discussions:
+            message["text"] = message["text"][:200]
+        return {
+            "issue": {"date": issue_date, "headline": self._issue_headline(issue_date)},
+            "items": [
+                {**candidate(doc), "project_relevance": (doc.get("project_relevance") or "")[:200]}
+                for doc in issue if doc["kind"] == "item"
+            ],
+            "judgements": [candidate(doc) for doc in issue if doc["kind"] == "judgement"],
+            "discussions": discussions[-40:],
+            "reported_gaps": self.store.fetchall(
+                "SELECT title FROM reports WHERE kind='gap' AND created_at >= ? ORDER BY created_at DESC LIMIT 10",
+                (iso(now - REPORT_LOOKBACK_DAYS * 86400),),
+            ),
+        }
+
+    def _issue_headline(self, issue_date: str) -> str:
+        reader = read_json(self.root / "archive" / "issues" / issue_date / "reader.json", {})
+        return str(reader.get("headline") or "")[:200]
+
     def _already_said(self, thread_key: str) -> list[dict[str, Any]]:
         """What the assistant has cited in this discussion before, so it does not repeat itself."""
 
@@ -527,6 +575,8 @@ class Engine:
             errors += self._refine_errors(task, output, payload)
         elif task["kind"] == "contribute":
             errors += self._contribute_errors(task, output, payload)
+        elif task["kind"] == "alert":
+            errors += self._alert_errors(output, payload)
         elif task["kind"] == "card_copy":
             for field in ("headline", "summary", "why_it_matters"):
                 if INTERNAL_FIELD.search(output.get(field) or ""):
@@ -569,7 +619,7 @@ class Engine:
         errors = []
         if not any(quote in text for text in texts):
             errors.append(f"quote is not verbatim: {quote!r}")
-        allowed = _numbers(" ".join([*(_published(doc) for doc in docs), *texts]))
+        allowed = _numbers(" ".join([*(_published(doc) for doc in docs if doc), *texts]))
         for number in sorted(_numbers(framing) - allowed):
             errors.append(f"a number in the framing appears in no cited document nor in the discussion: {number}")
         return errors
@@ -624,6 +674,16 @@ class Engine:
                 errors.append(f"nearest must name a configured topic or direction: {gap['nearest']}")
         return errors
 
+    def _alert_errors(self, output: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+        errors: list[str] = []
+        shown = {doc["id"] for doc in [*(payload.get("items") or []), *(payload.get("judgements") or [])]}
+        texts = [message["text"] for message in payload.get("discussions") or []]
+        for pick in output["picks"]:
+            if pick["doc_id"] not in shown:
+                errors.append(f"doc_id is not from this issue: {pick['doc_id']}")
+            errors += self._framing_errors(pick["why"], pick["quote"], [self.index.get(pick["doc_id"])], texts)
+        return errors
+
     def _reject(self, task: dict[str, Any], policy: Policy, now: float) -> None:
         """Invalid output is final: fall back or stay silent, never ask again."""
 
@@ -636,6 +696,8 @@ class Engine:
                 outcome = self._apply_refine(connection, task, output, policy, now)
             elif task["kind"] == "contribute":
                 outcome = self._apply_contribution(connection, task, output, policy, now)
+            elif task["kind"] == "alert":
+                outcome = self._apply_alert(connection, task, output, policy, now)
             else:
                 drafts = self.store.get_meta("card_drafts", {})
                 idea_id = payload.get("idea", {}).get("idea_id", "")
@@ -688,6 +750,27 @@ class Engine:
         target = {"said": "spoken", "reported": "reported"}.get(outcome, "silent")
         self._move(connection, "thread_key=?", (thread_key,), "evaluating", target, f"{act}:{outcome}", now)
         return {"outcome": outcome, "act": act}
+
+    def _apply_alert(self, connection: Any, task: dict[str, Any], output: dict[str, Any], policy: Policy, now: float) -> dict[str, Any]:
+        issue_date = task["thread_key"][len("alert:"):]
+        draft = compose_alert(
+            issue_date, [{"why": pick["why"], "doc": self.index.get(pick["doc_id"])} for pick in output["picks"]]
+        ) if output["picks"] else None
+        outcome = "silent"
+        if draft is not None:
+            if policy.proactive == "observe":
+                outcome = "observe_would_say"
+            else:
+                outbox.enqueue(
+                    self.store, connection, key=task["thread_key"], kind="alert", chat_id=self.config.chat_whitelist[0],
+                    reply_to="", text=draft, thread_key=task["thread_key"], now=now,
+                )
+                outcome = "said"
+        self._record_decision(
+            connection, "alert", None, task["thread_key"], policy, outcome, now,
+            ((pick["doc_id"], 0.0) for pick in output["picks"]), act="alert", draft=draft,
+        )
+        return {"outcome": outcome, "picks": len(output["picks"])}
 
     def _draft(self, act: str, output: dict[str, Any]) -> str | None:
         if act == "add":
