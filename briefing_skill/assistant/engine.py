@@ -1,10 +1,12 @@
 """The deterministic core of the group assistant.
 
 Every message passes Source filters and the admission table before anything
-else. The engine is the only writer of assistant state. It answers directly
-when lexical retrieval is confident and queues a semantic task otherwise.
-Proactive recommendations stay behind code-enforced gates; the host session
-only proposes, and a proposal that fails a check ends in silence.
+else. A question addressed to the assistant is answered at once when retrieval
+is confident and refined by a host session otherwise. Everything else in the
+group is looked at moments after it arrives and handed to a host session,
+which decides whether and how to speak. The program builds every reply from
+published text, checks what the session wrote, and is the only writer of
+assistant state.
 """
 
 from __future__ import annotations
@@ -16,55 +18,67 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from ..utils import read_json, stable_hash
-from . import outbox, tasks
+from . import outbox, reports, tasks, topics
 from .config import AssistantConfig
 from .constants import (
-    ANCHORED_MIN_MESSAGES,
-    ASSESS_CANDIDATES,
+    ADD_ITEMS,
+    ANSWER_MAX_ITEMS,
+    BREAKER_LIMIT,
     CARD_REACTIONS,
     CLUSTER_MAX_GAP_SECONDS,
     CLUSTER_WINDOW_SECONDS,
     CONTEXT_NEIGHBOURS,
-    DAILY_PROACTIVE_CAP,
+    CONTRIBUTE_CANDIDATES,
+    DEBOUNCE_SECONDS,
     DISLIKE_PAUSE_MIN_SAMPLES,
     DISLIKE_PAUSE_RATIO,
     EXPLICIT_RATE_PER_MINUTE,
     MESSAGE_CHAR_LIMIT,
-    OBSERVE_COOLDOWN_SECONDS,
-    QUIET_SECONDS,
     REFINE_CANDIDATES,
+    REPORT_LOOKBACK_DAYS,
+    REPORTS_PER_DAY,
+    REPORT_TERMS,
     REPLY_REACTIONS,
-    SHAPE_MIN_MESSAGES,
-    SHAPE_MIN_SENDERS,
+    REVIEW_ITEMS,
     STALE_SECONDS,
-    THREAD_COOLDOWN_SECONDS,
+    THREAD_MIN_INTERVAL_SECONDS,
     WINDOW_MAX_MESSAGES,
 )
 from .events import Trigger
-from .policy import RULES, Policy, admit
-from .replies import NO_MATCH_TEXT, URL, compose_answer, compose_recommendation, first_sentence
-from .retrieval import LexicalIndex, assess
+from .policy import Policy, admit
+from .replies import NO_MATCH_TEXT, URL, compose_add, compose_answer, compose_review
+from .retrieval import LexicalIndex, assess, search_discussion
 from .store import Store, text_hash
-from .timeutil import day_key, iso, local
+from .timeutil import day_start, iso, local
 
 INTERNAL_FIELD = re.compile(r"hypothesis|problem_key|mechanism_key|validation_plan|decision_log|idea_id|brief_item")
 TRUNCATED_NOTE = "…（已截断）"
+NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 
-def _candidate(doc: dict[str, Any], score: float = 0.0) -> dict[str, Any]:
-    """What the host session may see of one retrieval hit."""
+def candidate(doc: dict[str, Any], score: float = 0.0) -> dict[str, Any]:
+    """What a host session may see of one published document."""
+
     return {
         "id": doc["id"],
         "kind": doc["kind"],
-        "title": doc["title"],
+        "title": doc.get("headline") or doc["title"],
         "date": doc.get("issue_date") or "",
-        "summary": first_sentence(doc.get("summary") or "", 120),
+        "lead": (doc.get("lead") or doc.get("summary") or "")[:300],
+        "boundary": (doc.get("boundary") or "")[:200],
+        "status": doc.get("status") or "",
         "score": round(score, 3),
     }
 
 
-def _scores(pairs: Iterable[tuple[str, float]]) -> str:
-    return json.dumps({doc_id: round(score, 3) for doc_id, score in pairs})
+def _published(doc: dict[str, Any]) -> str:
+    """Every word of a document a framing may echo a number from."""
+
+    return " ".join(str(doc.get(field) or "") for field in ("title", "headline", "lead", "summary", "result", "boundary", "project_relevance"))
+
+
+def _numbers(text: str) -> set[str]:
+    return set(NUMBER.findall(text or ""))
 
 
 class Engine:
@@ -88,6 +102,7 @@ class Engine:
         self.clock = clock
         self.tasks_dir = tasks.tasks_root(state_dir)
         self.known_urls = frozenset(doc["url"] for doc in index.docs)
+        self._topics = topics.load_topics(root)
 
     # ---- intake -----------------------------------------------------------------
 
@@ -142,7 +157,7 @@ class Engine:
                     elif admitted == "explicit":
                         outcome = self._answer(connection, trigger, thread_key, policy, now)
                     else:
-                        outcome = ("pending", "awaiting_shape")
+                        outcome = ("pending", "awaiting_look")
             self._set_disposition(connection, trigger, thread_key, outcome[0], outcome[1], now)
         return {"decision": outcome[0], "reason": outcome[1]}
 
@@ -264,21 +279,16 @@ class Engine:
             )
             self._record_decision(
                 connection, "answer", trigger.trigger_id, thread_key, policy, "answered", now,
-                ((hit["doc"]["id"], hit["score"]) for hit in result["hits"][:3]),
+                ((hit["doc"]["id"], hit["score"]) for hit in result["hits"][:ANSWER_MAX_ITEMS]),
             )
             return "answered", "confident"
         tasks.create(
-            connection,
-            self.state_dir,
-            kind="refine",
-            trigger_id=trigger.trigger_id,
-            thread_key=thread_key,
-            policy_version=policy.version,
-            now=now,
+            connection, self.state_dir, kind="refine", trigger_id=trigger.trigger_id, thread_key=thread_key,
+            policy_version=policy.version, now=now,
             payload={
                 "question": trigger.text,
-                "candidates": [_candidate(hit["doc"], hit["score"]) for hit in result["hits"][:REFINE_CANDIDATES]],
-                "fallback_doc_ids": [hit["doc"]["id"] for hit in result["hits"][:3]],
+                "candidates": [candidate(hit["doc"], hit["score"]) for hit in result["hits"][:REFINE_CANDIDATES]],
+                "fallback_doc_ids": [hit["doc"]["id"] for hit in result["hits"][:ANSWER_MAX_ITEMS]],
             },
         )
         return "refine", result["state"]
@@ -296,17 +306,16 @@ class Engine:
 
         event = self.store.fetchone("SELECT chat_id, message_id FROM events WHERE trigger_id=?", (task["trigger_id"],))
         if event is not None:
-            key = f"answer:{task['trigger_id']}"
-            self._queue_answer(connection, key, event["chat_id"], event["message_id"], text, task["thread_key"], now)
+            self._queue_answer(connection, f"answer:{task['trigger_id']}", event["chat_id"], event["message_id"], text, task["thread_key"], now)
 
     def _fallback_answer(self, payload: dict[str, Any]) -> str:
         docs = [self.index.get(doc_id) for doc_id in payload.get("fallback_doc_ids") or []]
         return compose_answer([{"doc": doc} for doc in docs if doc], refined=False, unrefined=True)
 
-    # ---- periodic work ----------------------------------------------------------
+    # ---- looking at discussions ---------------------------------------------------
 
     def sweep(self) -> dict[str, int]:
-        """Evaluate quiet discussions, close stale tasks and apply the self-checks."""
+        """Look at what has arrived in the group, and finish tasks that will never be applied."""
 
         now = self.clock()
         policy = Policy.load(self.store)
@@ -319,9 +328,7 @@ class Engine:
             if task["kind"] != "card_copy" and task["policy_version"] != policy.version:
                 self._close(task, policy, now, "policy_changed")
                 closed += 1
-        assessed = self._evaluate_discussions(policy, now)
-        paused = self._auto_pause(policy, now)
-        return {"closed": closed, "assessed": assessed, "paused": paused}
+        return {"closed": closed, "looked": self._look_at_discussions(policy, now)}
 
     def _close(self, task: dict[str, Any], policy: Policy, now: float, why: str) -> None:
         """Finish a task that will never be applied: fall back or stay silent."""
@@ -331,47 +338,62 @@ class Engine:
                 payload = read_json(Path(task["input_path"]), {})
                 self._queue_refined_answer(connection, task, self._fallback_answer(payload), now)
                 self._move(connection, "trigger_id=?", (task["trigger_id"],), "refine", "answered", f"refine_{why}", now)
-            elif task["kind"] == "assess":
-                self._move(connection, "thread_key=?", (task["thread_key"],), "evaluating", "ignored", f"assess_{why}", now)
+            elif task["kind"] == "contribute":
+                self._move(connection, "thread_key=?", (task["thread_key"],), "evaluating", "silent", f"contribute_{why}", now)
         status = "expired" if why == "expired" else "invalid"
         tasks.mark(self.store, task["task_id"], status, now, result_json=json.dumps({"outcome": why}))
 
-    def _evaluate_discussions(self, policy: Policy, now: float) -> int:
-        # Only the messages still waiting for a verdict count as this round of
-        # the discussion, so one late reply cannot reopen an old thread.
-        pending_threads = self.store.fetchall(
+    def _look_at_discussions(self, policy: Policy, now: float) -> int:
+        """Look at every discussion whose first waiting message arrived DEBOUNCE_SECONDS ago.
+
+        Nothing waits for the discussion to go quiet: a lively one is looked at
+        while it is still going, and what arrives before the look is answered
+        joins it.
+        """
+
+        rows = self.store.fetchall(
             """
-            SELECT d.thread_key AS thread_key, MAX(e.created_ms) AS last_ms, COUNT(*) AS messages,
-                   COUNT(DISTINCT e.sender_id) AS senders
+            SELECT d.thread_key AS thread_key, MIN(e.created_ms) AS first_ms
             FROM dispositions d JOIN events e ON e.trigger_id = d.trigger_id
             WHERE d.decision='pending'
             GROUP BY d.thread_key
             """
         )
-        assessed = 0
-        for row in pending_threads:
-            if now * 1000 - row["last_ms"] < QUIET_SECONDS * 1000:
+        looked = 0
+        for row in rows:
+            if now * 1000 - row["first_ms"] < DEBOUNCE_SECONDS * 1000:
                 continue
             with self.store.transaction() as connection:
-                thread = connection.execute("SELECT * FROM threads WHERE thread_key=?", (row["thread_key"],)).fetchone()
-                reason = self._shape_gate(row, thread, policy, now)
-                if reason:
-                    outcome = ("ignored", reason)
-                else:
-                    self._queue_assessment(connection, row["thread_key"], thread, policy, now)
-                    outcome = ("evaluating", "assessment_created")
-                self._move(connection, "thread_key=?", (row["thread_key"],), "pending", outcome[0], outcome[1], now)
-            assessed += 1
-        return assessed
+                looked += self._look(connection, row["thread_key"], policy, now)
+        return looked
 
-    def _shape_gate(self, row: dict[str, Any], thread: dict[str, Any], policy: Policy, now: float) -> str:
-        """Return why a quiet discussion is not assessed, or an empty string to assess it."""
+    def _look(self, connection: Any, thread_key: str, policy: Policy, now: float) -> int:
+        thread = connection.execute("SELECT * FROM threads WHERE thread_key=?", (thread_key,)).fetchone()
+        if thread is None:
+            self._move(connection, "thread_key=?", (thread_key,), "pending", "ignored", "no_thread", now)
+            return 1
+        in_flight = connection.execute(
+            "SELECT * FROM tasks WHERE kind='contribute' AND thread_key=? AND status='pending'", (thread_key,)
+        ).fetchone()
+        if in_flight is not None:
+            # The session is still thinking about this discussion: fold in what arrived since.
+            self._refresh_contribution(connection, in_flight, thread, now)
+            return 0
+        if now * 1000 - (thread["last_task_ms"] or 0) < THREAD_MIN_INTERVAL_SECONDS * 1000:
+            return 0
+        reason = self._speech_gate(thread, policy, now)
+        if reason:
+            if reason == "breaker":
+                self._breaker_notice(connection, now)
+            self._move(connection, "thread_key=?", (thread_key,), "pending", "ignored", reason, now)
+            return 1
+        self._queue_contribution(connection, thread_key, thread, policy, now)
+        connection.execute("UPDATE threads SET last_task_ms=?, updated_at=? WHERE thread_key=?", (int(now * 1000), iso(now), thread_key))
+        return 1
 
-        anchored = bool(thread["anchor_idea_id"])
-        if row["messages"] < (ANCHORED_MIN_MESSAGES if anchored else SHAPE_MIN_MESSAGES):
-            return "too_few_messages"
-        if row["senders"] < (1 if anchored else SHAPE_MIN_SENDERS):
-            return "single_speaker"
+    def _speech_gate(self, thread: dict[str, Any], policy: Policy, now: float) -> str:
+        """Why the assistant may not speak in this discussion now; empty when it may."""
+
         if policy.proactive == "off":
             return "proactive_off"
         if policy.is_muted(now):
@@ -380,39 +402,69 @@ class Engine:
             return "thread_muted"
         if not self.config.is_working_time(local(now)):
             return "outside_working_hours"
-        last_recommended = thread["last_recommended_ms"] or 0
-        if now * 1000 - last_recommended < THREAD_COOLDOWN_SECONDS * 1000:
-            return "thread_cooldown"
-        if policy.proactive == "observe" and thread["last_assessed_ms"] and now * 1000 - thread["last_assessed_ms"] < OBSERVE_COOLDOWN_SECONDS * 1000:
-            return "observe_cooldown"
-        if self._recommendations_sent(now) >= DAILY_PROACTIVE_CAP:
-            return "daily_cap"
+        if self._proactive_last_hour(now) >= BREAKER_LIMIT:
+            return "breaker"
         return ""
 
-    def _recommendations_sent(self, now: float) -> int:
-        start = iso(now - 86400)
-        rows = self.store.fetchall("SELECT sent_at FROM outbox WHERE kind='recommendation' AND status='sent' AND sent_at >= ?", (start,))
-        return sum(1 for row in rows if (row["sent_at"] or "")[:10] == day_key(now))
+    def _proactive_last_hour(self, now: float) -> int:
+        return self.store.fetchone(
+            "SELECT COUNT(*) AS n FROM outbox WHERE kind IN ('recommendation', 'alert') AND status='sent' AND sent_at >= ?",
+            (iso(now - 3600),),
+        )["n"]
 
-    def _queue_assessment(self, connection: Any, thread_key: str, thread: dict[str, Any], policy: Policy, now: float) -> None:
-        messages, nearby = self._discussion_window(thread_key)
-        query = " ".join(message["text"] for message in messages[-6:])
-        hits = self.index.search(query, ASSESS_CANDIDATES)
+    def _breaker_notice(self, connection: Any, now: float) -> None:
+        if self.store.fetchone("SELECT 1 FROM reports WHERE kind='notice' AND created_at >= ?", (iso(now - 3600),)) is None:
+            self._notice(connection, f"主动发言一小时超过了 {BREAKER_LIMIT} 条，已暂停主动发言，点名照常回答。", now)
+
+    def _queue_contribution(self, connection: Any, thread_key: str, thread: dict[str, Any], policy: Policy, now: float) -> None:
+        tasks.create(
+            connection, self.state_dir, kind="contribute", thread_key=thread_key, policy_version=policy.version,
+            now=now, payload=self._contribution_payload(thread_key, thread, now),
+        )
+        self._move(connection, "thread_key=?", (thread_key,), "pending", "evaluating", "looking", now)
+
+    def _refresh_contribution(self, connection: Any, task: dict[str, Any], thread: dict[str, Any], now: float) -> None:
+        """More of the discussion arrived while the session was still thinking: give it the latest."""
+
+        tasks.write_input(task, self._contribution_payload(task["thread_key"], thread, now))
+        self._move(connection, "thread_key=?", (task["thread_key"],), "pending", "evaluating", "looking", now)
+
+    def _contribution_payload(self, thread_key: str, thread: dict[str, Any], now: float) -> dict[str, Any]:
+        messages, nearby, _ = self._discussion_window(thread_key)
+        hits = search_discussion(self.index, [message["text"] for message in messages], CONTRIBUTE_CANDIDATES)
         payload: dict[str, Any] = {
             "messages": messages,
             "nearby": nearby,
-            "rules": [{"id": rule_id, **RULES[rule_id]} for rule_id in policy.enabled_rules()],
-            "candidates": [_candidate(hit["doc"], hit["score"]) for hit in hits],
+            "already_said": self._already_said(thread_key),
+            "retrieval": {"strength": hits[0]["strength"] if hits else 0.0},
+            "candidates": [candidate(hit["doc"], hit["score"]) for hit in hits],
+            "topics": self._topics,
+            "recent_reports": self.store.fetchall(
+                "SELECT title, created_at FROM reports WHERE kind='gap' AND created_at >= ? ORDER BY created_at DESC LIMIT 10",
+                (iso(now - REPORT_LOOKBACK_DAYS * 86400),),
+            ),
         }
         if thread["anchor_idea_id"]:
-            payload["anchored_idea"] = _candidate(self.index.get(f"idea:{thread['anchor_idea_id']}") or {"id": "", "kind": "idea", "title": ""})
-        tasks.create(
-            connection, self.state_dir, kind="assess", thread_key=thread_key, policy_version=policy.version, now=now, payload=payload,
-        )
-        connection.execute("UPDATE threads SET last_assessed_ms=?, updated_at=? WHERE thread_key=?", (int(now * 1000), iso(now), thread_key))
+            payload["anchored_idea"] = candidate(self.index.get(f"idea:{thread['anchor_idea_id']}") or {"id": "", "kind": "idea", "title": ""})
+        return payload
 
-    def _discussion_window(self, thread_key: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """The latest messages of a discussion with senders replaced by labels."""
+    def _already_said(self, thread_key: str) -> list[dict[str, Any]]:
+        """What the assistant has cited in this discussion before, so it does not repeat itself."""
+
+        said: list[dict[str, Any]] = []
+        rows = self.store.fetchall(
+            "SELECT doc_ids_json, created_at FROM decisions WHERE thread_key=? AND outcome IN ('said', 'answered', 'refined') ORDER BY created_at",
+            (thread_key,),
+        )
+        for row in rows:
+            for doc_id in json.loads(row["doc_ids_json"]):
+                doc = self.index.get(doc_id)
+                if doc is not None:
+                    said.append({"id": doc_id, "title": doc.get("headline") or doc["title"], "at": row["created_at"]})
+        return said[:10]
+
+    def _discussion_window(self, thread_key: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
+        """The latest messages of a discussion with senders replaced by labels, and the labels themselves."""
 
         rows = self.store.fetchall(
             "SELECT * FROM events WHERE thread_key=? ORDER BY created_ms DESC, trigger_id DESC LIMIT ?",
@@ -436,21 +488,9 @@ class Engine:
             message = {"sender": label(row["sender_id"]), "text": text}
             return {**message, "at": iso(row["created_ms"] / 1000)} if with_time else message
 
-        return [shape(row, True) for row in rows], [shape(row, False) for row in nearby]
+        return [shape(row, True) for row in rows], [shape(row, False) for row in nearby], aliases
 
-    def _auto_pause(self, policy: Policy, now: float) -> int:
-        if policy.proactive != "off" and self._recommendations_sent(now) >= DAILY_PROACTIVE_CAP:
-            self._pause(policy, "daily_cap", now)
-            return 1
-        return 0
-
-    def _pause(self, policy: Policy, reason: str, now: float) -> None:
-        policy.proactive = "off"
-        with self.store.transaction() as connection:
-            policy.save(self.store, connection)
-            connection.execute("INSERT INTO pause_log(reason, created_at) VALUES(?, ?)", (reason, iso(now)))
-
-    # ---- semantic tasks ---------------------------------------------------------
+    # ---- applying what a session wrote ---------------------------------------------
 
     def apply_task(self, task_id: str, output: dict[str, Any] | None, output_error: str = "") -> dict[str, Any]:
         """Validate a host session's output and act on it. Invalid output is final."""
@@ -483,25 +523,10 @@ class Engine:
         foreign = self._foreign_urls(output)
         if foreign:
             errors.append(f"Output contains a link outside the index: {foreign[0]}")
-        known = {candidate["id"] for candidate in payload.get("candidates") or []}
         if task["kind"] == "refine":
-            for selection in output.get("selected") or []:
-                if selection["doc_id"] not in known:
-                    errors.append(f"doc_id is not one of the candidates: {selection['doc_id']}")
-                if selection["quote"] not in payload.get("question", ""):
-                    errors.append(f"quote is not verbatim from the question: {selection['quote']!r}")
-            if output.get("none_relevant") and output.get("selected"):
-                errors.append("none_relevant cannot be combined with a selection")
-        elif task["kind"] == "assess":
-            expected = sorted(rule["id"] for rule in payload.get("rules") or [])
-            if sorted(rule["rule_id"] for rule in output.get("rules") or []) != expected:
-                errors.append(f"rules must cover exactly: {', '.join(expected)}")
-            texts = [message["text"] for message in (payload.get("messages") or []) + (payload.get("nearby") or [])]
-            for rule in output.get("rules") or []:
-                if rule["matches"] and not any(rule["evidence_quote"] and rule["evidence_quote"] in text for text in texts):
-                    errors.append(f"evidence_quote is not verbatim for rule {rule['rule_id']}")
-            if output.get("doc_id") and output["doc_id"] not in known:
-                errors.append(f"doc_id is not one of the candidates: {output['doc_id']}")
+            errors += self._refine_errors(task, output, payload)
+        elif task["kind"] == "contribute":
+            errors += self._contribute_errors(task, output, payload)
         elif task["kind"] == "card_copy":
             for field in ("headline", "summary", "why_it_matters"):
                 if INTERNAL_FIELD.search(output.get(field) or ""):
@@ -512,14 +537,92 @@ class Engine:
         """Links in a host session's output that the published corpus does not carry."""
 
         if isinstance(value, str):
-            return [
-                url for url in URL.findall(value) if not any(url.startswith(known) for known in self.known_urls)
-            ]
+            return [url for url in URL.findall(value) if not any(url.startswith(known) for known in self.known_urls)]
         if isinstance(value, dict):
             return [url for item in value.values() for url in self._foreign_urls(item)]
         if isinstance(value, list):
             return [url for item in value for url in self._foreign_urls(item)]
         return []
+
+    def _citable(self, task: dict[str, Any], payload: dict[str, Any]) -> set[str]:
+        """Every document the session was shown for this task, by the input or by its own searches."""
+
+        return {candidate["id"] for candidate in payload.get("candidates") or []} | tasks.seen_ids(self.store, task["task_id"])
+
+    def _check_citations(self, citations: list[dict[str, Any]], citable: set[str], texts: list[str], errors: list[str]) -> list[dict[str, Any]]:
+        """Every citation must name a document the session saw and quote the discussion verbatim."""
+
+        docs = []
+        for citation in citations:
+            if citation["doc_id"] not in citable:
+                errors.append(f"doc_id was not shown for this task: {citation['doc_id']}")
+            elif not any(citation["quote"] in text for text in texts):
+                errors.append(f"quote is not verbatim from the discussion: {citation['quote']!r}")
+            doc = self.index.get(citation["doc_id"])
+            if doc is not None:
+                docs.append(doc)
+        return docs
+
+    def _framing_errors(self, framing: str, quote: str, docs: list[dict[str, Any]], texts: list[str]) -> list[str]:
+        """The framing must answer the discussion and may only use numbers it was given."""
+
+        errors = []
+        if not any(quote in text for text in texts):
+            errors.append(f"quote is not verbatim: {quote!r}")
+        allowed = _numbers(" ".join([*(_published(doc) for doc in docs), *texts]))
+        for number in sorted(_numbers(framing) - allowed):
+            errors.append(f"a number in the framing appears in no cited document nor in the discussion: {number}")
+        return errors
+
+    def _refine_errors(self, task: dict[str, Any], output: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+        errors: list[str] = []
+        citable = self._citable(task, payload)
+        question = payload.get("question", "")
+        docs = []
+        for selection in output.get("selected") or []:
+            if selection["doc_id"] not in citable:
+                errors.append(f"doc_id was not shown for this task: {selection['doc_id']}")
+            if selection["quote"] not in question:
+                errors.append(f"quote is not verbatim from the question: {selection['quote']!r}")
+            doc = self.index.get(selection["doc_id"])
+            if doc is not None:
+                docs.append(doc)
+        if output.get("none_relevant") and output.get("selected"):
+            errors.append("none_relevant cannot be combined with a selection")
+        if output.get("framing"):
+            errors += self._framing_errors(output["framing"], (output.get("selected") or [{"quote": ""}])[0]["quote"], docs, [question])
+        return errors
+
+    def _contribute_errors(self, task: dict[str, Any], output: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+        errors: list[str] = []
+        texts = [message["text"] for message in (payload.get("messages") or []) + (payload.get("nearby") or [])]
+        citable = self._citable(task, payload)
+        said = {item["id"] for item in payload.get("already_said") or []}
+        act = output["act"]
+        if act == "add":
+            docs = self._check_citations(output["items"], citable, texts, errors)
+            for citation in output["items"]:
+                if citation["doc_id"] in said:
+                    errors.append(f"already said in this discussion: {citation['doc_id']}")
+            errors += self._framing_errors(output["framing"], output["quote"], docs, texts)
+        elif act == "review":
+            review = output["review"]
+            ids = [review["closest_idea"]] if review["closest_idea"] else []
+            for doc_id in ids:
+                if doc_id not in citable:
+                    errors.append(f"doc_id was not shown for this task: {doc_id}")
+                elif (self.index.get(doc_id) or {}).get("kind") != "idea":
+                    errors.append(f"closest_idea must be an idea: {doc_id}")
+            docs = [self.index.get(doc_id) for doc_id in ids if self.index.get(doc_id)]
+            docs += self._check_citations(list(review["supporting"]) + list(review["counter"]), citable, texts, errors)
+            errors += self._framing_errors(output["framing"], output["quote"], docs, texts)
+        elif act == "gap":
+            gap = output["gap"]
+            if not any(output["quote"] in text for text in texts):
+                errors.append(f"quote is not verbatim: {output['quote']!r}")
+            if gap["nearest"] and gap["nearest"] not in topics.known_scope_ids(self._topics):
+                errors.append(f"nearest must name a configured topic or direction: {gap['nearest']}")
+        return errors
 
     def _reject(self, task: dict[str, Any], policy: Policy, now: float) -> None:
         """Invalid output is final: fall back or stay silent, never ask again."""
@@ -530,19 +633,9 @@ class Engine:
         outcome: dict[str, Any] = {}
         with self.store.transaction() as connection:
             if task["kind"] == "refine":
-                scores = {candidate["id"]: candidate["score"] for candidate in payload.get("candidates") or []}
-                selected = [self.index.get(selection["doc_id"]) for selection in output.get("selected") or []]
-                text = compose_answer([{"doc": doc} for doc in selected if doc], refined=True) if selected else NO_MATCH_TEXT
-                self._queue_refined_answer(connection, task, text, now)
-                reason = "refined" if selected else "none_relevant"
-                self._move(connection, "trigger_id=?", (task["trigger_id"],), "refine", "answered", reason, now)
-                self._record_decision(
-                    connection, "refine", task["trigger_id"], task["thread_key"], policy, reason, now,
-                    [(doc["id"], scores.get(doc["id"], 0.0)) for doc in selected if doc],
-                )
-                outcome = {"outcome": reason}
-            elif task["kind"] == "assess":
-                outcome = self._apply_assessment(connection, task, output, payload, policy, now)
+                outcome = self._apply_refine(connection, task, output, policy, now)
+            elif task["kind"] == "contribute":
+                outcome = self._apply_contribution(connection, task, output, policy, now)
             else:
                 drafts = self.store.get_meta("card_drafts", {})
                 idea_id = payload.get("idea", {}).get("idea_id", "")
@@ -552,73 +645,140 @@ class Engine:
         tasks.mark(self.store, task["task_id"], "applied", now, result_json=json.dumps(outcome, ensure_ascii=False))
         return outcome
 
-    def _apply_assessment(
-        self, connection: Any, task: dict[str, Any], output: dict[str, Any], payload: dict[str, Any], policy: Policy, now: float
-    ) -> dict[str, Any]:
-        matched = [rule["rule_id"] for rule in output["rules"] if rule["matches"]]
-        doc = self.index.get(output["doc_id"]) if output.get("doc_id") else None
-        eligible = bool(matched) and doc is not None and output["relevance"] == "high"
-        draft = compose_recommendation(doc) if eligible else None
-        if not matched:
-            outcome = "silent_no_rule"
-        elif not eligible:
-            outcome = "silent_no_hit"
-        elif policy.proactive == "observe":
-            outcome = "observe_would_accept"
-        else:
-            thread_key = task["thread_key"]
-            outbox.enqueue(
-                self.store, connection, key=f"recommendation:{thread_key}:{int(now)}", kind="recommendation",
-                chat_id=thread_key.split(":", 1)[0], reply_to=thread_key.split(":", 1)[1], text=draft or "",
-                thread_key=thread_key, now=now,
-            )
-            connection.execute(
-                "UPDATE threads SET last_recommended_ms=?, updated_at=? WHERE thread_key=?", (int(now * 1000), iso(now), thread_key)
-            )
-            outcome = "recommended"
-        decision = {
-            "id": stable_hash("assess", task["thread_key"], task["policy_version"], task["created_ms"])[:16],
-            "kind": "assess", "thread_key": task["thread_key"], "trigger_id": None, "policy_version": task["policy_version"],
-            "mode": policy.proactive, "outcome": outcome, "rules_json": json.dumps(output["rules"], ensure_ascii=False),
-            "doc_ids_json": json.dumps([doc["id"]] if doc else []),
-            "scores_json": _scores((item["id"], item["score"]) for item in payload.get("candidates") or []),
-            "draft": draft, "created_at": iso(now),
-        }
-        connection.execute(
-            """
-            INSERT OR IGNORE INTO decisions(id, kind, thread_key, trigger_id, policy_version, mode, outcome,
-                                           rules_json, doc_ids_json, scores_json, draft, created_at)
-            VALUES(:id, :kind, :thread_key, :trigger_id, :policy_version, :mode, :outcome, :rules_json,
-                   :doc_ids_json, :scores_json, :draft, :created_at)
-            """,
-            decision,
+    def _apply_refine(self, connection: Any, task: dict[str, Any], output: dict[str, Any], policy: Policy, now: float) -> dict[str, Any]:
+        docs = [self.index.get(selection["doc_id"]) for selection in output.get("selected") or []]
+        found = [doc for doc in docs if doc]
+        framing = output.get("framing") or ""
+        text = compose_answer([{"doc": doc} for doc in found], framing=framing, refined=True) if found else NO_MATCH_TEXT
+        self._queue_refined_answer(connection, task, text, now)
+        reason = "refined" if found else "none_relevant"
+        self._move(connection, "trigger_id=?", (task["trigger_id"],), "refine", "answered", reason, now)
+        self._record_decision(
+            connection, "refine", task["trigger_id"], task["thread_key"], policy, reason, now, ((doc["id"], 0.0) for doc in found)
         )
-        target = "recommended" if outcome == "recommended" else "silent"
-        self._move(connection, "thread_key=?", (task["thread_key"],), "evaluating", target, outcome, now)
-        return {"outcome": outcome}
+        return {"outcome": reason}
+
+    def _apply_contribution(self, connection: Any, task: dict[str, Any], output: dict[str, Any], policy: Policy, now: float) -> dict[str, Any]:
+        act = output["act"]
+        thread_key = task["thread_key"]
+        draft = None
+        if act == "none":
+            outcome = "silent"
+        elif act == "gap":
+            self._save_report(connection, task, output, now)
+            outcome = "reported"
+        else:
+            draft = self._draft(act, output)
+            if policy.proactive == "observe":
+                outcome = "observe_would_say"
+            else:
+                chat_id, root = thread_key.split(":", 1)
+                outbox.enqueue(
+                    self.store, connection, key=f"recommendation:{thread_key}:{int(now)}", kind="recommendation",
+                    chat_id=chat_id, reply_to=root, text=draft or "", thread_key=thread_key, now=now,
+                )
+                outcome = "said"
+        cited = [citation["doc_id"] for citation in output.get("items") or []]
+        if act == "review":
+            cited += [output["review"]["closest_idea"]] if output["review"]["closest_idea"] else []
+            cited += [c["doc_id"] for c in output["review"]["supporting"]]
+        self._record_decision(
+            connection, "contribute", None, thread_key, policy, outcome, now, ((doc_id, 0.0) for doc_id in cited), act=act, draft=draft
+        )
+        target = {"said": "spoken", "reported": "reported"}.get(outcome, "silent")
+        self._move(connection, "thread_key=?", (thread_key,), "evaluating", target, f"{act}:{outcome}", now)
+        return {"outcome": outcome, "act": act}
+
+    def _draft(self, act: str, output: dict[str, Any]) -> str | None:
+        if act == "add":
+            docs = [self.index.get(citation["doc_id"]) for citation in output["items"]]
+            return compose_add(output["framing"], [doc for doc in docs if doc])
+        review = output["review"]
+        closest = self.index.get(review["closest_idea"]) if review["closest_idea"] else None
+        supporting = [self.index.get(c["doc_id"]) for c in review["supporting"]]
+        counter = [self.index.get(c["doc_id"]) for c in review["counter"]]
+        return compose_review(
+            output["framing"], closest=closest, supporting=[doc for doc in supporting if doc],
+            counter=[doc for doc in counter if doc], missing=review["missing"],
+        )
+
+    def _save_report(self, connection: Any, task: dict[str, Any], output: dict[str, Any], now: float) -> str:
+        """Record a coverage gap and, within the day's budget, tell the owner privately."""
+
+        messages, _, aliases = self._discussion_window(task["thread_key"])
+        names = self.store.get_meta("member_names", {})
+        nearest = output["gap"]["nearest"] or ""
+        report_id = f"gap-{stable_hash(task['thread_key'], int(now * 1000))[:16]}"
+        created_at = iso(now)
+        body = {
+            "texts": [message["text"] for message in messages],
+            "names": [names.get(sender_id) or label for sender_id, label in aliases.items()],
+            "summary": output["gap"]["summary"],
+            "nearest": nearest,
+            "nearest_label": reports.scope_label(nearest, self._topics) if nearest else "",
+            "terms": output["gap"]["terms"][:REPORT_TERMS],
+            "placement": output["gap"]["placement"],
+        }
+        status = "recorded"
+        owner = self.store.get_meta("report_to")
+        if owner and self._reports_today(now) < REPORTS_PER_DAY:
+            outbox.enqueue(
+                self.store, connection, key=f"report:{report_id}", kind="report", chat_id=owner["chat_id"], reply_to="",
+                text=reports.gap_text(report_id, body, created_at=created_at), thread_key=task["thread_key"], now=now,
+            )
+            status = "queued"
+        connection.execute(
+            "INSERT INTO reports(id, kind, thread_key, title, body_json, status, created_at) VALUES(?, 'gap', ?, ?, ?, ?, ?)",
+            (report_id, task["thread_key"], body["summary"][:80], json.dumps(body, ensure_ascii=False), status, created_at),
+        )
+        return report_id
+
+    def _reports_today(self, now: float) -> int:
+        return self.store.fetchone(
+            "SELECT COUNT(*) AS n FROM reports WHERE kind='gap' AND status IN ('queued', 'sent') AND created_at >= ?",
+            (iso(day_start(now)),),
+        )["n"]
+
+    def _notice(self, connection: Any, text: str, now: float) -> None:
+        """Tell the owner privately that the assistant stopped speaking on its own."""
+
+        owner = self.store.get_meta("report_to")
+        notice_id = f"notice-{stable_hash(text, int(now * 1000))[:12]}"
+        status = "recorded"
+        if owner:
+            outbox.enqueue(
+                self.store, connection, key=f"report:{notice_id}", kind="report", chat_id=owner["chat_id"], reply_to="",
+                text=reports.notice_text(text), thread_key=None, now=now,
+            )
+            status = "queued"
+        connection.execute(
+            "INSERT INTO reports(id, kind, thread_key, title, body_json, status, created_at) VALUES(?, 'notice', NULL, ?, ?, ?, ?)",
+            (notice_id, text[:80], json.dumps({"text": text}, ensure_ascii=False), status, iso(now)),
+        )
 
     def _record_decision(
         self, connection: Any, kind: str, trigger_id: str | None, thread_key: str | None, policy: Policy,
-        outcome: str, now: float, hits: Iterable[tuple[str, float]],
+        outcome: str, now: float, cited: Iterable[tuple[str, float]] = (), *, act: str | None = None, draft: str | None = None,
     ) -> None:
-        hits = list(hits)
+        cited = list(cited)
         connection.execute(
             """
-            INSERT OR IGNORE INTO decisions(id, kind, thread_key, trigger_id, policy_version, mode, outcome,
+            INSERT OR IGNORE INTO decisions(id, kind, thread_key, trigger_id, policy_version, mode, outcome, act,
                                            rules_json, doc_ids_json, scores_json, draft, created_at)
-            VALUES(?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, NULL, ?)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?)
             """,
             (
-                stable_hash(kind, trigger_id or thread_key, policy.version, int(now * 1000))[:16], kind, thread_key,
-                trigger_id, policy.version, "explicit" if kind != "assess" else policy.proactive, outcome,
-                json.dumps([doc_id for doc_id, _ in hits]), _scores(hits), iso(now),
+                stable_hash(kind, trigger_id or thread_key or act, policy.version, int(now * 1000))[:16], kind, thread_key,
+                trigger_id, policy.version, "explicit" if kind != "contribute" else policy.proactive, outcome, act,
+                json.dumps([doc_id for doc_id, _ in cited]), json.dumps({doc_id: round(score, 3) for doc_id, score in cited}),
+                draft, iso(now),
             ),
         )
 
     # ---- feedback ---------------------------------------------------------------
 
     def on_reaction(self, reaction: dict[str, Any], now: float | None = None) -> dict[str, Any]:
-        """Record a 👍 / 👎 on a reply or an idea card. A 👎 on a reply also opts its discussion out."""
+        """Record a 👍 / 👎 on a reply or an idea card. A 👎 on a reply also silences that discussion."""
 
         now = self.clock() if now is None else now
         emoji, message_id = reaction.get("emoji") or "", reaction.get("message_id") or ""
@@ -682,5 +842,8 @@ class Engine:
         policy = Policy.load(self.store)
         if policy.proactive == "off":
             return 0
-        self._pause(policy, "dislike_ratio", now)
+        with self.store.transaction() as connection:
+            policy.proactive = "off"
+            policy.save(self.store, connection)
+            connection.execute("INSERT INTO pause_log(reason, created_at) VALUES(?, ?)", ("dislike_ratio", iso(now)))
         return 1

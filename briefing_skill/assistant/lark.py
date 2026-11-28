@@ -149,12 +149,24 @@ def thread_roots(records: list[dict[str, Any]]) -> list[tuple[str, str, str, int
     return found
 
 
-def members(config: AssistantConfig, chat_id: str) -> list[str]:
-    """Open IDs of the human members of a chat."""
+def members(config: AssistantConfig, chat_id: str) -> dict[str, str]:
+    """The human members of a chat by open ID, with the names the owner knows them by."""
     items = _paged(
         config, f"/open-apis/im/v1/chats/{chat_id}/members", {"member_id_type": "open_id", "page_size": MEMBERS_PAGE_SIZE}
     )
-    return [str(item["member_id"]) for item in items if item.get("member_id")]
+    return {str(item["member_id"]): str(item.get("name") or "") for item in items if item.get("member_id")}
+
+
+def direct_chat(config: AssistantConfig, open_id: str, text: str) -> dict[str, Any]:
+    """Message a person directly and return what the platform says about it.
+
+    The reply carries the ID of the private chat between the bot and that
+    person, which later reports are sent to.
+    """
+
+    return run(
+        config, "im", "+messages-send", "--user-id", open_id, "--text", text, "--idempotency-key", wire_key(f"direct:{open_id}")
+    ).get("data") or {}
 
 
 def bot(config: AssistantConfig) -> dict[str, str]:
@@ -327,7 +339,7 @@ class LarkClient:
     def bot(self) -> dict[str, str]:
         return bot(self.config)
 
-    def members(self, chat_id: str) -> list[str]:
+    def members(self, chat_id: str) -> dict[str, str]:
         return members(self.config, chat_id)
 
     def records(self, *, container_type: str, container_id: str, start_ms: int) -> list[dict[str, Any]]:
@@ -335,6 +347,9 @@ class LarkClient:
 
     def reactions(self, message_id: str) -> list[dict[str, Any]]:
         return reactions(self.config, message_id)
+
+    def open_direct_chat(self, open_id: str, text: str) -> dict[str, Any]:
+        return direct_chat(self.config, open_id, text)
 
     def transport(self) -> LarkTransport:
         return LarkTransport(self.config)

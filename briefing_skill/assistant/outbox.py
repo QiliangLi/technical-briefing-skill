@@ -15,11 +15,11 @@ from typing import Any, Protocol
 
 from .constants import OUTBOX_MAX_ATTEMPTS
 from .policy import Policy
-from .replies import count_words, within_limit
+from .replies import within_limit
 from .store import Store
 from .timeutil import iso
 
-ALLOWED_KINDS = ("answer", "recommendation", "card")
+ALLOWED_KINDS = ("answer", "recommendation", "alert", "card", "report")
 
 # A card push records its idea before the message ID is known. The placeholder
 # is replaced with the real ID once the card has been sent.
@@ -57,7 +57,7 @@ def enqueue(
 ) -> None:
     """Queue one message inside the caller's open transaction.
 
-    A reply that could not be shortened to the IM word limit is kept as
+    A reply that could not be shortened to its length limit is kept as
     ``refused`` with the reason, so the ledger shows what was dropped instead
     of failing the message that asked for it. Cards follow a template and are
     not counted.
@@ -65,8 +65,7 @@ def enqueue(
 
     if kind not in ALLOWED_KINDS:
         raise OutboxError(f"Reply kind is not allowed: {kind}")
-    words = count_words(text)
-    refused = kind != "card" and not within_limit(text)
+    refused = kind != "card" and not within_limit(text, kind)
     connection.execute(
         """
         INSERT OR IGNORE INTO outbox(id, kind, chat_id, reply_to, thread_key, text, status, attempts, created_at, last_error)
@@ -74,7 +73,7 @@ def enqueue(
         """,
         (
             key, kind, chat_id, reply_to, thread_key, text, "refused" if refused else "pending", iso(now),
-            f"Exceeds the IM word limit: {words} words" if refused else None,
+            f"Exceeds the {kind} length limit: {len(text)} characters" if refused else None,
         ),
     )
 
@@ -94,12 +93,19 @@ def blocked_reason(store: Store, row: dict[str, Any]) -> str:
             return "The message being answered did not come from a person addressing the assistant"
     elif row["kind"] == "recommendation":
         decision = store.fetchone(
-            "SELECT 1 FROM decisions WHERE kind='assess' AND thread_key=? AND outcome='recommended'", (row["thread_key"],)
+            "SELECT 1 FROM decisions WHERE kind='contribute' AND thread_key=? AND outcome='said'", (row["thread_key"],)
         )
         if decision is None:
-            return "No accepted assessment with a matching rule covers this recommendation"
+            return "No accepted decision to speak covers this message"
         if Policy.load(store).proactive != "auto":
             return "Proactive mode is no longer auto"
+    elif row["kind"] == "alert":
+        if store.fetchone("SELECT 1 FROM decisions WHERE kind='alert' AND thread_key=? AND outcome='said'", (row["thread_key"],)) is None:
+            return "No accepted alert covers this message"
+    elif row["kind"] == "report":
+        report_id = row["id"][len("report:"):]
+        if store.fetchone("SELECT 1 FROM reports WHERE id=? AND status='queued'", (report_id,)) is None:
+            return "No queued report covers this message"
     elif row["kind"] == "card":
         if store.fetchone("SELECT 1 FROM registry WHERE message_id=?", (PENDING_CARD + row["id"],)) is None:
             return "No confirmed card push covers this message"
@@ -112,6 +118,15 @@ def _claim_card(store: Store, row: dict[str, Any], message_id: str, now: float) 
     with store.transaction() as connection:
         connection.execute(
             "UPDATE registry SET message_id=?, pushed_at=? WHERE message_id=?", (message_id, iso(now), PENDING_CARD + row["id"])
+        )
+
+
+def _close_report(store: Store, row: dict[str, Any], message_id: str, now: float) -> None:
+    """A sent report is marked so that it is neither sent again nor counted as due."""
+
+    with store.transaction() as connection:
+        connection.execute(
+            "UPDATE reports SET status='sent', message_id=? WHERE id=?", (message_id, row["id"][len("report:"):])
         )
 
 
@@ -133,6 +148,8 @@ def flush(store: Store, transport: Transport, now: float) -> dict[str, int]:
             status, sent_at, message_id = "sent", iso(now), result.message_id
             if row["kind"] == "card" and result.message_id:
                 _claim_card(store, row, result.message_id, now)
+            elif row["kind"] == "report" and result.message_id:
+                _close_report(store, row, result.message_id, now)
         elif result.status == "gone":
             status, error = "gone", result.error
         elif attempts >= OUTBOX_MAX_ATTEMPTS:

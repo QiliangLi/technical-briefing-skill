@@ -90,6 +90,7 @@ def test_src_06_standalone_messages_cluster_by_time(world):
 
 
 def test_src_07_every_message_keeps_one_disposition_with_a_reason(world):
+    world.policy(proactive="off")
     sent = [
         world.say(CONFIDENT, mention=True),
         world.say(UNCERTAIN, mention=True),
@@ -147,7 +148,7 @@ def test_adm_01_a_mention_is_an_explicit_request_in_every_mode(world, mode):
 def test_adm_02_an_unaddressed_message_is_an_inferred_candidate(world):
     world.policy(proactive="observe")
     assert world.say("一句没有点名助手的消息") == {
-        "message_id": "om_1", "decision": "pending", "reason": "awaiting_shape"
+        "message_id": "om_1", "decision": "pending", "reason": "awaiting_look"
     }
 
 
@@ -160,13 +161,14 @@ def test_adm_03_other_bots_are_not_admitted(world):
 def test_adm_04_admission_reads_metadata_not_the_body(world):
     world.policy(proactive="observe")
     unaddressed = [world.say("甲说的一句", sender=BOB), world.say("乙说的完全不同的一句", sender=BOB)]
-    assert [(item["decision"], item["reason"]) for item in unaddressed] == [("pending", "awaiting_shape")] * 2
+    assert [(item["decision"], item["reason"]) for item in unaddressed] == [("pending", "awaiting_look")] * 2
     assert world.say(CONFIDENT, mention=True, sender=BOB)["decision"] == "answered"
 
 
-def test_adm_05_off_mode_never_assesses_but_still_answers(world):
+def test_adm_05_off_mode_never_looks_at_discussions_but_still_answers(world):
+    world.policy(proactive="off")
     assert world.say("没有点名的一句")["reason"] == "proactive_off"
-    world.advance(91)
+    world.advance(60)
     world.engine.sweep()
     assert world.tasks() == []
     assert world.say(CONFIDENT, mention=True)["decision"] == "answered"
@@ -180,7 +182,7 @@ def test_adm_06_a_direct_message_is_answered_only_for_members(world):
 
 def test_adm_07_a_mention_is_judged_by_the_mentions_field_not_the_text(world):
     world.policy(proactive="observe")
-    assert world.say("@助手 请问 KV cache 分层卸载怎么做")["reason"] == "awaiting_shape"
+    assert world.say("@助手 请问 KV cache 分层卸载怎么做")["reason"] == "awaiting_look"
     assert world.say("@助手 " + CONFIDENT, mention=True)["decision"] == "answered"
 
 

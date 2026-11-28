@@ -190,11 +190,11 @@ def test_the_bot_identity_and_the_members_come_from_the_api(monkeypatch):
     canned(
         monkeypatch,
         [
-            completed(json.dumps({"ok": True, "data": {"items": [{"member_id": "ou_a"}, {"member_id": "ou_b"}], "has_more": False}})),
+            completed(json.dumps({"ok": True, "data": {"items": [{"member_id": "ou_a", "name": "张三"}, {"member_id": "ou_b"}], "has_more": False}})),
             completed(json.dumps({"ok": True, "data": {"open_id": "ou_bot", "app_name": "助手"}})),
         ],
     )
-    assert lark.members(CONFIG, CHAT) == ["ou_a", "ou_b"]
+    assert lark.members(CONFIG, CHAT) == {"ou_a": "张三", "ou_b": ""}
     assert lark.bot(CONFIG) == {"open_id": "ou_bot", "app_name": "助手"}
 
 

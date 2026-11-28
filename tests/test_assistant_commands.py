@@ -9,7 +9,7 @@ import yaml
 
 from assistant_support import ALICE, BOB, CHAT, World
 from briefing_skill import cli
-from briefing_skill.assistant import e2e, install_assistant, tasks
+from briefing_skill.assistant import commands, e2e, install_assistant, tasks
 from briefing_skill.assistant.config import AssistantConfig
 from briefing_skill.assistant.engine import Engine
 from briefing_skill.assistant.events import Trigger
@@ -18,7 +18,7 @@ from briefing_skill.paths import discover_root
 
 UNCERTAIN = "光交换机和 KV 卸载哪个更急"
 KV = [(ALICE, "KV cache 卸载到内存的方案怎么做"), (BOB, "有没有人做过分层卸载"), (ALICE, "我记得有篇讲 CXL 内存池的")]
-OPTICS = [(ALICE, "光交换机在智算中心怎么调度"), (BOB, "光交换机的尾延迟"), (ALICE, "整负载调度光交换机")]
+SMALL_TALK = [(ALICE, "午饭吃什么"), (BOB, "楼下那家面馆"), (ALICE, "走吧")]
 
 
 @pytest.fixture
@@ -37,19 +37,6 @@ def run_cli(world, capsys, *args):
 
 
 # ---- what the assistant responds to ----
-
-
-def test_rules_are_listed_and_switched_one_at_a_time(world, capsys):
-    code, listed = run_cli(world, capsys, "rules")
-    assert code == 0 and [rule["id"] for rule in listed["rules"]] == ["prior_art", "related_evidence"]
-    assert all(rule["on"] for rule in listed["rules"])
-
-    code, switched = run_cli(world, capsys, "rules", "related_evidence", "off")
-    assert code == 0 and switched["version"] != listed["version"]
-    assert [rule["on"] for rule in switched["rules"]] == [True, False]
-
-    assert run_cli(world, capsys, "rules", "no_such_rule", "off")[0] == 1
-    assert run_cli(world, capsys, "rules", "prior_art")[0] == 1  # a rule without on or off is not a switch
 
 
 def test_modes_only_take_their_own_values(world, capsys):
@@ -121,25 +108,55 @@ def test_status_and_stop_with_nothing_running(world, capsys):
     assert run_cli(world, capsys, "stop") == (0, {"running": False, "stopped": True})
 
 
-def test_review_and_stats_summarise_a_shadow_period(world, capsys):
-    world.recommend(KV)
-    task = world.quiet_discussion(OPTICS, proactive="observe")
-    world.apply(task, world.assessment(task))
+def test_review_and_stats_show_what_was_decided_including_the_silences(world, capsys):
+    world.speak(KV)
+    silent = world.look(SMALL_TALK)
+    world.apply(silent, world.contribution(silent, act="none"))
 
     code, listed = run_cli(world, capsys, "review", "--days", "365")
-    assert code == 0
-    assert [item["outcome"] for item in listed["decisions"]] == ["observe_would_accept", "recommended"]
-    assert [item["rules"][0]["quote"] for item in listed["decisions"]] == ["整负载调度光", "我记得有篇讲"]
-    assert listed["by_rule"]["prior_art"] == {"judged": 2, "matched": 2}
-    assert run_cli(world, capsys, "review", "--days", "365", "--rule", "related_evidence")[1]["decisions"] == []
+    assert code == 0 and listed["by_act"] == {"add": {"said": 1}, "none": {"silent": 1}}
+    assert sorted((item["act"], item["outcome"]) for item in listed["decisions"]) == [("add", "said"), ("none", "silent")]
+    assert run_cli(world, capsys, "review", "--act", "none", "--days", "365")[1]["decisions"][0]["draft"] is None
+    said = run_cli(world, capsys, "review", "--act", "add", "--days", "365")[1]["decisions"][0]
+    assert said["draft"].startswith("日报库里有一条相关的：") and said["documents"][0]["id"].startswith("item:")
 
     code, counts = run_cli(world, capsys, "stats", "--days", "365")
     assert code == 0
-    assert counts["decisions"]["assess"] == {"recommended": 1, "observe_would_accept": 1}
-    assert counts["dispositions"] == {"recommended": {"recommended": 3}, "silent": {"observe_would_accept": 3}}
+    assert counts["acts"] == {"add": {"said": 1}, "none": {"silent": 1}}
+    assert counts["dispositions"] == {"spoken": {"add:said": 3}, "silent": {"none:silent": 3}}
     assert counts["outbox"]["recommendation"] == {"sent": 1}
-    assert counts["tasks"]["assess"] == {"applied": 2}
-    assert counts["feedback"] == {} and counts["pauses"] == []
+    assert counts["reports"] == {} and counts["pauses"] == []
+
+
+def test_a_session_searches_for_its_own_task_and_may_cite_what_it_finds(world, capsys):
+    task = world.look(KV)
+    assert run_cli(world, capsys, "search", "--task", task["task_id"], "存储介质")[1]["hits"][0]["id"] == "roadmap:storage"
+    assert tasks.seen_ids(world.store, task["task_id"]) == {"roadmap:storage"}
+    assert run_cli(world, capsys, "search", "--task", "no-such-task", "存储介质")[0] == 1
+
+
+def test_reports_go_to_the_owner_the_user_names_and_can_be_read_back(world, capsys, monkeypatch):
+    opened = {}
+
+    class FakeClient:
+        def open_direct_chat(self, open_id: str, text: str) -> dict:
+            opened.update(open_id=open_id, text=text)
+            return {"chat_id": "oc_dm", "message_id": "om_dm"}
+
+    monkeypatch.setattr(commands, "LarkClient", lambda config: FakeClient())
+    owner = "ou_" + "a" * 32
+    assert run_cli(world, capsys, "report", "to", owner) == (0, {"report_to": {"open_id": owner, "chat_id": "oc_dm"}})
+    assert opened["open_id"] == owner and "向你汇报" in opened["text"]
+    assert run_cli(world, capsys, "report", "to", "not-an-open-id")[0] == 1
+
+    task = world.look([(ALICE, "我们在评估一个新方向")])
+    world.apply(task, world.contribution(task, act="gap"))
+    listing = run_cli(world, capsys, "report", "list", "--days", "365")[1]
+    assert listing["report_to"]["chat_id"] == "oc_dm"
+    assert [(item["kind"], item["status"], item["names"]) for item in listing["reports"]] == [("gap", "queued", ["同事 A"])]
+    shown = run_cli(world, capsys, "report", "show", listing["reports"][0]["id"])[1]
+    assert shown["messages"] == ["我们在评估一个新方向"] and shown["terms"] == ["新检索词"]
+    assert run_cli(world, capsys, "report", "show", "no-such-report")[0] == 1
 
 
 # ---- the live run's guard rails ----

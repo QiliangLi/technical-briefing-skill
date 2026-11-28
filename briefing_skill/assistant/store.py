@@ -69,8 +69,7 @@ CREATE TABLE IF NOT EXISTS threads (
     anchor_idea_id TEXT,
     muted_at TEXT,
     last_activity_ms INTEGER,
-    last_assessed_ms INTEGER,
-    last_recommended_ms INTEGER,
+    last_task_ms INTEGER,
     updated_at TEXT NOT NULL
 );
 
@@ -82,6 +81,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     policy_version TEXT NOT NULL,
     mode TEXT NOT NULL,
     outcome TEXT NOT NULL,
+    act TEXT,
     rules_json TEXT NOT NULL,
     doc_ids_json TEXT NOT NULL,
     scores_json TEXT NOT NULL,
@@ -105,6 +105,25 @@ CREATE TABLE IF NOT EXISTS tasks (
     error_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, created_ms);
+
+CREATE TABLE IF NOT EXISTS task_searches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    query TEXT NOT NULL,
+    doc_ids_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    thread_key TEXT,
+    title TEXT NOT NULL,
+    body_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    message_id TEXT,
+    created_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS outbox (
     id TEXT PRIMARY KEY,

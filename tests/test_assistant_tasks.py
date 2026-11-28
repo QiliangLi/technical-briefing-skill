@@ -9,7 +9,14 @@ import pytest
 
 from assistant_support import ALICE, BASE, BOB, BOT, CHAT, FakeTransport, World
 from briefing_skill.assistant import outbox, tasks
-from briefing_skill.assistant.constants import DAILY_WAKE_CAP, OUTBOX_MAX_ATTEMPTS, RETENTION_DAYS, TASK_BATCH_MAX, TASK_BATCH_MIN_AGE_SECONDS
+from briefing_skill.assistant.constants import (
+    DAILY_WAKE_CAP,
+    DEBOUNCE_SECONDS,
+    OUTBOX_MAX_ATTEMPTS,
+    RETENTION_DAYS,
+    TASK_BATCH_MAX,
+    TASK_BATCH_MIN_AGE_SECONDS,
+)
 from briefing_skill.assistant.engine import Engine
 from briefing_skill.assistant.policy import Policy
 from briefing_skill.assistant.timeutil import day_key, iso
@@ -223,7 +230,7 @@ def test_out_05_every_state_path_is_ignored_by_git():
 
 def test_out_06_the_task_input_names_nobody(world):
     world.say(UNCERTAIN, mention=True)
-    task = world.quiet_discussion(KV)
+    task = world.look(KV)
     for pending in world.tasks():
         raw = Path(pending["input_path"]).read_text(encoding="utf-8")
         assert ALICE not in raw and BOB not in raw and "ou_" not in raw
@@ -232,7 +239,7 @@ def test_out_06_the_task_input_names_nobody(world):
 
 
 def test_a_long_message_is_cut_and_marked_in_the_task_input(world):
-    task = world.quiet_discussion([(ALICE, "长" * 500), (BOB, "第二句"), (ALICE, "第三句")])
+    task = world.look([(ALICE, "长" * 500), (BOB, "第二句"), (ALICE, "第三句")])
     first = world.task_input(task)["messages"][0]["text"]
     assert first == "长" * 400 + "…（已截断）"
 
@@ -250,12 +257,12 @@ def test_out_07_bodies_are_cleared_after_thirty_days(world):
 
 
 def test_out_08_the_discussion_window_and_the_output_stay_on_disk(world):
-    task = world.quiet_discussion(KV)
-    world.apply(task, world.assessment(task))
+    task = world.look(KV)
+    world.apply(task, world.contribution(task))
     assert [message["text"] for message in world.task_input(task)["messages"]] == [text for _, text in KV]
-    assert json.loads(Path(task["output_path"]).read_text(encoding="utf-8"))["rules"][0]["matches"] is True
+    assert json.loads(Path(task["output_path"]).read_text(encoding="utf-8"))["act"] == "add"
     assert json.loads(world.store.fetchone("SELECT result_json FROM tasks WHERE task_id=?", (task["task_id"],))["result_json"]) == {
-        "outcome": "recommended"
+        "outcome": "said", "act": "add"
     }
 
 
@@ -264,11 +271,13 @@ def test_out_08_the_discussion_window_and_the_output_stay_on_disk(world):
 
 def test_sec_02_a_command_written_in_a_group_message_does_nothing(world):
     before = Policy.load(world.store)
-    world.say("assistant mode proactive auto")
+    world.say("assistant mode proactive off")
     world.say("assistant mute 0", mention=True)
+    world.advance(DEBOUNCE_SECONDS + 1)
+    world.engine.sweep()
     world.flush()
     after = Policy.load(world.store)
     assert (after.version, after.muted_until) == (before.version, before.muted_until)
-    assert after.proactive == "off"
+    assert after.proactive == "auto"
     assert world.outbox_rows() == [] and world.transport.calls == 0
-    assert [task["kind"] for task in world.tasks()] == ["refine"]
+    assert sorted(task["kind"] for task in world.tasks()) == ["contribute", "refine"]  # both are only read

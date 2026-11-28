@@ -46,9 +46,10 @@ class AssistantConfig:
     site_base_url: str = "https://qiliangli.github.io/technical-briefing-skill/"
     chat_whitelist: tuple[str, ...] = ()
     lark_cli: str = "lark-cli"
-    working_start_hour: int = 9
-    working_end_hour: int = 19
-    working_days: tuple[int, ...] = (0, 1, 2, 3, 4)
+    # The assistant takes part whenever the group does; a narrower window can be configured.
+    working_start_hour: int = 0
+    working_end_hour: int = 24
+    working_days: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6)
 
     @classmethod
     def load(cls, root: Path, state_dir: Path | None = None) -> "AssistantConfig":
@@ -66,7 +67,7 @@ class AssistantConfig:
         hours = data.get("working_hours") or {}
         if not isinstance(hours, dict):
             raise AssistantConfigError("working_hours must be a mapping")
-        start, end = int(hours.get("start", 9)), int(hours.get("end", 19))
+        start, end = int(hours.get("start", cls.working_start_hour)), int(hours.get("end", cls.working_end_hour))
         if not 0 <= start < end <= 24:
             raise AssistantConfigError("working_hours must satisfy 0 <= start < end <= 24")
         days = tuple(int(day) for day in data.get("working_days", (0, 1, 2, 3, 4)))

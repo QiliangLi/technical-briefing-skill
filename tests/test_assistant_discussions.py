@@ -9,7 +9,7 @@ from assistant_support import ALICE, BOB, SITE, World
 from briefing_skill import cli
 from briefing_skill.assistant import commands, discussions, install_assistant
 from briefing_skill.assistant.config import AssistantConfig
-from briefing_skill.assistant.constants import QUIET_SECONDS
+from briefing_skill.assistant.constants import DEBOUNCE_SECONDS
 from briefing_skill.assistant.retrieval import ensure_index
 from briefing_skill.paths import discover_root
 
@@ -100,26 +100,28 @@ def play(world, scenario):
     speakers = {"a": ALICE, "b": BOB}
     sent = []
     for line in scenario["messages"]:
-        result = world.say(line["text"], sender=speakers[line["from"]], root=sent[0] if sent else "", advance=scenario.get("gap_seconds", 1))
+        result = world.say(
+            line["text"], sender=speakers[line["from"]], root=sent[0] if sent else "", advance=scenario.get("gap_seconds", 1)
+        )
         sent.append(result["message_id"])
-    world.advance(QUIET_SECONDS + 1)
+    world.advance(DEBOUNCE_SECONDS + 1)
     world.engine.sweep()
-    for task in world.tasks(kind="assess"):
-        world.apply(task, world.careful_verdict(task, scenario["expect_any"]))
+    for task in world.tasks(kind="contribute"):
+        world.apply(task, world.careful_contribution(task, scenario["expect_any"]))
     world.flush()
-    replies = [row["text"] for row in world.outbox_rows() if row["reply_to"] == sent[0] and row["status"] == "sent"]
-    return replies
+    return [row["text"] for row in world.outbox_rows() if row["reply_to"] == sent[0] and row["status"] == "sent"]
 
 
 @pytest.mark.parametrize("name", ["kv-offload-prior-art", "lively-optical-switch"])
-def test_a_discussion_the_small_corpus_covers_gets_one_good_reply(world, name):
+def test_a_discussion_the_small_corpus_covers_is_joined_within_seconds(world, name):
     scenario = next(item for item in discussions.load(discover_root()) if item["id"] == name)
     replies = play(world, scenario)
     assert len(replies) == 1 and judged(scenario, replies)["ok"], replies
+    assert replies[0].startswith("日报库里有一条相关的：")  # the framing comes first, then the cited document
 
 
-@pytest.mark.parametrize("name", ["small-talk", "admin-meeting", "gap-liquid-cooling"])
-def test_small_talk_and_a_subject_the_corpus_lacks_get_no_reply(world, name):
+@pytest.mark.parametrize("name", ["small-talk", "admin-meeting"])
+def test_small_talk_gets_no_reply(world, name):
     scenario = next(item for item in discussions.load(discover_root()) if item["id"] == name)
     assert play(world, scenario) == [] and judged(scenario, [])["ok"]
 

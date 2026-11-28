@@ -4,37 +4,48 @@ These are code constants on purpose. The design keeps settings few: a value beco
 configuration only after a trial shows it needs tuning per deployment.
 """
 
-# Shape gate for a proactive recommendation.
-SHAPE_MIN_MESSAGES = 3
-SHAPE_MIN_SENDERS = 2
-QUIET_SECONDS = 90
+# Looking at a discussion. The first unaddressed message of a thread is looked
+# at this many seconds later, whatever comes after it; messages arriving before
+# the look is answered join it. A thread gets a new look at most this often, so
+# a lively discussion is followed without a task for every message. The breaker
+# only stops a runaway loop and sits far above normal use.
+# Standalone messages in the main channel form one discussion while they stay
+# this close together.
 CLUSTER_WINDOW_SECONDS = 600
 CLUSTER_MAX_GAP_SECONDS = 300
-THREAD_COOLDOWN_SECONDS = 24 * 3600
-OBSERVE_COOLDOWN_SECONDS = 30 * 60
-DAILY_PROACTIVE_CAP = 3
-ANCHORED_MIN_MESSAGES = 1
+DEBOUNCE_SECONDS = 10
+THREAD_MIN_INTERVAL_SECONDS = 30
+BREAKER_LIMIT = 30
+CONTRIBUTE_CANDIDATES = 5
 
 # Explicit answers.
 EXPLICIT_RATE_PER_MINUTE = 10
 ANSWER_MAX_ITEMS = 3
-
-# Replies. Cards follow a template and are not counted against the word limit.
-IM_WORD_LIMIT = 100
 ROADMAP_PER_ANSWER = 1
+
+# Replies. A card follows a template and is not counted.
 OUTBOX_MAX_ATTEMPTS = 5
 
-# Semantic tasks.
+# Semantic tasks. A host session may search for itself when the candidates it
+# was handed look wrong; what it finds is what it may cite.
 REFINE_TTL_SECONDS = 600
-ASSESS_TTL_SECONDS = 300
-TASK_BATCH_MIN_AGE_SECONDS = 60
+CONTRIBUTE_TTL_SECONDS = 900
+TASK_BATCH_MIN_AGE_SECONDS = 10
 TASK_BATCH_MAX = 5
-DAILY_WAKE_CAP = 40
+DAILY_WAKE_CAP = 300
 REFINE_CANDIDATES = 20
-ASSESS_CANDIDATES = 10
 WINDOW_MAX_MESSAGES = 20
 MESSAGE_CHAR_LIMIT = 400
 CONTEXT_NEIGHBOURS = 5
+SESSION_SEARCHES = 4
+
+# Framing written by a host session, and the reports it sends the owner.
+FRAMING_CHAR_LIMIT = 200
+ADD_ITEMS = 2
+REVIEW_ITEMS = 4
+REPORT_TERMS = 10
+REPORTS_PER_DAY = 3
+REPORT_LOOKBACK_DAYS = 30
 
 # Intake. A message first seen this long after it was written is recorded but
 # not answered: the platform redelivers what was missed while the machine slept.

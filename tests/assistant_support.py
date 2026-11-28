@@ -15,10 +15,10 @@ from typing import Any
 
 from briefing_skill.assistant import outbox
 from briefing_skill.assistant.config import AssistantConfig
-from briefing_skill.assistant.constants import CLUSTER_MAX_GAP_SECONDS, QUIET_SECONDS
+from briefing_skill.assistant.constants import CLUSTER_MAX_GAP_SECONDS, DEBOUNCE_SECONDS
 from briefing_skill.assistant.engine import Engine
 from briefing_skill.assistant.events import Trigger
-from briefing_skill.assistant.policy import RULES, Policy
+from briefing_skill.assistant.policy import Policy
 from briefing_skill.assistant.retrieval import ensure_index
 from briefing_skill.assistant.store import Store
 from briefing_skill.paths import discover_root
@@ -45,7 +45,7 @@ def _item(item_id: str, title: str, conclusion: str, keywords: list[str]) -> dic
     }
 
 
-ASSET_NAMES = ("assistant-refine", "assistant-assess", "assistant-card-copy")
+ASSET_NAMES = ("assistant-refine", "assistant-contribute", "assistant-card-copy")
 
 
 def repository(root: Path) -> Path:
@@ -144,8 +144,8 @@ class World:
         )
         self.policy()
 
-    def policy(self, *, explicit: bool = True, proactive: str = "off", **rules: bool) -> Policy:
-        policy = Policy(explicit=explicit, proactive=proactive, rules={rule_id: rules.get(rule_id, True) for rule_id in RULES})
+    def policy(self, *, explicit: bool = True, proactive: str = "auto") -> Policy:
+        policy = Policy(explicit=explicit, proactive=proactive)
         policy.save(self.store)
         return policy
 
@@ -196,78 +196,77 @@ class World:
     def outbox_rows(self) -> list[dict[str, Any]]:
         return self.store.fetchall("SELECT * FROM outbox ORDER BY created_at, id")
 
-    def discuss(self, lines: list[tuple[str, str]], *, root: str = "") -> list[dict[str, Any]]:
+    def discuss(self, lines: list[tuple[str, str]], *, root: str = "", advance: float = 1.0) -> list[dict[str, Any]]:
         """Unaddressed messages from several people inside one discussion."""
 
-        return [self.say(text, sender=sender, root=root) for sender, text in lines]
+        return [self.say(text, sender=sender, root=root, advance=advance) for sender, text in lines]
 
-    def quiet_discussion(
-        self, lines: list[tuple[str, str]], *, root: str = "", proactive: str = "auto", **rules: bool
-    ) -> dict[str, Any]:
-        """Start a discussion, let it go quiet and return the assessment task it produces."""
+    def look(self, lines: list[tuple[str, str]], *, root: str = "", proactive: str | None = None) -> dict[str, Any]:
+        """Hold a discussion, let the debounce pass and return the look it produces."""
 
-        self.policy(proactive=proactive, **rules)
+        if proactive is not None:
+            self.policy(proactive=proactive)
         if not root:
             self.new_topic()
         self.discuss(lines, root=root)
-        self.advance(QUIET_SECONDS + 1)
+        self.advance(DEBOUNCE_SECONDS + 1)
         self.engine.sweep()
-        tasks = self.tasks(kind="assess")
-        assert len(tasks) == 1, self.store.fetchall("SELECT decision, reason FROM dispositions")
-        return tasks[0]
+        looks = self.tasks(kind="contribute")
+        assert len(looks) == 1, self.store.fetchall("SELECT decision, reason FROM dispositions")
+        return looks[0]
 
-    def recommend(self, lines: list[tuple[str, str]], *, root: str = "") -> dict[str, str]:
-        """Take a discussion through assessment and delivery; return what was sent."""
+    def speak(self, lines: list[tuple[str, str]], *, root: str = "", act: str = "add") -> dict[str, str]:
+        """Take a discussion through a look and send what the stand-in session says; returns what was sent."""
 
-        task = self.quiet_discussion(lines, root=root)
-        assert self.apply(task, self.assessment(task))["outcome"] == "recommended"
+        task = self.look(lines, root=root)
+        assert self.apply(task, self.contribution(task, act=act))["outcome"] == "said", self.task_input(task)
         self.flush()
         return self.transport.sent[-1]
 
-    def assessment(
-        self, task: dict[str, Any], *, matched: tuple[str, ...] = ("prior_art",), doc_id: str | None = None,
-        quote: str | None = None, relevance: str = "high", reason: str = "理由",
-    ) -> dict[str, Any]:
-        payload = self.task_input(task)
-        texts = [message["text"] for message in payload["messages"]]
-        verbatim = next((text[:6] for text in reversed(texts) if len(text) >= 6), "")
-        return {
-            "schema_version": 1,
-            "_task": {"task_id": task["task_id"], "kind": "assess"},
-            "rules": [
-                {
-                    "rule_id": rule["id"],
-                    "matches": rule["id"] in matched,
-                    "evidence_quote": (quote or verbatim) if rule["id"] in matched else "",
-                    "reason": reason,
-                }
-                for rule in payload["rules"]
-            ],
-            "doc_id": doc_id if doc_id is not None else (payload["candidates"][0]["id"] if payload["candidates"] else None),
-            "relevance": relevance,
-        }
+    def contribution(self, task: dict[str, Any], *, act: str = "add", doc_id: str | None = None, quote: str | None = None,
+                     framing: str | None = None) -> dict[str, Any]:
+        """What a host session writes about a discussion: join in with a candidate, or stay silent."""
 
-    def refinement(self, task: dict[str, Any], ids: list[str] | None = None, *, none: bool = False, quote: str | None = None) -> dict[str, Any]:
         payload = self.task_input(task)
-        question = payload["question"]
-        chosen = ids if ids is not None else [payload["candidates"][0]["id"]] if payload["candidates"] else []
-        return {
-            "schema_version": 1,
-            "_task": {"task_id": task["task_id"], "kind": "refine"},
-            "queries": ["分层卸载", "KV offloading"],
-            "selected": [] if none else [{"doc_id": doc_id, "quote": quote or question[:4]} for doc_id in chosen],
-            "none_relevant": none,
-        }
+        verbatim = payload["messages"][-1]["text"][:6]
+        quote = quote or verbatim
+        output: dict[str, Any] = {"schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "contribute"}, "act": act}
+        if act == "add":
+            chosen = doc_id if doc_id is not None else payload["candidates"][0]["id"]
+            output.update(framing=framing or "日报库里有一条相关的：", quote=quote, items=[{"doc_id": chosen, "quote": quote}])
+        elif act == "review":
+            chosen = doc_id if doc_id is not None else payload["candidates"][0]["id"]
+            output.update(
+                framing=framing or "这个思路和日报库对照的结果：", quote=quote,
+                review={"closest_idea": None, "supporting": [{"doc_id": chosen, "quote": quote}], "counter": [], "missing": "库里没有对应内容"},
+            )
+        elif act == "gap":
+            output.update(quote=quote, gap={"summary": "讨论的要点", "nearest": None, "terms": ["新检索词"], "placement": "新建方向"})
+        return output
 
-    def careful_verdict(self, task: dict[str, Any], expect_any: list[str]) -> dict[str, Any]:
+    def careful_contribution(self, task: dict[str, Any], expect_any: list[str]) -> dict[str, Any]:
         """What a careful host session writes: cite the first candidate carrying an expected term, or stay silent."""
 
         payload = self.task_input(task)
         chosen = next(
-            (item for item in payload["candidates"] if any(term in f"{item['title']} {item.get('summary', '')}" for term in expect_any)),
+            (item for item in payload["candidates"] if any(term in f"{item['title']} {item.get('lead', '')}" for term in expect_any)),
             None,
         )
-        return self.assessment(task, matched=("prior_art",) if chosen else (), doc_id=chosen["id"] if chosen else None)
+        return self.contribution(task, act="add" if chosen else "none", doc_id=chosen["id"] if chosen else None)
+
+    def refinement(self, task: dict[str, Any], ids: list[str] | None = None, *, none: bool = False, quote: str | None = None,
+                   framing: str = "") -> dict[str, Any]:
+        payload = self.task_input(task)
+        question = payload["question"]
+        chosen = ids if ids is not None else [payload["candidates"][0]["id"]] if payload["candidates"] else []
+        output: dict[str, Any] = {
+            "schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "refine"}, "queries": ["分层卸载"],
+            "selected": [] if none else [{"doc_id": doc_id, "quote": quote or question[:4]} for doc_id in chosen],
+            "none_relevant": none,
+        }
+        if framing:
+            output["framing"] = framing
+        return output
 
     def apply(self, task: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
         Path(task["output_path"]).write_text(json.dumps(output, ensure_ascii=False), encoding="utf-8")

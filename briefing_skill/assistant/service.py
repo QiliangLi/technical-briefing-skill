@@ -144,7 +144,9 @@ class Service:
                     self.sleep(SERVICE_TICK_SECONDS)
         except Exception as exc:  # shown by `status`; the process must not linger half-started
             self.exit_code = 1
-            self.store.set_meta("service", {**self.store.get_meta("service", {}), "error": f"{type(exc).__name__}: {exc}"})
+            message = f"{type(exc).__name__}: {exc}"
+            self.store.set_meta("service", {**self.store.get_meta("service", {}), "error": message})
+            self._tell_owner(f"进程出错退出了，需要重新启动：{message}")
         finally:
             self._shutdown()
         return self.exit_code
@@ -333,15 +335,25 @@ class Service:
         self.store.set_meta("wakes", {day: count for day, count in wakes.items() if day == day_key(now)})
 
     def _refresh_members(self) -> None:
-        """Who may write to the assistant in a direct message: the members of its groups."""
+        """Who may write to the assistant in a direct message, and the names a report may use."""
 
-        members = {}
+        members, names = {}, dict(self.store.get_meta("member_names", {}))
         for chat_id in self.config.chat_whitelist:
             try:
-                members[chat_id] = self.client.members(chat_id)
+                found = self.client.members(chat_id)
             except lark.LarkError:
-                members[chat_id] = self.store.get_meta("members", {}).get(chat_id, [])
+                found = dict.fromkeys(self.store.get_meta("members", {}).get(chat_id, []), "")
+            members[chat_id] = list(found)
+            names.update(found)
         self.store.set_meta("members", members)
+        self.store.set_meta("member_names", names)
+
+    def _tell_owner(self, text: str) -> None:
+        """A last word to the owner before the process gives up; the outbox will not be flushed."""
+
+        owner = self.store.get_meta("report_to")
+        if owner:
+            self.transport.send(owner["chat_id"], "", f"群助手：{text}"[:1500], f"report:exit-{int(time.time())}", "report")
 
     # ---- consumers --------------------------------------------------------------
 
@@ -454,10 +466,10 @@ def overview(store: Store, root: Path, config: AssistantConfig, state_dir: Path,
             "bus_error": service.get("bus_error"),
         },
         "policy": {
-            "explicit": policy_meta.get("explicit", False),
-            "proactive": policy_meta.get("proactive", "off"),
-            "rules": policy_meta.get("rules", {}),
+            "explicit": policy_meta.get("explicit", True),
+            "proactive": policy_meta.get("proactive", "auto"),
             "muted_for_seconds": max(0, int((policy_meta.get("muted_until") or 0) - now)),
+            "report_to": (service.get("report_to") or {}).get("open_id"),
         },
         "index": {"input_digest": index.input_digest, "documents": index.n},
         "today": {
@@ -473,6 +485,7 @@ def overview(store: Store, root: Path, config: AssistantConfig, state_dir: Path,
             ),
         },
         "outbox": _counts(store, "SELECT status, COUNT(*) AS n FROM outbox GROUP BY status", "status"),
+        "reports": _counts(store, "SELECT kind, COUNT(*) AS n FROM reports GROUP BY kind", "kind"),
         "tasks": {
             **_counts(store, "SELECT status, COUNT(*) AS n FROM tasks GROUP BY status", "status"),
             "wakes": store.get_meta("wakes", {}).get(day_key(now), 0),

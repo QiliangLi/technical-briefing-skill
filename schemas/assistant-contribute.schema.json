@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Group assistant decision on one discussion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "_task", "act"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "_task": {
+      "type": "object",
+      "required": ["task_id", "kind"],
+      "properties": {
+        "task_id": {"type": "string", "minLength": 1},
+        "kind": {"const": "contribute"}
+      }
+    },
+    "act": {"enum": ["none", "add", "review", "gap"]},
+    "framing": {"type": "string", "minLength": 1, "maxLength": 200},
+    "quote": {"type": "string", "minLength": 2, "maxLength": 200},
+    "items": {"type": "array", "maxItems": 4, "items": {"$ref": "#/$defs/citation"}},
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["closest_idea", "supporting", "counter", "missing"],
+      "properties": {
+        "closest_idea": {"type": ["string", "null"], "maxLength": 200},
+        "supporting": {"type": "array", "maxItems": 2, "items": {"$ref": "#/$defs/citation"}},
+        "counter": {"type": "array", "maxItems": 2, "items": {"$ref": "#/$defs/citation"}},
+        "missing": {"type": "string", "minLength": 1, "maxLength": 200}
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "nearest", "terms", "placement"],
+      "properties": {
+        "summary": {"type": "string", "minLength": 1, "maxLength": 300},
+        "nearest": {"type": ["string", "null"], "maxLength": 200},
+        "terms": {"type": "array", "maxItems": 10, "items": {"type": "string", "minLength": 1, "maxLength": 60}},
+        "placement": {"type": "string", "minLength": 1, "maxLength": 200}
+      }
+    }
+  },
+  "$defs": {
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["doc_id", "quote"],
+      "properties": {
+        "doc_id": {"type": "string", "minLength": 1, "maxLength": 200},
+        "quote": {"type": "string", "minLength": 2, "maxLength": 200}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"act": {"const": "add"}}},
+      "then": {"required": ["framing", "quote", "items"], "properties": {"items": {"minItems": 1, "maxItems": 2}}}
+    },
+    {
+      "if": {"properties": {"act": {"const": "review"}}},
+      "then": {"required": ["framing", "quote", "review"]}
+    },
+    {
+      "if": {"properties": {"act": {"const": "gap"}}},
+      "then": {"required": ["quote", "gap"]}
+    }
+  ]
+}

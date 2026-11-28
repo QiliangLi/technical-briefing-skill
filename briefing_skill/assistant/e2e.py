@@ -20,10 +20,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..utils import read_json
-from . import lark, outbox
-from . import discussions
+from . import discussions, lark, outbox
 from .config import AssistantConfig, write_local_config
-from .constants import QUIET_SECONDS
+from .constants import DEBOUNCE_SECONDS
 from .engine import Engine
 from .feedback import card, card_json, load_ideas, stored_copy
 from .policy import Policy
@@ -36,15 +35,16 @@ LIVE_CHAT = "oc_37c6acf73d9ca25d346146d83c2297c5"
 PREFIX = "[E2E]"
 CONFIDENT = f"{PREFIX} KV cache 分层卸载怎么做"
 UNSURE = f"{PREFIX} 光交换机和 KV 卸载哪个更急"
-UNDER_CARD = f"{PREFIX} 这个方向我们组之前试过类似的，有没有先例"
-AGAIN = f"{PREFIX} 有没有人做过这个方向"
+OPENS_A_DISCUSSION = f"{PREFIX} 光交换机在智算中心到底值不值，尾延迟这块能好多少"
+JOINS_IT = f"{PREFIX} 主要是想和传统电交换比"
 AFTER_DISLIKE = f"{PREFIX} 再问一句，这一次不该再接话"
-REPLAY_SUITES = ("retrieval", "source", "recommend", "tasks", "lark", "service", "commands", "feedback")
+REPLAY_SUITES = ("retrieval", "source", "join", "tasks", "lark", "service", "commands", "feedback", "discussions")
 READY_TIMEOUT = 60
 REPLY_TIMEOUT = 8
-QUIET_TIMEOUT = QUIET_SECONDS + 30
+# A look is due DEBOUNCE_SECONDS after the first message; this leaves room for the sweep.
+LOOK_TIMEOUT = DEBOUNCE_SECONDS + 20
 # A discussion is given this long to be answered before it counts as silence.
-DISCUSSION_TIMEOUT = 150
+DISCUSSION_TIMEOUT = 120
 SOAK_PROBE_SECONDS = 300
 HEARTBEAT_LIMIT = 15
 LINK_ID = re.compile(r"#(?:archive\?date=[\d-]+&item=|ideas\?idea=|roadmaps\?topic=)([A-Za-z0-9_]+)")
@@ -90,8 +90,8 @@ class Live:
             self.step("a crash and a restart send nothing twice", lambda: self.s2_crash_restart(first["question"]))
             self.step("a mention inside the thread is answered in that thread", lambda: self.s3_thread(first["question"]))
             self.step("an uncertain question is refined, then answered", self.s4_refine)
-            card_message = self.step("a discussion under a card is assessed in observe and nothing is said", self.s5_card_observe)
-            self.step("in auto the same discussion gets one recommendation, and a dislike silences it", lambda: self.s6_auto_dislike(card_message))
+            opened = self.step("a discussion is looked at as soon as it opens, and observe says nothing", self.s5_look_observe)
+            self.step("in auto the assistant joins in its thread, and a dislike silences it", lambda: self.s6_join_dislike(opened["opener"]))
             self.step("the counts match the scenarios", self.s7_counts)
             report["ok"] = True
         except (E2EError, AssertionError) as exc:
@@ -194,11 +194,11 @@ class Live:
 
         thread = f"{LIVE_CHAT}:{root}"
         deadline = time.time() + timeout
-        settled_not_before = time.time() + QUIET_SECONDS + 10
+        settled_not_before = time.time() + LOOK_TIMEOUT
         while time.time() < deadline:
             if session == "stand-in":
-                for task in self.rows("SELECT * FROM tasks WHERE kind='assess' AND status='pending' AND thread_key=?", (thread,)):
-                    self.engine.apply_task(task["task_id"], self._verdict(task))
+                for task in self.rows("SELECT * FROM tasks WHERE kind='contribute' AND status='pending' AND thread_key=?", (thread,)):
+                    self.engine.apply_task(task["task_id"], self._contribution(task))
             sent = self.rows("SELECT text FROM outbox WHERE reply_to=? AND status='sent' ORDER BY created_at", (root,))
             if sent:
                 time.sleep(REPLY_TIMEOUT)  # let a second reply arrive before judging
@@ -256,7 +256,7 @@ class Live:
         self.store = Store(self.state / "assistant.sqlite")
         self.index, _ = ensure_index(self.root, self.config, self.state, created_at=iso(time.time()))
         self.engine = Engine(self.store, self.index, self.config, self.root, self.state)
-        Policy(explicit=True, proactive="observe").save(self.store)
+        Policy(explicit=True, proactive="auto").save(self.store)
         self.bot_id = lark.bot(self.config)["open_id"]
 
     def step(self, name: str, run: Callable[[], Any]) -> Any:
@@ -355,19 +355,30 @@ class Live:
     def _task_input(task: dict[str, Any]) -> dict[str, Any]:
         return read_json(Path(task["input_path"]), {})
 
-    def _verdict(self, task: dict[str, Any]) -> dict[str, Any]:
-        """What a host session would write for an assessment: the first rule matches and quotes the last message."""
+    def _refinement(self, task: dict[str, Any]) -> dict[str, Any]:
+        """What a host session writes for a refinement: the first candidate, quoted from the question."""
 
         payload = self._task_input(task)
-        quote = next((message["text"][:6] for message in reversed(payload["messages"]) if len(message["text"]) >= 6), "")
+        chosen = payload["candidates"][0]["id"]
         return {
-            "schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "assess"},
-            "rules": [
-                {"rule_id": rule["id"], "matches": index == 0, "evidence_quote": quote if index == 0 else "", "reason": "E2E stand-in session"}
-                for index, rule in enumerate(payload["rules"])
-            ],
-            "doc_id": payload["candidates"][0]["id"] if payload["candidates"] else None,
-            "relevance": "high",
+            "schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "refine"}, "queries": ["分层卸载"],
+            "selected": [{"doc_id": chosen, "quote": payload["question"][:6]}], "none_relevant": False,
+        }
+
+    def _contribution(self, task: dict[str, Any]) -> dict[str, Any]:
+        """What a host session writes for a discussion: join in with the first candidate, quoting the last message.
+
+        Built by rule, so it judges nothing; a reply it produces shows the plumbing works.
+        """
+
+        payload = self._task_input(task)
+        quote = payload["messages"][-1]["text"][:6]
+        if not payload["candidates"]:
+            return {"schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "contribute"}, "act": "none"}
+        return {
+            "schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "contribute"}, "act": "add",
+            "framing": f"关于「{quote}」，日报库里有一条相关的：", "quote": quote,
+            "items": [{"doc_id": payload["candidates"][0]["id"], "quote": quote}],
         }
 
     # ---- the scenarios ----
@@ -392,6 +403,7 @@ class Live:
         assert links and all(link.startswith(self.config.site_base_url) for link in links), answer["text"]
         ids = [match.group(1) for match in LINK_ID.finditer(" ".join(links))]
         assert all(any(doc["id"].endswith(doc_id) for doc in self.index.docs) for doc_id in ids), ids
+        assert within_limit(answer["text"], "answer")
         return {"question": question, "answer": answer["message_id"], "seconds": round(seconds, 1), "links": len(links)}
 
     def s2_crash_restart(self, question: str) -> dict[str, Any]:
@@ -416,66 +428,58 @@ class Live:
             "a refinement task", lambda: self.one("SELECT * FROM tasks WHERE trigger_id=? AND status='pending'", (f"feishu:{question}",)), REPLY_TIMEOUT
         )
         assert self.rows("SELECT 1 FROM outbox WHERE reply_to=?", (question,)) == [], "Something was said before the answer was ready"
-        payload = self._task_input(task)
-        chosen = payload["candidates"][0]["id"]
-        output = {
-            "schema_version": 1, "_task": {"task_id": task["task_id"], "kind": "refine"}, "queries": ["分层卸载"],
-            "selected": [{"doc_id": chosen, "quote": payload["question"][:6]}], "none_relevant": False,
-        }
-        result = self.engine.apply_task(task["task_id"], output)
+        result = self.engine.apply_task(task["task_id"], self._refinement(task))
         assert result["ok"], result
         answer = self.wait_for("the refined answer", lambda: self.sent_answer(question), REPLY_TIMEOUT + 5)
-        assert answer["text"].startswith("日报库里相关的：") and within_limit(answer["text"])
+        assert answer["text"].startswith("日报库里相关的：") and within_limit(answer["text"], "answer")
         return {"question": question, "answer": answer["message_id"]}
 
-    def s5_card_observe(self) -> str:
-        ideas = load_ideas(self.root)
-        idea = max(ideas.values(), key=lambda item: (len(item.get("evidence_for") or []), item["idea_id"]))
-        card_message = self._post_card(idea["idea_id"])
-
-        self.say(UNDER_CARD, reply_to=card_message)
+    def s5_look_observe(self) -> dict[str, Any]:
+        self._set_mode("observe")
+        opener = self.say(OPENS_A_DISCUSSION)
+        started = time.time()
         task = self.wait_for(
-            "the discussion under the card to be assessed", lambda: self.one("SELECT * FROM tasks WHERE kind='assess' AND status='pending'"), QUIET_TIMEOUT
+            "the discussion to be looked at", lambda: self.one("SELECT * FROM tasks WHERE kind='contribute' AND status='pending'"), LOOK_TIMEOUT
         )
-        payload = self._task_input(task)
-        assert payload["anchored_idea"]["id"] == f"idea:{idea['idea_id']}", payload.get("anchored_idea")
-        assert [message["sender"] for message in payload["messages"]] == ["同事 A"], payload["messages"]
-        assert self.engine.apply_task(task["task_id"], self._verdict(task))["outcome"] == "observe_would_accept"
+        looked_after = round(time.time() - started, 1)
+        result = self.engine.apply_task(task["task_id"], self._contribution(task))
+        assert result["outcome"] == "observe_would_say", result
         assert self.rows("SELECT 1 FROM outbox WHERE kind='recommendation'") == [], "Observe mode said something"
-        assert self.rows("SELECT mode, outcome FROM decisions WHERE kind='assess'") == [{"mode": "observe", "outcome": "observe_would_accept"}]
-        return card_message
+        return {"opener": opener, "looked_after_seconds": looked_after}
 
-    def s6_auto_dislike(self, card_message: str) -> dict[str, Any]:
-        policy = Policy.load(self.store)
-        policy.proactive = "auto"
-        policy.save(self.store)
-
-        self.say(AGAIN, reply_to=card_message)
+    def s6_join_dislike(self, opener: str) -> dict[str, Any]:
+        self._set_mode("auto")
+        self.say(JOINS_IT, reply_to=opener)
         task = self.wait_for(
-            "the discussion to be assessed again", lambda: self.one("SELECT * FROM tasks WHERE kind='assess' AND status='pending'"), QUIET_TIMEOUT
+            "the new message to be looked at", lambda: self.one("SELECT * FROM tasks WHERE kind='contribute' AND status='pending'"), LOOK_TIMEOUT + 30
         )
-        assert self.engine.apply_task(task["task_id"], self._verdict(task))["outcome"] == "recommended"
+        assert self.engine.apply_task(task["task_id"], self._contribution(task))["outcome"] == "said"
         recommendation = self.wait_for(
-            "the recommendation", lambda: self.one("SELECT * FROM outbox WHERE kind='recommendation' AND status='sent'"), REPLY_TIMEOUT + 5
+            "the reply in the thread", lambda: self.one("SELECT * FROM outbox WHERE kind='recommendation' AND status='sent'"), REPLY_TIMEOUT + 5
         )
-        assert recommendation["text"].startswith("这个方向") and recommendation["text"].count("[查看详情](") == 1
-        placed = [item for item in self.thread(card_message) if item["message_id"] == recommendation["message_id"]]
-        assert placed and placed[0]["root_id"] == card_message, "The recommendation left the card's thread"
+        assert recommendation["text"].startswith("关于「") and within_limit(recommendation["text"], "recommendation")
+        placed = [item for item in self.thread(opener) if item["message_id"] == recommendation["message_id"]]
+        assert placed and placed[0]["root_id"] == opener, "The reply left the discussion's thread"
 
         self.react(recommendation["message_id"], "ThumbsDown")
         self.wait_for("the dislike to be recorded", lambda: self.one("SELECT 1 FROM feedback WHERE message_id=?", (recommendation["message_id"],)), REPLY_TIMEOUT + 5)
-        assessed = len(self.rows("SELECT 1 FROM tasks WHERE kind='assess'"))
-        self.say(AFTER_DISLIKE, reply_to=card_message)
-        time.sleep(QUIET_TIMEOUT)
-        assert len(self.rows("SELECT 1 FROM tasks WHERE kind='assess'")) == assessed, "The discussion was assessed again after a dislike"
+        looked = len(self.rows("SELECT 1 FROM tasks WHERE kind='contribute'"))
+        self.say(AFTER_DISLIKE, reply_to=opener)
+        time.sleep(LOOK_TIMEOUT)
+        assert len(self.rows("SELECT 1 FROM tasks WHERE kind='contribute'")) == looked, "The discussion was looked at again after a dislike"
         assert self.rows("SELECT reason FROM dispositions WHERE reason='thread_muted'"), "The last message was not left alone because of the dislike"
         return {"recommendation": recommendation["message_id"]}
 
     def s7_counts(self) -> dict[str, Any]:
         sent = {row["kind"]: row["n"] for row in self.rows("SELECT kind, COUNT(*) AS n FROM outbox WHERE status='sent' GROUP BY kind")}
-        assert sent == {"answer": 3, "card": 1, "recommendation": 1}, sent
+        assert sent == {"answer": 3, "recommendation": 1}, sent
         assert self.rows("SELECT 1 FROM outbox WHERE status IN ('retry', 'failed', 'refused', 'gone')") == []
         assert [row["choice"] for row in self.rows("SELECT choice FROM feedback")] == ["down"]
         counts = {row["decision"]: row["n"] for row in self.rows("SELECT decision, COUNT(*) AS n FROM dispositions GROUP BY decision")}
-        assert counts == {"answered": 3, "silent": 1, "recommended": 1, "ignored": 1}, counts
+        assert counts == {"answered": 3, "spoken": 1, "silent": 1, "ignored": 1}, counts
         return {"sent": sent, "dispositions": counts}
+
+    def _set_mode(self, proactive: str) -> None:
+        policy = Policy.load(self.store)
+        policy.proactive = proactive
+        policy.save(self.store)

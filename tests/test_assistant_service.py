@@ -61,8 +61,8 @@ class FakeClient:
     def bot(self) -> dict[str, str]:
         return {"open_id": BOT, "app_name": "助手"}
 
-    def members(self, chat_id: str) -> list[str]:
-        return [ALICE]
+    def members(self, chat_id: str) -> dict[str, str]:
+        return {ALICE: "张三"}
 
     def transport(self) -> FakeTransport:
         return self.sender
@@ -387,7 +387,7 @@ def test_status_reads_the_ledger_without_touching_the_process(world):
     assert report["service"]["running"] and report["service"]["pid"] == os.getpid()
     assert {key: state["state"] for key, state in report["service"]["consumers"].items()} == dict.fromkeys(lark.EVENT_KEYS, "ready")
     assert report["service"]["heartbeat_age_seconds"] == 0
-    assert report["policy"] == {"explicit": True, "proactive": "off", "rules": {"prior_art": True, "related_evidence": True}, "muted_for_seconds": 0}
+    assert report["policy"] == {"explicit": True, "proactive": "auto", "muted_for_seconds": 0, "report_to": None}
     assert report["today"] == {"dispositions": {"answered": 1}, "sent": {"answer": 1}, "decisions": {"answer:answered": 1}}
-    assert report["outbox"] == {"sent": 1} and report["tasks"] == {"wakes": 0}
+    assert report["outbox"] == {"sent": 1} and report["tasks"] == {"wakes": 0} and report["reports"] == {}
     assert report["self_check"]["ok"] and report["index"]["documents"] == world.index.n
