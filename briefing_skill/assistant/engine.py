@@ -21,19 +21,19 @@ from .config import AssistantConfig
 from .constants import (
     ANCHORED_MIN_MESSAGES,
     ASSESS_CANDIDATES,
+    CARD_REACTIONS,
     CLUSTER_MAX_GAP_SECONDS,
     CLUSTER_WINDOW_SECONDS,
     CONTEXT_NEIGHBOURS,
     DAILY_PROACTIVE_CAP,
     DISLIKE_PAUSE_MIN_SAMPLES,
     DISLIKE_PAUSE_RATIO,
-    EMOJI_THUMBS_DOWN,
-    EMOJI_THUMBS_UP,
     EXPLICIT_RATE_PER_MINUTE,
     MESSAGE_CHAR_LIMIT,
     OBSERVE_COOLDOWN_SECONDS,
     QUIET_SECONDS,
     REFINE_CANDIDATES,
+    REPLY_REACTIONS,
     SHAPE_MIN_MESSAGES,
     SHAPE_MIN_SENDERS,
     STALE_SECONDS,
@@ -306,8 +306,9 @@ class Engine:
         for task in tasks.expire_stale(self.store, now):
             self._close(task, policy, now, "expired")
             closed += 1
+        # Card copy does not depend on the policy, so a mode change leaves it in flight.
         for task in self.store.fetchall("SELECT * FROM tasks WHERE status='pending'"):
-            if task["policy_version"] != policy.version:
+            if task["kind"] != "card_copy" and task["policy_version"] != policy.version:
                 self._close(task, policy, now, "policy_changed")
                 closed += 1
         assessed = self._evaluate_discussions(policy, now)
@@ -459,7 +460,7 @@ class Engine:
             return {"ok": False, "errors": [f"Task is already {task['status']}"]}
         payload = read_json(Path(task["input_path"]), {})
         errors = [output_error] if output_error else tasks.schema_errors(task["kind"], output or {}, self.root)
-        if task["policy_version"] != policy.version:
+        if task["kind"] != "card_copy" and task["policy_version"] != policy.version:
             errors.append("The policy changed after this task was created")
         if not errors:
             errors = self._semantic_errors(task, output or {}, payload)
@@ -609,19 +610,20 @@ class Engine:
     # ---- feedback ---------------------------------------------------------------
 
     def on_reaction(self, reaction: dict[str, Any], now: float | None = None) -> dict[str, Any]:
-        """Record a 👍 / 👎 on an assistant message. A 👎 also opts its discussion out."""
+        """Record a 👍 / 👎 on a reply or an idea card. A 👎 on a reply also opts its discussion out."""
 
         now = self.clock() if now is None else now
-        emoji = reaction.get("emoji") or ""
-        choice = {EMOJI_THUMBS_UP: "up", EMOJI_THUMBS_DOWN: "down"}.get(emoji)
-        message_id = reaction.get("message_id") or ""
-        if choice is None or reaction.get("operator_is_bot"):
+        emoji, message_id = reaction.get("emoji") or "", reaction.get("message_id") or ""
+        if reaction.get("operator_is_bot"):
             return {"recorded": False}
         # Outbox and registry have different columns, so look them up in turn.
-        message = self.store.fetchone("SELECT * FROM outbox WHERE message_id=?", (message_id,)) or self.store.fetchone(
-            "SELECT * FROM registry WHERE message_id=?", (message_id,)
-        )
+        reply = self.store.fetchone("SELECT * FROM outbox WHERE message_id=?", (message_id,))
+        card = None if reply else self.store.fetchone("SELECT * FROM registry WHERE message_id=?", (message_id,))
+        message = reply or card
         if message is None:
+            return {"recorded": False}
+        choice = (CARD_REACTIONS if card else REPLY_REACTIONS).get(emoji)
+        if choice is None:
             return {"recorded": False}
         feedback_id = f"{message_id}:{reaction.get('operator_id') or ''}:{choice}"
         with self.store.transaction() as connection:
@@ -634,11 +636,11 @@ class Engine:
                     feedback_id, message_id, message.get("idea_id") or None, choice, reaction.get("operator_id") or "", iso(now),
                 ),
             )
-            if choice == "down" and message.get("thread_key"):
+            if reply and choice == "down":
                 connection.execute(
-                    "UPDATE threads SET muted_at=? WHERE thread_key=? AND muted_at IS NULL", (iso(now), message["thread_key"])
+                    "UPDATE threads SET muted_at=? WHERE thread_key=? AND muted_at IS NULL", (iso(now), reply["thread_key"])
                 )
-        paused = self._pause_on_dislikes(now)
+        paused = self._pause_on_dislikes(now) if reply else 0
         return {"recorded": True, "choice": choice, "paused": paused}
 
     def on_card_action(self, action: dict[str, Any], now: float | None = None) -> dict[str, Any]:

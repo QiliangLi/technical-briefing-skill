@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from ..utils import now_iso, read_json
-from .commands import add_parsers
+from .commands import add_parsers, cmd_feedback
 from .common import context, emit, load_index
 from .eval import evaluate
 from .replies import compose_answer
@@ -86,6 +86,23 @@ def add_assistant_parser(top: argparse._SubParsersAction) -> None:
     add_parsers(actions)
 
 
+def add_feedback_parser(top: argparse._SubParsersAction) -> None:
+    isolated = argparse.ArgumentParser(add_help=False)
+    isolated.add_argument("--state-dir", help="use another state directory (tests and live end-to-end runs)")
+    parser = top.add_parser("feedback", parents=[isolated], help="idea cards: prepare, push with confirmation, collect and count verdicts")
+    actions = parser.add_subparsers(dest="feedback_action", required=True)
+
+    prepare = actions.add_parser("prepare", help="choose the ideas of an issue and queue their plain-language copy")
+    prepare.add_argument("--issue", required=True, help="issue date the cards are for, YYYY-MM-DD")
+    prepare.set_defaults(func=cmd_feedback)
+    push = actions.add_parser("push", help="send the cards of an issue; only with --confirm-send")
+    push.add_argument("--issue", required=True, help="issue date the cards are for, YYYY-MM-DD")
+    push.add_argument("--confirm-send", action="store_true")
+    push.set_defaults(func=cmd_feedback)
+    actions.add_parser("collect", help="reconcile the reactions on sent cards with the ledger").set_defaults(func=cmd_feedback)
+    actions.add_parser("status", help="verdicts per idea and the push history").set_defaults(func=cmd_feedback)
+
+
 def install_cli() -> None:
     from .. import cli as root_cli
 
@@ -98,6 +115,8 @@ def install_cli() -> None:
         top = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction))
         if "assistant" not in top.choices:
             add_assistant_parser(top)
+        if "feedback" not in top.choices:
+            add_feedback_parser(top)
         return parser
 
     root_cli.build_parser = build_parser

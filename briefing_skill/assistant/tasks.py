@@ -71,11 +71,15 @@ def create(
     """Write the task input, then its ledger row inside the caller's transaction.
 
     The caller owns the transaction so a task is committed together with the
-    decision that requested it.
+    decision that requested it. Returns ``None`` when an identical task
+    already exists: the ID is derived from the kind, its subject, the policy
+    and the second, so two requests in one second are one task.
     """
 
     spec = TASK_SPECS[kind]
     task_id = f"{kind}-{stable_hash(kind, trigger_id or thread_key or '', policy_version, int(now * 1000))[:16]}"
+    if connection.execute("SELECT 1 FROM tasks WHERE task_id=?", (task_id,)).fetchone():
+        return None
     directory = tasks_root(state_dir) / task_id
     input_path, output_path = directory / "input.json", directory / "output.json"
     envelope = {
@@ -103,8 +107,8 @@ def create(
     }
     connection.execute(
         """
-        INSERT OR IGNORE INTO tasks(task_id, kind, thread_key, trigger_id, status, policy_version,
-                                    created_ms, expires_ms, input_path, output_path)
+        INSERT INTO tasks(task_id, kind, thread_key, trigger_id, status, policy_version,
+                          created_ms, expires_ms, input_path, output_path)
         VALUES(:task_id, :kind, :thread_key, :trigger_id, :status, :policy_version,
                :created_ms, :expires_ms, :input_path, :output_path)
         """,

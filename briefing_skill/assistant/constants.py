@@ -64,3 +64,20 @@ DISLIKE_PAUSE_MIN_SAMPLES = 4
 
 EMOJI_THUMBS_UP = "THUMBSUP"
 EMOJI_THUMBS_DOWN = "ThumbsDown"
+# On a reply a reaction grades retrieval; on a card it is one of the four verdicts.
+# Feishu has no reaction emoji for the other two, so they exist only as buttons.
+REPLY_REACTIONS = {EMOJI_THUMBS_UP: "up", EMOJI_THUMBS_DOWN: "down"}
+CARD_REACTIONS = {EMOJI_THUMBS_UP: "worth_validating", EMOJI_THUMBS_DOWN: "not_promising"}
+CARD_CHOICES = {
+    "worth_validating": "值得投入验证",
+    "not_promising": "不看好",
+    "insufficient_evidence": "证据不足",
+    "prior_art_exists": "已有人做过",
+}
+
+# Idea cards. A card is the one message nobody asked for in the moment, so it
+# goes out only through an explicit confirmation and at most once a week.
+CARDS_PER_PUSH = 3
+PUSH_INTERVAL_DAYS = 7
+# An idea nobody answered is shown again only this long after its last showing.
+REVIVE_AFTER_DAYS = 28

@@ -36,6 +36,7 @@ CALL_TIMEOUT_SECONDS = 30
 HISTORY_PAGE_SIZE = 50
 HISTORY_MAX_PAGES = 4
 MEMBERS_PAGE_SIZE = 100
+REACTIONS_PAGE_SIZE = 50
 STOP_GRACE_SECONDS = 10
 # lark-cli accepts an idempotency key of at most 50 characters.
 WIRE_KEY_LENGTH = 46
@@ -161,6 +162,12 @@ def bot(config: AssistantConfig) -> dict[str, str]:
 
     data = run(config, "api", "GET", "/open-apis/bot/v3/info").get("data") or {}
     return {"open_id": str(data.get("open_id") or ""), "app_name": str(data.get("app_name") or "")}
+
+
+def reactions(config: AssistantConfig, message_id: str) -> list[dict[str, Any]]:
+    """Who reacted to a message and how; the source of truth when the ledger is reconciled."""
+
+    return _paged(config, f"/open-apis/im/v1/messages/{message_id}/reactions", {"user_id_type": "open_id", "page_size": REACTIONS_PAGE_SIZE})
 
 
 class LarkTransport:
@@ -325,6 +332,9 @@ class LarkClient:
 
     def records(self, *, container_type: str, container_id: str, start_ms: int) -> list[dict[str, Any]]:
         return records(self.config, container_type=container_type, container_id=container_id, start_ms=start_ms)
+
+    def reactions(self, message_id: str) -> list[dict[str, Any]]:
+        return reactions(self.config, message_id)
 
     def transport(self) -> LarkTransport:
         return LarkTransport(self.config)

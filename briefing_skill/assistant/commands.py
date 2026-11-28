@@ -10,14 +10,17 @@ import argparse
 import json
 import re
 import time
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from . import tasks
 from .common import context, emit, load_index
+from .feedback import FeedbackError
 from .config import AssistantConfigError, normalize_chat_id, write_local_chats
 from .engine import Engine
-from .lark import LarkClient
+from . import feedback
+from .lark import LarkClient, LarkTransport
 from .policy import MODES, RULES, Policy
 from .service import AlreadyRunning, Service, overview, request_stop
 from .store import Store
@@ -253,6 +256,32 @@ def cmd_stats(args: argparse.Namespace) -> int:
     _, _, state_dir = context(args)
     emit(stats(Store(state_dir / "assistant.sqlite"), args.days))
     return 0
+
+
+# ---- idea cards ----
+
+
+def cmd_feedback(args: argparse.Namespace) -> int:
+    root, config, state_dir = context(args)
+    store = Store(state_dir / "assistant.sqlite")
+    now = time.time()
+    try:
+        issue = date.fromisoformat(args.issue).isoformat() if getattr(args, "issue", None) else None
+        if args.feedback_action == "prepare":
+            result: dict[str, Any] = feedback.prepare(root, config, state_dir, store, issue, now)
+        elif args.feedback_action == "push":
+            result = feedback.push(
+                root, config, state_dir, store, issue, LarkTransport(config), confirm=args.confirm_send, now=now
+            )
+        elif args.feedback_action == "collect":
+            result = feedback.collect(store, LarkClient(config), now)
+        else:
+            result = feedback.summary(store)
+    except (ValueError, FeedbackError) as exc:
+        emit({"error": str(exc)})
+        return 1
+    emit(result)
+    return 1 if result.get("error") else 0
 
 
 # ---- parser ----

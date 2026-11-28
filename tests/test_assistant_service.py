@@ -192,7 +192,7 @@ def test_reaction_and_card_events_reach_the_ledger(world):
     assert run(world, 1) == 0
     assert world.store.fetchall("SELECT source, choice, idea_id, operator_id FROM feedback ORDER BY source") == [
         {"source": "button", "choice": "worth_testing", "idea_id": "idea_c", "operator_id": ALICE},
-        {"source": "reaction", "choice": "down", "idea_id": "idea_c", "operator_id": ALICE},
+        {"source": "reaction", "choice": "not_promising", "idea_id": "idea_c", "operator_id": ALICE},
     ]
 
 
