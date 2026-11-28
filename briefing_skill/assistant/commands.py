@@ -86,8 +86,8 @@ def _start_detached(root: Path, state_dir: Path) -> int:
     if pid_path.exists():
         pid = int(pid_path.read_text().strip() or 0)
         if pid and process_alive(pid):
-            emit({"error": f"assistant serve is already running (pid {pid})"})
-            return 1
+            emit({"started": False, "running": True, "pid": pid, "log": str(state_dir / "serve.log")})
+            return 0
     state_dir.mkdir(parents=True, exist_ok=True)
     log_path = state_dir / "serve.log"
     with log_path.open("a", encoding="utf-8") as log:

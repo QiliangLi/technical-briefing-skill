@@ -169,6 +169,12 @@ def direct_chat(config: AssistantConfig, open_id: str, text: str) -> dict[str, A
     ).get("data") or {}
 
 
+def patch_card(config: AssistantConfig, message_id: str, card: str) -> None:
+    """Replace a sent card's content, to show on its face what has been received."""
+
+    run(config, "im", "messages", "patch", "--message-id", message_id, "--data", json.dumps({"content": card}, ensure_ascii=False))
+
+
 def bot(config: AssistantConfig) -> dict[str, str]:
     """The bot's own identity; its messages are the assistant's and are never processed."""
 

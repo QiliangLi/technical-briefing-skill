@@ -157,20 +157,60 @@ def test_fb_08_the_copy_comes_from_a_session_task_and_the_card_is_built_from_it(
 
     push(world)
     sent = json.loads(world.transport.sent[-1]["text"])
+    assert sent["schema"] == "2.0"
     assert sent["header"] == {"title": {"tag": "plain_text", "content": "把同样的开头复制到多个节点"}, "template": "blue"}
-    assert [block["text"]["content"] for block in sent["elements"][:4]] == [
+    elements = sent["body"]["elements"]
+    assert [block["content"] for block in elements[:4]] == [
         "同样的开头被反复计算，复制一份就能少算。", "**为什么重要**：能省下重复的首包计算。",
         "**一条代表证据**：证据 0", f"**状态**：观察中，2026-10-01 起　[查看详情]({item['url']})",
     ]
-    assert sent["elements"][-1] == {
-        "tag": "action",
-        "actions": [
-            {"tag": "button", "text": {"tag": "plain_text", "content": "值得投入验证"}, "type": "primary", "value": {"choice": "worth_validating", "idea": "a"}},
-            {"tag": "button", "text": {"tag": "plain_text", "content": "不看好"}, "type": "default", "value": {"choice": "not_promising", "idea": "a"}},
-            {"tag": "button", "text": {"tag": "plain_text", "content": "证据不足"}, "type": "default", "value": {"choice": "insufficient_evidence", "idea": "a"}},
-            {"tag": "button", "text": {"tag": "plain_text", "content": "已有人做过"}, "type": "default", "value": {"choice": "prior_art_exists", "idea": "a"}},
-        ],
+    assert elements[-4:] == [
+        {"tag": "button", "text": {"tag": "plain_text", "content": "值得投入验证"}, "type": "primary_filled",
+         "behaviors": [{"type": "callback", "value": {"choice": "worth_validating", "idea": "a"}}]},
+        {"tag": "button", "text": {"tag": "plain_text", "content": "不看好"}, "type": "default",
+         "behaviors": [{"type": "callback", "value": {"choice": "not_promising", "idea": "a"}}]},
+        {"tag": "button", "text": {"tag": "plain_text", "content": "证据不足"}, "type": "default",
+         "behaviors": [{"type": "callback", "value": {"choice": "insufficient_evidence", "idea": "a"}}]},
+        {"tag": "button", "text": {"tag": "plain_text", "content": "已有人做过"}, "type": "default",
+         "behaviors": [{"type": "callback", "value": {"choice": "prior_art_exists", "idea": "a"}}]},
+    ]
+    assert len(elements) == 10  # no tally line before anything is received
+
+
+def test_every_card_button_calls_back(world):
+    """A card 1.0 button with only a ``value`` does nothing when pressed: the platform reports
+    that there is no callback for it. Every verdict button must carry a callback behaviour."""
+    publish(world, {"a": idea("a")})
+    feedback.push(world.root, world.config, world.state, world.store, ISSUE, world.transport, confirm=True, now=world.now)
+    sent = json.loads(world.transport.sent[-1]["text"])
+    buttons = [element for element in sent["body"]["elements"] if element["tag"] == "button"]
+    assert len(buttons) == 4
+    for button in buttons:
+        (behaviour,) = button["behaviors"]
+        assert behaviour["type"] == "callback" and set(behaviour["value"]) == {"choice", "idea"}
+        assert behaviour["value"]["choice"] in feedback.CARD_CHOICES and behaviour["value"]["idea"] == "a"
+
+
+def test_a_press_is_shown_on_the_card(world, monkeypatch):
+    patched = []
+    monkeypatch.setattr(feedback.lark, "patch_card", lambda config, message_id, card: patched.append((message_id, card)))
+    publish(world, {"a": idea("a")})
+    feedback.push(world.root, world.config, world.state, world.store, ISSUE, world.transport, confirm=True, now=world.now)
+    card_message = world.store.fetchone("SELECT message_id FROM registry")["message_id"]
+
+    world.engine.on_card_action({"message_id": card_message, "choice": "insufficient_evidence", "operator_id": "ou_x"})
+    world.engine.on_card_action({"message_id": card_message, "choice": "worth_validating", "operator_id": "ou_y"})
+    world.engine.on_reaction({"message_id": card_message, "emoji": "THUMBSUP", "operator_id": "ou_z"})
+    assert feedback.tally(world.store, card_message) == {
+        "worth_validating": 2, "not_promising": 0, "insufficient_evidence": 1, "prior_art_exists": 0
     }
+
+    assert feedback.refresh_card(world.store, world.root, world.config, card_message)
+    message_id, card = patched[-1]
+    assert message_id == card_message
+    closing = json.loads(card)["body"]["elements"][-1]
+    assert closing["content"] == "已收到 3 条反馈：值得投入验证 ×2，证据不足 ×1"
+    assert not feedback.refresh_card(world.store, world.root, world.config, "om_unknown")
 
 
 # ---- the ledger ----

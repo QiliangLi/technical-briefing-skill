@@ -17,6 +17,7 @@ from typing import Any
 from ..utils import read_json
 from . import lark, outbox, tasks
 from .config import AssistantConfig
+from .config import AssistantConfig
 from .constants import CARD_CHOICES, CARD_REACTIONS, CARDS_PER_PUSH, PUSH_INTERVAL_DAYS, REVIVE_AFTER_DAYS
 from .store import Store
 from .timeutil import iso
@@ -145,30 +146,76 @@ def card(idea: dict[str, Any], copy: dict[str, Any], site_base_url: str) -> dict
     }
 
 
-def card_json(item: dict[str, Any]) -> str:
-    """The card as Feishu card JSON 1.0: text blocks, then one button per verdict."""
+def _button(choice: str, label: str, idea_id: str, primary: bool) -> dict[str, Any]:
+    """A verdict button that calls back. Without ``behaviors`` a button does nothing when pressed."""
 
-    blocks = [
-        item["summary"],
-        f"**为什么重要**：{item['why_it_matters']}",
-        f"**一条代表证据**：{item['evidence']}",
-        f"**状态**：{item['status']}　[查看详情]({item['url']})",
+    return {
+        "tag": "button",
+        "text": {"tag": "plain_text", "content": label},
+        "type": "primary_filled" if primary else "default",
+        "behaviors": [{"type": "callback", "value": {"choice": choice, "idea": idea_id}}],
+    }
+
+
+def card_document(item: dict[str, Any], tally: dict[str, int] | None = None) -> dict[str, Any]:
+    """The card as Feishu card 2.0: what the idea is about, then one button per verdict.
+
+    ``tally`` adds a line under the buttons with what has been received so far,
+    so a press shows on the card that it was taken.
+    """
+
+    elements: list[dict[str, Any]] = [
+        {"tag": "markdown", "content": line}
+        for line in (
+            item["summary"],
+            f"**为什么重要**：{item['why_it_matters']}",
+            f"**一条代表证据**：{item['evidence']}",
+            f"**状态**：{item['status']}　[查看详情]({item['url']})",
+        )
     ]
-    buttons = [
-        {
-            "tag": "button", "text": {"tag": "plain_text", "content": label}, "type": "primary" if index == 0 else "default",
-            "value": {"choice": choice, "idea": item["idea_id"]},
-        }
-        for index, (choice, label) in enumerate(CARD_CHOICES.items())
-    ]
-    elements = [{"tag": "div", "text": {"tag": "lark_md", "content": block}} for block in blocks]
     elements += [
         {"tag": "hr"},
-        {"tag": "div", "text": {"tag": "lark_md", "content": "你怎么看？点一个按钮，也可以在这张卡片的话题里讨论。"}},
-        {"tag": "action", "actions": buttons},
+        {"tag": "markdown", "content": "你怎么看？点一个按钮，也可以在这张卡片的话题里讨论。"},
     ]
-    header = {"title": {"tag": "plain_text", "content": item["headline"]}, "template": "blue"}
-    return json.dumps({"config": {"wide_screen_mode": True}, "header": header, "elements": elements}, ensure_ascii=False)
+    elements += [
+        _button(choice, label, item["idea_id"], primary=index == 0) for index, (choice, label) in enumerate(CARD_CHOICES.items())
+    ]
+    received = sum((tally or {}).values())
+    if received:
+        counts = "，".join(f"{label} ×{(tally or {})[choice]}" for choice, label in CARD_CHOICES.items() if (tally or {}).get(choice))
+        elements.append({"tag": "markdown", "text_size": "notation", "content": f"已收到 {received} 条反馈：{counts}"})
+    return {
+        "schema": "2.0",
+        "header": {"title": {"tag": "plain_text", "content": item["headline"]}, "template": "blue"},
+        "body": {"direction": "vertical", "padding": "12px 12px 20px 12px", "elements": elements},
+    }
+
+
+def card_json(item: dict[str, Any], tally: dict[str, int] | None = None) -> str:
+    return json.dumps(card_document(item, tally), ensure_ascii=False)
+
+
+def tally(store: Store, message_id: str) -> dict[str, int]:
+    """Verdicts taken on one card: button presses and the two reactions that stand for verdicts."""
+
+    aliases = {"up": "worth_validating", "down": "not_promising"}
+    counts = dict.fromkeys(CARD_CHOICES, 0)
+    for row in store.fetchall("SELECT choice, COUNT(*) AS n FROM feedback WHERE message_id=? GROUP BY choice", (message_id,)):
+        counts[aliases.get(row["choice"], row["choice"])] = counts.get(aliases.get(row["choice"], row["choice"]), 0) + row["n"]
+    return counts
+
+
+def refresh_card(store: Store, root: Path, config: AssistantConfig, message_id: str) -> bool:
+    """Show on a sent card what has been received. Returns False when the card cannot be rebuilt."""
+
+    row = store.fetchone("SELECT idea_id FROM registry WHERE message_id=?", (message_id,))
+    idea = load_ideas(root).get(row["idea_id"]) if row else None
+    if idea is None:
+        return False
+    copy = store.get_meta("card_drafts", {}).get(idea["idea_id"]) or stored_copy(idea)
+    item = card(idea, copy, config.site_base_url)
+    lark.patch_card(config, message_id, card_json(item, tally(store, message_id)))
+    return True
 
 
 # ---- prepare and push ----

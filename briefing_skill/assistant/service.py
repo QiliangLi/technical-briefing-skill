@@ -36,6 +36,7 @@ from .constants import (
     THREAD_POLL_WINDOW_SECONDS,
     TICK_FAILURE_LIMIT,
 )
+from . import feedback
 from .engine import Engine
 from .events import Trigger, card_action, from_event, reaction
 from .retrieval import LexicalIndex, assess, ensure_index, is_stale
@@ -277,8 +278,14 @@ class Service:
                 self.engine.on_reaction(note, self.clock())
         else:
             action = card_action(event)
-            if action is not None:
-                self.engine.on_card_action(action, self.clock())
+            if action is not None and self.engine.on_card_action(action, self.clock())["recorded"]:
+                self._show_on_card(action["message_id"])
+
+    def _show_on_card(self, message_id: str) -> None:
+        try:
+            feedback.refresh_card(self.store, self.root, self.config, message_id)
+        except lark.LarkError:
+            pass  # the press is recorded; the card just could not be refreshed
 
     def _backfill(self, now: float) -> None:
         self._backfill_rounds += 1
