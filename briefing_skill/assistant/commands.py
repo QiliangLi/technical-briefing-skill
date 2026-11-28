@@ -19,7 +19,7 @@ from .common import context, emit, load_index
 from .feedback import FeedbackError
 from .config import AssistantConfigError, normalize_chat_id, write_local_config
 from .engine import Engine
-from . import e2e, feedback
+from . import discussions, e2e, feedback
 from .lark import LarkClient, LarkTransport
 from .policy import MODES, RULES, Policy
 from .service import AlreadyRunning, Service, overview, request_stop
@@ -290,13 +290,22 @@ def cmd_e2e(args: argparse.Namespace) -> int:
     root, _, _ = context(args)
     if not args.live:
         return e2e.replay(root)
+    if args.only and not args.discussions:
+        emit({"error": "--only narrows --discussions; add --discussions"})
+        return 2
     try:
         e2e.check_chat(args.chat)
-    except e2e.E2EError as exc:
+        scenarios = discussions.load(root, args.only.split(",") if args.only else None) if args.discussions else None
+    except (e2e.E2EError, ValueError) as exc:
         emit({"error": str(exc)})
         return 2
     live = e2e.Live(root)
-    report = live.soak(args.soak_minutes) if args.soak_minutes else live.run()
+    if scenarios is not None:
+        report = live.discuss(scenarios, session=args.session, session_wait=args.session_wait)
+    elif args.soak_minutes:
+        report = live.soak(args.soak_minutes)
+    else:
+        report = live.run()
     emit(report)
     return 0 if report["ok"] else 1
 
@@ -318,6 +327,10 @@ def add_parsers(actions: argparse._SubParsersAction) -> None:
     e2e_command.add_argument("--live", action="store_true", help="send real messages to the test group as the user")
     e2e_command.add_argument("--chat", help="the group for a live run; only the test group is accepted")
     e2e_command.add_argument("--soak-minutes", type=int, default=0, help="with --live: keep the process up and probe it instead of running the scenarios")
+    e2e_command.add_argument("--discussions", action="store_true", help="with --live: hold simulated discussions and judge the replies")
+    e2e_command.add_argument("--only", help="comma-separated scenario ids for --discussions")
+    e2e_command.add_argument("--session", choices=["stand-in", "manual"], default="stand-in", help="with --discussions: who executes the tasks")
+    e2e_command.add_argument("--session-wait", type=float, default=e2e.DISCUSSION_TIMEOUT, help="with --discussions: seconds to wait for each reply")
 
     mode = command("mode", "change what the assistant responds to", cmd_mode)
     mode_kind = mode.add_subparsers(dest="mode_kind", required=True)

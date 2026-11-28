@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from ..utils import read_json
 from . import lark, outbox
+from . import discussions
 from .config import AssistantConfig, write_local_config
 from .constants import QUIET_SECONDS
 from .engine import Engine
@@ -42,6 +43,8 @@ REPLAY_SUITES = ("retrieval", "source", "recommend", "tasks", "lark", "service",
 READY_TIMEOUT = 60
 REPLY_TIMEOUT = 8
 QUIET_TIMEOUT = QUIET_SECONDS + 30
+# A discussion is given this long to be answered before it counts as silence.
+DISCUSSION_TIMEOUT = 150
 SOAK_PROBE_SECONDS = 300
 HEARTBEAT_LIMIT = 15
 LINK_ID = re.compile(r"#(?:archive\?date=[\d-]+&item=|ideas\?idea=|roadmaps\?topic=)([A-Za-z0-9_]+)")
@@ -129,6 +132,120 @@ class Live:
         finally:
             self.stop()
         return report
+
+    def discuss(
+        self, scenarios: list[dict[str, Any]], *, session: str = "stand-in", session_wait: float = DISCUSSION_TIMEOUT
+    ) -> dict[str, Any]:
+        """Hold simulated discussions as the user and judge what the assistant says about each.
+
+        ``stand-in`` plays the host session by rule, so the run tests plumbing;
+        ``manual`` leaves the tasks to a real session and waits for it.
+        """
+
+        self._reset()
+        Policy(explicit=True, proactive="auto").save(self.store)
+        report: dict[str, Any] = {"mode": "discussions", "session": session, "results": []}
+        try:
+            self.start()
+            for scenario in scenarios:
+                report["results"].append(self._discuss_one(scenario, session, session_wait))
+        except (E2EError, AssertionError) as exc:
+            report["error"] = str(exc)
+        finally:
+            self.stop()
+        generated = time.time()
+        page = self.state / "discussion-report.md"
+        page.write_text(discussions.report(report["results"], session=session, generated_at=generated), encoding="utf-8")
+        report["passed"] = sum(1 for item in report["results"] if item["evaluation"]["ok"])
+        report["report"] = str(page)
+        report["ok"] = "error" not in report and report["passed"] == len(report["results"])
+        return report
+
+    def _discuss_one(self, scenario: dict[str, Any], session: str, session_wait: float) -> dict[str, Any]:
+        """Hold one discussion in a thread of its own, so neighbours cannot bleed into it.
+
+        The bot opens the thread with a title line, which it never reads back as
+        a message; under an idea card the card itself is the root.
+        """
+
+        started = time.time()
+        root = self._post_card(scenario["anchored_idea"]) if scenario.get("anchored_idea") else self._post_header(scenario["title"])
+        for index, line in enumerate(scenario["messages"]):
+            if index and scenario.get("gap_seconds"):
+                time.sleep(scenario["gap_seconds"])
+            self.say(line["text"], reply_to=root)
+        replies, why = self._await_replies(root, session, session_wait)
+        seconds = None
+        if replies:
+            first = self.one("SELECT sent_at FROM outbox WHERE reply_to=? AND status='sent' ORDER BY created_at LIMIT 1", (root,))
+            seconds = round(datetime.fromisoformat(first["sent_at"]).timestamp() - started, 1) if first else None
+        return {
+            **{key: scenario[key] for key in ("id", "title", "target", "speak", "messages", "coverage") if key in scenario},
+            "replies": replies, "seconds": seconds, "why_silent": why,
+            "evaluation": discussions.evaluate(scenario, replies, site_base_url=self.config.site_base_url),
+        }
+
+    def _await_replies(self, root: str, session: str, timeout: float) -> tuple[list[str], list[str]]:
+        """Wait for the assistant's replies to a discussion; silence comes with the ledger's reasons.
+
+        With a stand-in session, silence is final once every message has a settled
+        disposition and nothing is in flight, so the wait ends there.
+        """
+
+        thread = f"{LIVE_CHAT}:{root}"
+        deadline = time.time() + timeout
+        settled_not_before = time.time() + QUIET_SECONDS + 10
+        while time.time() < deadline:
+            if session == "stand-in":
+                for task in self.rows("SELECT * FROM tasks WHERE kind='assess' AND status='pending' AND thread_key=?", (thread,)):
+                    self.engine.apply_task(task["task_id"], self._verdict(task))
+            sent = self.rows("SELECT text FROM outbox WHERE reply_to=? AND status='sent' ORDER BY created_at", (root,))
+            if sent:
+                time.sleep(REPLY_TIMEOUT)  # let a second reply arrive before judging
+                break
+            if session == "stand-in" and time.time() >= settled_not_before and self._settled(thread, root):
+                break
+            time.sleep(2)
+        replies = [row["text"] for row in self.rows("SELECT text FROM outbox WHERE reply_to=? AND status='sent' ORDER BY created_at", (root,))]
+        reasons = [
+            f"{row['decision']}:{row['reason']}" for row in self.rows(
+                "SELECT decision, reason FROM dispositions WHERE thread_key=? ORDER BY rowid", (thread,)
+            ) if row["reason"] != "bot"  # the bot's own title line, read back from history
+        ]
+        return replies, [] if replies else reasons
+
+    def _settled(self, thread: str, root: str) -> bool:
+        """Nothing is waiting to be decided or sent for the discussion any more."""
+
+        decisions = {row["decision"] for row in self.rows("SELECT decision FROM dispositions WHERE thread_key=?", (thread,))}
+        undecided = decisions & {"pending", "evaluating"}
+        in_flight = self.one(
+            "SELECT COUNT(*) AS n FROM tasks WHERE thread_key=? AND status='pending'", (thread,)
+        )["n"]
+        unsent = self.one("SELECT COUNT(*) AS n FROM outbox WHERE reply_to=? AND status IN ('pending', 'retry')", (root,))["n"]
+        return not undecided and not in_flight and not unsent
+
+    def _post_header(self, title: str) -> str:
+        envelope = lark.run(self.config, "im", "+messages-send", "--chat-id", LIVE_CHAT, "--text", f"{PREFIX} 讨论场景：{title}")
+        return str(envelope["data"]["message_id"])
+
+    def _post_card(self, idea_id: str) -> str:
+        """One idea card in the test group; replies under it form an anchored discussion."""
+
+        idea = load_ideas(self.root)[idea_id]
+        now = time.time()
+        key = f"card:e2e:{idea_id}:{int(now)}"
+        with self.store.transaction() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO registry(message_id, idea_id, issue_date, pushed_at) VALUES(?, ?, 'e2e', ?)",
+                (outbox.PENDING_CARD + key, idea_id, iso(now)),
+            )
+            outbox.enqueue(
+                self.store, connection, key=key, kind="card", chat_id=LIVE_CHAT, reply_to="",
+                text=card_json(card(idea, stored_copy(idea), self.config.site_base_url)), thread_key=None, now=now,
+            )
+        assert outbox.flush(self.store, lark.LarkTransport(self.config), now)["sent"] == 1
+        return self.one("SELECT message_id FROM outbox WHERE id=?", (key,))["message_id"]
 
     # ---- plumbing ----
 
@@ -314,19 +431,7 @@ class Live:
     def s5_card_observe(self) -> str:
         ideas = load_ideas(self.root)
         idea = max(ideas.values(), key=lambda item: (len(item.get("evidence_for") or []), item["idea_id"]))
-        now = time.time()
-        key = f"card:e2e:{idea['idea_id']}"
-        with self.store.transaction() as connection:
-            connection.execute(
-                "INSERT INTO registry(message_id, idea_id, issue_date, pushed_at) VALUES(?, ?, 'e2e', ?)",
-                (outbox.PENDING_CARD + key, idea["idea_id"], iso(now)),
-            )
-            outbox.enqueue(
-                self.store, connection, key=key, kind="card", chat_id=LIVE_CHAT, reply_to="",
-                text=card_json(card(idea, stored_copy(idea), self.config.site_base_url)), thread_key=None, now=now,
-            )
-        assert outbox.flush(self.store, lark.LarkTransport(self.config), now)["sent"] == 1
-        card_message = self.one("SELECT message_id FROM registry WHERE idea_id=?", (idea["idea_id"],))["message_id"]
+        card_message = self._post_card(idea["idea_id"])
 
         self.say(UNDER_CARD, reply_to=card_message)
         task = self.wait_for(

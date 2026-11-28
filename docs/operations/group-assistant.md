@@ -158,3 +158,26 @@ python briefing.py assistant e2e --live --soak-minutes 720  # 长稳：常驻并
 
 同一天跑过一次 15 分钟的短时长稳：三个探针各回了一条，30 次心跳采样的最大
 间隔 5.7 秒，没有重试或失败的发送。过夜的长稳还没有跑。
+
+### 讨论模拟
+
+`eval/assistant-discussions.json` 里是一组合成的群聊讨论，每段写明它该不该
+说话、好的回复必须出现和不能出现哪些词，以及日报库对这段讨论有没有相关
+条目、前十名里检不检得到。测试以你的身份把讨论发进测试群，等它自动回复，
+再按这些标准检查：
+
+```bash
+python briefing.py assistant e2e --live --discussions                 # 全部场景，约 25 分钟
+python briefing.py assistant e2e --live --discussions --only small-talk,moe-expert-offload
+python briefing.py assistant e2e --live --discussions --session manual --session-wait 300
+```
+
+- 默认由替身会话执行任务：它按规则取第一条候选，不判断质量，所以这轮只测
+  管道通不通。`--session manual` 把任务留给真实会话，脚本等它执行完再看回复，
+  这样看到的才是真实的判断质量。
+- 每个场景结束写一行去向：没回复时带上原因，比如被哪道门槛挡下。
+- 跑完生成 `workspace/assistant-e2e/discussion-report.md`，逐个场景列出讨论、
+  回复和检查结果，留了人工评分的位置。自动检查只查引用和禁忌，接话是否中肯
+  要人来评。
+- 有场景没通过时退出码为 1。库里检不到的场景在功能改好之前不会通过，这是
+  预期的；它们正是用来盯这个问题的。

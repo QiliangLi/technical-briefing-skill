@@ -259,6 +259,13 @@ class World:
             "none_relevant": none,
         }
 
+    def careful_verdict(self, task: dict[str, Any], expect_any: list[str]) -> dict[str, Any]:
+        """What a careful host session writes: cite the first candidate carrying an expected term, or stay silent."""
+
+        payload = self.task_input(task)
+        chosen = next((item for item in payload["candidates"] if any(term in item["title"] for term in expect_any)), None)
+        return self.assessment(task, matched=("prior_art",) if chosen else (), doc_id=chosen["id"] if chosen else None)
+
     def apply(self, task: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
         Path(task["output_path"]).write_text(json.dumps(output, ensure_ascii=False), encoding="utf-8")
         return self.engine.apply_task(task["task_id"], output)
