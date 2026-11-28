@@ -8,6 +8,8 @@ import pytest
 
 from assistant_support import ALICE, BASE, BOT, CHAT, FakeTransport, World
 from briefing_skill.assistant import lark
+from briefing_skill.assistant import service as service_module
+from briefing_skill.assistant.constants import INDEX_RETRY_SECONDS, TICK_FAILURE_LIMIT
 from briefing_skill.assistant.retrieval import LexicalIndex
 from briefing_skill.assistant.service import AlreadyRunning, Service, overview, request_stop, self_check
 from briefing_skill.assistant.timeutil import iso
@@ -284,6 +286,55 @@ def test_stop_without_a_running_process_only_cleans_up(world):
     world.service.pid_path.write_text("999999999\n", encoding="utf-8")
     assert request_stop(world.state, timeout=0) == {"running": False, "stopped": True}
     assert not world.service.pid_path.exists()
+
+
+HALF_WRITTEN = "Expecting value: line 1 column 1 (char 0)"  # what a file looks like while a briefing run writes it
+
+
+def test_a_tick_that_reads_a_half_written_corpus_is_ridden_out(world, monkeypatch):
+    original = service_module.Engine.sweep
+    failures = []
+
+    def flaky(self) -> dict:
+        failures.append(1)
+        if len(failures) == 1:
+            raise ValueError(HALF_WRITTEN)
+        return original(self)
+
+    monkeypatch.setattr(service_module.Engine, "sweep", flaky)
+    assert run(world, 8) == 0
+    assert len(failures) >= 2 and world.store.get_meta("service")["tick_error"] is None
+
+
+def test_a_minute_of_failing_ticks_stops_the_process_with_the_reason(world, monkeypatch):
+    def broken(self) -> dict:
+        raise RuntimeError("ledger is locked")
+
+    monkeypatch.setattr(service_module.Engine, "sweep", broken)
+    assert run(world, TICK_FAILURE_LIMIT * 3) == 1
+    service = world.store.get_meta("service")
+    assert service["error"] == "RuntimeError: ledger is locked"
+    assert (service["tick_error"]["count"], service["tick_error"]["message"]) == (TICK_FAILURE_LIMIT, "RuntimeError: ledger is locked")
+
+
+def test_startup_waits_out_a_corpus_being_rewritten(world, monkeypatch):
+    attempts = []
+    real = service_module.ensure_index
+
+    def being_rewritten(root, config, state_dir, created_at=None):
+        attempts.append(1)
+        if len(attempts) <= 2:
+            raise ValueError(HALF_WRITTEN)
+        return real(root, config, state_dir, created_at=created_at)
+
+    monkeypatch.setattr(service_module, "ensure_index", being_rewritten)
+    world.service.sleep = world.advance
+    started = world.now
+    world.service._open()
+    try:
+        assert len(attempts) == 3 and world.now - started == 2 * INDEX_RETRY_SECONDS
+    finally:
+        world.service._shutdown()
 
 
 def test_a_stale_index_is_rebuilt_at_the_hourly_check(world):

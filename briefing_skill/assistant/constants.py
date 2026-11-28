@@ -56,6 +56,12 @@ THREAD_POLL_WINDOW_SECONDS = 7 * 24 * 3600
 SERVICE_TICK_SECONDS = 1
 STOP_TIMEOUT_SECONDS = 30
 INDEX_CHECK_INTERVAL_SECONDS = 3600
+# A briefing run rewrites the corpus in place while it publishes, so a read
+# can catch a file half written. One bad read is waited out; a minute of
+# failing ticks means the process will not recover by itself.
+STARTUP_RETRIES = 6
+INDEX_RETRY_SECONDS = 5
+TICK_FAILURE_LIMIT = 60
 
 # Self-check and retention.
 RETENTION_DAYS = 30

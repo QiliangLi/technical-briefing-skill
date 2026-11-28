@@ -24,13 +24,16 @@ from .constants import (
     CONSUMER_MIN_STABLE_SECONDS,
     CONSUMER_READY_TIMEOUT_SECONDS,
     INDEX_CHECK_INTERVAL_SECONDS,
+    INDEX_RETRY_SECONDS,
     RETENTION_DAYS,
     SERVICE_TICK_SECONDS,
     STOP_TIMEOUT_SECONDS,
     SWEEP_INTERVAL_SECONDS,
+    STARTUP_RETRIES,
     THREAD_POLL_EVERY,
     THREAD_POLL_MAX,
     THREAD_POLL_WINDOW_SECONDS,
+    TICK_FAILURE_LIMIT,
 )
 from .engine import Engine
 from .events import Trigger, card_action, from_event, reaction
@@ -125,8 +128,19 @@ class Service:
         try:
             self._open()
             with _signals(self._request_stop):
+                failures = 0
                 while not self._stop_requested():
-                    self._tick()
+                    try:
+                        self._tick()
+                    except Exception as exc:
+                        # Usually a corpus file caught while a briefing run was rewriting it.
+                        failures += 1
+                        self._note_tick_error(exc, failures)
+                        if failures >= TICK_FAILURE_LIMIT:
+                            raise
+                    else:
+                        failures = 0
+                        self._clear_tick_error()
                     self.sleep(SERVICE_TICK_SECONDS)
         except Exception as exc:  # shown by `status`; the process must not linger half-started
             self.exit_code = 1
@@ -136,7 +150,7 @@ class Service:
         return self.exit_code
 
     def _open(self) -> None:
-        self.index, _ = ensure_index(self.root, self.config, self.state_dir, created_at=iso(self.clock()))
+        self._load_index()
         identity = self.client.bot()
         self.bot_ids = {identity["open_id"]} - {""}
         self.engine = Engine(
@@ -150,6 +164,25 @@ class Service:
             "service",
             {"pid": os.getpid(), "started_at": iso(self.clock()), "bot": identity, "chats": list(self.config.chat_whitelist)},
         )
+
+    def _load_index(self) -> None:
+        """Build or load the index, waiting out a briefing run that is rewriting the corpus."""
+
+        for attempt in range(1, STARTUP_RETRIES + 1):
+            try:
+                self.index, _ = ensure_index(self.root, self.config, self.state_dir, created_at=iso(self.clock()))
+                return
+            except (ValueError, KeyError, OSError):
+                if attempt == STARTUP_RETRIES:
+                    raise
+                self.sleep(INDEX_RETRY_SECONDS)
+
+    def _note_tick_error(self, exc: Exception, failures: int) -> None:
+        self._publish_service(tick_error={"at": iso(self.clock()), "count": failures, "message": f"{type(exc).__name__}: {exc}"[:300]})
+
+    def _clear_tick_error(self) -> None:
+        if self.store.get_meta("service", {}).get("tick_error") is not None:
+            self._publish_service(tick_error=None)
 
     def _claim_pid_file(self) -> None:
         if self.pid_path.exists():
@@ -417,6 +450,7 @@ def overview(store: Store, root: Path, config: AssistantConfig, state_dir: Path,
             "chats": service.get("chats", []),
             "backfill": store.get_meta("backfill", {}),
             "error": service.get("error"),
+            "tick_error": service.get("tick_error"),
             "bus_error": service.get("bus_error"),
         },
         "policy": {

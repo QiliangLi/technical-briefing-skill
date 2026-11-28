@@ -44,6 +44,8 @@ python briefing.py assistant status
 - 停止的顺序是先关每个消费子进程的 stdin，过 10 秒还没退再发 SIGTERM，最后
   `lark-cli event stop` 关事件总线。不要 `kill -9`：总线会留在后台，要手动关。
 - 进程启动时读一次白名单，改了白名单要重启才生效。
+- 它和日报的端到端流程可以同时跑：对日报的产物只读，状态各管各的。日报在改写归档
+  或知识文件时它恰好去读，会等下一次巡检或重试，不会中断日报，也不会自己停掉。
 
 ## 会话循环
 
@@ -107,6 +109,7 @@ python briefing.py feedback status
 | 某项一直是 `restarting` 或 `starting` | lark-cli 没登录，或总线异常 | `lark-cli event status` 看；`lark-cli event stop` 后重启进程 |
 | 进程退出后 `lark-cli event status` 仍显示 running | 进程被强杀 | `lark-cli event stop` |
 | `self_check.problems` 提示索引过期 | 归档或知识更新了 | `assistant index build`；运行中的进程每小时自查并重建 |
+| `service.tick_error` 有内容 | 一次巡检出错了，通常是读到了日报流程正在改写的文件 | 不用处理，下一次巡检成功会清掉；连续失败一分钟进程才退出，原因在 `error` 里 |
 | `outbox` 里有 `retry` 或 `failed` | 发送失败，`last_error` 有原因 | 网络问题会自己重试五次；权限问题同第一行 |
 | `outbox` 里有 `gone` | 要回复的消息已删除 | 不用处理，不会重发 |
 | `backfill` 里 `failed: true` | 读群历史失败 | 看 `error`；游标不动，下一轮重读同一段 |

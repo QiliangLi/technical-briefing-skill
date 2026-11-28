@@ -8,6 +8,7 @@ The assistant is a separate process outside the briefing pipeline, in `briefing_
 - It binds no model API. Semantic work leaves the process as bounded task files for a host session, the same pattern as the pipeline.
 - All state lives under the ignored state directory, `workspace/assistant/` by default. The repository is public; group chat text never enters it. What a host session sees carries sender labels, never names or open IDs.
 - Nothing sends mail, and nothing posts to a group except through the outbox or an explicitly confirmed card push.
+- It reads the corpus in place while briefing runs may be rewriting it, and never writes to it. A failing read is waited out and repeated; only a minute of continuous failure stops the resident process.
 
 ## Corpus and index
 
