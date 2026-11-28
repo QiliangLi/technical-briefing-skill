@@ -101,7 +101,7 @@ class Engine:
         """Run one message through Source filters, admission and the answer path."""
 
         now = self.clock()
-        if trigger.sender_id in self.bot_ids:
+        if trigger.sender_id in self.bot_ids or self._is_own(trigger):
             return {"decision": "dropped_own"}
         open_to_assistant = trigger.is_direct or trigger.chat_id in self.config.chat_whitelist
         with self.store.transaction() as connection:
@@ -145,6 +145,14 @@ class Engine:
                         outcome = ("pending", "awaiting_shape")
             self._set_disposition(connection, trigger, thread_key, outcome[0], outcome[1], now)
         return {"decision": outcome[0], "reason": outcome[1]}
+
+    def _is_own(self, trigger: Trigger) -> bool:
+        """A message the assistant sent, read back from history under the app's ID rather than the bot's."""
+
+        return self.store.fetchone(
+            "SELECT 1 FROM outbox WHERE message_id=? UNION SELECT 1 FROM registry WHERE message_id=?",
+            (trigger.message_id, trigger.message_id),
+        ) is not None
 
     def members(self) -> set[str]:
         members: set[str] = set()

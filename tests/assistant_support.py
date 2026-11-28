@@ -152,10 +152,11 @@ class World:
     def trigger(
         self, text: str, *, sender: str = ALICE, mention: bool = False, root: str = "", chat: str = CHAT,
         direct: bool = False, via: str = "event", at: float | None = None, bot: bool | None = None,
+        message_id: str | None = None,
     ) -> Trigger:
         moment = self.now if at is None else at
         return Trigger(
-            message_id=f"om_{next(self.ids)}", chat_id=chat, sender_id=sender, created_ms=int(moment * 1000), text=text,
+            message_id=message_id or f"om_{next(self.ids)}", chat_id=chat, sender_id=sender, created_ms=int(moment * 1000), text=text,
             via=via, root_id=root, is_mention=mention, is_direct=direct, is_bot=(sender == BOT) if bot is None else bot,
         )
 

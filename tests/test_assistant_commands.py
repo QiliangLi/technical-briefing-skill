@@ -5,14 +5,16 @@ import time
 from pathlib import Path
 
 import pytest
+import yaml
 
 from assistant_support import ALICE, BOB, CHAT, World
 from briefing_skill import cli
-from briefing_skill.assistant import install_assistant, tasks
+from briefing_skill.assistant import e2e, install_assistant, tasks
 from briefing_skill.assistant.config import AssistantConfig
 from briefing_skill.assistant.engine import Engine
 from briefing_skill.assistant.events import Trigger
 from briefing_skill.assistant.policy import Policy
+from briefing_skill.paths import discover_root
 
 UNCERTAIN = "光交换机和 KV 卸载哪个更急"
 KV = [(ALICE, "KV cache 卸载到内存的方案怎么做"), (BOB, "有没有人做过分层卸载"), (ALICE, "我记得有篇讲 CXL 内存池的")]
@@ -138,3 +140,21 @@ def test_review_and_stats_summarise_a_shadow_period(world, capsys):
     assert counts["outbox"]["recommendation"] == {"sent": 1}
     assert counts["tasks"]["assess"] == {"applied": 2}
     assert counts["feedback"] == {} and counts["pauses"] == []
+
+
+# ---- the live run's guard rails ----
+
+
+def test_sec_03_the_live_run_refuses_every_group_but_the_test_group(world, capsys):
+    code, refused = run_cli(world, capsys, "e2e", "--live", "--chat", "oc_" + "7" * 32)
+    assert code == 2 and "refuses" in refused["error"]
+    assert not (world.state / "service.pid").exists() and world.transport.calls == 0
+    assert e2e.check_chat(None) == e2e.check_chat(e2e.LIVE_CHAT) == e2e.LIVE_CHAT
+    with pytest.raises(e2e.E2EError, match="refuses"):
+        e2e.check_chat("oc_" + "7" * 32)
+
+
+def test_sec_04_the_published_config_carries_no_test_switches():
+    data = yaml.safe_load((discover_root() / "config" / "group-assistant.yaml").read_text(encoding="utf-8"))
+    assert set(data) == {"site_base_url", "lark_cli", "working_hours", "working_days"}
+    assert data["site_base_url"] == "https://qiliangli.github.io/technical-briefing-skill/"

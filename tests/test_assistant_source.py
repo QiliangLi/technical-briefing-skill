@@ -26,6 +26,16 @@ def test_src_01_own_messages_are_dropped(world):
     assert world.store.fetchall("SELECT * FROM dispositions") == []
 
 
+def test_src_01_the_bots_own_card_read_back_from_history_is_dropped_too(world):
+    world.store.execute(
+        "INSERT INTO registry(message_id, idea_id, issue_date, pushed_at) VALUES('om_card', 'idea_c', '2026-10-01', '2026-10-06T10:00:00')"
+    )
+    # History shows the sender as the app, not as the bot's open_id.
+    own = world.say("", sender="cli_app", bot=True, message_id="om_card")
+    assert own["decision"] == "dropped_own" and world.store.fetchall("SELECT * FROM events") == []
+    assert world.say("另一台机器人的消息", sender="cli_other_bot", bot=True)["reason"] == "bot"
+
+
 def test_src_02_chats_outside_the_whitelist_are_blocked_and_keep_no_body(world):
     result = world.say(CONFIDENT, mention=True, chat=OTHER_CHAT)
     assert (result["decision"], result["reason"]) == ("blocked", "chat_not_whitelisted")

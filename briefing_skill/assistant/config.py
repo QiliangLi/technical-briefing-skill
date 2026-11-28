@@ -43,7 +43,7 @@ def normalize_chat_id(value: Any) -> str:
 
 @dataclass(frozen=True)
 class AssistantConfig:
-    site_base_url: str = "https://qiliangli.github.io/technical-briefing-skill/site/"
+    site_base_url: str = "https://qiliangli.github.io/technical-briefing-skill/"
     chat_whitelist: tuple[str, ...] = ()
     lark_cli: str = "lark-cli"
     working_start_hour: int = 9
@@ -92,11 +92,13 @@ class AssistantConfig:
         )
 
 
-def write_local_chats(state_dir: Path, chats: list[str]) -> None:
-    """Store the chat whitelist in the ignored local config."""
+def write_local_config(state_dir: Path, **settings: Any) -> None:
+    """Merge settings into the ignored local config; the chat whitelist is checked here."""
 
     path = state_dir / "config.local.yaml"
     data = _read_mapping(path)
-    data["chat_whitelist"] = [normalize_chat_id(chat) for chat in chats]
+    if "chat_whitelist" in settings:
+        settings["chat_whitelist"] = [normalize_chat_id(chat) for chat in settings["chat_whitelist"]]
+    data.update(settings)
     state_dir.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=True), encoding="utf-8")

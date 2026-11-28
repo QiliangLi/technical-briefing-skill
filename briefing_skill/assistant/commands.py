@@ -17,9 +17,9 @@ from typing import Any
 from . import tasks
 from .common import context, emit, load_index
 from .feedback import FeedbackError
-from .config import AssistantConfigError, normalize_chat_id, write_local_chats
+from .config import AssistantConfigError, normalize_chat_id, write_local_config
 from .engine import Engine
-from . import feedback
+from . import e2e, feedback
 from .lark import LarkClient, LarkTransport
 from .policy import MODES, RULES, Policy
 from .service import AlreadyRunning, Service, overview, request_stop
@@ -154,7 +154,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
         chats.append(chat_id)
     elif args.chat_action == "remove" and chat_id in chats:
         chats.remove(chat_id)
-    write_local_chats(state_dir, chats)
+    write_local_config(state_dir, chat_whitelist=chats)
     emit(
         {
             "chats": chats,
@@ -284,6 +284,23 @@ def cmd_feedback(args: argparse.Namespace) -> int:
     return 1 if result.get("error") else 0
 
 
+def cmd_e2e(args: argparse.Namespace) -> int:
+    """``e2e`` replays offline; ``e2e --live`` speaks to the test group as the user."""
+
+    root, _, _ = context(args)
+    if not args.live:
+        return e2e.replay(root)
+    try:
+        e2e.check_chat(args.chat)
+    except e2e.E2EError as exc:
+        emit({"error": str(exc)})
+        return 2
+    live = e2e.Live(root)
+    report = live.soak(args.soak_minutes) if args.soak_minutes else live.run()
+    emit(report)
+    return 0 if report["ok"] else 1
+
+
 # ---- parser ----
 
 
@@ -296,6 +313,11 @@ def add_parsers(actions: argparse._SubParsersAction) -> None:
     command("serve", "run the resident process until it is stopped", cmd_serve)
     command("stop", "stop the resident process", cmd_stop)
     command("status", "heartbeat, consumers, index, today's counts and the self-check", cmd_status)
+
+    e2e_command = command("e2e", "replay the offline suites; with --live, run against the test group as the user", cmd_e2e)
+    e2e_command.add_argument("--live", action="store_true", help="send real messages to the test group as the user")
+    e2e_command.add_argument("--chat", help="the group for a live run; only the test group is accepted")
+    e2e_command.add_argument("--soak-minutes", type=int, default=0, help="with --live: keep the process up and probe it instead of running the scenarios")
 
     mode = command("mode", "change what the assistant responds to", cmd_mode)
     mode_kind = mode.add_subparsers(dest="mode_kind", required=True)
