@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6fd51f65a129e9c56f02",
+  "identity": {
+    "problem_key": "gqa_eviction_budget_inflation_and_irreversible_loss",
+    "mechanism_key": "entropy_pooled_page_demotion_to_recallable_cold_tier",
+    "target_key": "paged_gqa_kv_serving_stack"
+  },
+  "idea_type": "solution_concept",
+  "title": "GQA熵池化页帧驱逐即降级：按构造保预算、按页降入可召回4比特冷层",
+  "problem": "GQA骨干的KV驱逐同时有两个未解失败面：其一，逐head独立驱逐迫使共享KV缓冲保留各head并集，实测缓存最多膨胀到预算的5.10倍（Page-EntroKV量化），说明驱逐粒度未对齐物理共享与硬件分配粒度时预算不可执行；其二，无论何种打分，硬驱逐不可逆删除使被逐内容彻底丢失——逐字复制任务得分0.8（KVFetch口径）、strict判据深度0召回仅0.00-0.33（Page-EntroKV口径）。任一单条记录只解决其中一个失败面。",
+  "hypothesis": "在PagedAttention引擎内把驱逐单元定为页帧：物理GQA组内以sink隔离的Rényi-2熵权重池化各head分数并投影到页帧（按构造保证热层预算恒为1.0倍），被逐页帧整体降入4比特量化可召回冷层而非删除，读指针检测到逐字复制时按位置后继预取换入热层——可在GQA模型上同时保持热层预算恒定与逐字/needle任务质量显著高于硬驱逐对照，冷层存储开销不超过1%、复制期时延开销不超过10%；若熵池化页选择在strict判据下召回质量仍塌陷、或页粒度降级与预取开销随上下文长度超线性增长，则页对齐降级只应作为预算敏感GQA serving的可选路径而非默认驱逐行为。",
+  "mechanism": "驱逐选择：在物理GQA组内用sink隔离的Rényi-2熵权重池化各head分数，再投影到PagedAttention页帧决定驱逐集，与硬件分配粒度对齐（Page-EntroKV）。驱逐执行：被选页帧经准入降入4比特量化可召回冷层而非删除，低可预测性字面片段得以保留；读指针检测到逐字复制时预取位置后继换入热层，热层容量恒定使单次预取开销与上下文长度无关（KVFetch）。",
+  "target": "GQA骨干PagedAttention serving引擎的页粒度KV驱逐与分层路径",
+  "expected_effect": "对照口径：Page-EntroKV熵池化页驱逐1008次测量预算恒为1.0（head独立驱逐并集开销最高5.10倍）、20%预算needle检索100%对平均池化0%；KVFetch条目级降级在RULER-16K、20%保留率下逐字任务从0.8恢复到78.4、均值较等预算对照高8.4分，代价约0.36%存储与复制期4.8%时延。组合目标是预算恒定1.0的同时逐字/needle任务保持可召回质量，具体幅度待验证。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "同期两条独立证据互补覆盖驱逐的两个失败面：Page-EntroKV（2026-11-11）量化GQA逐head驱逐预算膨胀至5.10倍并给出熵池化页对齐解法，但其驱逐仍是硬删除且strict召回塌陷；KVFetch（2026-11-11）证明驱逐即降级加读指针预取可修复不可逆损失，但其准入为条目级内容打分、不处理GQA页粒度预算。两线联合支持『熵池化页帧选择＋降级可召回冷层』这一任一单条记录未陈述的组合机制。"
+  },
+  "evidence": [
+    {
+      "item_id": "b31255edd83a780764e98b71",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.03135v1"
+      ],
+      "reason": "Page-EntroKV量化GQA逐head驱逐迫使共享KV缓冲保留并集、实测缓存最多膨胀到预算的5.10倍；其在物理GQA组内用sink隔离的Rényi-2熵权重池化各head分数、再投影到PagedAttention页帧驱逐，1008次测量预算恒为1.0、20%预算needle检索100%对平均池化0%（仅Qwen2.5-1.5B试点、无serving吞吐实测、strict判据下深度0召回仅0.00-0.33）。",
+      "independence_group": "arxiv:2610.03135"
+    },
+    {
+      "item_id": "56b69243c1dcf4c051e4d398",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.08811v1"
+      ],
+      "reason": "KVFetch证明驱逐即降级可修复不可逆删除损失：低可预测性字面片段经准入降入4比特量化冷层而非删除、读指针检测到逐字复制时预取位置后继换入热层且热层容量恒定，RULER-16K、20%保留率下Qwen2.5-7B逐字任务从0.8升至78.4、均值较等预算对照高8.4分、LongBench无回归，代价约0.36%存储与复制期4.8%时延（只修复续写不修复定位、Mistral-7B上增益仅1.66、2比特冷层塌陷、单作者在审且代码未公开）。",
+      "independence_group": "arxiv:2610.08811"
+    }
+  ],
+  "evidence_item_ids": [
+    "b31255edd83a780764e98b71",
+    "56b69243c1dcf4c051e4d398"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.03135v1",
+    "https://arxiv.org/abs/2610.08811v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.03135",
+    "arxiv:2610.08811"
+  ],
+  "unknowns": [
+    "Page-EntroKV仅Qwen2.5-1.5B试点、无serving吞吐实测，strict判据下深度0召回仅0.00-0.33",
+    "KVFetch为单作者在审且代码未公开，只修复续写不修复定位，Mistral-7B上增益仅1.66",
+    "页粒度与条目级准入的粒度失配（低可预测性字面片段跨页分布时整页降级的质量与开销）未验证",
+    "两法模型规模与负载口径不同（1.5B试点对7B RULER），未在同一框架对照，组合收益未知",
+    "2比特冷层已有塌陷先例，页级量化宽度边界未知"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "vLLM/SGLang类PagedAttention引擎内实现页粒度GQA熵池化打分、被逐页帧4比特量化降级冷层与读指针预取；Qwen2.5-1.5B（复现Page-EntroKV口径）与Qwen2.5-7B级（复现KVFetch口径）",
+    "inputs": [
+      "保留预算5%-20%扫描",
+      "冷层量化宽度4/3比特与页大小对齐扫描",
+      "RULER-16K逐字与定位任务、needle检索负载",
+      "GQA与MHA骨干对照"
+    ],
+    "baselines": [
+      "head独立驱逐硬删除（并集膨胀口径）",
+      "熵池化页驱逐硬删除（Page-EntroKV单级）",
+      "条目级准入降级冷层（KVFetch单级）",
+      "全量KV常驻（质量上界与开销下界参照）"
+    ],
+    "metrics": [
+      "热层预算比（构造上限1.0）",
+      "逐字与needle任务得分",
+      "冷层存储开销占比",
+      "复制期时延开销占比",
+      "serving吞吐与TTFT"
+    ],
+    "support_criteria": [
+      "热层预算恒为1.0的同时逐字/needle任务显著高于两种硬删除对照且整体均值不回归",
+      "冷层存储开销不超过1%、复制期时延开销不超过10%"
+    ],
+    "reject_criteria": [
+      "页粒度冷层召回质量塌陷到硬删除水平",
+      "页对齐或预取开销随上下文长度超线性增长抵消收益"
+    ],
+    "limitations": [
+      "原始证据分别限于1.5B单模型试点与7B单模型试点，均无serving级吞吐验证",
+      "未覆盖MoE与多模态骨干"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "页对齐预算保证与可召回冷层两条独立证据线互补，但分别限于Qwen2.5-1.5B试点与单作者在审的7B单模型试点，未在同一框架对照，先观察组合验证。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_18458bcb48f7ddff4d4c"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a0f155b7dba65a3e558a",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "页对齐预算保证与可召回冷层两条独立证据线互补，但分别限于Qwen2.5-1.5B试点与单作者在审的7B单模型试点，未在同一框架对照，先观察组合验证。",
+      "evidence_item_ids": [
+        "b31255edd83a780764e98b71",
+        "56b69243c1dcf4c051e4d398"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_58e60582ef7124082778",
+  "identity": {
+    "problem_key": "per_question_request_shared_kv_reread",
+    "mechanism_key": "parallel_prompt_streams_single_request",
+    "target_key": "single_gpu_sglang_shared_prefix_decode"
+  },
+  "idea_type": "solution_concept",
+  "title": "把同一长文档的多个问题并为单请求并行流，让共享文档KV每个解码步只读一次",
+  "problem": "对同一长文档提出多个问题时，逐问成请求使每个问题的请求在每个解码步都要重读整段文档KV，解码受显存带宽限制。",
+  "hypothesis": "若把针对同一长文档的P个问题并为单个请求的P条并行流共同解码，使每个解码步只读一次共享文档KV，并以注意力核内按流编号的掩码保持各答案只依赖文档与自己的问题，则可在不改变答案依赖关系的前提下把每步对共享文档KV的重复读取降为一次，从而加速共享长文档的多问解码。",
+  "mechanism": "把P个问题并为单请求的P条并行流；注意力核内按流编号的掩码保证各答案只依赖文档与自己的问题；解码步形状固定并捕获为CUDA图；在SGLang中仅增约80行。",
+  "target": "单GPU上SGLang推理引擎中共享长文档多问负载的解码路径（单一注意力后端）",
+  "expected_effect": "相对原生SGLang，CodeLlama-7B长文档多问负载上A100快3.7倍、A6000快5.9–6.0倍；GQA模型Qwen2.5为1.3–1.9倍。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-25",
+    "rationale": "Direct触发项单独给出完整的问题（同一长文档多问逐问成请求使每个解码步重读整段文档KV、解码受显存带宽限制）、机制（并为单请求的并行流、注意力核内按流编号掩码与CUDA图捕获）、目标（单GPU上SGLang的共享长文档多问解码）与可测效应（较原生SGLang的加速倍数），候选直接落在该记录的并行流合并机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "e0678313165756651d188df1",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.15130v1"
+      ],
+      "reason": "《Parallel Prompting让共享长文档多问解码只读一次KV缓存》给出机制与对照结果：对同一长文档的P个问题并为单请求的P条并行流，注意力核内按流编号的掩码保证各答案只依赖文档与自己的问题，解码步形状固定并捕获为CUDA图，SGLang中仅增约80行；CodeLlama-7B长文档多问负载上较原生SGLang快3.7倍（A100）至5.9–6.0倍（A6000），GQA模型Qwen2.5为1.3–1.9倍；前提是共享文档请求预先已知的离线批量，在线服务需调度器集成，且仅单GPU与单一注意力后端。",
+      "independence_group": "arxiv:2611.15130"
+    }
+  ],
+  "evidence_item_ids": [
+    "e0678313165756651d188df1"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.15130v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.15130"
+  ],
+  "unknowns": [
+    "仅单一arXiv独立组，无其他来源对该加速量级的独立复现或对照",
+    "收益以共享文档请求预先已知的离线批量为前提；在线到达、请求不预先已知时如何做调度器集成以及能保留多少收益未知",
+    "仅单GPU与单一注意力后端，多卡、多节点以及其他注意力后端下的收益未知",
+    "已发布证据只给出相对原生SGLang的加速倍数，未给出首token等待、重复Prefill与网络侧口径，对TPN核心场景的适用边界未建立",
+    "GQA模型Qwen2.5上的加速比明显低于CodeLlama-7B，差异来源在该记录中未说明",
+    "该证据本期已进入idea_08f0269ef7fd181c9968证据链但仅被定位为共享前缀共置收益的量级前提，独立成案还是并入该Idea需人工世系决定"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单GPU SGLang环境复现Parallel Prompting：把针对同一长文档的P个问题并为单请求的P条并行流，与逐问独立请求的原生SGLang解码及常规多问批处理对照，并补测在线到达（请求不预先已知）下经调度器集成的表现。",
+    "inputs": [
+      "同一长文档上的多问负载（问题数P各档位）",
+      "文档长度档位",
+      "CodeLlama-7B与Qwen2.5模型",
+      "预先已知的离线批量与在线到达两种到达模式"
+    ],
+    "baselines": [
+      "原生SGLang逐问成请求的解码",
+      "原生SGLang中多问同批但不合并为单请求的解码"
+    ],
+    "metrics": [
+      "相对原生SGLang的加速比",
+      "解码吞吐",
+      "TPOT",
+      "TTFT",
+      "答案质量（各答案只依赖文档与自己问题）",
+      "显存占用"
+    ],
+    "support_criteria": [
+      "在预先已知的离线批量多问负载上，加速比按证据量级复现（CodeLlama-7B为3.7倍以上，Qwen2.5为1.3倍以上）",
+      "答案质量与逐问独立请求时持平",
+      "相对常规多问批处理基线仍有可测加速，说明收益来自并行流合并而非单纯批处理",
+      "在线到达下经调度器集成后仍保留可测的加速"
+    ],
+    "reject_criteria": [
+      "加速在常规多问批处理基线下消失，说明收益来自批处理而非并行流合并",
+      "答案质量因流间掩码泄漏或解码步形状固定而下降",
+      "在线到达下调度器集成开销吞没收益"
+    ],
+    "limitations": [
+      "原始证据仅单GPU、单一注意力后端与离线批量场景",
+      "以上均为建议的验证检查，尚未执行"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且身份（问题/机制/目标三元组）区别于既有候选与Idea；但证据仅单一arXiv独立组，缺独立支持；适用边界限于共享文档请求预先已知的离线批量、单GPU与单一注意力后端，在线服务的调度器集成未验证，对TPN核心场景（网络侧KV调度）的适用边界未建立；且该记录本期已进入idea_08f0269ef7fd181c9968证据链但仅被定位为共享前缀共置收益的量级前提，该Idea的跨节点热度复制身份并未覆盖本候选的引擎内并行流合并机制，独立成案还是并入该Idea需人工世系决定。",
+  "related_candidate_ids": [
+    "candidate_c8e42d5d6235afa242f5"
+  ],
+  "related_idea_ids": [
+    "idea_08f0269ef7fd181c9968"
+  ],
+  "first_seen_issue": "2026-11-25",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_af87be8a0ee68cfeef8f",
+      "issue_date": "2026-11-25",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且身份（问题/机制/目标三元组）区别于既有候选与Idea；但证据仅单一arXiv独立组，缺独立支持；适用边界限于共享文档请求预先已知的离线批量、单GPU与单一注意力后端，在线服务的调度器集成未验证，对TPN核心场景（网络侧KV调度）的适用边界未建立；且该记录本期已进入idea_08f0269ef7fd181c9968证据链但仅被定位为共享前缀共置收益的量级前提，该Idea的跨节点热度复制身份并未覆盖本候选的引擎内并行流合并机制，独立成案还是并入该Idea需人工世系决定。",
+      "evidence_item_ids": [
+        "e0678313165756651d188df1"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

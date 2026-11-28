@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_b593def0a978f8a8de0e",
+  "identity": {
+    "problem_key": "per_request_kv_footprint_bounds_decode_pool_capacity",
+    "mechanism_key": "kv_overlap_single_storage_overlapping_views",
+    "target_key": "lossless_decode_kv_memory_and_saturated_pool_throughput"
+  },
+  "idea_type": "solution_concept",
+  "title": "K/V 可互推层合并单份存储加交叠视图读取的按请求省显存方案",
+  "problem": "每请求解码 KV 占用决定解码池能同时容纳的请求数与每步可解码的 token 数；Gemma 4 全局层的键与值可互推，开源引擎仍把 K、V 各存一份，这部分占用是不丢信息即可消除的存储冗余；而不改分页逻辑的现成降占用杠杆是低精度 KV，在 SM100 上以 TTFT 增 7-11% 换每 rank KV 显存减半（vLLM v0.32.0 PR 基准口径）。",
+  "hypothesis": "对存在等宽且可互推 K/V 层的模型，每 KV 头每 token 只存一行、K 与 V 以两个交叠视图读同一显存，可在不改分页内核、输出与原布局逐位一致的前提下，把 16 位下每请求解码 KV 内存缩小 1.34 至 1.40 倍，并在解码池饱和时把每步解码 token 数提高到 1.24 至 1.38 倍；若解码池不饱和则吞吐收益不出现、只剩等批量 4% 至 9% 的步速代价；若目标模型没有该结构或已启用 FP8 低精度 KV，则本方案不适用。",
+  "mechanism": "全局层每个 KV 头每 token 只存一行 640 值，K 视图取 0 至 511 段、V 视图取 128 至 639 段，原版分页内核以两个交叠视图读同一显存，无需新内核；省下的按请求解码 KV 占用扩大解码池可容纳的请求数，在池满时换成每步更多解码 token。",
+  "expected_effect": "16 位下每请求解码 KV 内存缩小 1.34 至 1.40 倍，输出与原布局算术仿真逐位一致、固定题集答案差异在噪声内（对照原证据 432 个答案仅 2 个不同）；解码池饱和时每步解码 token 数达到原引擎的 1.24 至 1.38 倍，等批量 eager 步慢 4% 至 9%；相对 FP8 低精度 KV 的增量在于不损失信息，但受模型结构与 16 位限制。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "d4b721befbfddff4ee664cd6",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.23035v1"
+      ],
+      "reason": "直接证据：vLLM 原型利用 Gemma 4 全局层键值可互推的等宽 K=V 结构，每 KV 头每 token 只存一行 640 值，K 视图取 0 至 511 段、V 视图取 128 至 639 段，原版分页内核经两个交叠视图读同一显存、无需新内核；与原布局算术仿真逐位一致，432 个答案仅 2 个不同且在噪声内，16 位下每请求解码 KV 内存缩小 1.34 至 1.40 倍，双 A100 上 16K 提示每步解码 token 数为原引擎 1.38 倍、8K 为 1.24 倍（依赖 Gemma 4 特有等宽 K=V 结构、仅 16 位缓存适用、等批量 eager 步慢 4% 至 9%）。"
+    },
+    {
+      "item_id": "03ef64972818234359298513",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://github.com/vllm-project/vllm/releases/tag/v0.32.0"
+      ],
+      "reason": "同类问题的替代杠杆证据：vLLM v0.32.0 把 FP8 等低精度 KVCache 按架构设为默认，PR 基准称 SM100 上每 rank KV 显存减半、吞吐增 2.3-5.5%、TTFT 增 7-11%（全部为 PR 基准且未给方法学、无命中率或利用率实测）；跨条目推断(inferred)：两者同属不改分页逻辑的 KV 密度杠杆，K=V 合并仅 16 位适用意味着按现有证据不能与 FP8 KV 叠加，其增量价值在于不损失信息，验证时须以 FP8 KV 为对照并先确认部署所用 KV 精度。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "自有模型是否存在等宽可互推的 K/V 层（原证据仅覆盖 Gemma 4 全局层）",
+    "与 FP8/NVFP4 低精度 KV 的叠加方式（原证据仅 16 位适用，vLLM v0.32.0 已把低精度 KV 按架构设为默认）",
+    "生产解码池是否常态饱和（吞吐收益只在池满时出现）",
+    "等批量 eager 步慢 4% 至 9% 的来源（访存布局还是视图开销）及其对能耗的影响",
+    "多机张量并行下交叠视图与分页块布局的兼容性"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "第一步只做静态审计、不需要推理：对自有模型检查点逐层核对 K/V 投影的输出宽度与可互推关系；动态验证用具备等宽 K=V 全局层的开源模型（Gemma 4 口径）配一款常规 GQA 模型作阴性对照，单机双卡 A100 级即可对齐原证据口径。",
+    "inputs": [
+      "自有模型逐层 K/V 投影宽度与可互推关系的审计结果",
+      "提示长度 8K/16K/32K（原证据覆盖 8K 与 16K）",
+      "KV 缓存精度：16 位（唯一适用档）与 FP8（确认不适用边界）",
+      "解码池饱和度扫描：并发请求数从半池到满池，按 KV 块占用水位判定",
+      "原布局与合并布局使用同一批提示、同一随机种子的固定题集（不少于 432 题）与逐 token logits 抓取"
+    ],
+    "baselines": [
+      "原引擎 K、V 分存布局（同一 vLLM 版本、同一分页内核）",
+      "原布局的算术仿真输出（逐位一致比对基线）",
+      "FP8 低精度 KV（vLLM v0.32.0 默认口径，每 rank KV 显存减半但 TTFT 增 7-11%）"
+    ],
+    "metrics": [
+      "每请求解码 KV 内存与每 KV 头每 token 存储值个数",
+      "logits 逐位一致率与固定题集答案一致率",
+      "解码池饱和时每步解码 token 数与解码吞吐",
+      "等批量 TTFT 与 TPOT 相对原布局的变化",
+      "同一显存下可容纳的并发请求数"
+    ],
+    "support_criteria": [
+      "静态审计确认自有模型存在至少一组等宽可互推的 K/V 层",
+      "合并布局与原布局算术仿真逐位一致、答案差异在噪声内",
+      "16 位下每请求解码 KV 内存缩小不少于 1.3 倍",
+      "解码池饱和时每步解码 token 数不低于原引擎的 1.2 倍，且等批量 TPOT 劣化不超过 10%"
+    ],
+    "reject_criteria": [
+      "自有模型不存在可互推的等宽 K/V 层，杠杆不可用",
+      "出现逐位不一致或答案质量下降超出噪声",
+      "生产解码池长期不饱和，吞吐收益不出现而只剩步速劣化",
+      "目标部署已用 FP8 低精度 KV 且无法叠加，合并存储无增量"
+    ],
+    "limitations": [
+      "原证据依赖 Gemma 4 特有的等宽 K=V 结构且仅 16 位缓存适用，结论不能外推到其他架构",
+      "原证据为双 A100 上的原型测量，未覆盖多机张量并行与长于 16K 的提示",
+      "等批量 eager 步慢 4% 至 9% 的成因未在证据中说明，能耗影响未测",
+      "自有模型的结构审计尚未进行，适用性未知"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-10-27",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_4f621fd2640d703871df",
+      "issue_date": "2026-11-25",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据已发布证据新建 Idea：vLLM 原型把 Gemma 4 全局层 K=V 缓存经交叠视图合并为单份存储，16 位下每请求解码 KV 内存缩小 1.34 至 1.40 倍且输出与原布局逐位一致，解码池满时每步解码 token 数为原引擎 1.24 至 1.38 倍；vLLM v0.32.0 的 FP8 低精度 KV 作为同类问题的替代杠杆入证，用以界定其不损失信息但仅 16 位适用的增量边界。",
+      "evidence_item_ids": [
+        "d4b721befbfddff4ee664cd6",
+        "03ef64972818234359298513"
+      ]
+    }
+  ]
+}

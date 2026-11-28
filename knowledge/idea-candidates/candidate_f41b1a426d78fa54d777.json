@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_f41b1a426d78fa54d777",
+  "identity": {
+    "problem_key": "profile_wrap_scoring_prefill_dominance",
+    "mechanism_key": "trained_writer_reusable_profile_kv_re_rotation",
+    "target_key": "llm_recommender_scoring_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "把用户画像KV化并在新位置重旋转复用以消除推荐打分路径重复Prefill",
+  "problem": "LLM推荐器把用户画像以文本形式存放，打分请求中画像被不同前置文本包裹，前缀缓存只能回收开头的指令段，打分路径prefill占引擎工作量86%，画像级重复重算成为推荐服务的吞吐瓶颈。",
+  "hypothesis": "把画像更新解码改为由冻结reader加LoRA写入器同步产出可复用KV、打分调用在新上下文位置直接读取并以re-rotation修正位置误差，可在画像被动态上下文包裹的推荐打分负载上把饱和吞吐较全量prefill提升3倍以上且NDCG@10持平；若写入器逐数据集训练且跨域不迁移的缺陷或KV每token 128KiB的存储成本使总拥有成本不成立，则该机制只应限于离线批量打分而不进入在线服务路径。",
+  "mechanism": "冻结reader只训LoRA写入器，画像更新解码时同步产出可复用KV；打分调用在新位置直接读取画像KV，位置误差由re-rotation修正，绕开对同一画像的重复prefill。",
+  "target": "LLM推荐服务引擎的打分路径（画像KV缓存层）",
+  "expected_effect": "单张MI300X上打分路径饱和吞吐较全量prefill提升3.96×–4.49×，画像更新路径1.43×–1.91×，NDCG@10与文本画像基线持平。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "6f9f030feea772db2218d230",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.21920v1"
+      ],
+      "reason": "《KVUse将LLM推荐用户画像改为可复用KVCache》为直接证据：给出问题（画像以文本存放、被不同前置文本包裹使前缀缓存仅能回收开头指令段、打分路径prefill占引擎工作量86%）、机制（冻结reader只训LoRA写入器、画像更新解码时同步产出可复用KV、打分调用在新位置直接读取并以re-rotation修正位置误差）与MI300X实测效应（打分路径饱和吞吐3.96×–4.49×、画像更新1.43×–1.91×、NDCG@10持平）。",
+      "independence_group": "arxiv:2611.21920"
+    }
+  ],
+  "evidence_item_ids": [
+    "6f9f030feea772db2218d230"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.21920v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.21920"
+  ],
+  "unknowns": [
+    "写入器需逐数据集训练且跨域多不迁移",
+    "上传隐藏仅适用离线批任务，在线打分路径未验证",
+    "KV每token达128KiB远大于文本，存储成本未纳入总拥有成本口径",
+    "仅单张MI300X与单一推荐域评测，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部推荐打分负载上实现冻结reader加LoRA写入器的画像KV产出与新位置读取（含re-rotation），与文本画像全量prefill及现有前缀缓存对比。",
+    "inputs": [
+      "内部用户行为序列画像数据",
+      "冻结reader与LoRA写入器训练流程",
+      "画像KV存储与新位置读取路径"
+    ],
+    "baselines": [
+      "文本画像全量prefill",
+      "现有前缀缓存（仅回收开头指令段）"
+    ],
+    "metrics": [
+      "打分路径饱和吞吐",
+      "画像更新路径吞吐",
+      "NDCG@10等推荐质量指标",
+      "KV存储开销（每token字节）"
+    ],
+    "support_criteria": [
+      "打分路径吞吐提升≥3×且推荐质量与文本画像基线持平（NDCG@10差在噪声带内）",
+      "计入KV存储与写入器训练成本后总拥有成本低于全量prefill方案"
+    ],
+    "reject_criteria": [
+      "写入器跨数据集迁移失败使逐数据集训练成本超过吞吐收益",
+      "在线打分路径质量回退或KV存储成本超出预算"
+    ],
+    "limitations": [
+      "原始评测仅单张MI300X与单一推荐域",
+      "原始边界自陈写入器跨域多不迁移、上传隐藏仅适用离线批任务"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且与既有候选及Idea身份不同（idea_3957174660eb8129b82b仅将其作为非前缀复用可行性的跨域证据、自陈不触及修复区间变量），但仅arxiv:2611.21920一个独立性组支持，且写入器逐数据集训练、跨域多不迁移、上传隐藏仅适用离线批任务与KV每token 128KiB存储成本的适用边界待内部负载验证。",
+  "related_candidate_ids": [
+    "candidate_e224444277282cc28aed"
+  ],
+  "related_idea_ids": [
+    "idea_3957174660eb8129b82b"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_574dd0e8ed15a27e9070",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且与既有候选及Idea身份不同（idea_3957174660eb8129b82b仅将其作为非前缀复用可行性的跨域证据、自陈不触及修复区间变量），但仅arxiv:2611.21920一个独立性组支持，且写入器逐数据集训练、跨域多不迁移、上传隐藏仅适用离线批任务与KV每token 128KiB存储成本的适用边界待内部负载验证。",
+      "evidence_item_ids": [
+        "6f9f030feea772db2218d230"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

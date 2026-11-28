@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_70120e48c8679fa0c917",
+  "identity": {
+    "problem_key": "phase_agnostic_moe_expert_residency_waste",
+    "mechanism_key": "phase_conditioned_expert_residency_replanning",
+    "target_key": "capacity_limited_moe_expert_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "按执行相位重规划MoE专家驻留：阶段边界缓存管理与预填充/解码分相位布局的跨期合成",
+  "problem": "容量受限硬件上的MoE推理中，专家激活集合随执行相位系统性变化（CoT推理各阶段、预填充与解码），而专家驻留没有以相位为管理粒度：按token粒度管理专家缓存带来高占比的簿记开销与碎片化的小内核（SAEM记录中簿记开销占比由54.2%降到40.0%），不区分相位的驻留布局则要同时服务两种相位。",
+  "hypothesis": "MoE专家激活集合在相位内连贯、在相位边界发生系统性切换；因此在相位边界重规划专家驻留与布局（而非逐token追踪或保持相位无关的静态布局），可减少容量受限硬件上的专家搬运与换页并压低簿记开销，从而取得高于相位无关基线的吞吐。",
+  "mechanism": "把专家驻留管理的粒度从token改为相位，在相位边界检测切换并重规划该相位内的专家驻留与布局：SAEM用话语线索检测CoT推理的阶段边界、记录每层专家激活模式（EAP），按阶段边界管理专家缓存，并以专家对齐的token重打包消除碎片kernel；Tideway按预填充与解码两相位分别维护专家布局，把显存加内存并成统一池并由驻留表跨层去重专家。",
+  "target": "容量受限硬件（GPU加CPU内存层级、消费级PC）上大MoE推理的专家缓存与驻留布局。",
+  "expected_effect": "SAEM：两个推理MoE模型在MATH-500上较最强基线平均1.33倍吞吐（校准匹配1.54倍），簿记开销占比由54.2%降到40.0%。Tideway：RTX 5090加16–128GiB内存上端到端较最强基线平均1.97倍、最高3.18倍，TTFT平均2.40倍、TPOT约1.61倍。两者均为系统级总量，分相位管理本身的单独贡献未拆解。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-25",
+    "rationale": "Synthesis任务（ai_chip_accelerator，2026-11-25）在四条触发记录与同Topic已发布证据之间查找跨记录联合机理。触发记录60c8ba8630635de9b8152f26（Tideway，2026-11-25）按预填充与解码两相位维护不同专家布局；跨期记录bb2b2fe1727d566adf827248（SAEM，2026-08-29）按CoT推理阶段边界而非token粒度管理专家缓存。两条记录以不同相位定义给出同一机制——以相位为粒度重规划专家驻留与布局，该跨相位定义的机制无任何单条记录陈述，构成跨期合成；两者为不同arXiv论文（arxiv:2611.14848与arxiv:2608.21614），不是同一工作的重复报道。idea_15ffa6ef1f0591976613虽已把两条记录收录为evidence_for，但其机理为分层驻留、流式换入、I/O计算重叠与逐专家代价选择执行位置，其unknowns明确把『阶段可预测性相对盲分层流式的增量收益』与『Tideway阶段化布局相对SSD专家流水线的增量收益』列为未量化，即该机制未被其陈述。其余三条触发记录与已发布证据之间未发现记录共同支持的联合机理，其单记录身份判断由各自Direct任务承担。"
+  },
+  "evidence": [
+    {
+      "item_id": "60c8ba8630635de9b8152f26",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.14848v1"
+      ],
+      "reason": "《Tideway以阶段感知分层内存支撑消费级PC上的大MoE推理》提供预填充/解码相位条件化布局的实例：现有引擎把显存、内存与SSD当作独立缓存而反复换页，Tideway按预填充与解码阶段维护不同布局并去重专家（显存加内存构成统一池、SSD仅作出核后备、驻留表跨层去重专家、分段CUDA图在换页时保留图回放），在RTX 5090加16–128GiB内存上端到端较最强基线平均1.97倍、最高3.18倍，TTFT平均2.40倍、TPOT约1.61倍；边界为单卡RTX 5090与三个MoE模型、无功耗数据、逐项最快基线的身份未披露。单版本arXiv预印本，独立分组arxiv:2611.14848。该条本期已被idea_15ffa6ef1f0591976613作为同机理证据收录（evidence_added），本候选取其相位化布局要素；其收益为系统级总量，分相位布局的单独贡献未拆解。",
+      "independence_group": "arxiv:2611.14848"
+    },
+    {
+      "item_id": "bb2b2fe1727d566adf827248",
+      "issue_date": "2026-08-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.21614v1"
+      ],
+      "reason": "《SAEM：CoT推理的阶段感知MoE专家管理》提供推理阶段条件化缓存管理的实例：CoT推理各阶段呈连贯可预测的专家激活模式，SAEM用话语线索检测阶段边界并记录每层专家激活模式EAP，按阶段边界而非token粒度管理专家缓存，配合专家对齐的token重打包消除碎片kernel，非驻留专家比较PCIe传输与CPU直执行择优；两个推理MoE模型在MATH-500上较最强基线平均1.33倍吞吐（校准匹配1.54倍），Bookkeeping开销占比由54.2%降到40.0%；边界为阶段检测依赖英语话语线索、oracle分析显示单阶段预测仍有余量、评测限数学与科学推理负载。单版本arXiv预印本，独立分组arxiv:2608.21614。",
+      "independence_group": "arxiv:2608.21614"
+    }
+  ],
+  "evidence_item_ids": [
+    "60c8ba8630635de9b8152f26",
+    "bb2b2fe1727d566adf827248"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.14848v1",
+    "https://arxiv.org/abs/2608.21614v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.14848",
+    "arxiv:2608.21614"
+  ],
+  "unknowns": [
+    "两条记录的相位定义不同（CoT推理阶段与预填充/解码），相位条件化跨相位定义的通用性未被任何记录联合验证",
+    "Tideway的1.97倍为系统级总量，分相位布局、统一池、跨层去重与分段CUDA图各自的贡献未拆解",
+    "SAEM未给出取消阶段感知后的对照数字，阶段检测依赖英语话语线索，评测限数学与科学推理负载",
+    "SAEM记录未给出所用GPU型号与两个MoE模型的规模，跨硬件与模型规模的可迁移性未知",
+    "相位切换时的重布局开销与阶段误判的代价未刻画",
+    "相位条件化驻留相对盲分层流式换入（idea_15ffa6ef1f0591976613的机理）的增量收益未量化",
+    "与idea_15ffa6ef1f0591976613的血缘关系（其子机理还是独立Idea）需人工判定，暂经related_idea_ids显式标注"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在单张消费级GPU加系统内存的分层环境中实现相位条件化的专家驻留管理器：以预填充/解码切换为相位边界重规划专家布局，解码内部以可配置的阶段检测器（含oracle上界）切换专家缓存，对照相位无关的热度缓存与盲分层流式。",
+    "inputs": [
+      "开源MoE checkpoint及其按相位切分的真实路由统计",
+      "显存加内存统一池与驻留表实现",
+      "相位边界与阶段边界检测器（含oracle上界）",
+      "MATH-500类推理负载与通用对话负载"
+    ],
+    "baselines": [
+      "相位无关的热度缓存（LRU类）",
+      "逐token粒度的专家缓存管理",
+      "不区分相位的盲分层流式换入",
+      "oracle相位/阶段上界"
+    ],
+    "metrics": [
+      "端到端吞吐、TTFT与TPOT",
+      "每千token专家换入数据量与换页次数",
+      "缓存簿记开销占比",
+      "相位与阶段预测准确率及重布局开销"
+    ],
+    "support_criteria": [
+      "相位条件化驻留相对相位无关基线在吞吐或换入量上取得可复现的净收益",
+      "收益随阶段预测准确率提高而增加并逼近oracle上界",
+      "重布局开销低于其节省的搬运开销"
+    ],
+    "reject_criteria": [
+      "取消相位感知后端到端收益变化落入噪声范围",
+      "阶段误判或重布局开销吞掉收益",
+      "收益仅在数学推理负载出现而在通用负载消失"
+    ],
+    "limitations": [
+      "两条证据相位定义不同，需分别验证后再讨论通用性",
+      "无功耗口径，且Tideway的最快基线身份未披露"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且有两条独立分组、跨两个发布期的真实硬件系统证据（arxiv:2608.21614与arxiv:2611.14848）。身份三元组与48个既有候选及8个Idea均不同：最接近的idea_15ffa6ef1f0591976613是分层驻留加流式I/O重叠（moe_expert_weight_capacity_wall + tiered_expert_streaming_io_overlap + capacity_limited_moe_inference），本候选是相位条件化的专家驻留重规划，问题、机制与目标三键均不同，且该Idea的unknowns把阶段可预测性与阶段化布局的增量收益列为未量化，不构成duplicate。但两条记录相位定义不同且未被任何记录联合验证，Tideway未拆解分相位布局的单独贡献，SAEM无取消阶段感知的对照数字且限数学与科学推理负载，相对盲分层流式的增量收益未量化，与该Idea的血缘需人工判定，按deferred观察。",
+  "related_candidate_ids": [
+    "candidate_c9e9231ff865bba7618a",
+    "candidate_e7519c587b0f339feb1f"
+  ],
+  "related_idea_ids": [
+    "idea_15ffa6ef1f0591976613"
+  ],
+  "first_seen_issue": "2026-08-29",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d15715ebad9a61414bfc",
+      "issue_date": "2026-11-25",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且有两条独立分组、跨两个发布期的真实硬件系统证据（arxiv:2608.21614与arxiv:2611.14848）。身份三元组与48个既有候选及8个Idea均不同：最接近的idea_15ffa6ef1f0591976613是分层驻留加流式I/O重叠（moe_expert_weight_capacity_wall + tiered_expert_streaming_io_overlap + capacity_limited_moe_inference），本候选是相位条件化的专家驻留重规划，问题、机制与目标三键均不同，且该Idea的unknowns把阶段可预测性与阶段化布局的增量收益列为未量化，不构成duplicate。但两条记录相位定义不同且未被任何记录联合验证，Tideway未拆解分相位布局的单独贡献，SAEM无取消阶段感知的对照数字且限数学与科学推理负载，相对盲分层流式的增量收益未量化，与该Idea的血缘需人工判定，按deferred观察。",
+      "evidence_item_ids": [
+        "60c8ba8630635de9b8152f26",
+        "bb2b2fe1727d566adf827248"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

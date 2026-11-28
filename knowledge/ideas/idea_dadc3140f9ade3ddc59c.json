@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_dadc3140f9ade3ddc59c",
+  "identity": {
+    "problem_key": "hbm_capacity_cost_wall",
+    "mechanism_key": "gpu_initiated_fine_grained_flash_reads",
+    "target_key": "inference_kv_and_weight_tiering"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "GPU发起的512B级细粒度闪存读能否以可接受尾时延替代部分HBM扩容",
+  "problem": "扩HBM或节点内DRAM的每GB成本高且容量受限，推理的KV缓存与冷权重需要更便宜的近GPU容量层；主机中转路径的粒度与时延无法匹配细粒度随机读需求，粗粒度预取又浪费带宽与显存。",
+  "hypothesis": "若GPU线程直接发起512B-4KiB细粒度闪存读（GPU侧客户端库加低延迟闪存介质），则可在尾时延与每I/O功耗受控的前提下，以显著低于HBM的每GB成本承接KV与冷权重读取，使端到端TTFT与吞吐优于重算和主机中转基线。",
+  "mechanism": "GPU侧客户端库直接构建并下发NVMe细粒度读命令、数据直达显存；介质层用512B粒度低延迟闪存（XL-FLASH第2代、50 DWPD级耐久）；按热度分级决定KV块驻留HBM还是闪存层。",
+  "expected_effect": "HBM容量墙外移：热工作集溢出部分落到近GPU闪存层，5万token以上长上下文的读取成本低于重算；若假设失效则退回粗粒度预取加内核GDS路径。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "ea689bb652526e0e8a1731e6",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://americas.kioxia.com/en-us/business/news/2026/ssd-20260803-1.html"
+      ],
+      "reason": "Kioxia GP1以XL-FLASH第2代实现最高1000万512B随机读IOPS、路线图指向1亿IOPS，厂商称每GB成本显著低于节点内HBM或DRAM扩容，E3.S/E1.S支持冷板液冷，为本Idea提供介质层供给锚点（规格口径，无第三方评测与写IOPS数据，评测样品2026年底交付）。"
+    },
+    {
+      "item_id": "6d2d783dbbd72017f98515e0",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://www.h3platform.com/blog-detail/81"
+      ],
+      "reason": "SCADA官方解读确认GPU线程直接发起并控制小于4KB的细粒度NVMe访问、把发起者从主机移到GPU执行侧；当前PCIe Gen6企业SSD约五到六百万4KB随机读IOPS每盘、下一代路线图约两千五百万、平台最多集成48块E1.S，为本Idea的发起机制与平台要素提供依据（解读文章无量化实验，路线图数字非现售规格）。"
+    },
+    {
+      "item_id": "20fb8a6279b3bbd998425ffa",
+      "issue_date": "2026-09-06",
+      "source_urls": [
+        "https://blogs.nvidia.com/blog/ai-storage-fms"
+      ],
+      "reason": "NVIDIA发布SCADA框架并开源cuFile存储栈：大规模并行GPU只拉取所需数据直接进显存、用户态高速路径留在可信基之外、特权组件在setup时按Linux协议配置受保护访问，为GPU按需细粒度拉取提供框架与生态基础（全部为厂商口径，无IOPS与时延数字）。"
+    },
+    {
+      "item_id": "30d45b2e7f98cfb8329a6b56",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://graidtech.com/post/100-million-iops-for-gpu-initiated-io"
+      ],
+      "reason": "GRAID报告在受保护RAID 5卷上达成1亿随机512字节GPU发起IOPS、WholeGraph训练负载下受保护卷与基线持平，说明GPU发起512B细粒度读在数据保护卷上也有规模先例（厂商单方声明，无第三方复测，缺时延队列深度与功耗口径）。"
+    },
+    {
+      "item_id": "fcc0c18d8d6e0695d8d52b2d",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://www.hotstorage.org/2026/program.html"
+      ],
+      "reason": "HotStorage 2026海报以把GPU发起存储I/O推向1亿IOPS为目标，说明该扩展性问题已进入系统研究议程，与本Idea的问题层相关（仅见会议程序页，1亿IOPS为标题目标而非实测，取得原文前不作为成果引用）。"
+    },
+    {
+      "item_id": "e39d7c409d0069a974468b8c",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://s25.q4cdn.com/621799436/files/doc_downloads/2026/10/MU-TP-Webinar.pdf"
+      ],
+      "reason": "美光AI级NAND路线图把'高IOPS SLC NAND服务GPU发起的小块访问'写入头部介质厂商优先路线，下一代SSD目标为小块访问25M-100M IOPS、容量至512TB，为本Idea的介质层供给前提新增主要厂商路线图信号（全部为附免责声明的前瞻路线图，无实测，IOPS目标缺基线、块大小与队列条件，无产品时间表）。"
+    },
+    {
+      "item_id": "17eb246304de167a8bbcdc2a",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://americas.kioxia.com/en-us/business/news/2026/ssd-20261008-1.html"
+      ],
+      "reason": "KIOXIA在OCP 2026演示基于XL-FLASH第三代的增强GP系列近GPU SSD，512字节随机读宣称20+ MIOPS，与GP1同族，为512B级细粒度介质层能力再添器件信号（技术演示而非量产，无队列深度、盘数、时延、功耗与主机/GPU配置，通稿未描述I/O发起者、控制路径或数据路径变化，不能作路径层证据）。"
+    },
+    {
+      "item_id": "9277255f427b131d07864051",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://www.hotstorage.org/2026/slides/plink_slide.pdf"
+      ],
+      "reason": "三星HotStorage '26幻灯片PLINK量化了GPU发起细粒度NVMe读的GPU侧队列处理开销：BaM式同步路径93.1%的I/O周转时间耗在CQ轮询与门铃上，专用SQ warp持续提交加专用CQ warp处理完成、按槽位等待与warp级门铃合并后，4KB随机读队列深度1024微基准中以136个I/O warp使SSD饱和、较基线238个少43%（只做SQ/CQ解耦反而需246个），为本Idea机制层的GPU侧客户端库设计新增首个带实测数字的队列处理开销与改进证据（幻灯片只报告warp数量、无时延与端到端负载结果，基准不计完成通知开销）。"
+    },
+    {
+      "item_id": "7c58430599ddde25291aa2ed",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://sol.sbc.org.br/index.php/sscad/article/view/46669"
+      ],
+      "reason": "UNICAMP与AMD作者的SSCAD 2026论文提出基于Linux原生io_uring的跨厂商GPU发起I/O设计，为本Idea机制层（GPU侧发起路径）新增一条复用Linux原生原语、跨厂商通用化的学术路线信号；可见证据仅为摘要为空的落地页，只有出版事实可证——论文收录于SSCAD 2026论文集，无任何设计细节、工作负载或性能数据可见，发现源提到的ring所有权协议未经主源核实，PDF补取前不据此引用其机制或结果。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "GP1写IOPS与尾时延分布缺失，评测样品2026年底才交付",
+    "GPU侧发起路径的错误恢复与多进程隔离语义未公开",
+    "512B粒度在真实KV与权重访问模式下的有效命中率未知",
+    "美光25M-100M IOPS与KIOXIA 20+ MIOPS均为无条件宣称或路线图目标，器件实测与产品规格未交付",
+    "PLINK幻灯片只报告warp数量（136对238），队列重构对时延分布与端到端推理负载的收益未测，基准也不计完成通知开销",
+    "SSCAD 2026的io_uring跨厂商GPU发起I/O论文仅落地页可证，其发起机制与细粒度存储访问的适配均未知，PDF补取前无法评估其与本Idea机制层的关系"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "一台GPU节点配SCADA式GPU侧客户端库与1-4块512B细粒度低延迟SSD（GP1样品交付前用现有低延迟NVMe近似），跑KV命中与冷权重读取负载。",
+    "inputs": [
+      "读粒度512B-4KiB扫描",
+      "队列深度扫描",
+      "KV与权重热度分布（Zipf参数）",
+      "闪存层容量取HBM的0.5-2倍",
+      "命中率先验"
+    ],
+    "baselines": [
+      "全HBM驻留",
+      "主机中转读（POSIX路径）",
+      "内核GDS粗粒度预取"
+    ],
+    "metrics": [
+      "细粒度随机读IOPS与时延P50/P99",
+      "每I/O功耗",
+      "TTFT与吞吐",
+      "HBM替代比例与每GB成本",
+      "使SSD饱和所需I/O warp数（GPU侧队列处理资源成本，参照PLINK的136对238口径）"
+    ],
+    "support_criteria": [
+      "在P99时延预算内以更低每GB成本承接热工作集溢出，端到端TTFT优于重算基线"
+    ],
+    "reject_criteria": [
+      "尾时延或写耐久限制使可用命中率不足",
+      "GPU发起路径错误恢复不可用或隔离代价过高"
+    ],
+    "limitations": [
+      "GP1为厂商规格，无第三方评测与写IOPS数据",
+      "SCADA服务器生态与错误恢复语义未公开",
+      "未覆盖多节点共享与RDMA远程层",
+      "美光与KIOXIA的新IOPS目标缺基线与测试条件，器件实测交付前验证只能以现有低延迟NVMe近似",
+      "PLINK结果为幻灯片微基准口径，仅warp数量、无时延与端到端负载，warp占用指标的迁移性未验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-04",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_ec4d10d0cb04192e966e",
+      "issue_date": "2026-11-02",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "介质（GP1）、发起机制（SCADA解读与框架）、保护卷规模先例（GRAID）与研究议程（HotStorage海报）共同支撑该可检验假设，但关键量化口径均为厂商规格或目标值、样品未交付，状态置observing。",
+      "evidence_item_ids": [
+        "ea689bb652526e0e8a1731e6",
+        "6d2d783dbbd72017f98515e0",
+        "20fb8a6279b3bbd998425ffa",
+        "30d45b2e7f98cfb8329a6b56",
+        "fcc0c18d8d6e0695d8d52b2d"
+      ]
+    },
+    {
+      "event_id": "idea_decision_0ee1f5c436e0fb123edb",
+      "issue_date": "2026-11-06",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "美光AI级NAND路线图与KIOXIA XL-FLASH第三代演示把512B级细粒度高IOPS介质供给从GP1单点扩展到两家头部厂商路线，问题-机制-目标身份不变；新增证据均为无实测的路线图或展台宣称，量化口径未变，维持observing。",
+      "evidence_item_ids": [
+        "e39d7c409d0069a974468b8c",
+        "17eb246304de167a8bbcdc2a"
+      ]
+    },
+    {
+      "event_id": "idea_decision_4a9c1e77b30d2f5a08e2",
+      "issue_date": "2026-11-11",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "PLINK把GPU发起细粒度NVMe读的GPU侧队列处理开销量化为BaM式同步路径93.1%周转时间耗在CQ轮询与门铃，并给出专用SQ/CQ warp分工加槽位等待与warp级门铃合并后warp占用少43%的微基准（136对238，4KB随机读队列深度1024），为机制层新增首个带实测数字的队列处理证据，warp占用应入验证指标；幻灯片无时延与端到端结果，量化口径未变，维持observing。",
+      "evidence_item_ids": [
+        "9277255f427b131d07864051"
+      ]
+    },
+    {
+      "event_id": "idea_decision_206f8cabd74d02997f06",
+      "issue_date": "2026-11-13",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "SSCAD 2026论文以Linux原生io_uring提出跨厂商GPU发起I/O，属GPU发起路线的跨厂商学术信号，问题-机制-目标身份不变；可见证据仅为摘要为空的落地页，只有出版事实可证，无可引用的机制或性能数据，量化口径不变，维持observing并待PDF补取后复评。",
+      "evidence_item_ids": [
+        "7c58430599ddde25291aa2ed"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_cb9767a88f8fc52c7fff",
+  "identity": {
+    "problem_key": "long_context_kv_access_cost_split_across_prefill_and_decode",
+    "mechanism_key": "cluster_amortized_retrieval_plus_compiled_kv_access_plan",
+    "target_key": "vllm_long_context_serving_runtime"
+  },
+  "idea_type": "solution_concept",
+  "title": "跨阶段选择性KV访问：预填充簇摊销检索联合解码期KV访问计划",
+  "problem": "长上下文自托管serving的成本集中在两段KV访问：预填充阶段选择性稀疏注意力的检索开销与解码阶段的全量KV内存流量。已发布优化各覆盖一端且边界互补——SCR只摊销预填充检索且无吞吐与成本数据，GraphSpec只限制解码期可见KV且TTFT因编译略升，单阶段优化会把瓶颈留给另一阶段。",
+  "hypothesis": "把只触碰被选中KV集合的原则显式化为同一运行时的跨阶段访问计划——预填充按查询簇摊销检索并继承选择缓存、解码按编译期访问计划限制可见KV——可在同一vLLM分页KV运行时内同时降低TTFT与解码内存流量且质量不降。",
+  "mechanism": "预填充侧对相似查询块按簇只做一次检索（继承TokenSelect选择缓存），解码侧把知识先验编译为运行期KV访问计划并重排分页KV物理放置，两阶段共享同一被选中KV集合控制点。",
+  "target": "基于vLLM分页KV的长上下文推理服务运行时",
+  "expected_effect": "已发表的逐阶段效应：SCR较TokenSelect把检索调用从8959次降到1165次、InfiniteBench平均TTFT降约35%、RULER在128K降32.9%；GraphSpec在Qwen3-VL-32B上128K可见KV仅5.5%、解码吞吐升1.08至1.19倍且质量不变。组合的可检验效应：两阶段同时启用时TTFT与解码吞吐同时改善且质量不降。",
+  "topic_ids": [
+    "ai_infra_horizontal"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "2026-08-10与2026-11-02两期、两个独立组的已发布记录分别在解码与预填充阶段支持同一选择性KV访问机制，且各自边界恰好互补（SCR缺吞吐数据、GraphSpec TTFT略升），联合支持任何单一记录都未陈述的跨阶段机制。"
+  },
+  "evidence": [
+    {
+      "item_id": "810e7598d049ddf8b401fc54",
+      "issue_date": "2026-08-10",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.24260v1"
+      ],
+      "reason": "GraphSpec提供解码期机制与效应：把图先验编译为运行期KV访问计划、在vLLM分页KV上重排物理放置，Qwen3-VL-32B上128K可见KV仅5.5%、解码吞吐升1.08至1.19倍且质量不变；并给出TTFT因编译略升、仅Graph-RAG单实例的边界。",
+      "independence_group": "arxiv:2607.24260"
+    },
+    {
+      "item_id": "705bd31af4b4ee2d93f86497",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.31568v1"
+      ],
+      "reason": "SCR提供预填充期机制与效应：对相似查询块按簇只做一次检索、把选择性稀疏注意力的检索开销从子块粒度摊销到簇粒度并继承TokenSelect选择缓存，检索调用从8959次降到1165次、InfiniteBench平均TTFT降约35%；并给出单张H100评测、吞吐利用率与成本缺失的边界。",
+      "independence_group": "arxiv:2609.31568"
+    }
+  ],
+  "evidence_item_ids": [
+    "810e7598d049ddf8b401fc54",
+    "705bd31af4b4ee2d93f86497"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2607.24260v1",
+    "https://arxiv.org/abs/2609.31568v1"
+  ],
+  "independence_groups": [
+    "arxiv:2607.24260",
+    "arxiv:2609.31568"
+  ],
+  "unknowns": [
+    "跨阶段组合从未在任何单一记录中验证",
+    "SCR仅在单张H100评测，吞吐、利用率与成本缺失",
+    "GraphSpec仅Graph-RAG单实例验证，批次与并发未报告",
+    "GraphSpec编译导致的TTFT回升是否会抵消SCR的预填充收益"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在vLLM分页KV上同时实现预填充簇摊销检索与解码期编译KV访问计划，对照仅启用单阶段的两种配置与TokenSelect基线。",
+    "inputs": [
+      "InfiniteBench与RULER长上下文负载",
+      "Graph-RAG类知识先验",
+      "vLLM分页KV运行时与选择缓存"
+    ],
+    "baselines": [
+      "TokenSelect基线",
+      "仅SCR簇摊销检索",
+      "仅GraphSpec解码访问计划",
+      "原始稠密注意力"
+    ],
+    "metrics": [
+      "平均TTFT",
+      "RULER 128K TTFT降幅",
+      "解码吞吐",
+      "可见KV比例",
+      "输出与全上下文的一致率",
+      "检索调用次数"
+    ],
+    "support_criteria": [
+      "两阶段同时启用时TTFT与解码吞吐均优于任一单阶段配置且输出质量不降"
+    ],
+    "reject_criteria": [
+      "编译或检索开销使TTFT回升并抵消另一阶段收益",
+      "可见KV压缩引入质量漂移"
+    ],
+    "limitations": [
+      "组合验证仅限原型与公开基准",
+      "SCR与GraphSpec各自证据规模有限（单卡与单实例）"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "两阶段机制分别有独立组支持且边界互补，但跨阶段组合无任何已发布记录验证，组合的适用边界（批次、并发、成本）未建立，先观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-08-10",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_206cfaa5c288f9d4e0b",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "两阶段机制分别有独立组支持且边界互补，但跨阶段组合无任何已发布记录验证，组合的适用边界（批次、并发、成本）未建立，先观察。",
+      "evidence_item_ids": [
+        "810e7598d049ddf8b401fc54",
+        "705bd31af4b4ee2d93f86497"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

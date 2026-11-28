@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_66cfce05ef119b57beff",
+  "identity": {
+    "problem_key": "resident_kv_position_distance_unretrievability",
+    "mechanism_key": "plan_aware_retention_plus_bounded_position_renumbering",
+    "target_key": "long_horizon_agent_kv_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "驻留不等于可检索：计划感知保留加有界位置重编号治理长程Agent会话KV的位置距离失效",
+  "problem": "长程Agent会话KV随轮次线性增长迫使按预算逐出，而PACE实测所需token即使99.6%仍驻留KV缓存，准确率仍随rotary位置距离从93%跌至64%：只保证驻留或命中不足以维持检索能力，驻留token会因位置距离变得不可检索。",
+  "hypothesis": "把规划器依赖图转为按span的前瞻加分叠加在注意力分数上选择保留，并在位置接近上限时对token做有界重编号、对key精确重旋转且以参考存储避免误差累积，可在极小KV预算下恢复长程会话检索准确率，并把会话长度扩展到显存预算之外；跨域缓存命中恢复路径同理只保证命中不够，恢复后仍须处理位置距离。",
+  "mechanism": "计划感知保留：规划器依赖图转为按span的前瞻加分叠加在注意力分数上；有界位置重编号：位置接近上限时重编号token并对key精确重旋转，参考存储避免误差累积。",
+  "target": "长程（规划器驱动）Agent会话的推理KV缓存管理",
+  "expected_effect": "Qwen3-8B、100K会话、2048-token KV预算下隐藏测试通过率97%（H2O为42%、SnapKV为3%）；单张24GB GPU可扩至2M会话。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "36ac42ebb196e035b9c576c0",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10240v1"
+      ],
+      "reason": "《PACE实测所需token驻留KV缓存仍不可检索，提出有界位置重编号》给出问题（99.6%驻留下准确率仍随rotary距离从93%跌至64%）、机制（规划器依赖图按span前瞻加分叠加注意力分数；位置接近上限时重编号并精确重旋转key、参考存储避免误差累积）、目标（规划器驱动长程Agent会话KV）与可检验效应（Qwen3-8B、100K会话、2048-token预算97%隐藏测试通过率对H2O 42%与SnapKV 3%，单张24GB GPU扩至2M会话），并明示边界（无规划器时100K降至63%、跨域RTT与恢复字节未报告）。",
+      "independence_group": "arxiv:2611.10240"
+    }
+  ],
+  "evidence_item_ids": [
+    "36ac42ebb196e035b9c576c0"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.10240v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.10240"
+  ],
+  "unknowns": [
+    "机制依赖规划器依赖图，无规划器负载100K会话降至63%，适用边界未定",
+    "单一预印本（arXiv 2611.10240），无独立复现",
+    "跨域缓存命中恢复后的位置距离处理、RTT与恢复字节数未实测"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部Agent serving的KV缓存管理中实现计划感知span保留与有界位置重编号（精确重旋转加参考存储），扫描KV预算并度量长程会话任务通过率与重编号开销；扩展场景在跨域缓存命中恢复路径上应用重编号，度量恢复准确率与恢复时延。",
+    "inputs": [
+      "规划器驱动的长程Agent会话轨迹集（100K至2M token）",
+      "规划器依赖图",
+      "KV预算扫描",
+      "跨域缓存命中恢复轨迹（扩展）"
+    ],
+    "baselines": [
+      "全量KV保留",
+      "H2O",
+      "SnapKV",
+      "无计划感知的近期优先保留"
+    ],
+    "metrics": [
+      "隐藏测试通过率",
+      "KV驻留字节数",
+      "重编号与重旋转开销",
+      "命中恢复后准确率与恢复时延（扩展）"
+    ],
+    "support_criteria": [
+      "同预算下通过率显著优于H2O与SnapKV并接近全量保留",
+      "重编号与重旋转开销不抵消预算收益"
+    ],
+    "reject_criteria": [
+      "无规划器负载通过率回落至与基线同档",
+      "重旋转误差累积使长会话质量持续下降"
+    ],
+    "limitations": [
+      "原始证据为单一预印本，仅单模型与单GPU实测",
+      "跨域场景仅有host 2.3毫秒对remote约2.7秒的成本锚点，无WAN实测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且身份区别于既有候选与Idea：beacon查询重访预测（candidate_079a62a6e119a9b1913c）面向LRM思维链压缩且无位置重编号，固定容量循环记忆（candidate_0700dd4855109f3b7938）以替代KVCache为机制，gist降级保留（candidate_9b8f958587774c16d03f）与部署亲和路由治理复用坍塌（idea_984fec4fcf65a75a6b1f）均不覆盖“驻留token因rotary位置距离不可检索”这一问题；但证据为单一预印本，机制绑定有规划器负载（无规划器时100K会话降至63%），跨域RTT与恢复字节数未报告，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_079a62a6e119a9b1913c",
+    "candidate_0700dd4855109f3b7938",
+    "candidate_9b8f958587774c16d03f"
+  ],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d58228ee1217c4d00f4ae11d5d13edf9",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且身份区别于既有候选与Idea：beacon查询重访预测（candidate_079a62a6e119a9b1913c）面向LRM思维链压缩且无位置重编号，固定容量循环记忆（candidate_0700dd4855109f3b7938）以替代KVCache为机制，gist降级保留（candidate_9b8f958587774c16d03f）与部署亲和路由治理复用坍塌（idea_984fec4fcf65a75a6b1f）均不覆盖“驻留token因rotary位置距离不可检索”这一问题；但证据为单一预印本，机制绑定有规划器负载（无规划器时100K会话降至63%），跨域RTT与恢复字节数未报告，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "36ac42ebb196e035b9c576c0"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

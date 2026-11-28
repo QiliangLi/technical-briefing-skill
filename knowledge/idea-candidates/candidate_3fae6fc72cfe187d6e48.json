@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_3fae6fc72cfe187d6e48",
+  "identity": {
+    "problem_key": "long_context_prefill_kv_peak_memory",
+    "mechanism_key": "layer_end_delayed_eviction_decoupled_selector",
+    "target_key": "chunked_prefill_kv_eviction_scheduling"
+  },
+  "idea_type": "solution_concept",
+  "title": "层末延迟驱逐：分块prefill期仅活跃层驻全量KV以压低长上下文构建期峰值显存",
+  "problem": "长上下文KVCache压缩必须先完成全量prefill，构建期峰值显存仍然高企；若为压峰值在分块prefill进行中在线驱逐，驱逐决策只见局部历史而伤害质量——构建期峰值与驱逐质量在现有路径上不可兼得，小显存设备因此无法构建128K上下文。",
+  "hypothesis": "在分块prefill的KV驱逐调度中把驱逐时机从分块进行中延迟到每层处理完prompt全部分块之后，仅活跃层保留全量KV、层末按选择器统一驱逐，且驱逐调度与打分选择器解耦（可与SnapKV等配对），可在质量不劣于全量prefill后驱逐口径的前提下大幅压低构建期显存：A100 128K口径构建期瞬时显存降83.89%、峰值显存降43.86%、TTFT仅增4.17%，4090上RULER 64K/128K得76.65/65.93（SnapKV为74.82与OOM），使小显存设备可行上下文从32K扩至128K；若batch>1并发下延迟驱逐收益消失，或TTFT代价超出16.74%口径持续恶化，则该调度只应作为单请求长上下文构建期的可选驱逐路径。",
+  "mechanism": "Transformer以层为单位流式处理prompt全部分块：某一层处理期间仅该活跃层驻留全量KV，该层处理完全部分块后按选择器统一驱逐、再进入下一层，逐层推进；驱逐调度（时机）与驱逐选择器（内容）解耦，选择器可为SnapKV等任意压缩方法——构建期同时驻留的全量KV由全部层数压缩为单层。",
+  "target": "自研推理栈分块prefill路径中的KVCache驱逐调度点（长上下文构建期的驱逐时机决策，面向4090/Jetson等小显存设备）。",
+  "expected_effect": "A100 128K上TTFT增4.17%、峰值显存降43.86%、构建期瞬时显存降83.89%；4090上RULER 64K/128K得76.65/65.93，对SnapKV的74.82与OOM；小显存设备可行上下文从32K量级扩至128K。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "单条已发布记录同时给出问题（长上下文KV压缩需全量prefill、构建期峰值仍高，分块进行中在线驱逐只见局部历史而伤质量）、可解释机制（层内流式处理全部分块、仅活跃层驻全量KV、层末统一驱逐，调度与选择器解耦、可与SnapKV配对）、目标对象（分块prefill的KV驱逐调度点）与可检验效应（A100 128K上TTFT +4.17%、峰值-43.86%、构建期瞬时-83.89%；4090 RULER 64K/128K为76.65/65.93对SnapKV的74.82与OOM）。"
+  },
+  "evidence": [
+    {
+      "item_id": "95acb09fe1bc6fd4ec5f702a",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.24499v1"
+      ],
+      "reason": "TideKV给出问题（长上下文KV压缩需全量prefill、构建期峰值仍高，在线驱逐只见局部历史而伤质量）、机制（层内流式处理全部分块、仅活跃层保留全量KV、层末统一驱逐，调度与选择器解耦、可与SnapKV配对）、目标（分块prefill的KV驱逐调度）与可检验效应（A100 128K上TTFT增4.17%、峰值降43.86%、构建期瞬时显存降83.89%；4090上RULER 64K/128K为76.65/65.93，SnapKV为74.82与OOM）；边界：默认batch 1单请求、无并发吞吐评估、TTFT代价最高16.74%、128K进程级降幅依赖分配器。",
+      "independence_group": "arxiv:2610.24499"
+    }
+  ],
+  "evidence_item_ids": [
+    "95acb09fe1bc6fd4ec5f702a"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.24499v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.24499"
+  ],
+  "unknowns": [
+    "评估默认batch 1单请求形态，无并发吞吐结果，延迟驱逐在batch>1下的收益未知",
+    "TTFT代价最高可达16.74%，代价随上下文长度与硬件的标度未给出",
+    "128K进程级降幅依赖分配器行为，瞬时与进程级两种峰值口径需分别报告",
+    "调度与选择器解耦的声明主要在SnapKV上验证，其他选择器的可配对性未系统报告",
+    "质量对照限于RULER口径，无LongBench等跨任务验证"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在自研推理栈或SGLang类引擎的分块prefill路径实现层末延迟驱逐调度：仅活跃层驻全量KV、层末按可插拔选择器统一驱逐，与分块进行中在线驱逐及全量prefill后驱逐两种基线对比。",
+    "inputs": [
+      "RULER 64K/128K长上下文负载",
+      "A100与4090/Jetson两档硬件",
+      "选择器扫描（SnapKV与至少一种其他压缩器）",
+      "batch 1与并发两形态"
+    ],
+    "baselines": [
+      "全量prefill后驱逐（SnapKV直接应用）",
+      "分块进行中在线驱逐（局部历史打分）",
+      "无压缩全KV基线"
+    ],
+    "metrics": [
+      "构建期瞬时峰值显存与进程级峰值显存（分口径）",
+      "TTFT",
+      "RULER长上下文分数",
+      "并发吞吐（并发形态下）"
+    ],
+    "support_criteria": [
+      "峰值降幅与TTFT代价的权衡达到A100口径量级（峰值-43.86%/TTFT+4.17%）",
+      "小显存设备128K免OOM且质量不低于全量prefill后驱逐口径",
+      "更换选择器后调度收益保持，解耦声明成立"
+    ],
+    "reject_criteria": [
+      "batch>1或并发下延迟驱逐收益消失",
+      "TTFT代价超出16.74%口径持续恶化",
+      "层末统一驱逐造成层间流水停顿使TTFT不可接受"
+    ],
+    "limitations": [
+      "原始证据仅batch 1单请求、无并发吞吐数据",
+      "进程级降幅依赖分配器，两种峰值口径需区分报告"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "单条已发布记录完整给出问题、机制、目标与可检验效应，且与既有候选及Idea身份含义不同：驱逐类既有候选治理的是打分信号（层形状与未来查询）、打分选层、GQA组内池化预算或可召回降级，分层类候选治理的是层边界与秩的放置规划，均未触及『把驱逐时机延迟到层末、仅活跃层驻全量KV以压构建期峰值』这一身份，等待人工升格。",
+  "related_candidate_ids": [
+    "candidate_80a11fa68bdf30c34571",
+    "candidate_827f27dbafeac04e8d94",
+    "candidate_d4ad44954f43a2562f13"
+  ],
+  "related_idea_ids": [
+    "idea_d4ad44954f43a2562f13",
+    "idea_18458bcb48f7ddff4d4c"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_76aa9cd53acccad6193",
+      "issue_date": "2026-11-18",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "单条已发布记录完整给出问题、机制、目标与可检验效应，且与既有候选及Idea身份含义不同：驱逐类既有候选治理的是打分信号（层形状与未来查询）、打分选层、GQA组内池化预算或可召回降级，分层类候选治理的是层边界与秩的放置规划，均未触及『把驱逐时机延迟到层末、仅活跃层驻全量KV以压构建期峰值』这一身份，等待人工升格。",
+      "evidence_item_ids": [
+        "95acb09fe1bc6fd4ec5f702a"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

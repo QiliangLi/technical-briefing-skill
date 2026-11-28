@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_2bb19b8ae91662956d18",
+  "identity": {
+    "problem_key": "cost_oblivious_partial_hit_agent_cache_management",
+    "mechanism_key": "recompute_cost_restore_asymmetry_joint_scheduling",
+    "target_key": "agent_serving_cache_and_delivery_scheduling"
+  },
+  "idea_type": "solution_concept",
+  "title": "重算代价与恢复不对称驱动的联合调度：部分命中Agent负载下的保留、放置、仲裁与投递序",
+  "problem": "Agent服务的会话与前缀缓存管理被切成互不感知的单轴决策：LRU类淘汰只看新旧、无视KV段间重算代价差异而反复丢弃最廉价段并重算昂贵后缀；层级放置只看容量、无视命中恢复代价的不对称；prefill调度在复用优先与公平分配间二选一，而生产trace中65%的tool-agent请求仅部分命中、未缓存prefill工作量相差70–250倍，单边策略在积压下把miss请求最坏TTFT推到66.3–201.4秒；受限链路上工具结果仍按到达序投递，早投递本可让请求提前恢复并释放缓存配额。各轴策略互相拆台，缺少由统一代价变量驱动的联合决策。",
+  "hypothesis": "若把保留淘汰、层级放置、复用-公平仲裁与状态投递顺序统一为由“每段KV重算代价×恢复代价不对称性”驱动的联合调度，则在部分命中为主的Agent负载下可同时压低尾部TTFT与完整工作流时延，并优于各单轴策略的任意组合；跨域链路上同一变量应进一步决定传输什么、以何序传输与在何侧保留，且收益需在真实WAN RTT、传输字节与P95下单独核算而非由单机结果外推。",
+  "mechanism": "同一组代价变量驱动四个正交控制轴：淘汰按段间重算代价排序——共享前缀后从头释放、保留昂贵后缀、仅对缺口分段重算，并把GPU与CPU两级缓存当一个逻辑缓存统一选择迁移（Penelope）；放置按命中恢复代价的不对称性分层——活跃KV与循环态留GPU、复用前缀进DRAM、命中只取一个大小与上下文无关的检查点（HiState）；仲裁按缓存节省算力与相对等待组织Fast/Fair双车道并限制插队总量（Fairway）；投递按缓存命中优先并与独占配额、预估交接时间及前缀租约耦合，恢复后配额可转投其他历史（LADS）。“缓存状态是按重算与恢复代价联合调度的一阶变量”这一完整机制没有任何单条记录声明，四条各给出一个轴的实测。",
+  "target": "Agent服务（含受限与跨域链路）中缓存保留、层级放置、prefill仲裁与状态投递的联合调度层",
+  "expected_effect": "单机各轴参照：重算代价感知淘汰平均TTFT最高降76%、JCT降60%；不对称感知分层放置p95/p99 TTFT最低、最高7.40倍加速；双车道仲裁把积压miss最坏TTFT从66.3–201.4秒压到22.0秒；租约感知投递把16条真实任务路径时延降50.6%。联合调度应在同一部分命中负载上同时不劣于任一单轴策略并在尾部TTFT或工作流时延上显著更优；跨域扩展下按同一代价变量选择传输内容与顺序时，传输字节、RTT与P95核算仍优于按到达序或按新旧的基线。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-06",
+    "rationale": "同一期四个独立组分别实测重算代价感知淘汰（Penelope）、恢复不对称分层放置（HiState）、复用-公平双车道仲裁（Fairway）与租约感知投递排序（LADS），恰好覆盖同一调度空间的四个正交轴，且各自边界都明示单机局限；由统一代价变量联合调度四轴的完整机制没有任何单条记录声明。"
+  },
+  "evidence": [
+    {
+      "item_id": "2a8ee5e605785dd6a40fc304",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.00391v1"
+      ],
+      "reason": "Penelope证明Agent长历史复用下LRU尾部淘汰反复丢弃最廉价的共享前缀KV段并重算昂贵后缀，改为在共享前缀结束后从头释放KV、保留后缀、仅对缺口分段重算，并把GPU与CPU两级缓存当一个逻辑缓存统一选择迁移，SGLang上Claude Code回放中235B-A22B两级缓存平均TTFT降76%、JCT降60%（8B模型4并发会话仅GPU缓存降60%）；给出重算代价在KV段间异质、应驱动保留与淘汰的那一轴，全部为单节点GPU-CPU设计。",
+      "independence_group": "arxiv:2611.00391"
+    },
+    {
+      "item_id": "3c9411349fcf2380a107eead",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.00881v1"
+      ],
+      "reason": "LADS把并发Web代理工具结果在32–48 kbit/s受限回传链路上的投递顺序变成调度维度：投递以缓存命中优先、保护压力下按独占配额与预估交接时间之比选覆盖对象、前缀租约用原生块引用实现且恢复后归还配额，受控并发负载平均完整工作流时延从FIFO的196.6秒降至108.9秒、16条真实任务路径降50.6%、48次配对比较全部更低；给出状态恢复时序与缓存配额耦合调度的那一轴，仅单机localhost限速链路与单一7B模型、无命中率与传输字节结果。",
+      "independence_group": "arxiv:2611.00881"
+    },
+    {
+      "item_id": "69cf2d7da82c483aa8c17b94",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.41508v1"
+      ],
+      "reason": "HiState利用混合LLM命中只需读一个大小与上下文无关检查点的非对称性做分层放置：活跃KV与循环态留GPU、复用KV前缀进CPU DRAM、检查点放SSD，配自适应间隔与代价感知逐出，真实编码Agent轨迹（Qwen3.5-9B、单卡H100）上p95/p99 TTFT最低、较vLLM-Marconi最高加速7.40与5.73倍；给出恢复代价不对称驱动层级放置的那一轴，仅单机分层缓存与编码Agent轨迹、对SGLang-HiCache的5.44倍仅见摘要。",
+      "independence_group": "arxiv:2610.41508"
+    },
+    {
+      "item_id": "95cfc70179967155c577e8c5",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02082v1"
+      ],
+      "reason": "Fairway实测生产trace中65%的tool-agent请求仅部分命中、未缓存prefill工作量相差70–250倍，以Fast/Fair双虚拟车道按负载切换复用优先与公平分配（Fast lane按缓存节省算力排序并随相对等待晋升，Fair lane按到达序服务并限制命中请求插队总量），洪泛测试中积压miss请求最坏TTFT为22.0秒而LPM等复用优先调度达66.3–201.4秒；给出复用节省与排队公平必须同场仲裁的那一轴，评估在单张GPU上、Mooncake trace降采样至1/8会话与1/4长度、命中请求中位等待升至18.2秒。",
+      "independence_group": "arxiv:2611.02082"
+    }
+  ],
+  "evidence_item_ids": [
+    "2a8ee5e605785dd6a40fc304",
+    "3c9411349fcf2380a107eead",
+    "69cf2d7da82c483aa8c17b94",
+    "95cfc70179967155c577e8c5"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.00391v1",
+    "https://arxiv.org/abs/2611.00881v1",
+    "https://arxiv.org/abs/2610.41508v1",
+    "https://arxiv.org/abs/2611.02082v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.00391",
+    "arxiv:2611.00881",
+    "arxiv:2610.41508",
+    "arxiv:2611.02082"
+  ],
+  "unknowns": [
+    "四条证据全部为单机实测（单节点GPU-CPU、单机localhost限速链路、单卡H100、单GPU降采样trace），无任何WAN RTT、跨集群一致性或真实跨域P95数据",
+    "Fairway评估把Mooncake trace降采样至1/8会话与1/4长度、GPU与LLM未具名，命中请求中位等待升至18.2秒的代价未在联合调度下重新评估",
+    "LADS未给出租约时长，且无命中率与传输字节结果；Penelope收益依赖缓存感知调度并受会话中首token等待占比限制",
+    "重算代价、恢复不对称、复用-公平与投递序四个代价变量之间的冲突（如保留昂贵后缀与公平车道限制插队）及联合最优性未经同一系统验证",
+    "重算代价与恢复代价的在线估计误差对调度收益的影响未知"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在同一Agent服务原型（SGLang或vLLM）上实现联合调度器：淘汰按段间重算代价排序、放置按恢复代价不对称分层、复用-公平双车道仲裁、工具结果投递按配额租约排序；先在单机分别复现四条单轴基线并做消融，再接可控WAN仿真链路按同一代价变量选择跨域传输内容与顺序。",
+    "inputs": [
+      "真实Agent轨迹回放（Claude Code或编码Agent trace）",
+      "Mooncake类生产trace（含部分命中占比）",
+      "重算代价与恢复代价的在线估计器",
+      "WAN时延与带宽矩阵（跨域段）"
+    ],
+    "baselines": [
+      "SGLang默认LRU淘汰",
+      "朴素检查点或容量分层缓存",
+      "LPM等复用优先调度",
+      "FIFO工具结果投递",
+      "四个单轴策略的两两组合（消融）"
+    ],
+    "metrics": [
+      "平均TTFT与P95/P99 TTFT",
+      "完整工作流时延与JCT",
+      "重算量与命中率",
+      "跨域段传输字节与RTT下的端到端P95"
+    ],
+    "support_criteria": [
+      "同一部分命中负载上联合调度在所有单轴指标上不劣于该轴专用策略，且尾部TTFT或工作流时延显著优于最优单轴策略",
+      "跨域仿真段按同一代价变量选择传输内容与顺序时，在传输字节与P95核算下仍优于按到达序或按新旧的基线"
+    ],
+    "reject_criteria": [
+      "联合调度在任一单轴指标上系统性劣于该轴专用策略",
+      "重算或恢复代价的在线估计误差抵消调度收益",
+      "跨域段收益只能由单机压缩比或调度收益外推、无法在RTT与传输字节核算下复现"
+    ],
+    "limitations": [
+      "四条支撑证据均为单机实测，跨域段为仿真链路而非真实WAN部署",
+      "联合最优性未经理论证明，依赖估计器质量"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，由同一期四个独立组的互补单轴实测联合支持；与eviction_scoring_marginal（仅淘汰轴评分）、non_prefix_kv_recurrence（检索控制面缓存）、wan_state_transfer_volume（压缩把带宽变可调度开销）等既有身份含义不同，等待人工晋升。",
+  "related_candidate_ids": [
+    "candidate_2119757ba208fd48cc78",
+    "candidate_9b8f958587774c16d03f",
+    "candidate_984fec4fcf65a75a6b1f"
+  ],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f",
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_9cfd6f2aa4aa1b9eb2aa",
+      "issue_date": "2026-11-06",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应完整，由同一期四个独立组的互补单轴实测联合支持，与既有身份含义不同，等待人工晋升。",
+      "evidence_item_ids": [
+        "2a8ee5e605785dd6a40fc304",
+        "3c9411349fcf2380a107eead",
+        "69cf2d7da82c483aa8c17b94",
+        "95cfc70179967155c577e8c5"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

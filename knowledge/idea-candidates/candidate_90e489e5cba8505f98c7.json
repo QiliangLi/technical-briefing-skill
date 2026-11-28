@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_90e489e5cba8505f98c7",
+  "identity": {
+    "problem_key": "static_harness_stagnation_and_rewrite_token_waste",
+    "mechanism_key": "gated_module_wise_harness_evolution",
+    "target_key": "agent_harness_runtime_components"
+  },
+  "idea_type": "solution_concept",
+  "title": "门控模块进化自改进Harness：逐模块补丁加运行时验证门，以约十分之一token成本逼近全量重写",
+  "problem": "手调的静态harness在模型更替时常停滞或回归，改动缺少低成本的可验证路径；无约束的整harness重写虽可改进但token浪费明显（全量重写每任务451.6k token），而提示词规则类改动又无法在运行时强制退出。harness缺少既可控又负担得起的自改进方式。",
+  "hypothesis": "可证伪主张：把harness拆成可编辑运行时组件并逐模块进化，补丁经运行时检查与留出任务验证门后才部署，能以约十分之一的每任务token成本取得与无约束全量重写相当的准确率，并显著高于静态种子harness。",
+  "mechanism": "框架把harness分解为四个可编辑的运行时组件；外循环诊断执行轨迹，按模块生成补丁；补丁先经运行时检查，再在留出任务集上验证，通过后才部署。进化被门约束在单模块粒度，避免无约束重写的token开销与不可控回归。",
+  "target": "Agent Harness的运行时可编辑组件及其门控自改进循环",
+  "expected_effect": "参照已发布量级：SWE-bench Lite留出集准确率40.0%（为种子的8倍）、每任务46.7k token，而无约束全量重写42.5%需451.6k token。可检验形式：同评估预算下门控模块进化的准确率—每任务token成本曲线显著优于全量重写与静态种子。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "Direct模式单条触发记录（arxiv:2611.22299）同时给出问题、可解释机制、目标对象与带token成本口径的可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "c0f81eefe72e0d06b4c09530",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.22299v1"
+      ],
+      "reason": "Google实测门控模块进化：harness拆为四个可编辑运行时组件，外循环诊断轨迹、逐模块提补丁并经运行时检查与留出任务验证后部署；SWE-bench Lite留出集40.0%（种子8倍）、每任务46.7k token，对全量重写42.5%、451.6k token。同一条证据同时支撑问题（静态harness停滞与重写token浪费）、机制（门控模块进化）、目标（harness运行时组件）与可检验效应（准确率—token成本）。边界：验证仅限60个Python任务与Gemini家族。",
+      "independence_group": "arxiv:2611.22299"
+    }
+  ],
+  "evidence_item_ids": [
+    "c0f81eefe72e0d06b4c09530"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.22299v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.22299"
+  ],
+  "unknowns": [
+    "仅SWE-bench Lite的60个Python任务与Gemini家族验证，其他模型家族、语言与任务类型上的跨模型迁移是否稳定未知。",
+    "选型报告为留出集总分而非配对新增/丢失任务统计，门控是否系统性掩盖局部任务回归未知（与idea_7ba369353fb1935cba45的配对统计要求交叉）。",
+    "外循环诊断与逐模块验证自身的token及算力开销、四组件分解对非编码类harness的可移植性均未报告。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部编码Agent的harness上复刻四组件分解与门控模块进化循环：外循环诊断失败轨迹、逐模块生成补丁、运行时检查、留出任务集验证后部署，并设每任务token上限。",
+    "inputs": [
+      "内部编码Agent的失败轨迹与种子harness四组件定义",
+      "留出任务集及进化前后配对新增/丢失任务记录",
+      "每模块补丁、运行时检查与验证日志、每任务token计量"
+    ],
+    "baselines": [
+      "静态手调种子harness",
+      "无约束全量重写（同token上限）",
+      "随机单模块改动对照"
+    ],
+    "metrics": [
+      "留出集准确率（含配对新增/丢失任务统计）",
+      "每任务token成本与进化循环总token",
+      "部署门拦截补丁数与误拦率"
+    ],
+    "support_criteria": [
+      "同评估预算下门控模块进化的准确率提升显著高于静态种子，且每任务token成本比全量重写低约一个量级",
+      "配对统计未显示采纳补丁造成系统性任务丢失"
+    ],
+    "reject_criteria": [
+      "准确率提升消失，或每任务token成本与全量重写同量级",
+      "配对统计显示门控部署的补丁在留出集外净丢失任务"
+    ],
+    "limitations": [
+      "内部小规模原型，非原论文设置，60任务量级留出集统计功效有限",
+      "模型家族与任务类型差异可能改变门控收益与token口径",
+      "未复现外循环诊断的完整搜索空间"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份与58条既有候选、9条Idea不同：既有Harness自改进线的机制分别是翻转任务完整复评验收门（candidate_30000ab57d8d17fb38df）、槽位组合bandit搜索（candidate_a555d2ca4e82d0ea4401）、资源计价奖励轴（candidate_c2cda6bbfce511a744e4）、权重—Harness协同（candidate_0bea7e4ea26f9ae8481d）与无真值行为对比（candidate_9fa60df23e23f6a7dcc2），均未陈述『逐模块补丁＋运行时检查＋留出验证门、以token成本为主轴』的门控模块进化；本期idea_7ba369353fb1935cba45与idea_876c619ed473b24b78bc虽吸收该证据，但分别只覆盖独立验收门一侧与可演化Harness实例一侧，身份不构成重复。但仅单一独立来源组支持，验证限于60个Python任务与Gemini家族，且证据已被两条Idea在同期吸收、谱系分工需人工裁定，先缓议。",
+  "related_candidate_ids": [
+    "candidate_30000ab57d8d17fb38df",
+    "candidate_a555d2ca4e82d0ea4401",
+    "candidate_c2cda6bbfce511a744e4",
+    "candidate_0bea7e4ea26f9ae8481d"
+  ],
+  "related_idea_ids": [
+    "idea_7ba369353fb1935cba45",
+    "idea_876c619ed473b24b78bc"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d3925d9a39203793ce3f",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "新候选：门控模块进化（arxiv:2611.22299）问题、机制、目标与带token口径的可检验效应四要素完整，身份与既有候选及Idea均不同；但仅单一独立来源组、验证限于SWE-bench Lite的60个Python任务与Gemini家族，且证据本期已被idea_7ba369353fb1935cba45与idea_876c619ed473b24b78bc各吸收一侧，谱系分工待人工裁定，列为deferred。",
+      "evidence_item_ids": [
+        "c0f81eefe72e0d06b4c09530"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

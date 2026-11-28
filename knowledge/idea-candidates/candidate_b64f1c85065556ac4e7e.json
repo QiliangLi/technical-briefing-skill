@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_b64f1c85065556ac4e7e",
+  "identity": {
+    "problem_key": "low_bit_kv_dequant_instruction_issue_bottleneck",
+    "mechanism_key": "group_scale_offset_affine_folding",
+    "target_key": "h100_b200_low_bit_kv_attention_decode"
+  },
+  "idea_type": "solution_concept",
+  "title": "以仿射折叠把组尺度与偏移移出热路径，兑现2/4位KV缓存的解码提速",
+  "problem": "把KV缓存压到2或4比特节省了HBM流量，但逐值反量化要在每个缓存值上重建s·q+z，把瓶颈转移到增长缓慢的指令发射，带宽节省无法兑现为解码提速，低比特KV改造缺少把执行资源预算计入的内核路径。",
+  "hypothesis": "若按量化方案把组尺度s与偏移z折入另一操作数或矩阵积输出、不在每个缓存值上重建s·q+z（折叠在精确算术下不改变输出），则H100与B200上2/4位KV的注意力解码内核可显著快于FlashInfer BF16，且INT4有效KV吞吐接近峰值带宽。",
+  "mechanism": "仿射折叠：按量化方案把组尺度与偏移折入另一操作数或矩阵积输出，把逐值反量化移出热路径；折叠本身在精确算术下不改变输出。",
+  "target": "H100与B200 GPU上2/4位KV缓存的LLM注意力解码内核（对照FlashInfer BF16，内核已开源）",
+  "expected_effect": "INT2内核较FlashInfer BF16几何平均快3.36倍（H100）与2.67倍（B200）；H100上INT4有效KV吞吐达峰值带宽91.3%。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "Direct任务审阅单条触发记录，其同时给出问题（逐值反量化把瓶颈转移到增长缓慢的指令发射、带宽节省无法兑现为解码提速）、可解释机制（按量化方案把组尺度与偏移折入另一操作数或矩阵积输出）、目标对象（H100与B200上2/4位KV注意力解码内核）与可检验效应（INT2较FlashInfer BF16几何平均快3.36与2.67倍、INT4有效KV吞吐达峰值带宽91.3%）；该条同日已被两个正式Idea收录为支持证据（idea_30e35e81d5172a1e7747的保留率条件枚举、idea_0beeab7573d3f58b0330的部署验收判据），但本候选的身份是仿射折叠内核方案本身，与彼等的评估方法论及内核闭环身份不同，亦与其余既有候选的身份元组不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "5f0b3a320c99019dca435bac",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09722v1"
+      ],
+      "reason": "FOSCAR记录给出问题（KV缓存压到2或4比特节省HBM流量，但逐值反量化重建s·q+z把瓶颈转移到增长缓慢的指令发射）、机制（按量化方案把组尺度与偏移折入另一操作数或矩阵积输出，折叠在精确算术下不改变输出）、目标（H100与B200上2/4位KV注意力解码内核，相关内核已开源）与可检验效应（INT2内核较FlashInfer BF16几何平均快3.36倍于H100与2.67倍于B200、H100上INT4有效KV吞吐达峰值带宽91.3%），并同时给出未评审预印本、服务端+341%吞吐声明缺评估细节、2比特KV端到端精度未验证的边界。",
+      "independence_group": "arxiv:2611.09722"
+    }
+  ],
+  "evidence_item_ids": [
+    "5f0b3a320c99019dca435bac"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.09722v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.09722"
+  ],
+  "unknowns": [
+    "未评审arXiv v1预印本，单一独立分组，缺独立复现",
+    "服务端+341%的吞吐声明缺评估细节，服务层收益未验证",
+    "2比特KV的端到端精度未验证",
+    "折叠按量化方案分型，除已实测的KV注意力解码外其他算子与硬件代际未覆盖"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有H100或B200上以开源FOSCAR内核复现2/4位KV的注意力解码，对照FlashInfer BF16与逐值反量化基线，先以剖析量化指令发射开销占比，再测端到端精度。",
+    "inputs": [
+      "LLM注意力解码负载与KV量化配置（INT2/INT4）",
+      "FlashInfer BF16基线与逐值重建s·q+z的低比特KV解码内核",
+      "H100/B200指令发射与HBM带宽剖析"
+    ],
+    "baselines": [
+      "FlashInfer BF16注意力解码",
+      "逐值重建s·q+z的低比特KV解码内核"
+    ],
+    "metrics": [
+      "解码内核几何平均加速比",
+      "INT4有效KV吞吐相对峰值带宽比例",
+      "指令发射开销占比",
+      "2比特KV下的端到端任务精度"
+    ],
+    "support_criteria": [
+      "内核加速与带宽利用率在自有负载复现，且2比特KV端到端精度损失可控"
+    ],
+    "reject_criteria": [
+      "指令发射节省在其他量化方案或硬件上不复现，或2比特KV端到端精度损失不可接受"
+    ],
+    "limitations": [
+      "首版仅覆盖H100/B200的KV注意力解码内核与INT2/INT4两档，不含服务端吞吐口径"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且与既有候选及Idea的身份元组不同（W4A4KV4旋转校准候选属校准成本、NVFP4权重候选属MoE权重带宽墙、能力保留率Idea属执行上下文条件评估方法论，均非KV解码内核的仿射折叠方案）；本条证据同日已被idea_30e35e81d5172a1e7747与idea_0beeab7573d3f58b0330收录为支持证据，但彼等身份分别是能力保留率评估与内核优化闭环，与本候选身份不同；但仅有单一arXiv预印本独立分组支撑，未评审、+341%服务端吞吐声明缺评估细节、2比特KV端到端精度未验证，缺独立复现与适用边界，先观察。",
+  "related_candidate_ids": [
+    "candidate_8caa65d9cb2bf32901c9",
+    "candidate_243ee6399d56d55d9a56"
+  ],
+  "related_idea_ids": [
+    "idea_30e35e81d5172a1e7747",
+    "idea_0beeab7573d3f58b0330"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_72201c8c72ad07d6a854",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且与既有候选及Idea的身份元组不同（W4A4KV4旋转校准候选属校准成本、NVFP4权重候选属MoE权重带宽墙、能力保留率Idea属执行上下文条件评估方法论，均非KV解码内核的仿射折叠方案）；本条证据同日已被idea_30e35e81d5172a1e7747与idea_0beeab7573d3f58b0330收录为支持证据，但彼等身份分别是能力保留率评估与内核优化闭环，与本候选身份不同；但仅有单一arXiv预印本独立分组支撑，未评审、+341%服务端吞吐声明缺评估细节、2比特KV端到端精度未验证，缺独立复现与适用边界，先观察。",
+      "evidence_item_ids": [
+        "5f0b3a320c99019dca435bac"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

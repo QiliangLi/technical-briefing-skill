@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6df55f097eece2b8f831",
+  "identity": {
+    "problem_key": "hybrid_kv_codec_reconstruction_error_only",
+    "mechanism_key": "end_to_end_trained_kv_codec",
+    "target_key": "hybrid_model_kv_transfer"
+  },
+  "idea_type": "solution_concept",
+  "title": "端到端学习编解码器按质量成本压缩混合模型KV缓存供跨设备搬运",
+  "problem": "混合语言模型的KV缓存随提示词增长且需跨设备搬运；已有学习编解码器只优化缓存重构误差，压缩字节与模型任务质量脱钩，跨域场景只能搬运未压缩缓存或远端重算预填充。",
+  "hypothesis": "把变换、量化器与熵模型对冻结模型端到端训练并按质量成本选定字节预算，可在跨设备搬运前把注意力缓存一次性压缩55倍以上，三项长上下文基准平均损失不超过1.8点，且同分所需字节少于KVTC。",
+  "mechanism": "预填充后一次性压缩注意力缓存、解码前完整还原，混合架构的递归状态保持精确；变换、量化器与条件熵模型对冻结模型端到端联合训练，使字节预算对应任务质量成本；条件熵模型分两遍并行解码任意长度的缓存。",
+  "target": "混合语言模型预填充KV缓存的跨设备传输载荷：发送端一次性压缩、接收端两遍并行解码并完整还原的编解码器链路。",
+  "expected_effect": "Qwen3.5-2B上以55倍以上压缩把三项长上下文基准平均损失控制在1.8点内，100倍以上时最多3.6点；比KVTC同分所需字节少62%-72%。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发表记录同时给出问题（重构误差目标与任务质量脱钩）、可解释机制（对冻结模型端到端训练的变换-量化器-熵模型与一次性压缩/完整还原）、目标对象（混合模型KV缓存的跨设备搬运）与可检验效应（55倍以上压缩的质量损失与KVTC字节对比）。"
+  },
+  "evidence": [
+    {
+      "item_id": "ba40335bbe25e9864da31278",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36950v1"
+      ],
+      "reason": "《DCKV：混合语言模型KV缓存的端到端学习压缩编解码器》给出端到端训练编解码器机制与Qwen3.5-2B上的压缩比、质量损失及KVTC字节对比；其边界为仅在单一模型验证、解码前完整还原bf16且无跨域传输实测。",
+      "independence_group": "arxiv:2610.36950"
+    }
+  ],
+  "evidence_item_ids": [
+    "ba40335bbe25e9864da31278"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.36950v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.36950"
+  ],
+  "unknowns": [
+    "仅在Qwen3.5-2B单一模型验证，跨模型与更大规模未证",
+    "解码前完整还原bf16缓存，不降低接收端显存峰值",
+    "跨域传输收益是项目判断，论文无跨域传输实测",
+    "短提示下递归状态占约八成请求内存，压缩注意力缓存的收益随提示变短而收缩",
+    "预印本单源证据，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "DCKV式端到端编解码器（变换加量化器加条件熵模型，对冻结模型训练）加跨域KV传输模拟：发送端一次性压缩预填充缓存，接收端两遍并行解码并完整还原后继续解码。",
+    "inputs": [
+      "Qwen3.5-2B级混合架构模型",
+      "三项长上下文基准负载",
+      "WAN带宽与时延矩阵",
+      "按质量成本选定的字节预算档位"
+    ],
+    "baselines": [
+      "BF16未压缩KV跨域传输",
+      "KVTC重构误差最优编解码器",
+      "远端重算预填充"
+    ],
+    "metrics": [
+      "传输字节与压缩比",
+      "三项长上下文基准平均损失",
+      "端到端首字时延",
+      "接收端还原时间与显存峰值"
+    ],
+    "support_criteria": [
+      "同分下所需字节少于KVTC，且跨域传输字节降至BF16的五十五分之一以下、平均损失不超过1.8点"
+    ],
+    "reject_criteria": [
+      "接收端还原时间或显存峰值吞噬传输节省，或压缩超过55倍后长上下文损失超3.6点且随上下文增长恶化"
+    ],
+    "limitations": [
+      "跨域时延结论依赖自建WAN模拟；仅单模型预印本证据，无独立复现"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且与既有跨域KV压缩类候选机制不同（Dual-QK为互逆非正交变换的量化格式、误差预算残差编码面向单机持久层、接收端免重编码读取面向查询侧读取路径），但证据为单一预印本、仅在Qwen3.5-2B验证且无跨域传输实测，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_a1008f40dbda996d4400",
+    "candidate_045301052ee5f2b35358",
+    "candidate_5b2eac76b34dc8a2d3bb"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_dd50bc2e9bb629bd880c",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且与既有跨域KV压缩类候选机制不同（Dual-QK为互逆非正交变换的量化格式、误差预算残差编码面向单机持久层、接收端免重编码读取面向查询侧读取路径），但证据为单一预印本、仅在Qwen3.5-2B验证且无跨域传输实测，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "ba40335bbe25e9864da31278"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

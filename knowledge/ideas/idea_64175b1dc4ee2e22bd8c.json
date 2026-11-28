@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_64175b1dc4ee2e22bd8c",
+  "identity": {
+    "problem_key": "inference_optimization_portability",
+    "mechanism_key": "hardware_gap_attribution",
+    "target_key": "edge_and_client_hardware"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "LLM推理优化迁移收益可由硬件差距特征预测，而非照搬服务器基准",
+  "problem": "LLM推理优化（量化、KV剪枝、投机解码、kernel移植）几乎都在NVIDIA服务器GPU或默认INT8必快的假设上设计与验证，端侧与客户端选型常直接引用服务器基准；已发布实测显示同一优化在不同硬件上收益缩小、消失甚至反转，选型缺少一个实测前的迁移收益预判方法。",
+  "hypothesis": "对同一模型与优化组合，服务器基准的收益排序在端侧与客户端硬件上系统性不成立：迁移收益的方向与幅度可由少量硬件差距特征（整数内核实现差异如点积指令、内存带宽-算力比、kernel launch与调度开销）预测，且特征预测的方向正确率显著高于直接引用服务器基准。",
+  "mechanism": "优化收益取决于它释放的资源是否是目标硬件的实际瓶颈：点积指令缺失使INT8整数内核由加速1.83–2.11倍反转为慢1.65–1.76倍并伴随数值漂移；带宽-算力比差异使带宽受限的KV剪枝在Apple Silicon上放大收益（最高1.75倍）而RTX 4090几乎无收益（至多1.02倍）；launch与调度开销使投机解码在端侧全线负收益（六种方法主基准均为负，唯一例外解码+1.1%而端到端−13.8%）。因此用少量刻画瓶颈错配的硬件特征即可在实测前预判迁移方向。",
+  "expected_effect": "若成立，端侧选型可用硬件特征清单在实测前筛除会反转的优化并优先带宽型优化，把逐机型全量基准压缩到特征无法判定的少数组合；若不成立，则每个目标机型仍须完整实测，服务器基准对端侧选型一律不可引用。",
+  "topic_ids": [
+    "ai_infra_horizontal"
+  ],
+  "status": "ready_for_validation",
+  "evidence_for": [
+    {
+      "item_id": "263a374ba902253630bd8971",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.16085v1"
+      ],
+      "reason": "七类CPU受控实测推翻INT8必快假设：同一ONNX工件与量化scales全程固定、整数内核为唯一变量，带点积指令的核加速1.83–2.11倍，无此指令反慢1.65–1.76倍，内核不同还使千张固定输入top-1一致数降到958–965/1000，Hexagon会静默忽略外部量化参数——迁移收益随目标核实现翻转且伴随数值漂移。"
+    },
+    {
+      "item_id": "d0a71d37f14bb457e1c88b46",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.31479v1"
+      ],
+      "reason": "四台Apple机型配RTX 4090对照、统一单请求解码负载逐项评测KV剪枝、投机解码、核移植与量化并用HW-GAP等标签归因迁移成败：KV剪枝吞吐在Apple最高1.75倍而4090至多1.02倍，六种投机解码方法主基准全部负收益（唯一例外解码提升1.1%而端到端下降13.8%）——服务器结论不能照搬端侧，且迁移成败可归因到具体硬件差距。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "预测特征的最小集合未确定：整数内核实现、带宽-算力比、launch开销之外，是否还需缓存层级、数据搬运量与NPU驱动行为（如Hexagon静默覆盖外部量化参数）",
+    "两条证据分别限于视觉模型INT8跨CPU与单请求本地解码场景，端侧多请求批处理LLM服务尚无实测",
+    "性能翻转与数值漂移（top-1一致数下降）是否由同一硬件特征解释，未验证",
+    "特征预测的幅度误差上限与所需标定机型数量未知"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "1个7B级开源LLM（如Llama-2-7B或Qwen3-8B）及同一INT8/INT4量化工件，加1个轻量视觉模型作INT8跨核对照；同一模型工件与量化scales全程固定，目标硬件为唯一变量",
+    "inputs": [
+      "统一单请求解码负载与固定prompt集",
+      "千张固定输入图像集（INT8数值漂移对照）",
+      "至少2类无点积指令CPU、2台Apple Silicon机型与1张NVIDIA服务器GPU（RTX 4090级）对照"
+    ],
+    "baselines": [
+      "FP32跨平台比特一致对照",
+      "服务器GPU上的同优化实测收益",
+      "直接引用原论文服务器基准数字的预测"
+    ],
+    "metrics": [
+      "端到端吞吐、TPOT与P95时延相对kernel级加速比之差",
+      "迁移收益方向预测正确率与幅度误差",
+      "千张固定输入top-1一致数",
+      "投机解码接受率与端到端变化"
+    ],
+    "support_criteria": [
+      "硬件差距特征预测迁移收益方向的正确率显著高于直接引用服务器基准（如≥80%对≤50%）",
+      "全部收益翻转案例可由已测特征解释（点积指令缺失、带宽-算力比反转、launch开销）"
+    ],
+    "reject_criteria": [
+      "加入特征后方向预测正确率与引用服务器基准无显著差异",
+      "出现无法归因到任何已测硬件特征的翻转或数值漂移"
+    ],
+    "limitations": [
+      "端侧多请求批处理与并发服务未覆盖",
+      "剪枝与投机解码后的输出质量未评估",
+      "厂商NPU静默参数覆盖行为需逐厂商排查",
+      "结论不能外推到未测硬件类别"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-10-18",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_aad0772fffcd8be30a4a",
+      "issue_date": "2026-11-16",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "ready_for_validation",
+      "reason": "两条独立已发布实测（七类CPU的INT8翻转与Apple Silicon四类优化评测）共同支持「迁移收益由硬件瓶颈错配决定、可用少量特征预判」这一可证伪假设，基准验证协议可由两文方法完整复现，故建档并置为待验证。",
+      "evidence_item_ids": [
+        "263a374ba902253630bd8971",
+        "d0a71d37f14bb457e1c88b46"
+      ]
+    }
+  ]
+}

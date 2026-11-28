@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_8bb95c60c96c52d5911b",
+  "identity": {
+    "problem_key": "reuse_first_prefill_tail_starvation",
+    "mechanism_key": "load_switched_dual_lane_prefill_scheduling",
+    "target_key": "prefix_cached_llm_serving_prefill"
+  },
+  "idea_type": "solution_concept",
+  "title": "按负载在KV复用优先与公平分配间切换的双虚拟车道prefill调度",
+  "problem": "带前缀缓存的LLM服务中未缓存prefill工作量相差可达70-250倍，复用优先调度允许命中请求不断插队，积压miss请求的最坏TTFT达66.3-201.4秒；固定规则难以同时兼顾中位与尾部TTFT。",
+  "hypothesis": "若以双虚拟车道按负载在复用优先与公平分配间切换——Fast车道按缓存节省算力排序并按相对等待晋升，Fair车道按到达序服务并限制命中请求插队总量——则可在保留复用收益的同时把积压miss请求的最坏TTFT压到有界水平。",
+  "mechanism": "Fast lane按请求可节省的缓存算力排序并随相对等待时间晋升；Fair lane按到达序服务，并对命中请求的插队总量设上限；调度器按负载在两车道间切换，以vLLM钩子实现而不改引擎内核。",
+  "target": "带前缀缓存的LLM服务prefill调度器（vLLM钩子层）",
+  "expected_effect": "洪泛测试中积压miss请求最坏TTFT为22.0秒，LPM等复用优先调度为66.3-201.4秒；代价是命中请求中位等待升至18.2秒，形成显式的中位-尾部权衡曲线。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发布记录同时给出问题（未缓存prefill工作量70-250倍差异下复用优先调度的miss尾部饥饿）、可解释机制（按负载切换的双虚拟车道）、目标对象（带前缀缓存服务的prefill调度器）与可检验效应（最坏TTFT 22.0秒对66.3-201.4秒及命中请求等待权衡）。"
+  },
+  "evidence": [
+    {
+      "item_id": "95cfc70179967155c577e8c5",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02082v1"
+      ],
+      "reason": "《Fairway：在KV复用优先与公平分配间按负载切换的prefill调度器》实测生产trace中65%的tool-agent请求部分命中、未缓存prefill工作量相差70-250倍，给出双虚拟车道机制与最坏TTFT 22.0秒对复用优先66.3-201.4秒的对照，并报告命中请求中位等待升至18.2秒的代价；边界为单张GPU评估且Mooncake trace降采样至1/8会话与1/4长度、GPU与LLM未具名。",
+      "independence_group": "arxiv:2611.02082"
+    }
+  ],
+  "evidence_item_ids": [
+    "95cfc70179967155c577e8c5"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.02082v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.02082"
+  ],
+  "unknowns": [
+    "评估在单张GPU上进行且GPU与LLM未具名，硬件与模型外推边界未知",
+    "Mooncake trace降采样至1/8会话与1/4长度，负载代表性有限",
+    "命中请求中位等待升至18.2秒的中位-尾部权衡在其它负载与多卡部署下未刻画",
+    "单篇预印本，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "以vLLM钩子在内部tool-agent服务上实现双虚拟车道prefill调度，回放含部分命中与积压miss的真实流量，与复用优先及到达序基线对比。",
+    "inputs": [
+      "内部tool-agent请求trace",
+      "命中率与负载档位扫描",
+      "命中请求插队总量上限档位"
+    ],
+    "baselines": [
+      "复用优先调度（LPM等）",
+      "按到达序的公平调度",
+      "固定规则混合调度"
+    ],
+    "metrics": [
+      "积压miss请求最坏TTFT",
+      "命中请求中位等待",
+      "中位与尾部TTFT权衡曲线",
+      "缓存命中率"
+    ],
+    "support_criteria": [
+      "高命中负载下最坏TTFT显著低于复用优先基线且命中请求等待增幅有界"
+    ],
+    "reject_criteria": [
+      "低命中或低负载下车道切换开销吞噬收益，或命中请求等待增幅失控"
+    ],
+    "limitations": [
+      "原始证据限于单张GPU与降采样trace，多卡与真实生产负载未测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，身份区别于跨部署复用坍塌Idea（放置路由与压缩保留）与检索控制平面等既有候选；但证据为单一预印本、仅单张GPU与降采样trace评估，缺独立支持与适用边界，且该记录已于同期被idea_984fec4fcf65a75a6b1f以相邻证据吸收，与本候选的分工lineage需人工决定。",
+  "related_candidate_ids": [
+    "candidate_984fec4fcf65a75a6b1f",
+    "candidate_ccdfa5b1ca5299f7009f"
+  ],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_4a6f7baae1e19796a316",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应完整，身份区别于跨部署复用坍塌Idea（放置路由与压缩保留）与检索控制平面等既有候选；但证据为单一预印本、仅单张GPU与降采样trace评估，缺独立支持与适用边界，且该记录已于同期被idea_984fec4fcf65a75a6b1f以相邻证据吸收，与本候选的分工lineage需人工决定。",
+      "evidence_item_ids": [
+        "95cfc70179967155c577e8c5"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

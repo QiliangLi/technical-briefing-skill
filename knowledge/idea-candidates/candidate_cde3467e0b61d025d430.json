@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_cde3467e0b61d025d430",
+  "identity": {
+    "problem_key": "on_device_agent_visual_kv_budget_round_limit",
+    "mechanism_key": "lifecycle_segmented_per_turn_reuse_core_aligned_pruning",
+    "target_key": "on_device_agent_kv_runtime"
+  },
+  "idea_type": "solution_concept",
+  "title": "按生命周期分段与按轮复用加核心数对齐剪枝扩展端侧多模态智能体的缓存轮数上限",
+  "problem": "端侧多模态智能体的历史视觉观测持续占用KV缓存，固定缓存预算限制了可交互轮数，全历史保留策略约6轮即耗尽预算。",
+  "hypothesis": "把上下文按生命周期分为系统提示、持久文本历史与瞬时视觉段，每轮用掩码预填充在工具执行窗口提交文本状态并移除历史图像，配合把注意力头数剪至可被核心数整除的结构化剪枝，可在不增加每轮延迟的前提下把固定缓存预算下的可交互轮数从约6轮扩展到约20轮（超3倍），恢复训练后动作类型准确率与坐标命中率恢复至原模型附近。",
+  "mechanism": "结构化剪枝把注意力头数裁至可被边缘NPU核心数整除；运行时把上下文分为系统提示、持久文本历史与瞬时视觉段，每轮用掩码预填充在工具执行窗口提交文本状态并移除历史图像，实现按轮的KV复用与驱逐。",
+  "target": "端侧多模态智能体（单块边缘NPU）的KV缓存运行时管理",
+  "expected_effect": "固定缓存预算下可交互轮数从全历史策略的约6轮增至约20轮（超3倍），每轮延迟不增加；恢复训练后动作类型准确率与坐标命中率恢复至原模型附近，残余差距集中在精确匹配率。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发布记录同时给出问题（历史视觉观测持续占用缓存、固定预算限制可交互轮数）、可解释机制（生命周期分段加按轮掩码预填充复用与历史图像移除、头数对齐核心数的结构化剪枝）、目标对象（端侧多模态智能体的KV缓存运行时）与可检验效应（固定预算下约6轮到约20轮且每轮延迟不增、恢复训练后精度恢复的对照）。"
+  },
+  "evidence": [
+    {
+      "item_id": "b97a19bec4858dc590279b80",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.02601v1"
+      ],
+      "reason": "PARC给出问题（端侧多模态智能体历史视觉观测持续占用缓存、固定缓存预算限制可交互轮数）、机制（剪枝把注意力头数裁至可被核心数整除；上下文分为系统提示、持久文本历史与瞬时视觉段，每轮用掩码预填充在工具执行窗口提交文本状态并移除历史图像）、目标（端侧多模态智能体在单块边缘NPU上的KV缓存运行时）与可检验效应（固定预算下轮数从全历史策略约6轮增至约20轮超3倍、每轮延迟不增，恢复训练后动作类型准确率与坐标命中率恢复至原模型附近，残余差距集中在精确匹配率）。",
+      "independence_group": "arxiv:2611.02601"
+    }
+  ],
+  "evidence_item_ids": [
+    "b97a19bec4858dc590279b80"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.02601v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.02601"
+  ],
+  "unknowns": [
+    "工具链不导出缓存命中率与占用指标，复用收益仅能间接度量",
+    "验证仅限单一4B模型与单块边缘NPU上的GUI任务",
+    "单一预印本证据，无独立工作线复现",
+    "剪枝残余差距集中在精确匹配率，非GUI任务上的质量边界未刻画"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部端侧推理栈实现按生命周期分段（系统提示、持久文本历史、瞬时视觉段）的按轮KV复用与历史图像移除，并实现头数对齐NPU核心数的结构化剪枝与恢复训练，对照全历史保留基线。",
+    "inputs": [
+      "多轮GUI智能体轨迹基准（含历史图像累积）",
+      "固定缓存预算多档扫描",
+      "剪枝头数档位（对齐核心数的不同整除档）与恢复训练开/关对照",
+      "工具链补埋点后的命中率与占用轨迹"
+    ],
+    "baselines": [
+      "全历史KV保留基线（约6轮耗尽预算口径）",
+      "无生命周期分段的朴素按轮前缀复用"
+    ],
+    "metrics": [
+      "固定预算下可交互轮数",
+      "每轮延迟",
+      "缓存命中率与占用（需补埋点）",
+      "动作类型准确率、坐标命中率与精确匹配率"
+    ],
+    "support_criteria": [
+      "固定预算下轮数较全历史基线提升3倍量级且每轮延迟不增加",
+      "恢复训练后动作类型准确率与坐标命中率恢复至原模型附近"
+    ],
+    "reject_criteria": [
+      "移除历史图像使多轮任务准确率不可恢复",
+      "命中率与占用无法度量导致复用收益无法证实"
+    ],
+    "limitations": [
+      "原始验证仅覆盖单一4B模型与单块边缘NPU上的GUI任务",
+      "原始工具链不导出命中率与占用指标"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有候选不同义，但证据为单一预印本，验证仅限单一4B模型与单块边缘NPU的GUI任务，且工具链不导出命中率与占用指标使复用收益仅能间接度量，独立支持不足，先观察。",
+  "related_candidate_ids": [
+    "candidate_8fc8416fea27e4c4cbd9",
+    "candidate_90e9417774bee4c97457",
+    "candidate_efe3ba32609f3962f77a"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_c360e3caac3856759054",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有候选不同义，但证据为单一预印本，验证仅限单一4B模型与单块边缘NPU的GUI任务，且工具链不导出命中率与占用指标使复用收益仅能间接度量，独立支持不足，先观察。",
+      "evidence_item_ids": [
+        "b97a19bec4858dc590279b80"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

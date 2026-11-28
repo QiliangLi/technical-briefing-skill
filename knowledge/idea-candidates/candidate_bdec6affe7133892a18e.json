@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_bdec6affe7133892a18e",
+  "identity": {
+    "problem_key": "zns_zone_reclaim_checkpoint_write_amplification",
+    "mechanism_key": "retention_aware_zone_placement_hint",
+    "target_key": "zns_ssd_checkpoint_backend"
+  },
+  "idea_type": "solution_concept",
+  "title": "把检查点保留策略译为ZNS回收分区提示再放置",
+  "problem": "ZNS SSD只能整区回收空间，删除单个文件不释放容量，密集写检查点受预留开销与写放大制约。",
+  "hypothesis": "把latest-K类保留策略译为显式回收分区提示、隔离长保留锚点并把回收期相近对象聚到同区，可同时压低预留占用、检查点p99时延与写放大。",
+  "mechanism": "保留策略转回收分区提示，按延迟回收字节加区尾余量选区，回收期相近对象聚合放置。",
+  "target": "ZNS SSD上的训练检查点后端",
+  "expected_effect": "84%负载下预留占用较ZenFS减41.7%，检查点p99时延从85.3毫秒降至44.8毫秒，写放大从1.165降至1.003。",
+  "topic_ids": [
+    "storage_media"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-18",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "c12d4dda04645145d4503bb5",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.05554v1"
+      ],
+      "reason": "《RetainZ》给出机制与ZenFS对照的FEMU仿真结果。",
+      "independence_group": "arxiv:2610.05554"
+    }
+  ],
+  "evidence_item_ids": [
+    "c12d4dda04645145d4503bb5"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.05554v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.05554"
+  ],
+  "unknowns": [
+    "全部实验为FEMU仿真而非真实器件",
+    "真实训练负载仅135M模型，收益依赖精确保留提示"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在真实ZNS器件上实现保留提示放置，以内部训练检查点负载对比ZenFS。",
+    "inputs": [
+      "真实ZNS SSD",
+      "latest-K保留策略扫描",
+      "内部检查点负载"
+    ],
+    "baselines": [
+      "ZenFS-Alloc"
+    ],
+    "metrics": [
+      "预留占用",
+      "检查点p99时延",
+      "写放大"
+    ],
+    "support_criteria": [
+      "三项指标同向改善且提示开销可忽略"
+    ],
+    "reject_criteria": [
+      "真实器件GC行为使聚合失效"
+    ],
+    "limitations": [
+      "原始证据全部来自FEMU仿真"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整，但全部证据来自FEMU仿真且真实负载仅小模型，独立支持不足。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-18",
+  "last_updated_issue": "2026-10-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_7647cf5675f956dadaf",
+      "issue_date": "2026-10-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整，但全部证据来自FEMU仿真且真实负载仅小模型，独立支持不足。",
+      "evidence_item_ids": [
+        "c12d4dda04645145d4503bb5"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

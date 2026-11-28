@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a9fd5a6395ecd7254f29",
+  "identity": {
+    "problem_key": "mla_quantization_spares_position_keys",
+    "mechanism_key": "role_separated_attention_error_reversible_transforms",
+    "target_key": "whole_mla_kv_cache_quantized_format"
+  },
+  "idea_type": "solution_concept",
+  "title": "按张量角色分离拟合可逆变换，把整份MLA KV缓存量化到约2.5比特",
+  "problem": "MLA缓存的既有量化只处理隐向量、保留位置键，整份缓存位宽存在约3.78比特下限，需跨域搬运或持久化的MLA缓存字节体积居高不下。",
+  "hypothesis": "若按张量角色分别拟合面向注意力输出误差的可逆变换、并把反变换折入解码端上投影，可在精度基本持平下把整份MLA缓存量化到约2.5比特，需传输或持久化的缓存字节约降至六分之一。",
+  "mechanism": "角色分析显示隐向量主要承载值信息、位置键主导注意力打分；为二者分别拟合面向注意力输出误差的可逆变换，反变换折入解码端上投影。",
+  "target": "跨域传输或持久化前的整份MLA KV缓存量化格式（隐向量加位置键）。",
+  "expected_effect": "约2.5比特下四个MLA模型与BF16差距均在0.5分内；100万token序列缓存从52.9GiB降到8.2GiB；最强基线OSCAR需约1.5倍缓存。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "单条已发表记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "ac7bcf0c0b42e6bffdaf4ec1",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.33625v1"
+      ],
+      "reason": "《RAQ-MLA》给出按张量角色分别拟合可逆变换的机制，以及约2.5比特下四个MLA模型的精度、内核时延与缓存体积结果。",
+      "independence_group": "arxiv:2610.33625"
+    }
+  ],
+  "evidence_item_ids": [
+    "ac7bcf0c0b42e6bffdaf4ec1"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.33625v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.33625"
+  ],
+  "unknowns": [
+    "仅测单节点解码精度与内核时延，未测跨域传输、命中率与P95",
+    "内核数据限于H20双卡batch为1",
+    "WAN字节与时延收益需另行实测",
+    "单一预印本，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "RAQ-MLA量化格式加解码端上投影反变换的跨域传输与持久化模拟",
+    "inputs": [
+      "MLA架构模型的完整缓存（隐向量加位置键）",
+      "百万token级长序列负载",
+      "WAN带宽与时延矩阵"
+    ],
+    "baselines": [
+      "BF16未压缩MLA缓存",
+      "仅量化隐向量、保留位置键的既有MLA量化（约3.78比特）",
+      "OSCAR等最强基线"
+    ],
+    "metrics": [
+      "整份缓存每元素比特数",
+      "与BF16的任务精度差距",
+      "传输字节、命中率与P95时延"
+    ],
+    "support_criteria": [
+      "精度差距保持0.5分量级且跨域传输或持久化字节约降至BF16的六分之一"
+    ],
+    "reject_criteria": [
+      "反变换折入上投影后解码时延或P95劣化吞噬带宽节省",
+      "跨模型角色假设失效导致精度塌陷"
+    ],
+    "limitations": [
+      "原始证据仅覆盖单节点解码精度与内核时延，跨域收益依赖自建WAN模拟"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且与既有跨域传输体积类候选机制不同（Dual-QK是互逆非正交Q/K变换、误差预算候选是残差编码、配额候选是预算分配），但证据仅为单一预印本，只有单节点解码精度与内核时延，跨域传输、命中率与P95未实测，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_a1008f40dbda996d4400",
+    "candidate_045301052ee5f2b35358",
+    "candidate_e5563020923e9d940d63",
+    "candidate_7ea64b51e3c8e3cdef6e"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_32f8c4086f03a247d7b9",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且与既有跨域传输体积类候选机制不同（Dual-QK是互逆非正交Q/K变换、误差预算候选是残差编码、配额候选是预算分配），但证据仅为单一预印本，只有单节点解码精度与内核时延，跨域传输、命中率与P95未实测，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "ac7bcf0c0b42e6bffdaf4ec1"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

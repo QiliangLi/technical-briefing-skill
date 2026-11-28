@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_5393564e98d6d52d688e",
+  "identity": {
+    "problem_key": "multi_model_working_set_single_card_memory",
+    "mechanism_key": "unified_weight_shard_kv_budget",
+    "target_key": "multi_model_agent_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "权重分片与KV块共用一份显存预算统一调度多模型Agent",
+  "problem": "多模型Agent工作集超出单卡显存时，整模型换入换出阻塞计算并丢弃会话KV，重预填充随上下文二次增长。",
+  "hypothesis": "把权重分片与KV块并入同一显存预算，按重用概率乘恢复代价选择驻留对象并以调用意图提前预取权重分片，可在紧预算下大幅缩短会话完成时间。",
+  "mechanism": "流式输出中的调用意图提前触发权重预取；各模型仅驻留启动分片，切换变为增量传输；会话KV由主机层承接，按重用概率乘恢复代价选驻留对象。",
+  "target": "单卡多模型Agent服务",
+  "expected_effect": "32GB预算下中位会话完成较最强基线降21.7%，16GB时整模型基线超出时间窗而该方案仍可完成。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-18",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "34cdffbf507f9b88369b2324",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.19822v1"
+      ],
+      "reason": "《JointServe》给出统一预算机制与多基线对照。",
+      "independence_group": "arxiv:2610.19822"
+    }
+  ],
+  "evidence_item_ids": [
+    "34cdffbf507f9b88369b2324"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.19822v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.19822"
+  ],
+  "unknowns": [
+    "仅单卡层级，无跨机或WAN结果",
+    "显存充裕时收益收窄至5.2%"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "以内部多模型Agent会话迹驱动显存预算仿真，对比统一调度与整模型换入换出及权重弹性策略。",
+    "inputs": [
+      "内部会话迹",
+      "多档显存预算",
+      "模型分片画像"
+    ],
+    "baselines": [
+      "整模型换入换出",
+      "权重与KV独立预算"
+    ],
+    "metrics": [
+      "会话完成时间",
+      "重预填充token数",
+      "切换停顿"
+    ],
+    "support_criteria": [
+      "紧预算下完成时间显著下降且预测开销小"
+    ],
+    "reject_criteria": [
+      "显存充裕或会话模型单一时劣化"
+    ],
+    "limitations": [
+      "原始评估仅单卡，无跨机数据"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整，但仅单卡层级验证且显存充裕时收益收窄，独立支持不足。",
+  "related_candidate_ids": [
+    "candidate_d636e61ae696f3bd677f"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-18",
+  "last_updated_issue": "2026-10-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_ea6d27ff9403382e3f3",
+      "issue_date": "2026-10-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整，但仅单卡层级验证且显存充裕时收益收窄，独立支持不足。",
+      "evidence_item_ids": [
+        "34cdffbf507f9b88369b2324"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

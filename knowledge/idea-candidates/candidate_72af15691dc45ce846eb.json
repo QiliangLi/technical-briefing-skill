@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_72af15691dc45ce846eb",
+  "identity": {
+    "problem_key": "host_tier_kv_capacity_plateau_and_gpu_scheduling_dependency",
+    "mechanism_key": "resident_side_independent_scheduling_with_async_recall_admission",
+    "target_key": "gpu_host_tiered_kv_serving_engine"
+  },
+  "idea_type": "solution_concept",
+  "title": "分层KV卸载的驻留侧独立调度与主机层容量收益边界",
+  "problem": "GPU显存加主机内存两层的KV卸载中，驻留（CPU侧）请求须等GPU调度让位，解码进展突发并推高P99尾延迟；同时主机KV池容量越过约120GiB后收益持平（DualPace实测120-240GiB区间持平），限制因素从层容量转为调度权与CPU算力/带宽，单纯扩容不再兑现代价。",
+  "hypothesis": "把驻留侧解码与跨层KV搬运从GPU统一调度改为驻留侧独立调度（CPU引擎自有解码队列、按离线profiling阈值按需GPU Dense Assist），并把召回/搬运当异步事件与普通批交错执行、按IO积压自适应准入并配背压检测，可在固定P99 TPOT预算下显著提升请求率与利用率；主机层容量配置应先测CPU解码吞吐与带宽上限再定，越过收益持平点后扩容无增益而调度治理仍有收益。",
+  "mechanism": "DualPace让AMX CPU引擎以自有队列独立推进驻留解码、GPU引擎负责prefill并按离线profiling阈值选择本地执行或GPU Dense Assist；PulseInfer以中断式层间调度把召回I/O当异步事件与普通批交错执行、IO自适应准入在运行时定普通/卸载批次配比、SoloHead选择加聚散传输合并8KB碎片；vLLM 0.31.0新增KV卸载背压检测并让持有KV块的请求优先调度。三条独立工作线联合支持『跨层调度权治理而非层容量是分层KV尾延迟与利用率的主导变量』，该组合判断任何单条记录都未陈述。",
+  "target": "GPU显存加主机内存两层的分层KV serving引擎（vLLM/SGLang类）的调度器与主机层容量配置。",
+  "expected_effect": "DualPace口径：1.5秒P99 TPOT下请求率较NEO高61%（8B单卡）至3%（32B四卡），主机KV池120-240GiB间收益持平、CPU算力与带宽成为新瓶颈；PulseInfer口径：解码吞吐较全KV基线升1.5-4.7倍、TPOT最多降76%（同步召回系统GPU利用率仅约35%）。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "DualPace（2026-11-02触发项）给出调度权让渡机制与主机容量收益持平点，PulseInfer（2026-09-30）与vLLM 0.31.0（2026-10-14）独立证明跨层搬运治理（异步召回、自适应准入、背压）主导利用率与尾延迟，三条独立工作线联合支持任何单条记录未陈述的『调度权治理优于层容量扩容』机制组合。"
+  },
+  "evidence": [
+    {
+      "item_id": "8580ae5c27679496d453025f",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.34555v1"
+      ],
+      "reason": "PulseInfer实测同步召回系统GPU利用率仅约35%、逐头选择把传输碎成8KB小包致PCIe有效带宽仅约6GB/s；中断式层间调度加IO自适应准入后SGLang解码吞吐较全KV基线升1.5-4.7倍、TPOT最多降76%（评估跳过prefill阶段）。",
+      "independence_group": "arxiv:2609.34555"
+    },
+    {
+      "item_id": "ac5e43456730856b45a55c92",
+      "issue_date": "2026-10-14",
+      "source_urls": [
+        "https://github.com/vllm-project/vllm/releases/tag/v0.31.0"
+      ],
+      "reason": "vLLM 0.31.0新增KV卸载背压检测并让持有KV块的请求优先调度，是引擎侧把卸载治理纳入调度决策的同向信号（release说明未附这批KV管理变更的量化基准）。",
+      "independence_group": "github-release:vllm-project/vllm@v0.31.0"
+    },
+    {
+      "item_id": "7fcabc4e54e77f51ba45316e",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.33501v1"
+      ],
+      "reason": "DualPace让AMX CPU引擎以自有队列独立推进驻留解码、GPU引擎负责prefill并按离线profiling阈值选择本地执行或GPU Dense Assist，1.5秒P99 TPOT下请求率较NEO高61%（8B单卡）至3%（32B四卡）；主机KV池在120-240GiB间收益持平，瓶颈转为CPU算力与带宽（吞吐区间属摘要级声明且容量实验配置未说明，分层仅GPU显存加主机内存）。",
+      "independence_group": "arxiv:2610.33501"
+    }
+  ],
+  "evidence_item_ids": [
+    "8580ae5c27679496d453025f",
+    "ac5e43456730856b45a55c92",
+    "7fcabc4e54e77f51ba45316e"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.34555v1",
+    "https://github.com/vllm-project/vllm/releases/tag/v0.31.0",
+    "https://arxiv.org/abs/2610.33501v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.34555",
+    "github-release:vllm-project/vllm@v0.31.0",
+    "arxiv:2610.33501"
+  ],
+  "unknowns": [
+    "DualPace吞吐区间属摘要级声明且容量实验配置未说明",
+    "分层仅GPU显存加主机内存，无SSD层",
+    "PulseInfer评估跳过prefill阶段，收益依赖普通批提供可重叠计算且MoE模型下缩小",
+    "三种调度机制未在同一引擎框架对照，组合收益与相互干扰未验证",
+    "AMX为特定CPU指令集硬件，其他CPU平台可迁移性未知"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在GPU加主机两层分层KV引擎（vLLM或SGLang）中实现驻留侧独立调度（CPU引擎自有解码队列、按离线profiling阈值的GPU Dense Assist），并叠加召回/卸载搬运的异步事件化与按积压自适应准入/背压，与GPU统一调度基线对比。",
+    "inputs": [
+      "内部混合负载（单轮/多轮/Agent）回放",
+      "主机KV池容量扫描（含120GiB以上越过收益持平点的区间）",
+      "异步召回与自适应准入/背压的开关对照",
+      "CPU解码吞吐与带宽上限画像"
+    ],
+    "baselines": [
+      "GPU统一调度门控卸载（NEO式）",
+      "同步召回（无异步交错）",
+      "静态容量配置"
+    ],
+    "metrics": [
+      "P99/P50 TPOT与TTFT",
+      "固定时延预算下请求率",
+      "GPU与CPU利用率",
+      "重复搬运量与背压事件数"
+    ],
+    "support_criteria": [
+      "固定P99 TPOT预算下请求率显著高于GPU统一调度基线",
+      "容量越过持平点后扩容无增益而调度治理改动仍有收益"
+    ],
+    "reject_criteria": [
+      "调度权让渡的切换与让渡开销吞噬收益",
+      "CPU算力或带宽先饱和使请求率不升"
+    ],
+    "limitations": [
+      "DualPace数字为摘要级声明且容量实验配置未说明",
+      "PulseInfer评估跳过prefill阶段",
+      "无SSD第三层覆盖"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且三条独立证据线同向，但DualPace吞吐区间为摘要级声明、容量持平点实验配置未说明且无SSD层，PulseInfer跳过prefill评估，三种调度机制未在同一引擎框架对照，先观察。",
+  "related_candidate_ids": [
+    "candidate_1a75d7dd024c14c38c88"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-09-30",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_dab9f9fe38fcee2bca5d",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且三条独立证据线同向，但DualPace吞吐区间为摘要级声明、容量持平点实验配置未说明且无SSD层，PulseInfer跳过prefill评估，三种调度机制未在同一引擎框架对照，先观察。",
+      "evidence_item_ids": [
+        "8580ae5c27679496d453025f",
+        "ac5e43456730856b45a55c92",
+        "7fcabc4e54e77f51ba45316e"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

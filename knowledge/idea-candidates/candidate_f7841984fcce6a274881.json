@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_f7841984fcce6a274881",
+  "identity": {
+    "problem_key": "kv_transfer_tail_latency",
+    "mechanism_key": "transfer_recompute_locality_selection",
+    "target_key": "pd_disaggregated_inference"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "带宽与精度编排感知的KV交接代价并入PD执行位置选择（与既有Idea同身份）",
+  "problem": "PD解耦推理并非总该完整传输KV：链路带宽、KV重要性与请求放置会改变传输、重算与就地计算的最优选择，固定策略导致尾部TTFT恶化与无效KV搬移。",
+  "hypothesis": "若按请求与交接点估算KV传输（含切层边界、传输精度与带宽编排）、局部重算和就地计算代价，并据此选择执行位置（阶段角色与请求落点）与传输粒度，则可在不牺牲输出正确性的前提下降低尾部TTFT并减少无效KV搬移。",
+  "mechanism": "按请求估算KV传输（含GPU侧量化/压缩执行开销）、局部重算与就地计算代价；把估计并入预填完成时间模型与在线阶段重指派规划；交接执行时按带宽联合选择切层边界与传输精度并与计算重叠。",
+  "target": "PD解耦推理服务的请求级执行位置与KV交接编排决策层",
+  "expected_effect": "在不牺牲输出正确性的前提下降低尾部TTFT并减少无效KV搬移；本期三条记录分别给出请求级（中位TTFT较最强基线平均降61.4%）、服务层（平均端到端时延54.4秒降至13.2秒、P95 TTFT 142秒降至10.2秒）与交接级（8K交接较全量BF16传输快2.36-3.65倍）的分量实证。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "同期三条独立记录联合表述同一机制含义：Nebula把排队、计算与KV传输成本并入预填完成时间估计并按请求选择跨节点取用或并行预填充，Evolving Infra在服务层在线重指派PD阶段并以排队期RDMA异步取回KV，ReKV按带宽联合选择交接的切层边界与传输精度；三者联合即为既有Idea idea_f7841984fcce6a274881所述按请求估算KV传输、重算与就地代价后选择执行位置与传输粒度，且三条记录已于本期进入该Idea证据链，不构成新的独立身份，按duplicate处置。"
+  },
+  "evidence": [
+    {
+      "item_id": "e196a92a7cf23d4c8fdd2524",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09474v1"
+      ],
+      "reason": "Nebula在请求级把排队、计算与KV传输成本并入预填完成时间估计，据此调度跨节点取用与并行预填充，四模型RAG/代理负载中位TTFT较最强基线平均降61.4%、找回前缀缓存漏失token的76.1%——按请求估算传输与计算代价选择执行位置的机制实例（每请求仅一个输出token，TPOT、吞吐与网络利用率未报告）。",
+      "independence_group": "arxiv:2611.09474"
+    },
+    {
+      "item_id": "6a40c55e6e13c84e9e723e82",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.12304v1"
+      ],
+      "reason": "Evolving Infra在服务层在线重指派PD阶段且不弃KV：规划器在线学习迭代用时模型重指派阶段，KV驻留主机内存共享池、集群目录计数分支引用、排队期间经RDMA异步取回，Claude Code负载平均端到端时延由54.4秒降至13.2秒、P95 TTFT由142秒降至10.2秒（基线Dynamo）——执行位置（阶段角色）按代价在线选择的服务层形态（聚合KV传输量与网络利用率未报告，未报告重复与方差）。",
+      "independence_group": "arxiv:2611.12304"
+    },
+    {
+      "item_id": "1c1a7069e13c4d967fb84030",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.08770v1"
+      ],
+      "reason": "ReKV把KV交接做成带宽感知的切层边界与传输精度联合选择：预填侧先发BF16边界隐状态、解码侧重算后缀层、量化前缀KV在途传输并恢复，跨节点H100上过质量门槛的Joint Q8在8K交接中位时延较全量BF16传输快2.36-3.65倍——传输粒度按带宽选择的交接级实例（计时不含prefill与后续decode，无并发端到端TTFT/TPOT/P95）。",
+      "independence_group": "arxiv:2611.08770"
+    }
+  ],
+  "evidence_item_ids": [
+    "e196a92a7cf23d4c8fdd2524",
+    "6a40c55e6e13c84e9e723e82",
+    "1c1a7069e13c4d967fb84030"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.09474v1",
+    "https://arxiv.org/abs/2611.12304v1",
+    "https://arxiv.org/abs/2611.08770v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.09474",
+    "arxiv:2611.12304",
+    "arxiv:2611.08770"
+  ],
+  "unknowns": [
+    "三策略在并发端到端TTFT/TPOT与网络利用率口径下的统一对照仍缺失：Nebula每请求仅一个输出token且未报告TPOT、吞吐与网络利用率，Evolving Infra未报告聚合KV传输量、网络利用率与重复方差，ReKV计时不含prefill与后续decode。",
+    "最优动作随长度与带宽翻转，交叉点位置在多负载与多租户P95/P99下未验证。",
+    "服务层编排基线（Evolving Infra无网络侧机制已把P95 TTFT降至10.2秒）之上，网络侧机制的增量收益无对照数据。"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "离散事件模型覆盖Prefill、KV传输（含切层边界×传输精度×带宽的交接编排）、Decode排队与在线阶段重指派，比较统一代价估计下执行位置与传输粒度联合选择相对固定策略的收益；该身份与既有Idea重复，验证应并入该Idea的统一计划执行。",
+    "inputs": [
+      "RTT与带宽扫描",
+      "KV大小与可选比例（含切层边界与量化档位）",
+      "缓存命中率与前缀/位置无关容量配比",
+      "Prefill/Decode到达率与阶段摆动轨迹"
+    ],
+    "baselines": [
+      "完整KV传输（BF16全量）",
+      "始终重算或固定切层/精度",
+      "固定请求放置与静态PD阶段划分（Dynamo式）"
+    ],
+    "metrics": [
+      "P50/P95/P99 TTFT",
+      "TPOT",
+      "传输字节",
+      "GPU与网络利用率"
+    ],
+    "support_criteria": [
+      "联合选择策略在一段可解释参数区间内同时改善尾TTFT和传输量"
+    ],
+    "reject_criteria": [
+      "策略只在极窄参数点获益，或预测开销使尾延迟不优于固定基线"
+    ],
+    "limitations": [
+      "模拟不能覆盖真实通信栈抖动、GPU内核干扰和调度实现开销",
+      "与既有Idea重复，独立执行将造成重复验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "与现有Idea idea_f7841984fcce6a274881同身份同含义：该Idea的问题即KV传输尾延迟下传输、重算与就地计算随带宽和命中率变化的交叉点，其机制即按请求估算KV传输（含GPU侧压缩执行开销）、局部重算和就地计算代价后选择执行位置与传输粒度；本期三条触发记录（e196a92a7cf23d4c8fdd2524、6a40c55e6e13c84e9e723e82、1c1a7069e13c4d967fb84030）的联合语义——请求级传输成本入估计、服务层在线阶段重指派加排队期异步取回、交接级带宽感知的量化与重算联合选择——正是该Idea机制在请求级、服务层与交接级三个层级的实例，且三条记录已于2026-11-11进入该Idea证据链（idea_decision_e216aeb6e0a96a39023b）；综合不构成区别于该Idea的独立身份，按duplicate指向该Idea，不另立案。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_e5423655e2a15ea2c1b9",
+      "issue_date": "2026-11-11",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "与现有Idea idea_f7841984fcce6a274881同身份同含义：该Idea的问题即KV传输尾延迟下传输、重算与就地计算随带宽和命中率变化的交叉点，其机制即按请求估算KV传输（含GPU侧压缩执行开销）、局部重算和就地计算代价后选择执行位置与传输粒度；本期三条触发记录（e196a92a7cf23d4c8fdd2524、6a40c55e6e13c84e9e723e82、1c1a7069e13c4d967fb84030）的联合语义——请求级传输成本入估计、服务层在线阶段重指派加排队期异步取回、交接级带宽感知的量化与重算联合选择——正是该Idea机制在请求级、服务层与交接级三个层级的实例，且三条记录已于2026-11-11进入该Idea证据链（idea_decision_e216aeb6e0a96a39023b）；综合不构成区别于该Idea的独立身份，按duplicate指向该Idea，不另立案。",
+      "evidence_item_ids": [
+        "e196a92a7cf23d4c8fdd2524",
+        "6a40c55e6e13c84e9e723e82",
+        "1c1a7069e13c4d967fb84030"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

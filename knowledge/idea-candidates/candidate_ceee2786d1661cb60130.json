@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ceee2786d1661cb60130",
+  "identity": {
+    "problem_key": "kv_memory_constrained_request_scheduling",
+    "mechanism_key": "cmu_rule_priority_admission_backfill",
+    "target_key": "single_gpu_llm_request_scheduler"
+  },
+  "idea_type": "solution_concept",
+  "title": "KV缓存内存约束下cμ规则加准入回填的单GPU请求调度",
+  "problem": "单张GPU上LLM推理请求调度受有限KV缓存容量约束，vLLM默认调度不按代价与有效服务率对请求排序，也不保证接纳后各步KV占用不超限，平均时延与TTFT偏高。",
+  "hypothesis": "若按代价乘以有效服务率（综合算力、访存带宽与容量）对请求排序，并以准入检查确保未来各步KV占用不超限、以backfill绕过不可行请求继续接纳，可在KV内存受限的单GPU推理上大幅降低平均时延与TTFT且输出吞吐基本持平。",
+  "mechanism": "cμ规则按代价乘以有效服务率排序请求，该速率综合算力、访存带宽与容量；准入检查确保未来各步KV占用不超限；backfill变体绕过不可行请求继续接纳。",
+  "target": "单GPU LLM推理服务的请求级调度器（vLLM类引擎调度层）",
+  "expected_effect": "压缩To-B生产轨迹回放上cμ-backfill平均时延9.47秒、TTFT 2.56秒，对比vLLM默认调度的35.49秒与28.77秒，输出吞吐基本持平。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "Direct触发项单独给出完整的问题（有限KV缓存容量下的单GPU请求调度）、可解释机制（cμ排序加KV占用准入检查与backfill）、目标对象（vLLM类单GPU调度层）与可测效应（平均时延9.47秒对35.49秒、TTFT 2.56秒对28.77秒且吞吐持平），候选直接落在该记录的调度机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "9a355876a02b1d84ace7b6fb",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04807v1"
+      ],
+      "reason": "《KV缓存内存约束下cμ规则的渐近最优性与生产轨迹验证》以流体模型证明cμ规则在KV内存约束下渐近最优，并给出机制与回放对照：cμ-backfill在压缩To-B轨迹上平均时延9.47秒、TTFT 2.56秒对vLLM默认的35.49秒与28.77秒，输出吞吐基本持平。",
+      "independence_group": "arxiv:2611.04807"
+    }
+  ],
+  "evidence_item_ids": [
+    "9a355876a02b1d84ace7b6fb"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.04807v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.04807"
+  ],
+  "unknowns": [
+    "对比策略均假设输出长度精确已知并按回放评估，长度预测误差的影响未测",
+    "评估基于压缩To-B生产轨迹回放，未在真实在线服务环境验证",
+    "设定为单GPU且无网络侧机制，多GPU或分离式场景的适用性未知",
+    "仅与vLLM默认调度对照，未与其他KV感知调度或准入控制策略比较"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "在内部单GPU推理服务的生产轨迹上复现cμ排序加KV占用准入检查与backfill调度，回放对比vLLM默认调度，并注入输出长度预测误差评估鲁棒性。",
+    "inputs": [
+      "内部生产请求轨迹（到达过程、输入与输出长度）",
+      "GPU KV缓存容量与访存带宽配置",
+      "输出长度真实值与含误差预测器"
+    ],
+    "baselines": [
+      "vLLM默认调度（证据内基线）",
+      "使用含误差长度预测的cμ-backfill（鲁棒性对照）"
+    ],
+    "metrics": [
+      "平均时延",
+      "TTFT",
+      "输出吞吐",
+      "准入拒绝与backfill比例",
+      "长度预测误差下的时延与TTFT退化"
+    ],
+    "support_criteria": [
+      "平均时延与TTFT相对vLLM默认调度显著下降且输出吞吐不显著恶化，长度预测误差注入下退化可控"
+    ],
+    "reject_criteria": [
+      "长度预测误差使cμ排序失效或性能不再优于默认调度，或准入检查与回填开销抵消排序收益"
+    ],
+    "limitations": [
+      "内部轨迹负载特征可能偏离压缩To-B轨迹",
+      "单GPU结论不直接外推到网络侧或分离式场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且区别于既有候选与Idea，但仅单一arXiv独立组，且结论依赖输出长度精确已知的回放评估并限于单GPU设定，缺独立支持与适用边界。",
+  "related_candidate_ids": [
+    "candidate_15d532fcd3f21efeb738",
+    "candidate_7dbcf1f5c24bf8b8528b"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_7c5ddda8caef385b63",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且区别于既有候选与Idea，但仅单一arXiv独立组，且结论依赖输出长度精确已知的回放评估并限于单GPU设定，缺独立支持与适用边界。",
+      "evidence_item_ids": [
+        "9a355876a02b1d84ace7b6fb"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

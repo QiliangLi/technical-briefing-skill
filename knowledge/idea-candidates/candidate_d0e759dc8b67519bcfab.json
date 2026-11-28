@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_d0e759dc8b67519bcfab",
+  "identity": {
+    "problem_key": "cross_model_kv_handoff_decode_blocking",
+    "mechanism_key": "step_budgeted_per_layer_translated_kv_transfer",
+    "target_key": "large_prefill_small_decode_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "跨模型翻译KV的逐层在途预算传输调度缩短大预填小解码的首token等待",
+  "problem": "大模型Prefill、小模型Decode的异构PD服务只需一次跨模型KV交接，但现有方案把它当作固定带宽下的整块传输：BridgeKV把网络仅建模为固定带宽，逐层KV交接开销0.04-0.08毫秒只是参考点，小模型解码起点仍被翻译后KV的传输阻塞；而vllm-rlt证明同类PD交接的尾延迟由在途预算轮次与引擎步边界决定而非链路速度。跨模型缓存交接这一新交接对象尚无传输调度机制。",
+  "hypothesis": "把逐层翻译后的KV块作为在途预算单元、提交与完成只发生在引擎步边界，并与缝合模块的逐层翻译流水重叠、优先放行小模型解码首层所需KV，可在给定带宽下缩短大预填小解码的首token等待且无需重复Prefill；优于整块传输后再解码或先升级链路。",
+  "mechanism": "以逐层翻译交接开销（0.04-0.08毫秒档）为预算粒度，把大→小模型布局翻译后的KV传输拆成在途预算轮次、只在步间提交/完成（vllm-rlt的步间预算机制），逐层源层聚合与键值残差非线性映射（BridgeKV缝合模块）与传输重叠流水，按小模型解码的首层依赖顺序放行，首层KV到达即开工。",
+  "target": "大模型Prefill/小模型Decode的PD分离serving的KV交接传输调度层",
+  "expected_effect": "给定带宽下小模型解码首token时间相对整块翻译KV传输后再解码明显缩短，且每请求时延保持与1B单跑相当（A40实测2.96对2.80秒档），无需小模型重复Prefill；带宽降档时改善应扩大而非消失（对照传输预算机制的带宽敏感性）。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-16",
+    "rationale": "同期两条独立记录联合支撑一个任何单条都未陈述的机制：BridgeKV把跨模型缓存交接立为网络调度的新对象（网络仅建模为固定带宽、逐层交接开销0.04-0.08毫秒未参与调度），vllm-rlt给出交接尾延迟由在途预算轮次与步边界决定的调度机制；把后者施加于前者的新交接对象，即逐层翻译KV的步间在途预算传输，两记录均未提出。它与吸收BridgeKV的idea_7d4c5b213d117cba4697身份与含义不同：该Idea的机制是跨模型KV迁移中映射误差与刷新频率的联合调度（精度/时效轴），本候选是翻译后KV的传输预算调度（时延轴）；与ReKV的同模型交接层边界/精度选择、GPU→NPU布局直传、表示轴分片截止期调度等既有候选的对象与机制均不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "77f27b4b2614a367fad9d413",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.11761v1"
+      ],
+      "reason": "BridgeKV用轻量KV缝合模块（逐层源层聚合、键值各自残差非线性映射弥合层数/KV头数/头维度差异，两个锚点模型冻结训练）把大模型预填KV翻译成小模型布局、推理仅需一次缓存交接：服务仿真中8B→1B响应时间39.80秒降至9.13秒、吞吐增至113.5 tok/s，A40单卡每请求2.96秒与1B单跑2.80秒相当；确立跨模型KV交接为待调度的传输对象，并把逐层交接开销0.04-0.08毫秒带入预算粒度参考。边界：主表系统数字来自含排队与传输开销的仿真而非实测、质量侧五个数据集与指标不可见、网络仅建模为固定带宽。",
+      "independence_group": "arxiv:2611.11761"
+    },
+    {
+      "item_id": "bd2b49eeff5341c458da618a",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.05150v1"
+      ],
+      "reason": "vllm-rlt证明PD间KV交接尾延迟由在途预算轮次而非链路速度决定：在途预算按单请求KV设定、提交与完成只发生在引擎步之间、KV直入解码池终页（提交尾延迟约1秒缩至17毫秒，移除TCP仅64MB块20.0降至16.9毫秒）；为跨模型翻译KV交接提供可迁移的步间预算传输机制。边界：证据来自同模型、单节点IPC与小型循环模型，未覆盖跨模型布局翻译下的预算轮次行为。",
+      "independence_group": "arxiv:2611.05150"
+    }
+  ],
+  "evidence_item_ids": [
+    "77f27b4b2614a367fad9d413",
+    "bd2b49eeff5341c458da618a"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.11761v1",
+    "https://arxiv.org/abs/2611.05150v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.11761",
+    "arxiv:2611.05150"
+  ],
+  "unknowns": [
+    "BridgeKV主表系统数字来自含排队与传输开销的仿真而非实测，质量侧五个数据集与指标不可见，翻译精度与传输分块粒度的相互作用未知",
+    "缝合模块的逐层翻译（层数/KV头数/头维度映射）能否与传输流式重叠、中间布局是否可分块序列化，证据未给出",
+    "vllm-rlt的步间预算证据来自同模型、单节点IPC、小型循环模型，跨模型翻译KV下的预算轮次行为未验证",
+    "小模型解码质量相对大模型自解码的落差（替换后精度降幅未量化）在分块传输与首层先行下是否放大"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在BridgeKV式大预填小解码PD服务仿真中加入vllm-rlt式步间在途预算传输层：翻译后的逐层KV块作为预算单元、只在步边界提交完成、与缝合模块翻译重叠，按小模型首层依赖顺序放行；与整块交接和链路升档对照。",
+    "inputs": [
+      "大/小模型对与缝合模块（8B→1B档）及逐层KV大小与翻译开销（0.04-0.08毫秒档）",
+      "带宽扫描（如15-32Gbps）下的交接时延曲线",
+      "小模型解码首层KV依赖集",
+      "含排队与传输开销的服务负载（BridgeKV仿真口径）"
+    ],
+    "baselines": [
+      "BridgeKV整块翻译KV交接后再解码",
+      "小模型重复Prefill（无交接）",
+      "整块交接加链路带宽加倍"
+    ],
+    "metrics": [
+      "小模型解码首token时间",
+      "每请求时延与吞吐（对照2.96对2.80秒、113.5 tok/s档）",
+      "翻译-传输重叠率与在途预算轮次占用",
+      "输出质量代理指标（可用监视集）"
+    ],
+    "support_criteria": [
+      "给定带宽下分块预算传输的首token时间优于整块交接，且每请求时延不劣于1B单跑档",
+      "带宽降档时改善扩大而非消失，符合预算轮次主导的预测"
+    ],
+    "reject_criteria": [
+      "逐层翻译无法流式化或分块提交开销吞没收益，首token时间不优于整块交接",
+      "首层先行放行放大翻译精度落差，质量代理指标显著劣于整块交接档"
+    ],
+    "limitations": [
+      "系统级数字均为仿真口径、质量侧指标在证据中不可见",
+      "步间预算机制的证据域（单节点同模型IPC）与目标域（跨模型布局翻译）不一致"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "两条独立arXiv记录联合给出完整的问题、机制、目标与可检验效应，身份与含义不同于全部既有Candidate与Idea（含吸收BridgeKV的跨模型迁移Idea），等待人工晋升决策。",
+  "related_candidate_ids": [
+    "candidate_42994fde404af6801926",
+    "candidate_4712cdbe2d8960143688",
+    "candidate_a3452ab66b5ff7c4a45e"
+  ],
+  "related_idea_ids": [
+    "idea_7d4c5b213d117cba4697"
+  ],
+  "first_seen_issue": "2026-11-16",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_8b3e64f10a2c75d9e614",
+      "issue_date": "2026-11-16",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "两条独立arXiv记录联合给出完整的问题、机制、目标与可检验效应，身份与含义不同于全部既有Candidate与Idea（含吸收BridgeKV的跨模型迁移Idea），等待人工晋升决策。",
+      "evidence_item_ids": [
+        "77f27b4b2614a367fad9d413",
+        "bd2b49eeff5341c458da618a"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

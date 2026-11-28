@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_d636e61ae696f3bd677f",
+  "identity": {
+    "problem_key": "fixed_weight_memory_partition",
+    "mechanism_key": "fp16_fp8_elastic_weight_lending",
+    "target_key": "serving_kv_capacity"
+  },
+  "idea_type": "solution_concept",
+  "title": "权重显存弹性借给KV块以吸收突发容量尖峰",
+  "problem": "serving系统把权重显存当执行期固定量，突发KV需求尖峰决定吞吐与SLO，静态分区在尖峰与常态间两难。",
+  "hypothesis": "用半统一内存让权重区在FP16与FP8变体间切换、KV压力时把空闲权重内存改用作KV块，可在保精度下显著提升吞吐。",
+  "mechanism": "半统一内存维护FP16与FP8权重变体；KV压力下权重内存改用作KV块，压力解除后恢复。",
+  "target": "vLLM类serving系统的显存管理器",
+  "expected_effect": "三MoE模型加生产轨迹吞吐较Static FP16升2.1-3.3倍，有效pass@1最多+41pp且保持FP16级精度，整条轨迹仅2次切换。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-09-30",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "7c7c9ee1f42e2759ca57776d",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.34380v1"
+      ],
+      "reason": "《DPS把权重显存变成可弹性借给KV块的资源》给出机制与对照结果。",
+      "independence_group": "arxiv:2609.34380"
+    }
+  ],
+  "evidence_item_ids": [
+    "7c7c9ee1f42e2759ca57776d"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.34380v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.34380"
+  ],
+  "unknowns": [
+    "分页碎片未处理",
+    "恢复时延受PCIe带宽约束",
+    "层粒度混合精度留作未来"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在内部serving栈上实现FP16/FP8权重变体切换与KV借用，用生产轨迹回放对比静态分区。",
+    "inputs": [
+      "内部生产轨迹",
+      "权重变体管理器",
+      "KV压力检测"
+    ],
+    "baselines": [
+      "Static FP16",
+      "Static FP8"
+    ],
+    "metrics": [
+      "吞吐",
+      "有效pass@1",
+      "切换次数与恢复时延"
+    ],
+    "support_criteria": [
+      "精度保持且吞吐显著提升、切换次数少"
+    ],
+    "reject_criteria": [
+      "恢复时延或碎片开销吞噬收益"
+    ],
+    "limitations": [
+      "原始结论限三MoE模型与vLLM栈"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整，但恢复时延受PCIe带宽约束且碎片未处理，切换时延预算待内部硬件验证。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-09-30",
+  "last_updated_issue": "2026-09-30",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_1fc40426264e8b36cae",
+      "issue_date": "2026-09-30",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整，但恢复时延受PCIe带宽约束且碎片未处理，切换时延预算待内部硬件验证。",
+      "evidence_item_ids": [
+        "7c7c9ee1f42e2759ca57776d"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

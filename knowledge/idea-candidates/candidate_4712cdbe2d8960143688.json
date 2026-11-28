@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_4712cdbe2d8960143688",
+  "identity": {
+    "problem_key": "heterogeneous_pd_kv_relayout_cost",
+    "mechanism_key": "in_transit_layout_adaptation_direct_transfer",
+    "target_key": "gpu_prefill_npu_decode_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "布局感知的GPU到NPU KV直传",
+  "problem": "GPU预填充加NPU解码的解耦推理受跨设备KV传输拖累，布局差异要求传输后重排。",
+  "hypothesis": "把布局适配并入RDMA传输路径并在NPU端预留布局感知缓冲，直传可逼近同构GPU直连的传输性能。",
+  "mechanism": "Mooncake打通GPU到NPU的RDMA直传；传输中完成布局变换；接收端布局感知缓冲。",
+  "target": "异构P/D解耦推理（GPU预填充加NPU解码）",
+  "expected_effect": "1280MB传输延迟约为主机中转的14.7%、与GPU直连差不到1%；90% SLO下请求速率至多低7.69%。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-23",
+    "rationale": "单条已发表记录给出问题、机制、目标与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "14f554896a5602f09d452905",
+      "issue_date": "2026-10-23",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.29873v1"
+      ],
+      "reason": "HAWK给出传输中布局变换与布局感知缓冲机制及14.7%中转延迟对照。",
+      "independence_group": "arxiv:2610.29873"
+    }
+  ],
+  "evidence_item_ids": [
+    "14f554896a5602f09d452905"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.29873v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.29873"
+  ],
+  "unknowns": [
+    "仅Tenstorrent p150a与Llama 3.1 70B单实例",
+    "不感知推理状态",
+    "网络利用率未报告"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在GPU与NPU混合环境复现传输中布局变换与布局感知缓冲",
+    "inputs": [
+      "70B级模型",
+      "多规模KV传输",
+      "SLO负载"
+    ],
+    "baselines": [
+      "主机中转",
+      "同构GPU直连"
+    ],
+    "metrics": [
+      "传输延迟",
+      "SLO达成率",
+      "成本效率"
+    ],
+    "support_criteria": [
+      "延迟逼近直连且SLO降幅小于一成"
+    ],
+    "reject_criteria": [
+      "布局变换开销吞噬直传收益"
+    ],
+    "limitations": [
+      "单实例验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "单实例验证但机制可迁移，作为P/D异构选型参考观察。",
+  "related_candidate_ids": [
+    "candidate_c56cd1e6215a71f3f27f"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-10-23",
+  "last_updated_issue": "2026-10-23",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5f37d0a7ea697e7c826",
+      "issue_date": "2026-10-23",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "单实例验证但机制可迁移，作为P/D异构选型参考观察。",
+      "evidence_item_ids": [
+        "14f554896a5602f09d452905"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

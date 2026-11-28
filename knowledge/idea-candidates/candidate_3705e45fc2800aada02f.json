@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_3705e45fc2800aada02f",
+  "identity": {
+    "problem_key": "training_communication_overlap_byte_floor",
+    "mechanism_key": "inline_fp4_compression_persistent_kernel",
+    "target_key": "single_node_multi_gpu_llm_training"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "把FP4压解内联进持久内核通信角色，突破重叠后剩余的通信字节地板",
+  "problem": "通信-计算重叠只隐藏时延、不减少必须串行传输的字节：TP+SP与MoE专家并行把通信压上训练关键路径后，KOSMOS用自调度持久内核让工作组在通信与矩阵计算角色间动态切换，在MI350系列实测稠密训练47项非OOM全胜Transformer Engine（1.097至1.280倍）、MoE代理训练全配置胜DeepEP（1.29至1.83倍），但通信角色仍需按原始字节数传输；FP4Quant证明集合通信可压到NVFP4四比特，其压解却是围绕集合通信的独立单内核。重叠之后剩余的墙是通信字节数本身。",
+  "hypothesis": "若在持久内核的角色切换边界内联FP4压解——工作组进入通信角色前用微分组双尺度FP4量化加两级快速Walsh-Hadamard变换压缩载荷、消费端角色解压——则通信角色占用时长按约四倍（相对BF16）压缩比缩短，单机对称内存域（XGMI或NVLink）端到端训练吞吐超过未压缩持久内核，精度代价由微分组尺度换挡显式控制。",
+  "mechanism": "持久内核内工作组按消费需求队列在通信与矩阵计算角色间切换，MoE路由不下设备、基于对称内存；通信角色传输的载荷在切换边界完成微分组双尺度FP4量化、warp协作半字节打包与接收端解压，使压缩与重叠在同一自调度内核中复合而非两级串联。",
+  "target": "单机MI350或H100级多GPU的稠密与MoE训练（TP+SP、专家并行）",
+  "expected_effect": "KOSMOS未压缩持久内核已实测稠密1.097至1.280倍、MoE代理1.29至1.83倍于既有基线；FP4Quant分组64实测1.40倍（损失2.2306）、分组256最高1.56倍（PPL 21.36）。若内联成立，通信角色时长按压缩比下降后端到端吞吐应在KOSMOS基础上再叠加，损失由分组尺度控制（分组64与256的实测数字给出代价-收益边界）。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-09",
+    "rationale": "KOSMOS（AMD，arxiv:2611.07477）与FP4Quant（arxiv:2611.04323）两个2026-11-09独立分组分别给出重叠后通信仍在关键路径、通信载荷可压至FP4两半证据，联合支持把压解内联进持久内核通信角色这一复合机理；任何单条记录均未陈述该复合。与既有候选及Idea的含义不同：idea_46f7dbdd677133518d37是MoE serving的显式SM资源分区与运行时调优，本候选是训练持久内核内的字节压缩，机制与目标均不同；candidate_677162bb3beb92db288b的NVFP4作用于推理权重而非通信路径。"
+  },
+  "evidence": [
+    {
+      "item_id": "c7d7374408bb50f29a003d5d",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07477v1"
+      ],
+      "reason": "KOSMOS给出重叠后剩余约束的直接实测：通信与计算同驻一个持久内核，工作组按消费需求队列在两类角色间动态切换，形状启发替代逐形状调优，MoE路由不下设备、基于XGMI对称内存；MI350上稠密训练47项非OOM实测全胜Transformer Engine（1.097至1.280倍）、MoE代理训练全配置胜DeepEP（1.29至1.83倍）。该记录证明重叠有效但未压缩载荷字节，构成内联压缩的宿主机制。",
+      "independence_group": "arxiv:2611.07477"
+    },
+    {
+      "item_id": "398597b26090cf365e0505bc",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04323v1"
+      ],
+      "reason": "FP4Quant给出通信字节压缩的实测与精度代价：微分组双尺度FP4量化对齐张量分布、两级快速Walsh-Hadamard变换抑制误差、warp协作半字节打包、围绕集合通信单内核压解；Qwen-7B张量并行分组64时155.3 TFLOP/s/GPU为BF16的1.40倍（损失2.2306）、分组256最高1.56倍（PPL 21.36）。该记录证明载荷可压且压解可内核化，但未与持久内核角色切换复合。",
+      "independence_group": "arxiv:2611.04323"
+    }
+  ],
+  "evidence_item_ids": [
+    "c7d7374408bb50f29a003d5d",
+    "398597b26090cf365e0505bc"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.07477v1",
+    "https://arxiv.org/abs/2611.04323v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.07477",
+    "arxiv:2611.04323"
+  ],
+  "unknowns": [
+    "KOSMOS仅单机验证、依赖XGMI对称内存，RDMA与多节点待后续，大模型用代理层数且有一格OOM",
+    "压解占用工作组时间与通信角色缩短时间的净收益未测；MoE专家载荷FP4化对路由与精度的影响未测",
+    "FP4Quant流水并行最高仅1.01倍，提示时延受限路径压缩收益有限；两条记录硬件域不同（MI350 XGMI对H100），迁移性未验证",
+    "两条记录均为单版本arXiv预印本，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在单机MI350或H100上实现持久内核通信角色的FP4内联压解（角色切换边界完成微分组量化与半字节打包、消费端解压），测通信角色占用时长、每步跨卡字节与端到端步时延、损失曲线，对照未压缩持久内核。",
+    "inputs": [
+      "持久内核通信/计算角色切换框架（KOSMOS式自调度）",
+      "微分组双尺度FP4压解内核与可调分组尺度",
+      "稠密与MoE训练负载及对称内存域多卡环境"
+    ],
+    "baselines": [
+      "KOSMOS式未压缩持久内核",
+      "Transformer Engine基线",
+      "DeepEP基线（MoE代理负载）"
+    ],
+    "metrics": [
+      "通信角色占用时长",
+      "每步跨卡通信字节",
+      "端到端训练吞吐",
+      "损失或困惑度"
+    ],
+    "support_criteria": [
+      "等损失容差下端到端吞吐高于未压缩持久内核，且通信角色时长按压缩比下降"
+    ],
+    "reject_criteria": [
+      "压解占用的工作组时间吃掉压缩收益，或MoE路由与精度损失失控"
+    ],
+    "limitations": [
+      "仅单机对称内存域，未覆盖RDMA多节点",
+      "首版仅稠密与代理MoE负载"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "复合机理与可检验效应齐备且身份全新，但内联压解的净收益与MoE载荷量化精度未验证，两条记录分别绑定不同硬件域（MI350 XGMI对H100）、均为同期单版本预印本，适用边界与独立支持均缺，先deferred观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_46f7dbdd677133518d37"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_c0c96aacdf9688f6a360",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "复合机理与可检验效应齐备且身份全新，但内联压解的净收益与MoE载荷量化精度未验证，两条记录分别绑定不同硬件域（MI350 XGMI对H100）、均为同期单版本预印本，适用边界与独立支持均缺，先deferred观察。",
+      "evidence_item_ids": [
+        "c7d7374408bb50f29a003d5d",
+        "398597b26090cf365e0505bc"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

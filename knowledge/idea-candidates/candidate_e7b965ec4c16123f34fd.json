@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_e7b965ec4c16123f34fd",
+  "identity": {
+    "problem_key": "kv_eviction_algorithm_improvement_lacks_assumption_model",
+    "mechanism_key": "lean_assumption_relaxation_search_over_policy_space",
+    "target_key": "serving_grade_kv_eviction_policy_space"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "假设松弛搜索从离线驱逐算法族推广到serving级策略与命中率时延口径",
+  "problem": "KV驱逐算法的改进多为手工直觉驱动、很少显式陈述假设，难以归因迭代（AutoAssumption口径：89个ML系统算法被形式化前无系统假设模型）。即便Lean假设松弛搜索已在离线token级驱逐算法族上产出更优变体（RestoreKV GM，RULER-4K平均+2.73分），其搜索与评测仍限于200题离线质量子集，未触达serving级策略空间（radix前缀缓存驱逐、分层放置策略）与命中率/时延口径，方法可推广性未知。",
+  "hypothesis": "把Lean证明图加单假设松弛搜索从离线token级驱逐算法族推广到serving级驱逐策略空间（如SGLang radix树前缀缓存驱逐、分层KV放置策略），并把适应度从RULER离线分换成命中率、TTFT/ITL与尾时延，能在不人工重写策略的前提下产出较手工调优基线可证更强或等价的策略变体，且人工核对成本可度量可控；若形式化人工核对成本随策略复杂度超线性增长、或搜索增益只在离线质量口径出现而serving口径消失（离线分与命中率/时延脱钩），则该搜索只应停留在离线算法族而不进入在线策略栈。",
+  "mechanism": "把驱逐策略族写成Lean证明图，节点为算法、边为显式假设命题；每次只松弛一个假设、先写新假设与假设命题再改代码，检查器只重验受影响的证明段，从而系统扫描变体空间（AutoAssumption机制原样）。推广点有二：策略族从token级驱逐算法换成引擎内serving级驱逐策略；适应度从RULER离线分换成serving命中率与时延口径。",
+  "target": "serving级KV驱逐策略空间（radix/前缀缓存驱逐、分层放置策略）的自动改进路径。",
+  "expected_effect": "先复现AutoAssumption 200题口径（RestoreKV GM较母算法+2.73），再于serving模拟或真实引擎（SGLang类）上以命中率/TTFT为适应度搜索radix驱逐策略变体，目标较手工基线在命中率或尾时延上可度量改善（幅度待验证），并给出人工核对工时与变体数的成本曲线。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "单条已发布记录同时给出问题（驱逐算法很少显式陈述假设、难以归因改进）、可解释机制（Lean证明图加单假设松弛搜索、检查器只重验受影响证明段）、目标对象（KV缓存驱逐算法族）与可检验效应（RestoreKV GM较母算法RULER-4K平均+2.73分、32×压缩最高+12.0）；本候选把该记录未验证的外推（serving级策略空间与命中率/时延口径）显式化为待验证假设。"
+  },
+  "evidence": [
+    {
+      "item_id": "e3a1755d2f00a1eb27855e14",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.14844v1"
+      ],
+      "reason": "AutoAssumption给出问题（驱逐算法很少显式陈述假设、难以归因改进）、机制（把89个ML系统算法写成Lean证明图，每次只放松一个假设来搜索新算法，变体须先写新假设与假设命题再写代码、检查器只改动受影响证明段）、目标对象（KV缓存驱逐算法族）与可检验效应（RestoreKV GM在RULER-4K较母算法平均+2.73分、32×压缩最高+12.0）；边界为搜索只用200题子集、6500题成绩未给出、计时为batch 1、64K上下文TTFT 33.0秒对不驱逐5.94秒、形式化仍需人工核对。",
+      "independence_group": "arxiv:2611.14844"
+    }
+  ],
+  "evidence_item_ids": [
+    "e3a1755d2f00a1eb27855e14"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.14844v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.14844"
+  ],
+  "unknowns": [
+    "搜索与评测仅200题离线子集口径，6500题全量成绩未给出",
+    "形式化仍需人工核对，serving级策略复杂度下人工成本是否可控未知",
+    "离线质量分与serving命中率/时延口径可能脱钩，增益可迁移性未验证",
+    "单一预印本，无独立工作线复现",
+    "RestoreKV GM结果侧的共享KV头池化打分与candidate_4292b1d7d5e7493acb6c的GQA熵池化打分同族，两族相对优劣未对照"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "复现AutoAssumption的Lean松弛搜索框架于两类策略族：token级驱逐算法（复现RestoreKV GM口径）与radix前缀缓存驱逐策略（SGLang影子重放类模拟或引擎内离线回放）。",
+    "inputs": [
+      "RULER 200题复现口径与6500题全量",
+      "真实trace回放（多轮agent与共享前缀负载）",
+      "假设松弛深度与变体数扫描",
+      "人工核对工时记录"
+    ],
+    "baselines": [
+      "手工调优驱逐策略（母策略）",
+      "随机变体搜索（同预算搜索对照）",
+      "RestoreKV GM（token级复现参照）"
+    ],
+    "metrics": [
+      "RULER离线分数",
+      "前缀命中率",
+      "TTFT/ITL与P99尾时延",
+      "人工核对工时与产出变体数"
+    ],
+    "support_criteria": [
+      "serving口径搜索出的策略变体较母策略在命中率或P99上显著改善且离线分不回归",
+      "人工核对成本随变体数近似线性、可被增益覆盖"
+    ],
+    "reject_criteria": [
+      "增益仅出现在离线质量口径而serving口径无差异",
+      "人工核对成本随策略复杂度超线性增长吞没增益"
+    ],
+    "limitations": [
+      "原始证据为单期预印本且仅离线子集口径",
+      "serving级外推完全未验证"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "方法语义（假设松弛搜索自动产出驱逐策略变体）与既有候选不同义（candidate_23f01f3e719cba35258d为分页正确性的可验证不变式回归门而非算法空间搜索、candidate_827f27dbafeac04e8d94为分层决策预测；其结果侧RestoreKV GM的GQA共享头池化打分与candidate_4292b1d7d5e7493acb6c的熵池化打分同族、已由该候选跟踪），但证据为单一预印本、仅200题离线子集、形式化需人工核对、serving级外推完全未验证，无独立支持，先观察。",
+  "related_candidate_ids": [
+    "candidate_23f01f3e719cba35258d",
+    "candidate_4292b1d7d5e7493acb6c",
+    "candidate_ec65d4c9adf0ae17f640"
+  ],
+  "related_idea_ids": [
+    "idea_e8ac8cc5cd625623e8dd"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_462f7b0c85e4b4fc3b2d",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "方法语义与既有候选不同义，但证据为单一预印本、仅200题离线子集、形式化需人工核对、serving级外推完全未验证，无独立支持，先观察。",
+      "evidence_item_ids": [
+        "e3a1755d2f00a1eb27855e14"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_bb7b8076d49e4b5fbf59",
+  "identity": {
+    "problem_key": "kv_transfer_volume_uncalibrated_to_attention_demand",
+    "mechanism_key": "progressive_plane_transfer_with_predicted_refinement_prefetch",
+    "target_key": "wide_area_kv_transfer_pipeline"
+  },
+  "idea_type": "solution_concept",
+  "title": "注意力阈值门控的渐进保真跨域KV传输：先传重建基，按需并预测式补传低位平面与残差",
+  "problem": "跨域迁移或复用KV缓存时，发送端必须在接收端知道注意力将落在哪些token之前就把整份压缩缓存传完：全量传输把字节浪费在低价值低位信息上，而逐条反应式取回又会把广域RTT放进解码关键路径。",
+  "hypothesis": "把每token的KV拆为必读重建基与精化载荷两级：基（LoopKV式高位2比特平面，或LowRam式按头预测器与少量误差最大残差）先行急传，接收端仅以基计算注意力；对注意力权重超阈值的token补传低位平面或残差，并由需求预测器在阈值触发前经广域链路预取——可在任务分数不低于BF16级包络的同时，把线上字节与迁移后首token时延压到全量压缩传输之下。",
+  "mechanism": "发送端把KV编码为渐进保真层级：LoopKV离线刻画敏感度后分配的两比特平面中，高位平面每步必读、先行传输；LowRam按头两层MLP拟合key到value映射并只保留误差最大token残差，可把基进一步压小并为残差排出补传优先级，元学习初始化使接收端两次梯度更新即可适配。接收端仅持基解码并以基计算注意力权重，权重超阈值的token触发低位平面或残差补传；DualDecoder与Janus证明相邻步稀疏KV需求可由更早中间值预测，据此在阈值触发前预取精化块、miss在注意力执行前纠正，使广域RTT脱离解码关键路径。",
+  "target": "跨域KV迁移与复用的传输管线：发送端渐进编码器加接收端阈值门控解码与预取调度器",
+  "expected_effect": "迁移首阶段仅传高位平面与预测器（LoopKV全量每token 155对240KiB已较均匀INT4省35%，基只占其中一部分）；低位补传仅覆盖注意力超阈值位置；预取召回高时解码goodput接近本地缓存（同类机制证据：DualDecoder吞吐最高2.62倍、Janus关键路径KV读占比17.5%-36.3%压到0.2%-6.4%）；精度落在LoopKV基准平均不劣于BF16与LowRam 4倍压缩保留98.2% RULER 4K的包络内。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-09",
+    "rationale": "四条跨三期（2026-09-03、2026-10-12、2026-11-09）的独立记录各自验证管线的一环：两比特平面按注意力阈值按需读取、按头预测器加误差排序残差的测试时压缩、相邻步稀疏KV需求可预测、预测预取把IO移出关键路径；两条触发项均明确指向跨域增量传输但都未组合出该机制，联合机制为任一单条所未陈述。"
+  },
+  "evidence": [
+    {
+      "item_id": "92f68e544ed13848162ab363",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04137v1"
+      ],
+      "reason": "LoopKV给出阈值门控的平面级机制：高2比特平面每步必读，低2比特仅在该处注意力权重超阈值时取回，跨循环经指针复用末轮KV；其项目相关性明确指出可迁移为广域先传高位、按注意力需求补传低位的增量传输设计；Ouro-1.4B每token存储155对240KiB较均匀INT4少35%、SLO下goodput为KIVI-4的1.7-2.2倍、基准平均不劣于BF16；仅循环结构模型且全部单卡，无广域实验。",
+      "independence_group": "arxiv:2611.04137"
+    },
+    {
+      "item_id": "f683940086b4f21d1066323c",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.07025v1"
+      ],
+      "reason": "LowRam给出紧凑重建基与补传优先级：按头两层MLP拟合key到value映射、按误差排序只保留少量精确残差，元学习初始化把适配降到2次梯度更新；4倍压缩在Llama-3.1-8B保留98.2%的RULER 4K与99.3%的LongBench、Mistral-7B叠至26.9倍保留94.5%；其项目相关性指出传输预测器加所选残差可大幅减少传输字节，但上下文演化一致性未解决，无跨域传输测量。",
+      "independence_group": "arxiv:2611.07025"
+    },
+    {
+      "item_id": "d25f27c822643085b1e95cb4",
+      "issue_date": "2026-09-03",
+      "source_urls": [
+        "https://arxiv.org/abs/2607.26475v1"
+      ],
+      "reason": "DualDecoder证明补传需求可预测且可被隐藏：相邻解码步的稀疏KV检索索引高度可预测，以前一投机token驱动预测式预取并把主机到设备传输与逐层计算重叠，解码吞吐最高提升2.62倍；收益依赖预测精度、miss需恢复机制兜底，为预取腿提供独立定量支持。",
+      "independence_group": "arxiv:2607.26475"
+    },
+    {
+      "item_id": "fd93fd9a36a415b62feedccb",
+      "issue_date": "2026-10-12",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.36938v1"
+      ],
+      "reason": "Janus证明用更早中间值预测稀疏KV需求可把IO移出推理关键路径：模型自带KV selection模块lookahead预取、miss在attention执行前补取，关键路径KV读占比17.5%-36.3%压到0.2%-6.4%、较基线TTFT加速1.22-1.85倍；其项目相关性明确指出对跨域agent cache预取设计有借鉴；高召回以低精度冗余预取为代价。",
+      "independence_group": "arxiv:2609.36938"
+    }
+  ],
+  "evidence_item_ids": [
+    "92f68e544ed13848162ab363",
+    "f683940086b4f21d1066323c",
+    "d25f27c822643085b1e95cb4",
+    "fd93fd9a36a415b62feedccb"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.04137v1",
+    "https://arxiv.org/abs/2611.07025v1",
+    "https://arxiv.org/abs/2607.26475v1",
+    "https://arxiv.org/abs/2609.36938v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.04137",
+    "arxiv:2611.07025",
+    "arxiv:2607.26475",
+    "arxiv:2609.36938"
+  ],
+  "unknowns": [
+    "LoopKV仅在循环结构模型且全部单卡验证，H100上按需读低位不再提速，阈值门控收益在常规解码器与广域链路下未测",
+    "用基计算的注意力权重可能错误门控：低位平面会显著改变权重的token会被漏传或误传",
+    "LowRam预测器跨上下文演化的一致性未解决，冻结预测器随基传输在长会话是否保持近无损未知",
+    "无任何被引记录测量广域RTT、带宽与抖动下的行为，预取miss在100ms级RTT下的SLO代价未量化"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "双站点原型：发送端把KV缓存编码为两比特平面（LoopKV式）或预测器加误差排序残差（LowRam式）先行传输，接收端仅持基解码、以注意力阈值触发精化补传，并叠加DualDecoder/Janus式需求预测预取；在模拟广域链路的RTT与带宽档位下运行长上下文负载。",
+    "inputs": [
+      "长上下文负载集（RULER/LongBench类）及其KV缓存",
+      "基与精化的划分方式（平面划分或预测器加残差）",
+      "注意力阈值扫描与预取激进度扫描",
+      "模拟广域RTT与带宽档位"
+    ],
+    "baselines": [
+      "全量压缩缓存先传后用",
+      "均匀量化全量传输（无平面门控）",
+      "纯反应式按需取回（无预取）"
+    ],
+    "metrics": [
+      "线上传输字节",
+      "迁移后首token时延",
+      "SLO内解码goodput",
+      "下游任务分数"
+    ],
+    "support_criteria": [
+      "同等任务分数（不低于BF16级包络）下，线上字节与首token时延均显著低于全量压缩传输",
+      "预取使SLO违约率接近本地缓存水平"
+    ],
+    "reject_criteria": [
+      "预取miss引发SLO超限或任务分数跌出近无损包络",
+      "基注意力门控错误率随上下文增长而不可接受"
+    ],
+    "limitations": [
+      "无被引记录做过广域实测",
+      "LoopKV证据限于循环结构模型单卡",
+      "LowRam证据限于本地显存压缩"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，身份与既有候选及Idea均不同；四个独立来源跨三期分别定量支持机制各环节（两比特平面按需读取、按头预测器加误差排序残差、稀疏KV需求可预测、预测预取移出关键路径），组合出的渐进保真传输机制为任一单条记录所未陈述，等待人工晋升；广域边界未测记入unknowns。",
+  "related_candidate_ids": [
+    "candidate_e5563020923e9d940d63",
+    "candidate_726b07dbca622b39bd2a"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-09-03",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_baee0495e1ac0449899a",
+      "issue_date": "2026-11-09",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应齐备，身份与既有候选及Idea均不同；四个独立来源跨三期分别定量支持机制各环节（两比特平面按需读取、按头预测器加误差排序残差、稀疏KV需求可预测、预测预取移出关键路径），组合出的渐进保真传输机制为任一单条记录所未陈述，等待人工晋升；广域边界未测记入unknowns。",
+      "evidence_item_ids": [
+        "92f68e544ed13848162ab363",
+        "f683940086b4f21d1066323c",
+        "d25f27c822643085b1e95cb4",
+        "fd93fd9a36a415b62feedccb"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

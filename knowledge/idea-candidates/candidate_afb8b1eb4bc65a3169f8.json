@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_afb8b1eb4bc65a3169f8",
+  "identity": {
+    "problem_key": "metadata_blind_lru_eviction_wastes_multiturn_reuse",
+    "mechanism_key": "lifecycle_gated_reclaim_plus_intent_revisit_ranking",
+    "target_key": "multiturn_agent_prefix_kv_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "消息生命周期门控回收叠加意图回访排序的两级元数据驱动前缀缓存驱逐",
+  "problem": "多轮对话与Agent服务的前缀缓存驱逐只看token访问序，同时犯两类元数据盲错误：其一，Harness侧明知消息有保留、废弃与暂存之分，服务层却只看到KV访问，废弃KV长期滞留不被回收、暂存KV又被LRU误逐（KVTether口径：高缓存压力下LMCache LRU命中率仅10.2%）；其二，即便条目全部活跃，LRU也对即将回访的意图状态排序错误（IAC口径：ShareChat命中率仅12.2%）。两级信号各自缺失的损失均已被独立量化，但没有任何单条记录把『哪类条目该留』的生命周期门控与『谁先被逐』的回访统计排序组合成一个驱逐策略。",
+  "hypothesis": "在同一SGLang类radix前缀缓存内组合两级决策——第一级以Harness导出的消息生命周期状态做准入与直接回收（废弃即回收、暂存按最久等待优先保留），第二级对存活RadixTree叶子按离线学习的每意图回访概率与对数正态轮间延迟字典序排序驱逐——可在多轮对话与Agent混合回放中把命中率与TTFT同时提升到显著优于纯LRU、且优于任一单独信号口径的水平，两级信号不互相抵消；若生命周期门控在无Harness元数据流量上不可用、或回访统计在流量漂移下退化到LRU水平，则该组合只应作为可获得元数据流量的opt-in策略。",
+  "mechanism": "第一级：Harness侧记录八个消息级原语并异步导出，服务端把消息生命周期翻译为KV状态，废弃KV直接回收、暂存KV按最久等待优先保留（KVTether）。第二级：对请求分类意图，从日志学习每状态回访概率与对数正态轮间延迟，按中位复用窗口、复用概率与规模的字典序比较RadixTree叶子，低者优先驱逐（IAC）。两级共用请求侧元数据，分别控制驱逐的资格面与顺序面。",
+  "target": "自建SGLang多轮对话/Agent服务的radix前缀缓存驱逐策略层",
+  "expected_effect": "对照口径：IAC单独把ShareChat命中率从12.2%提到34.6%、Qwen-1.5-110B在5请求/秒下TTFT从6.98秒降至3.76秒；KVTether单独在高缓存压力下命中率49.5%对LMCache LRU的10.2%、端到端时延最高降26.3%。组合目标是在含死KV与暂存KV的多轮+Agent混合轨迹上超过两者单独口径，具体幅度待验证。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "同期两条独立证据分别量化驱逐决策两级元数据信号各自缺失的损失：KVTether（2026-11-11）证明无生命周期门控时死KV滞留与暂存误逐，IAC（2026-11-11）证明存活条目按访问序排序损失回访复用；两线互补地覆盖驱逐的资格面与顺序面，联合支持『门控回收＋回访排序』两级驱逐这一任一单条记录未陈述的机制组合。"
+  },
+  "evidence": [
+    {
+      "item_id": "954a38c6f86e6cf1050cee83",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09715v1"
+      ],
+      "reason": "IAC证明存活条目按访问序LRU排序损失回访复用：按意图学习每状态回访概率与对数正态轮间延迟、按中位复用窗口/复用概率/规模字典序驱逐RadixTree叶子，140K容量下ShareChat命中率34.6%对LRU的12.2%，Qwen-1.5-110B在5请求/秒下TTFT从6.98秒降至3.76秒（结果基于回放的公开对话轨迹与单一4xA100测试床，非在线生产验证，与离线上界的差距未知）。",
+      "independence_group": "arxiv:2611.09715"
+    },
+    {
+      "item_id": "8f9c78115b218621b855fc32",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.39819v1"
+      ],
+      "reason": "KVTether证明无生命周期门控时死KV滞留且暂存被误逐：Harness侧记录八个消息级原语并异步导出、服务端把消息生命周期翻译为KV状态，废弃KV直接回收、暂存KV按最久等待优先保留并驱动三级放置，生产轨迹重放中较LMCache端到端时延最高降26.3%、任务成本平均降40.0%、高缓存压力下命中率49.5%而LMCache的LRU仅10.2%（重放用匹配token长度的随机提示，任务成本为估算值，证据包未见分负载明细）。",
+      "independence_group": "arxiv:2609.39819"
+    }
+  ],
+  "evidence_item_ids": [
+    "954a38c6f86e6cf1050cee83",
+    "8f9c78115b218621b855fc32"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.09715v1",
+    "https://arxiv.org/abs/2609.39819v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.09715",
+    "arxiv:2609.39819"
+  ],
+  "unknowns": [
+    "两法证据均为回放口径（IAC为公开对话轨迹加单一4xA100测试床；KVTether重放用匹配token长度的随机提示、任务成本为估算值），无在线生产验证",
+    "生命周期门控与回访排序未在同一引擎框架对照，组合收益与相互干扰未知",
+    "意图分类器在真实流量上的准确性与回访统计随流量漂移的退化速度未知",
+    "无Harness元数据的流量上第一级不可用时的退化路径未定义",
+    "命中率增益向TTFT传导能否从回放推广到在线流量（本期Roadmap观察点）"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "SGLang radix前缀缓存内实现两级驱逐：Harness侧生命周期原语导出与KV状态翻译（KVTether口径）加每意图回访概率/对数正态轮间延迟学习与字典序驱逐（IAC口径）；7-8B级模型起步并在一款30B级模型复测",
+    "inputs": [
+      "多轮对话公开轨迹回放（ShareChat类）与ReAct Agent生产轨迹回放的混合负载",
+      "缓存容量多档扫描（含高缓存压力档）",
+      "意图分类准确性扫描与回访统计刷新窗口扫描"
+    ],
+    "baselines": [
+      "纯LRU（SGLang默认口径）",
+      "仅生命周期门控（KVTether单级）",
+      "仅意图回访排序（IAC单级）",
+      "LMCache LRU分层口径"
+    ],
+    "metrics": [
+      "前缀缓存命中率",
+      "TTFT P50/P95",
+      "显存占用与死KV驻留量",
+      "端到端时延与吞吐"
+    ],
+    "support_criteria": [
+      "混合轨迹上命中率与TTFT同时显著优于纯LRU且优于任一单独信号口径",
+      "死KV驻留接近零且暂存KV不被误逐"
+    ],
+    "reject_criteria": [
+      "两级信号互相抵消（组合劣于任一单独口径）",
+      "无元数据流量上组合显著劣化且无退化路径"
+    ],
+    "limitations": [
+      "原始证据分别限于公开轨迹回放与随机提示重放，均非在线流量",
+      "未覆盖多机共享缓存与多租户隔离"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "生命周期门控与意图回访排序两条独立证据线互补，但均为回放口径且未在同一引擎框架对照，组合收益与相互干扰未知，先观察组合验证。",
+  "related_candidate_ids": [
+    "candidate_90e9417774bee4c97457"
+  ],
+  "related_idea_ids": [
+    "idea_e8ac8cc5cd625623e8dd"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5b2aa9cc0a6600c4d30b",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "生命周期门控与意图回访排序两条独立证据线互补，但均为回放口径且未在同一引擎框架对照，组合收益与相互干扰未知，先观察组合验证。",
+      "evidence_item_ids": [
+        "954a38c6f86e6cf1050cee83",
+        "8f9c78115b218621b855fc32"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

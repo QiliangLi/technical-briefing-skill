@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_c9e9231ff865bba7618a",
+  "identity": {
+    "problem_key": "hbf_read_latency_inference_slowdown",
+    "mechanism_key": "demand_order_page_replay_prefetch",
+    "target_key": "hbf_read_only_weight_gpu_inference"
+  },
+  "idea_type": "solution_concept",
+  "title": "需求序页重放预取以16至40MB缓冲把HBF只读权重稠密推理恢复到理想性能的92%",
+  "problem": "HBF容量为HBM的16倍但读时延约20µs，按需访问使GPU推理最多慢12.8倍：大容量慢速权重层的可用性受读时延隐藏程度制约而非容量本身，稠密模型无法按容量比例兑现HBF层的收益。",
+  "hypothesis": "对数据无关kernel离线记录每CTA页需求序并由staging warp按4KB页重放预取，表项推迟到首次需求访问才释放（跟踪状态减少32倍），则16至40MB staging缓冲即可把按需访问的HBF稠密模型推理恢复到理想HBF性能的约92%，且流重放自身开销仅1至3%。",
+  "mechanism": "离线记录数据无关kernel的每CTA页需求序；运行时由staging warp按4KB页按需求序重放预取；预取表项到首次需求访问才释放，使跟踪状态较逐页全量跟踪减少32倍；16至40MB staging缓冲吸收HBF约20µs的读时延。",
+  "target": "以HBF为只读权重层的GPU稠密模型推理（七个稠密模型，周期级仿真口径，无HBF实物系统）。",
+  "expected_effect": "周期级仿真中40MB缓冲达理想HBF性能的92.4%、16MB达88.8%，而H3配320MB缓冲仅43.1%；流重放机制在实测中自身开销仅1至3%。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "Direct任务审阅触发记录edab69cf5dfad558b3a9bd4e（SlipStream）：其独立给出问题（HBF容量16倍于HBM但读时延约20µs、按需访问使推理最多慢12.8倍）、机制（数据无关kernel每CTA页需求序离线记录+staging warp按4KB页重放预取+首访释放表项使跟踪状态减32倍）、目标（HBF只读权重层的稠密模型GPU推理）与可检验效应（40MB缓冲92.4%、16MB 88.8%、H3配320MB仅43.1%、流重放实测开销1至3%），四要素齐备。其身份元组与45个既有候选及8个Idea均不同：最接近的idea_15ffa6ef1f0591976613为MoE专家权重容量墙的分层驻留+流式换入（target为capacity_limited_moe_inference），其本期(2026-11-18)evidence_added事件已把本条作为inferred同族证据收录，但该Idea自身记录明确标注本条对象为稠密模型只读权重与HBF假设介质、非MoE专家权重，故非同身份复报；candidate_85cbc88f81e2be83c31e为UVM超订页错误代价的张量级选择性预取、candidate_e7519c587b0f339feb1f为端侧SSD权重流式的推测-精炼协调预取，问题与目标对象均不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "edab69cf5dfad558b3a9bd4e",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.14776v1"
+      ],
+      "reason": "SlipStream在周期级仿真中给出需求序预取的完整证据链：HBF容量为HBM16倍但读时延约20µs、按需访问最多慢12.8倍的问题刻画；数据无关kernel每CTA页需求序离线记录、staging warp按4KB页重放、表项首访释放使跟踪状态减32倍的机制；40MB缓冲92.4%、16MB 88.8%、H3配320MB仅43.1%、流重放实测开销1至3%的效应；边界为主要数字均来自周期级仿真并以理想HBF为基线、无HBF实物系统、HBF仅存只读权重，应定位为预硅架构研究。单版本arXiv预印本，独立分组arxiv:2611.14776。该条同时被idea_15ffa6ef1f0591976613于本期(2026-11-18)以inferred同族证据收录（evidence_added事件），但该Idea身份为MoE专家权重容量墙，与本候选的稠密模型HBF读时延身份三键均不同。",
+      "independence_group": "arxiv:2611.14776"
+    }
+  ],
+  "evidence_item_ids": [
+    "edab69cf5dfad558b3a9bd4e"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.14776v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.14776"
+  ],
+  "unknowns": [
+    "全部主要数字来自周期级仿真且以理想HBF为基线，无HBF实物系统，介质本身为预硅假设（功耗、磨损与接口协议开销未刻画）",
+    "需求序依赖数据无关kernel的稳定页需求序，数据相关访问（KV缓存写入、MoE动态专家路由）下的可预测性与收益未验证",
+    "仅覆盖稠密模型只读权重，七个稠密模型之外的负载与batch行为未刻画",
+    "单一arXiv v1预印本独立分组，缺独立复现",
+    "与idea_15ffa6ef1f0591976613（慢速层容量墙同族机理）的血缘关系需人工判定，暂经related_idea_ids显式标注"
+  ],
+  "validation_plan": {
+    "mode": "simulation",
+    "minimal_model": "在周期级GPU仿真器（或GPU加注入约20µs读时延的HBF模拟层）上复现需求序页重放预取，运行七个稠密模型，扫描staging缓冲容量（16/40/320MB）与预取策略（需求序重放、顺序预取、H3按需分层）。",
+    "inputs": [
+      "数据无关kernel的每CTA页需求序trace与4KB页staging warp重放实现",
+      "HBF时延与带宽参数（约20µs读时延、16倍HBM容量）及缓冲容量扫描配置",
+      "七个稠密模型checkpoint与推理负载",
+      "流重放自身开销计量配置（对照报告的1至3%）"
+    ],
+    "baselines": [
+      "理想HBF全驻留上界",
+      "按需访问无预取（最多慢12.8倍）",
+      "H3配320MB缓冲",
+      "顺序预取变体"
+    ],
+    "metrics": [
+      "各稠密模型归一化到理想HBF的推理性能（对照92.4%/88.8%/43.1%）",
+      "缓冲容量-性能曲线与预取命中率",
+      "流重放自身开销占比",
+      "预取跟踪状态规模（对照32倍缩减）"
+    ],
+    "support_criteria": [
+      "40MB缓冲在多数稠密模型上达理想性能90%以上且流重放开销低于5%",
+      "需求序重放显著优于顺序预取与H3变体，且跟踪状态缩减复现一个数量级以上"
+    ],
+    "reject_criteria": [
+      "数据相关访问或kernel版本变化使需求序失稳、命中率坍塌到接近按需访问水平",
+      "缓冲需求随模型规模或batch增长超出成本可行区间"
+    ],
+    "limitations": [
+      "无HBF实物系统，全部结论依赖仿真器对时延与带宽的假设；仅只读权重，不含KV缓存写入与训练相位"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备：HBF读时延约20µs使按需推理最多慢12.8倍的问题、数据无关kernel每CTA页需求序离线记录加staging warp按4KB页重放加首访释放表项（跟踪状态减32倍）的机制、HBF只读权重稠密模型GPU推理的目标、40MB缓冲92.4%与16MB 88.8%且H3配320MB仅43.1%、流重放实测开销1至3%的效应；身份元组与45个既有候选及8个Idea均不同——最接近的idea_15ffa6ef1f0591976613系MoE专家权重容量墙的分层驻留加流式换入、目标为capacity_limited_moe_inference，本候选系稠密模型HBF读时延的需求序预取，问题、机制与目标三键均不同，该Idea本期(2026-11-18)虽已将本条作为inferred同族证据收录，但其记录明确标注对象为稠密模型只读权重与HBF假设介质、非MoE专家权重，属同族不同身份而非复报，不构成duplicate；candidate_85cbc88f81e2be83c31e为UVM超订页错误的张量级选择性预取、candidate_e7519c587b0f339feb1f为端侧SSD权重流式的推测-精炼协调预取，问题与目标对象均不同。但全部主要数字来自周期级仿真且以理想HBF为基线、无HBF实物系统、介质为预硅假设，仅覆盖数据无关kernel与只读权重，数据相关访问下需求序可预测性未验证，单一arXiv v1预印本独立分组缺独立复现，适用边界未划定，与MoE容量墙Idea的同族血缘认定需人工判断，先deferred观察。",
+  "related_candidate_ids": [
+    "candidate_85cbc88f81e2be83c31e",
+    "candidate_e7519c587b0f339feb1f"
+  ],
+  "related_idea_ids": [
+    "idea_15ffa6ef1f0591976613"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_2f10cf4419ec535adc44",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "触发证据edab69cf5dfad558b3a9bd4e四要素齐备，且身份元组（hbf_read_latency_inference_slowdown + demand_order_page_replay_prefetch + hbf_read_only_weight_gpu_inference）与全部既有候选及Idea不同：idea_15ffa6ef1f0591976613（MoE专家容量墙）本期已将其作为inferred同族证据收录，但其记录标注本条对象为稠密模型只读权重与HBF假设介质、非MoE专家权重，属同族不同身份，血缘认定经related_idea_ids标注待人工判断；因全部数字来自周期级仿真、无HBF实物系统、单一独立分组且数据相关访问下的可预测性与适用边界未验证，按deferred观察。",
+      "evidence_item_ids": [
+        "edab69cf5dfad558b3a9bd4e"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_17bc1aef830fbd75a441",
+  "identity": {
+    "problem_key": "naive_fp4_kv_quant_accuracy_loss",
+    "mechanism_key": "dual_fp4_residual_outlier_aware_attention_kernel",
+    "target_key": "single_gpu_fp4_kv_long_context_decoding"
+  },
+  "idea_type": "solution_concept",
+  "title": "以双FP4残差查询与离群感知键量化实现近无损原生FP4 KV长上下文解码",
+  "problem": "长上下文服务中KV Cache挤占显存，而朴素FP4量化KV平均落后BF16达8.5个点，低比特显存节省与解码精度、吞吐不可兼得。",
+  "hypothesis": "若查询以双FP4残差表示、以欠流感知概率缩放避免E4M3把小概率归零、键以离群感知量化抑制通道离群，并让注意力全程运行于FP4张量核，则长上下文解码可把KV Cache压至FP4而精度近无损，且TPOT与单卡峰值吞吐显著优于BF16 KV。",
+  "mechanism": "算法侧以双FP4残差表示查询、欠流感知概率缩放避免E4M3把小概率归零、离群感知键量化抑制通道离群；内核侧注意力全程运行于FP4张量核。",
+  "target": "单GPU（Blackwell FP4张量核）长上下文解码的KV Cache表示与注意力内核（vLLM解码路径）",
+  "expected_effect": "Qwen3-4B上NVFP4精度67.27对BF16 KV的67.69（近无损）；256K上下文TPOT快1.81倍；64并发单卡峰值吞吐为BF16的2.4-3.0倍。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "Direct触发项单独给出完整的问题、机制、目标与可测效应，候选直接落在该记录的原生FP4 KV Cache算法-内核协同设计机制上；其单节点Blackwell边界与网络侧评估缺失记为unknowns并进入验证计划，不构成候选本身的网络侧主张。"
+  },
+  "evidence": [
+    {
+      "item_id": "cf5fb762ffca196ee029781b",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.09825v1"
+      ],
+      "reason": "《BitDecoding-FP4：原生FP4 KV Cache解码的算法系统协同设计》给出完整机制与单卡对照：双FP4残差查询、欠流感知概率缩放与离群感知键量化使注意力全程运行于FP4张量核，Qwen3-4B上NVFP4精度67.27对BF16 KV的67.69，256K上下文TPOT快1.81倍、64并发单卡峰值吞吐为BF16的2.4-3.0倍；全部为单节点Blackwell内核与显存实验，未见TTFT、P95或跨节点KV传输评估。",
+      "independence_group": "arxiv:2611.09825"
+    }
+  ],
+  "evidence_item_ids": [
+    "cf5fb762ffca196ee029781b"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.09825v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.09825"
+  ],
+  "unknowns": [
+    "评估只覆盖单节点Blackwell与FP4张量核，无FP4支持硬件上的可行性与代价比未知",
+    "精度对照只报告Qwen3-4B，跨模型家族与更大规模下的精度损失未知",
+    "未见TTFT、P95与跨节点KV传输等网络侧评估，解码吞吐收益能否延续到分离式或跨节点部署未知",
+    "双FP4残差、欠流感知缩放与离群感知键量化三组件的单独贡献未分解",
+    "64并发以上与更大batch下2.4-3.0倍峰值吞吐是否保持未知"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在vLLM解码路径上启用原生FP4 KV Cache（双FP4残差查询、欠流感知概率缩放、离群感知键量化，注意力全程FP4张量核），在单节点Blackwell GPU上复现精度与吞吐对照，并补记证据缺失的TTFT、P95与并发扩展曲线，作为TPN网络侧调度的单卡对照基线。",
+    "inputs": [
+      "Blackwell FP4张量核单卡环境与vLLM解码栈",
+      "Qwen3-4B及至少一个其他家族或规模模型",
+      "64K-256K长上下文负载集与并发档位",
+      "BF16、朴素NVFP4与协同设计FP4三档KV精度配置"
+    ],
+    "baselines": [
+      "BF16 KV解码（证据内基线）",
+      "朴素NVFP4量化KV（证据内平均落后8.5个点的对照）"
+    ],
+    "metrics": [
+      "任务精度对BF16 KV的差值",
+      "TPOT",
+      "单卡峰值吞吐",
+      "TTFT与P95尾延迟（证据缺失项）",
+      "KV显存占用"
+    ],
+    "support_criteria": [
+      "非Qwen3-4B模型上精度仍近无损，差距显著小于朴素FP4的8.5个点",
+      "256K上下文TPOT与并发峰值吞吐收益方向复现",
+      "补记的TTFT与P95不因FP4路径显著恶化"
+    ],
+    "reject_criteria": [
+      "其他模型家族出现明显精度损失或需逐模型离群校准才可挽救",
+      "高并发下FP4内核吞吐收益消失或TTFT、P95显著恶化"
+    ],
+    "limitations": [
+      "仅单节点单卡评估，不覆盖跨节点KV传输与网络利用率",
+      "FP4张量核为Blackwell专属，结果不可直接外推到无FP4支持硬件",
+      "证据内无TTFT与P95口径可对照"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制、目标与可测效应完整且身份与含义不同于既有候选与Idea，但仅有单一arXiv独立组，评估只覆盖单节点Blackwell与Qwen3-4B且无TTFT/P95等网络侧证据，缺独立支持与适用边界。",
+  "related_candidate_ids": [
+    "candidate_ea3860053257d22a73b4",
+    "candidate_42994fde404af6801926"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_b9d18ba65d603ffc2054",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制、目标与可测效应完整且身份与含义不同于既有候选与Idea，但仅有单一arXiv独立组，评估只覆盖单节点Blackwell与Qwen3-4B且无TTFT/P95等网络侧证据，缺独立支持与适用边界。",
+      "evidence_item_ids": [
+        "cf5fb762ffca196ee029781b"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

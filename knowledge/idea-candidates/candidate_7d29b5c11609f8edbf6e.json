@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_7d29b5c11609f8edbf6e",
+  "identity": {
+    "problem_key": "eviction_order_ignores_recompute_cost",
+    "mechanism_key": "head_first_eviction_unified_gpu_cpu_cache",
+    "target_key": "agent_serving_kv_eviction_policy"
+  },
+  "idea_type": "solution_concept",
+  "title": "共享前缀后头部优先淘汰加GPU-CPU统一逻辑缓存降低Agent服务TTFT",
+  "problem": "Agent长历史复用使LRU尾部淘汰反复丢弃共享前缀后最廉价的KV段并重算昂贵后缀，淘汰顺序与重算代价错配，推高平均TTFT与JCT。",
+  "hypothesis": "若在共享前缀结束后从头部释放KV、保留缓存后缀、仅对后缀前的缺口分段重算，并把GPU与CPU两级缓存当作一个逻辑缓存统一选择淘汰与迁移，则可在紧缓存预算下显著降低Agent服务的平均TTFT与JCT。",
+  "mechanism": "淘汰时在共享前缀结束后从头释放KV并保留缓存后缀，仅对后缀前的缺口分段重算；GPU与CPU两级缓存作为单一逻辑缓存统一做淘汰与迁移选择。",
+  "target": "Agent推理服务的KV缓存淘汰与分层迁移策略（SGLang式单节点GPU-CPU缓存）",
+  "expected_effect": "Claude Code回放对比SGLang：8B模型4并发会话仅GPU缓存平均TTFT降60%；235B-A22B两级缓存平均TTFT降76%、JCT降60%。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-06",
+    "rationale": "单条已发布记录同时给出问题（LRU尾部淘汰丢弃廉价前缀段并重算昂贵后缀）、可解释机制（共享前缀后头部优先释放、后缀保留、缺口分段重算与GPU-CPU统一逻辑缓存）、目标对象（Agent服务分层KV缓存淘汰）与可检验效应（Claude Code回放的TTFT与JCT对照结果）。"
+  },
+  "evidence": [
+    {
+      "item_id": "2a8ee5e605785dd6a40fc304",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.00391v1"
+      ],
+      "reason": "《Penelope以头部优先KV淘汰将Agent服务平均TTFT最多降76%》给出淘汰顺序与重算代价错配的问题、头部优先淘汰加两级统一逻辑缓存机制与SGLang对照结果；边界为全部实验单节点GPU-CPU设计，未测跨地域WAN传输、压缩或跨集群一致性。",
+      "independence_group": "arxiv:2611.00391"
+    }
+  ],
+  "evidence_item_ids": [
+    "2a8ee5e605785dd6a40fc304"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.00391v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.00391"
+  ],
+  "unknowns": [
+    "全部实验为单节点GPU-CPU设计，未做跨地域WAN传输、压缩或跨集群一致性评估",
+    "收益依赖缓存感知调度且受会话中首token等待占比限制，适用负载边界未定",
+    "单一预印本证据，无独立复现",
+    "该记录已于2026-11-06被idea_984fec4fcf65a75a6b1f以evidence_added事件吸收为证据，本候选与该Idea的lineage归属需人工决定"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在SGLang式分层缓存上实现共享前缀后头部优先淘汰、后缀保留、缺口分段重算与GPU-CPU统一逻辑缓存的淘汰迁移选择，以内部Agent会话回放对比LRU尾部淘汰。",
+    "inputs": [
+      "内部Agent会话回放trace（含共享前缀结构标注）",
+      "GPU与CPU缓存容量档位",
+      "并发会话数档位"
+    ],
+    "baselines": [
+      "SGLang默认LRU尾部淘汰",
+      "仅GPU缓存与GPU-CPU两级缓存两种配置"
+    ],
+    "metrics": [
+      "平均TTFT",
+      "JCT",
+      "重算token量",
+      "缓存间迁移带宽占用"
+    ],
+    "support_criteria": [
+      "同缓存预算下平均TTFT与JCT显著低于LRU基线且重算token量下降"
+    ],
+    "reject_criteria": [
+      "低并发或前缀占比低的负载上收益消失，或统一迁移选择的开销抵消节省"
+    ],
+    "limitations": [
+      "原始证据限于单节点GPU-CPU与Claude Code回放负载"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，身份区别于既有候选与Idea（随机驱逐匹配打分器的candidate_2119757ba208fd48cc78为免打分随机淘汰、检索控制平面的candidate_ccdfa5b1ca5299f7009f为执行前路由、idea_984fec4fcf65a75a6b1f为跨部署亲和路由与键控压缩保留，本候选为单节点淘汰顺序与两级统一逻辑缓存）；但证据为单一预印本，全部实验限于单节点GPU-CPU设计、未测跨域WAN，收益依赖缓存感知调度且受首token等待占比限制，缺独立支持与适用边界，且该记录已被idea_984fec4fcf65a75a6b1f吸收为证据，lineage需人工决定。",
+  "related_candidate_ids": [
+    "candidate_2119757ba208fd48cc78",
+    "candidate_984fec4fcf65a75a6b1f"
+  ],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f"
+  ],
+  "first_seen_issue": "2026-11-06",
+  "last_updated_issue": "2026-11-06",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_8b1f2cb10c8b577a44f3",
+      "issue_date": "2026-11-06",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应完整，身份区别于随机驱逐、检索控制平面与跨部署亲和路由等既有候选与Idea；但证据为单一预印本，全部实验限于单节点GPU-CPU设计、未测跨域WAN，收益依赖缓存感知调度且受首token等待占比限制，缺独立支持与适用边界，且该记录已被idea_984fec4fcf65a75a6b1f吸收为证据，lineage需人工决定。",
+      "evidence_item_ids": [
+        "2a8ee5e605785dd6a40fc304"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

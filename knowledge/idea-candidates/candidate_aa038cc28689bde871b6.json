@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_aa038cc28689bde871b6",
+  "identity": {
+    "problem_key": "byte_budget_ignores_query_channel_axis",
+    "mechanism_key": "joint_bitwidth_token_channel_allocation",
+    "target_key": "kv_byte_budget_compression"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "固定字节预算在位宽、token数与查询通道三轴的联合分配",
+  "problem": "固定字节预算下KV压缩主要在保留token数与位宽之间取舍，Dual-QK新引入的查询通道稀疏维度没有进入预算分配决策。",
+  "hypothesis": "在固定字节预算下把位宽、保留token数与查询通道稀疏三轴联合端到端校准，可在同预算下取得比任意两轴分配更高的质量。",
+  "mechanism": "Dual-QK用互逆非正交Q/K变换使INT2键与约40%查询通道剪枝同时成立（每元素存储2.34位、带宽1.93位）；BreadthKV按端到端校准选位宽、量化到KIVI格式后按字节匹配淘汰token数。联合机制是把查询通道剪枝作为第三轴纳入BreadthKV式字节匹配分配，该三轴分配没有任何单条记录声明。",
+  "target": "推理模型KV字节预算的解码期压缩与传输体积分配",
+  "expected_effect": "BreadthKV相对SnapKV-D合并增益17.4个百分点、Qwen3-8B的AIME准确率9.4%升至51.7%；预期纳入通道轴后同字节预算质量进一步提高或同质量字节数更低。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "相邻两期的独立记录分别证明位宽-token分配的重要性和查询通道剪枝与INT2兼容的可行性，三轴联合分配没有任何单条记录声明。"
+  },
+  "evidence": [
+    {
+      "item_id": "c70971a97f6d522a9ddc448a",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.09827v1"
+      ],
+      "reason": "Dual-QK以互逆非正交Q/K变换使INT2量化与查询通道剪枝同时成立，128K上下文、40%查询稀疏下每元素存储2.34位、带宽1.93位，把查询通道稀疏变成字节预算的新分配轴。",
+      "independence_group": "arxiv:2610.09827"
+    },
+    {
+      "item_id": "ceb1caa889d484536ce1bbb2",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.05685v2"
+      ],
+      "reason": "BreadthKV发现固定字节预算下位宽与token数的分配比淘汰方法选择更重要：每128步把fp16窗口外整块量化到KIVI格式再按字节匹配淘汰token数，位宽按模型与预算端到端校准；相对SnapKV-D 18个设置17个为正，Qwen3-8B的AIME准确率由9.4%升至51.7%。",
+      "independence_group": "arxiv:2610.05685"
+    }
+  ],
+  "evidence_item_ids": [
+    "c70971a97f6d522a9ddc448a",
+    "ceb1caa889d484536ce1bbb2"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.09827v1",
+    "https://arxiv.org/abs/2610.05685v2"
+  ],
+  "independence_groups": [
+    "arxiv:2610.09827",
+    "arxiv:2610.05685"
+  ],
+  "unknowns": [
+    "Dual-QK长上下文检索仍低于BF16且8.3倍读取减少为估计值",
+    "BreadthKV仅覆盖三个7-8B英文数理推理模型且量化为引擎内模拟",
+    "通道稀疏与token淘汰在同一字节预算内的交互未测",
+    "无端到端吞吐或WAN传输数据"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在推理模型解码压缩中实现位宽乘token数乘查询通道的三轴字节匹配分配，与两轴基线对比。",
+    "inputs": [
+      "推理模型负载",
+      "字节预算档位",
+      "查询稀疏档位"
+    ],
+    "baselines": [
+      "仅位宽-token分配（BreadthKV）",
+      "仅查询通道剪枝（Dual-QK）",
+      "SnapKV-D"
+    ],
+    "metrics": [
+      "同预算任务质量",
+      "每元素位数",
+      "解码吞吐"
+    ],
+    "support_criteria": [
+      "同字节预算下三轴分配质量显著高于两轴基线"
+    ],
+    "reject_criteria": [
+      "通道轴增益被长上下文检索质量损失抵消"
+    ],
+    "limitations": [
+      "两条证据分别为预印本与窄域小模型评测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制完整可检验且与逐层逐头配额候选的分配轴不同，但两半证据均为预印本、域窄且组合缺独立支持。",
+  "related_candidate_ids": [
+    "candidate_e5563020923e9d940d63"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-18",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_a737eda6cc6429b63170",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制完整可检验且与逐层逐头配额候选的分配轴不同，但两半证据均为预印本、域窄且组合缺独立支持。",
+      "evidence_item_ids": [
+        "c70971a97f6d522a9ddc448a",
+        "ceb1caa889d484536ce1bbb2"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

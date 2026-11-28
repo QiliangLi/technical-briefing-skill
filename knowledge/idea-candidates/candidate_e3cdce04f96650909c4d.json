@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_e3cdce04f96650909c4d",
+  "identity": {
+    "problem_key": "prefix_cache_energy_ceiling_decode_kv_read",
+    "mechanism_key": "prefix_hit_plus_kv_compression_joint_energy_reduction",
+    "target_key": "serving_energy_and_latency_joint_accounting"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "前缀缓存节能上限受解码期KV读取制约、须与KV压缩组合的能耗收益假设",
+  "problem": "大模型推理的KVCache收益评估长期以TTFT/吞吐为口径、缺少解析能耗模型，token边际能耗随序列非线性增长：SIMPLE四参数定律把单token能耗解析分解为预填充摊销、KV缓存与下一token计算三项（13个稠密模型H100轨迹R2=0.969且无需逐模型拟合），前缀缓存仅按未缓存输入长度缩放预填充项，节能上限受解码期KV缓存读取项制约——估算约93%前缀命中下总能耗仅降2.7倍，命中请求能耗仍为非agentic请求的4.8倍；命中率工程（驱逐、复用、放置）因此存在结构性能耗上限，缺一条『命中率提升×KV体积压缩』联合优化能否突破该上限的可检验假设。",
+  "hypothesis": "在前缀命中率≥80%的多轮/agentic服务负载上，仅提升命中率的边际能耗收益递减（解码期KV读取项主导能耗），把命中率工程与KV体积压缩（在线低秩截断或FP8/4比特量化，把KV读取体积压到50%及以下）组合后，每token能耗较仅缓存基线再降≥25%且任务质量损失≤1分；若能耗拆解显示解码期KV读取项占比<20%、或压缩自身的计算能耗抵消读取节省，则前缀缓存的能耗收益应视为已接近上限，不应再为能耗目标追加缓存工程投入。",
+  "mechanism": "能耗按SIMPLE三项解析分解计量：预填充摊销、KV缓存读取、下一token计算，后两项构成解码能耗；命中率收益只作用于第一项（前缀缓存仅按未缓存输入长度缩放预填充项），KV体积压缩按比例缩减第二项的读取字节数，两者作用项不相交因而可叠加；能耗与时延两种收益口径须分别验收（存在吞吐升而TTFT反增的低精度KV先例）。",
+  "target": "自研推理栈LLM serving的前缀缓存命中率与KV体积的能耗-时延联合核算口径",
+  "expected_effect": "约93%前缀命中下总能耗降2.7倍的估算口径上，组合命中率工程与KV压缩使高命中负载每token能耗较仅缓存基线再降25%以上、能耗拆解中解码期KV读取项显著下降且任务质量保持在全量KV的1分以内；由架构超参代入SIMPLE四参数即可预测能耗（H100口径R2=0.969），无需逐模型拟合。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-13",
+    "rationale": "单条已发布记录同时给出问题（推理能耗缺解析模型、前缀缓存节能上限受解码期KV读取项制约、命中请求能耗仍为非agentic的4.8倍）、可解释机制（SIMPLE把单token能耗解析分解为预填充摊销、KV缓存与下一token计算三项，命中率收益只作用于预填充项、与缩减KV读取字节数的体积压缩作用项不相交可叠加）、目标对象（LLM serving的能耗-时延联合核算口径）与可检验效应（13个稠密模型H100轨迹R2=0.969、93%命中降2.7倍的估算口径）；但其身份与含义已被既有Idea吸收，比对后按重复处置。"
+  },
+  "evidence": [
+    {
+      "item_id": "a9fc4d466fcba05d8952502c",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.03330v1"
+      ],
+      "reason": "SIMPLE四参数能耗定律给出问题（大模型推理能耗缺解析模型，前缀缓存节能上限受解码期KV缓存读取项制约）、机制（单token能耗解析分解为预填充摊销、KV缓存与下一token计算三项，前缀缓存仅按未缓存输入长度缩放预填充项，故与缩减KV读取体积的压缩手段作用项不相交）、目标（LLM推理serving的能耗核算口径）与可检验效应（13个稠密模型H100轨迹R2=0.969且无需逐模型拟合；约93%前缀命中下总能耗降2.7倍、命中请求能耗仍为非agentic的4.8倍）；边界为系数绑定H100与TensorRT-LLM、不建模批大小与并发、未覆盖MoE、焦耳数为定律估算而非实测能耗。",
+      "independence_group": "arxiv:2611.03330"
+    }
+  ],
+  "evidence_item_ids": [
+    "a9fc4d466fcba05d8952502c"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.03330v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.03330"
+  ],
+  "unknowns": [
+    "SIMPLE系数绑定H100与TensorRT-LLM，其他硬件与推理引擎上的外推未验证",
+    "不建模批大小与并发，解码期KV读取项在真实批并发下的能耗占比未知",
+    "未覆盖MoE模型的能耗拆解",
+    "焦耳数为定律估算而非实测能耗，实测计量口径未给出",
+    "KV压缩手段与前缀缓存命中路径的兼容性，以及压缩自身计算能耗是否抵消读取节省未测"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在7B-14B级稠密开源模型上以GPU功耗采样（DCGM/nvidia-smi口径）分别计量预填充与解码能耗，对照SIMPLE四参数解析估算，叠加前缀命中率扫描与KV压缩档位。",
+    "inputs": [
+      "前缀命中率扫描50%/80%/93%/99%（多轮agentic与检索混合流量回放）",
+      "KV压缩档位：无压缩/FP8/4比特/在线低秩截断50%秩",
+      "上下文长度8K/32K/128K",
+      "GPU功耗采样并区分预填充与解码阶段"
+    ],
+    "baselines": [
+      "无前缀缓存全量重算",
+      "仅前缀缓存（无压缩）",
+      "SIMPLE定律解析估算值（解析对照）"
+    ],
+    "metrics": [
+      "每千token能耗（焦耳）",
+      "预填充/解码能耗拆解占比",
+      "TTFT P50/P95与吞吐（与时延口径并列）",
+      "任务质量（LongBench/RULER）"
+    ],
+    "support_criteria": [
+      "命中率≥80%时组合方案每token能耗较仅缓存基线再降≥25%",
+      "实测能耗与SIMPLE估算偏差在2倍以内",
+      "任务质量损失≤1分"
+    ],
+    "reject_criteria": [
+      "解码期KV读取项能耗占比<20%且压缩无显著能耗收益",
+      "压缩计算能耗抵消读取节省（组合能耗高于仅缓存基线）"
+    ],
+    "limitations": [
+      "SIMPLE焦耳数为定律估算而非实测、系数绑定H100与TensorRT-LLM",
+      "原证据不建模批大小与并发、未覆盖MoE"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "与既有Idea idea_e3cdce04f96650909c4d（前缀缓存节能上限受解码期KV读取制约、须与KV压缩组合的能耗收益假设，first_seen_issue 2026-10-27）身份与含义相同：该Idea的problem/hypothesis/mechanism已包含本触发项的『SIMPLE三项解析分解、命中率收益仅作用于预填充项、节能上限受解码期KV读取制约、93%命中降2.7倍、命中请求为非agentic的4.8倍、须与KV体积压缩组合并分离能耗与时延口径』语义，且该Idea于本期（2026-11-13 created）把本触发项a9fc4d466fcba05d8952502c吸收为首条evidence_for直接证据（另含AttSVD低秩压缩与vLLM FP8 KV杠杆证据），按重复处置并指向该Idea。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_e3cdce04f96650909c4d"
+  ],
+  "first_seen_issue": "2026-11-13",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_fdca0a1b19b2b0d648f5",
+      "issue_date": "2026-11-13",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "触发项同时具备问题、机制、目标与可检验效应，但其『前缀缓存节能上限受解码期KV读取制约、命中率工程须与KV体积压缩组合并分离能耗/时延口径』的语义已被既有Idea idea_e3cdce04f96650909c4d吸收（该Idea于2026-11-13把本触发项吸收为首条evidence_for直接证据），身份三键一一对应，按重复处置并指向该Idea。",
+      "evidence_item_ids": [
+        "a9fc4d466fcba05d8952502c"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

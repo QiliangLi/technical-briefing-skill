@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_95c78008f1c0b4437833",
+  "identity": {
+    "problem_key": "looped_kv_growth_limits_decode_batch",
+    "mechanism_key": "loop_layer_precision_allocation_bitplane_on_demand_fetch",
+    "target_key": "looped_transformer_serving_kv"
+  },
+  "idea_type": "solution_concept",
+  "title": "按循环层敏感度背包分配KV精度并以两比特平面按需读取",
+  "problem": "循环Transformer为每个循环保存KV，内存随循环数增长并限制解码批规模；均匀量化不区分各循环层的量化敏感度，跨循环的冗余KV也未被复用。",
+  "hypothesis": "离线刻画各循环层的量化敏感度并按背包规划为各循环层分配INT4、INT2或跨循环复用，再把每层KV拆为必读的高2比特平面与按注意力阈值按需取回的低2比特平面，可使每token KV存储较均匀INT4再降约三成，SLO下goodput达KIVI-4的1.7-2.2倍且基准平均不劣于BF16。",
+  "mechanism": "离线刻画各循环层的量化敏感度，按背包规划为各循环层分配INT4、INT2或跨循环复用；KV拆为两个2比特平面，高2比特平面每步必读，低2比特平面仅在该处注意力权重超阈值时取回；跨循环经指针重定向复用末循环KV；在vLLM内实现融合内核并覆盖整步CUDA图。",
+  "target": "循环结构Transformer在vLLM类引擎中的推理KV缓存与解码批规模",
+  "expected_effect": "Ouro-1.4B上每token存储155对240KiB，较均匀INT4少35%；SLO下goodput为KIVI-4的1.7-2.2倍；基准平均不劣于BF16。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题（循环KV随循环数增长限制解码批规模）、可解释机制（按循环层敏感度背包分配精度加两比特平面按需取回与跨循环指针复用）、目标对象（循环结构模型的vLLM服务KV）与可检验效应（较均匀INT4少35%存储、goodput为KIVI-4的1.7-2.2倍、基准平均不劣于BF16）。"
+  },
+  "evidence": [
+    {
+      "item_id": "92f68e544ed13848162ab363",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04137v1"
+      ],
+      "reason": "《LoopKV按循环层分配KV精度并以两比特平面按需读取》给出循环KV增长限制解码批规模的问题、按循环层敏感度背包分配精度加两比特平面按需取回与跨循环指针复用末循环KV的机制、vLLM融合内核加整步CUDA图的实现，以及Ouro-1.4B上较均匀INT4少35%存储、SLO下goodput为KIVI-4的1.7-2.2倍、基准平均不劣于BF16的结果；边界为仅验证循环结构模型且全部单卡，H100上按需读低位不再提速。",
+      "independence_group": "arxiv:2611.04137"
+    }
+  ],
+  "evidence_item_ids": [
+    "92f68e544ed13848162ab363"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.04137v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.04137"
+  ],
+  "unknowns": [
+    "仅验证循环结构模型且全部单卡，无广域或跨机实验",
+    "H100上按需读低位平面不再提速，收益依赖显存带宽受限的前提",
+    "两比特平面按需取回迁移为广域先传高位、按注意力需求补传低位仅为项目相关性判断，无实测",
+    "单一预印本，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在vLLM类引擎内实现按循环层敏感度的背包精度分配与两比特平面按需取回（高平面每步必读、低平面按注意力阈值取回、跨循环指针复用末循环KV），对比均匀量化与全精度基线，度量存储、SLO下goodput与基准质量。",
+    "inputs": [
+      "循环结构模型（Ouro-1.4B级）",
+      "循环层数与精度档位",
+      "各循环层量化敏感度刻画数据",
+      "SLO档位"
+    ],
+    "baselines": [
+      "均匀INT4量化",
+      "KIVI-4",
+      "BF16全精度KV"
+    ],
+    "metrics": [
+      "每token KV存储字节",
+      "SLO下goodput",
+      "基准任务平均分数",
+      "解码批规模"
+    ],
+    "support_criteria": [
+      "每token存储较均匀INT4少三成以上且基准平均不劣于BF16",
+      "同SLO下goodput显著高于KIVI-4"
+    ],
+    "reject_criteria": [
+      "显存带宽充裕的硬件上按需读低位无净收益且引入额外取回开销",
+      "跨循环复用或低位平面省略使基准任务显著劣化"
+    ],
+    "limitations": [
+      "原始验证仅限单一循环结构模型与单卡设置",
+      "广域先传高位按需补传低位的迁移无实测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，身份区别于既有候选（末轮KV共享用随机深度训练、跨轮收敛共享加保留时程打包为会话状态压缩、位宽-token-查询通道三轴分配面向通用KV字节预算、逐层逐头校准配额面向跨域传输体积规划），但证据为单一预印本、仅循环结构模型且全部单卡，H100上按需读低位不再提速，广域增量传输迁移仅为项目相关性判断，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_fe89d9e56f50de65c1e3",
+    "candidate_6640dfa217e4a75ed5f0",
+    "candidate_aa038cc28689bde871b6"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_8a292909b3dfb6262a843ae8",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且身份区别于循环KV共享与字节预算分配类既有候选，但单一预印本仅循环结构模型单卡验证、H100上按需读低位不再提速且广域迁移无实测，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "92f68e544ed13848162ab363"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

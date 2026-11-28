@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_4e4ac66fac4ee531a3e4",
+  "identity": {
+    "problem_key": "blocking_build_wait_in_code_generated_video_agents",
+    "mechanism_key": "content_addressed_exact_frame_reuse_plus_check_first_scheduling",
+    "target_key": "code_generated_video_agent_build_pipeline"
+  },
+  "idea_type": "solution_concept",
+  "title": "以内容寻址的精确帧复用与检查先行调度缩短代码生成视频Agent的阻塞构建等待",
+  "problem": "代码生成视频Agent的每次构建都是阻塞调用，Agent必须等构建完成才能继续；成片中位耗时11分钟且超过三分之一花在构建上。跨版本修改与时移编辑中有大量帧内容并未改变，仍随每次构建重复求值，重复构建占去成片时间的三分之一以上。",
+  "hypothesis": "若对代码生成视频Agent的每一帧以归一化到光栅器的求值绘图命令为键做内容寻址，键相同即精确复用已渲染结果，并把检查前置、渲染降为低优先级并行，则可在成片与从头渲染逐帧一致的前提下，把每次构建的中位等待降到从头重建的0.62至0.67倍，并在时移编辑下只需重绘不到一半的帧。",
+  "mechanism": "帧级内容寻址：每帧以归一化到光栅器的求值绘图命令为键，同键即精确复用，因键取决于帧的绘制内容，跨版本与时移编辑均有效；阻塞感知调度：先运行检查，渲染以低优先级并行启动，缩短Agent阻塞等待。",
+  "target": "代码生成视频Agent的构建流水线：帧级渲染缓存与构建调度器（限2D程序化绘制）",
+  "expected_effect": "真实Agent中每次构建的中位等待降至Rebuild的0.62至0.67倍，较温热流水线缩短36.3%；时移编辑下仅重绘43.9%的帧；全部成片与从头渲染逐帧一致。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-25",
+    "rationale": "单条已发布记录同时给出问题（构建为阻塞调用、成片逾三分之一时间花在构建上）、可解释机制（以归一化到光栅器的求值绘图命令为键的帧级内容寻址复用，加检查先行、渲染低优先级并行的调度）、目标对象（代码生成视频Agent的构建流水线）与可检验效应（每构建中位等待降至Rebuild的0.62至0.67倍、时移编辑仅重绘43.9%的帧、成片逐帧一致）。"
+  },
+  "evidence": [
+    {
+      "item_id": "ee2ccaef47803b5f108f72ec",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.22967v1"
+      ],
+      "reason": "《CodeReel以精确帧复用与阻塞感知调度加速代码生成视频Agent》给出问题、机制、目标与可检验效应：代码生成视频Agent的每次构建都是阻塞调用，成片中位耗时11分钟且超三分之一花在构建上；每帧以归一化到光栅器的求值绘图命令为键，同键即精确复用，跨版本与时移编辑均有效，调度上先跑检查、渲染以低优先级并行启动；真实Agent中每构建中位等待降至Rebuild的0.62至0.67倍，较温热流水线缩短36.3%，时移编辑下仅重绘43.9%的帧，全部成片与从头渲染逐帧一致。边界：仅支持2D程序化绘制，3D帧只渲染不复用，生成式素材不在范围内；项目判断明示证据止于单机，跨域传输只能类比参考。",
+      "independence_group": "arxiv:2611.22967"
+    }
+  ],
+  "evidence_item_ids": [
+    "ee2ccaef47803b5f108f72ec"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.22967v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.22967"
+  ],
+  "unknowns": [
+    "单一预印本、单一独立来源（arxiv:2611.22967），无独立复现",
+    "证据止于单机：帧缓存能否跨站点共享、跨域传输字节与跨域命中率均无数据，跨域适用只能类比参考",
+    "帧键归一化到光栅器，不同站点或不同光栅器实现下键是否一致记录中未说明",
+    "仅支持2D程序化绘制；3D帧只渲染不复用，生成式素材不在范围内",
+    "记录仅给出时移编辑下的重绘比例（43.9%），跨版本修改与其他编辑类型下的帧命中率未给出",
+    "帧复用与检查先行调度各自的收益贡献在记录中未拆分",
+    "记录给出的是每构建等待的比值，端到端成片总耗时的下降幅度未给出"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在一个代码生成视频Agent原型上实现帧级内容寻址缓存（以归一化到光栅器的求值绘图命令为键、同键精确复用）与检查先行、渲染低优先级并行的调度，回放含跨版本修改与时移编辑的构建序列，对比每次从头重建与温热流水线，并拆分复用与调度各自的贡献。",
+    "inputs": [
+      "代码生成视频Agent的多版本构建序列（含时移编辑）",
+      "2D程序化绘制的逐帧求值绘图命令流",
+      "帧缓存存储与命中日志"
+    ],
+    "baselines": [
+      "Rebuild（每次从头重建）",
+      "温热流水线（记录中的对比基线）",
+      "只开帧复用、不改调度（消融）"
+    ],
+    "metrics": [
+      "每构建等待时间相对Rebuild的比值",
+      "重绘帧比例与帧命中率",
+      "成片与从头渲染的逐帧一致率",
+      "端到端成片总耗时"
+    ],
+    "support_criteria": [
+      "真实Agent构建序列上每构建中位等待不高于Rebuild的0.67倍",
+      "复用后全部成片与从头渲染逐帧一致",
+      "时移编辑下重绘帧比例不高于43.9%"
+    ],
+    "reject_criteria": [
+      "复用后成片出现任何与从头渲染不一致的帧",
+      "帧命中率过低，使键计算与缓存开销抵消等待收益",
+      "等待收益在与记录不同的构建序列上消失"
+    ],
+    "limitations": [
+      "原始证据为单一预印本、单机实测，未涉及跨域传输",
+      "仅覆盖2D程序化绘制，3D帧与生成式素材不适用",
+      "以上为验证建议，尚未执行"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应四项齐全；身份（内容寻址的精确帧复用加检查先行调度，作用于代码生成视频Agent的构建流水线）与既有候选和Idea含义不同：recompute_cost_restore_asymmetry_joint_scheduling以重算与恢复代价统一调度KV缓存的保留、放置、仲裁与投递，lease_aware_delivery_order_scheduling只管工具结果投递序，non_prefix_kv_recurrence只管KV复用的检索控制面，三者均不涉及Agent产出制品的内容寻址复用。但证据为单一预印本、单一独立来源且无独立复现；记录明示证据止于单机、跨域传输只能类比参考，跨域适用边界未确认；机制仅覆盖2D程序化绘制。",
+  "related_candidate_ids": [
+    "candidate_2bb19b8ae91662956d18",
+    "candidate_6c8bedf82d69e0a9e8a2",
+    "candidate_ccdfa5b1ca5299f7009f"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-25",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d12c73b026b7fcb73a47",
+      "issue_date": "2026-11-25",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应四项齐全；身份（内容寻址的精确帧复用加检查先行调度，作用于代码生成视频Agent的构建流水线）与既有候选和Idea含义不同：recompute_cost_restore_asymmetry_joint_scheduling以重算与恢复代价统一调度KV缓存的保留、放置、仲裁与投递，lease_aware_delivery_order_scheduling只管工具结果投递序，non_prefix_kv_recurrence只管KV复用的检索控制面，三者均不涉及Agent产出制品的内容寻址复用。但证据为单一预印本、单一独立来源且无独立复现；记录明示证据止于单机、跨域传输只能类比参考，跨域适用边界未确认；机制仅覆盖2D程序化绘制。",
+      "evidence_item_ids": [
+        "ee2ccaef47803b5f108f72ec"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

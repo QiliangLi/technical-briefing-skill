@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_354849a7e622a14673a6",
+  "identity": {
+    "problem_key": "non_matrix_operator_unit_starvation",
+    "mechanism_key": "matrix_vector_unit_load_rebalancing",
+    "target_key": "decoupled_matrix_vector_unit_accelerators"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "解耦矩阵/向量单元加速器上非矩阵算子饿死矩阵单元：跨训练与推理的单元级负载再平衡机理",
+  "problem": "在矩阵与向量单元解耦的加速器上，softmax、张量重排、逐元素随机数生成等非矩阵算子落在低吞吐向量单元或数据搬移路径，使矩阵单元空转：边缘NPU实测中注意力kernel占计算密集kernel时延最高89.4%，GDN线性注意力较Adreno GPU基线吞吐低30%至71%，而同NPU的matmul/conv加速6.3至11.4倍；TPU上INT8训练的逐元素随机舍入随机数生成落在低吞吐向量单元、可能拖慢训练全步。各记录分别只覆盖推理或训练一侧，缺少被两侧证据共同支持的统一失配机理判据。",
+  "hypothesis": "非矩阵算子滞留向量/搬移路径导致的矩阵单元空转，是解耦矩阵/向量单元加速器上训练与推理两侧共同的性能损失机理；把此类工作按单元类型再平衡——按token共享随机舍入阈值、核心级切分融合、算子级即时消费中间张量与张量级布局重排——可在两侧同时恢复矩阵单元占用并兑现被空转吞掉的理论加速。",
+  "mechanism": "按单元类型做负载再平衡。训练侧把随机数生成移出逐元素向量路径：各token在隐藏维共享一个随机舍入阈值，一次量化服务两个反向矩阵乘，S3R-EC再沿token与隐藏维减去均值舍入误差保持无偏且不增方差。推理侧按NPU数据流三重重排：核心级按头维度切分并融合依赖算子消除跨核全局内存访问，算子级即时消费中间张量，张量级布局规划减少单元间变换开销，全程不改算法语义。",
+  "target": "解耦矩阵/向量单元加速器上的训练与推理负载：TPU类芯片的INT8量化训练，以及边缘NPU（Hexagon、RKNPU、Ascend 310P类）上的VLM与线性注意力推理",
+  "expected_effect": "训练侧TPU v5p稠密LLM全训练步达BF16的1.24至1.32倍、独立逐元素随机舍入的1.11倍（S3R实测）；推理侧竞争基线LA内核最高加速35.95倍、端到端请求时延最高快2.03倍、设备能耗降48%（HA-NPU实测）。若跨域机理成立，边缘NPU上线性注意力较GPU基线30%至71%的吞吐劣势应在同类单元级再平衡后收窄，且注意力kernel时延占比自89.4%量级下降。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "边缘NPU实测（推理侧病理）、S3R（训练侧病理加修复）与HA-NPU（推理侧修复）三条独立记录联合支持'非矩阵算子落在向量/搬移路径饿死矩阵单元、单元级再平衡可恢复'这一横跨训练与推理的统一机理；任何单条记录都只陈述各自一侧，未陈述该跨域机理。本期同批证据创建的Idea idea_9b899f5928d24ae421c1仅覆盖端侧VLM推理的softmax/重排数据流失配，本候选把机理推广到解耦单元加速器的训练与推理两侧，身份与含义均不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "1ce17ac6120740f77513a2da",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.40039v1"
+      ],
+      "reason": "在未修改生产栈上对6个VLM做kernel级下钻：softmax与张量重排使注意力kernel占计算密集kernel时延最高89.4%并令矩阵单元空转，GDN线性注意力较Adreno GPU基线吞吐低30%至71%而同NPU的matmul/conv加速6.3至11.4倍，证明推理侧损失在非矩阵算子执行路径而非矩阵单元算力。",
+      "independence_group": "arxiv:2610.40039"
+    },
+    {
+      "item_id": "d51b69856020fad8f76aef29",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.36587v1"
+      ],
+      "reason": "INT8训练的逐元素随机舍入随机数生成落在低吞吐向量单元；S3R按token共享随机舍入阈值使一次量化服务两个反向矩阵乘，TPU v5p上稠密LLM全训练步达BF16的1.24至1.32倍、独立随机舍入的1.11倍，证明训练侧同类单元失衡及其可修复性。",
+      "independence_group": "arxiv:2610.36587"
+    },
+    {
+      "item_id": "a39fefe1c419f15c07e2cde0",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.32114v1"
+      ],
+      "reason": "Qwen3.5-2B线性注意力层在Ascend 310P慢于全注意力3.02至4.98倍且占75%以上prefill时间；核心级按头维度切分融合、算子级即时消费中间张量与张量级布局规划把竞争基线LA内核最高加速35.95倍、端到端最高2.03倍、设备能耗降48%，给出推理侧单元级再平衡的实测修复。",
+      "independence_group": "arxiv:2609.32114"
+    }
+  ],
+  "evidence_item_ids": [
+    "1ce17ac6120740f77513a2da",
+    "d51b69856020fad8f76aef29",
+    "a39fefe1c419f15c07e2cde0"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.40039v1",
+    "https://arxiv.org/abs/2610.36587v1",
+    "https://arxiv.org/abs/2609.32114v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.40039",
+    "arxiv:2610.36587",
+    "arxiv:2609.32114"
+  ],
+  "unknowns": [
+    "S3R仅实测TPU v5p与JAX，且两个MoE模型上INT8全步反而慢5%至18%，训练侧机理是否跨负载普适未证",
+    "边缘NPU实测只含推理，功耗与热降频数值不可见，decode与prefill两相位的失配构成未分",
+    "HA-NPU评估聚焦prefill与单芯片边缘NPU，内核级最优与端到端2.03倍之间差距大",
+    "该判据对矩阵核与向量通路共驻同一SM的GPU是否同样成立，现有证据未覆盖"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在一块TPU类与一块边缘NPU类解耦矩阵/向量单元的设备上，各取一个训练侧（INT8随机舍入路径）与推理侧（线性注意力的softmax与张量重排）代表性内核；先以单元级profiler量化矩阵/向量单元占用，再实施按token共享阈值与三重数据流重排两类再平衡变体，对照端到端步时延、请求时延与能耗。",
+    "inputs": [
+      "TPU类与边缘NPU类设备各一及其单元级profiler",
+      "INT8随机舍入训练内核与线性注意力推理内核",
+      "按token共享阈值与数据流重排两类再平衡变体实现"
+    ],
+    "baselines": [
+      "逐元素随机舍入的INT8训练路径",
+      "未重排的NPU线性注意力实现",
+      "同设备matmul/conv等矩阵算子的实测吞吐上界"
+    ],
+    "metrics": [
+      "矩阵单元利用率与向量单元占用占比",
+      "全训练步时延与端到端请求时延",
+      "设备能耗"
+    ],
+    "support_criteria": [
+      "两侧再平衡后矩阵单元利用率显著上升，步时延与请求时延同步改善，跨域方向一致"
+    ],
+    "reject_criteria": [
+      "任一侧再平衡后矩阵单元仍空转或时延不改善，说明该病理不可用单元级再平衡修复或机理不跨域"
+    ],
+    "limitations": [
+      "首版仅覆盖每侧一个设备与一个内核族",
+      "GPU共驻SM场景不在首版范围"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备；三个独立来源横跨训练与推理两侧共同支持'非矩阵算子饿死矩阵单元、单元级再平衡可恢复'的统一机理，该跨域机理未被任何单条记录陈述；与既有18个候选及2个Idea的身份和含义均不同（idea_9b899f5928d24ae421c1仅覆盖端侧推理的softmax/重排数据流失配，本候选推广到训练与推理两侧的单元级负载再平衡）。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_9b899f5928d24ae421c1"
+  ],
+  "first_seen_issue": "2026-09-30",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_97a25f1198def20e4aae",
+      "issue_date": "2026-11-02",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "问题、机制、目标与可检验效应齐备；三个独立来源横跨训练与推理两侧共同支持'非矩阵算子饿死矩阵单元、单元级再平衡可恢复'的统一机理，该跨域机理未被任何单条记录陈述；与既有18个候选及2个Idea的身份和含义均不同（idea_9b899f5928d24ae421c1仅覆盖端侧推理的softmax/重排数据流失配，本候选推广到训练与推理两侧的单元级负载再平衡）。",
+      "evidence_item_ids": [
+        "1ce17ac6120740f77513a2da",
+        "d51b69856020fad8f76aef29",
+        "a39fefe1c419f15c07e2cde0"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

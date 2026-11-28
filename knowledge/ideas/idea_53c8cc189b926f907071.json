@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_53c8cc189b926f907071",
+  "identity": {
+    "problem_key": "llm_decode_collective_fixed_overhead",
+    "mechanism_key": "one_sided_write_sync_fusion",
+    "target_key": "small_batch_moe_serving_latency"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "LLM解码期集合通信的微秒级固定开销可经单边写与同步融合去除",
+  "problem": "自回归解码中集合通信每层每token执行一次，元数据交换、就绪同步与库提交等微秒级固定开销在B300级硬件上已超过小消息传输本身并主导小批量MoE专家并行的时延，按带宽口径优化通信无法兑现解码收益。",
+  "hypothesis": "在每层每token执行集合通信的解码路径上，时延主导项是固定协调开销而非传输带宽；把元数据交换与就绪同步移出热路径——源端单边远程写直入按源秩划分的对称显存槽位、数据块自带就绪证据使接收端免屏障校验——是否能在不改变数值语义的前提下，于小批量档（每秩约百token以内）取得可复现的往返与MoE层时延收益，且收益边界可由固定开销与传输项的比值按批量预测（批量增大到传输项主导后被融合内核反超）？",
+  "mechanism": "单边NVLink远程写使源GPU不经元数据交换直接把token写入目标GPU按源秩划分的对称显存槽位，分组GEMM按槽索引原地计算；或令数据块携带哨兵值或块序号等就绪证据、接收端直接校验，实现稳态集合通信零跨卡屏障；配合按消息大小与卡数的代价模型选择编码与一跳或分片两跳路径。",
+  "expected_effect": "小批量MoE专家并行服务时延下降：八卡B300往返时延较DeepEP快1.75至3.00倍、MoE层较DeepEP+DeepGEMM最高快2.37倍；all-reduce中位降28.8%、端到端TPOT降1.7%至6.8%；形成按批量分档选择通信路径（单边写/同步融合对融合内核）的部署判据。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "0f57e9c803a44b31a40aff39",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.01380v1"
+      ],
+      "reason": "GPU直连RDMA机制级测量为固定开销主导提供量化底线：8B写的机制提交底线为0.70微秒，NVSHMEM、NCCL与DeepEP等库在其上最多加4.6微秒，共享队列使时延劣化至毫秒级、约三千活跃连接时NIC消息率损失59%（证据来自8B微基准与合成消息率、未见端到端MoE吞吐验证、绑定ConnectX-7平台）；把库级固定开销叠加在小消息传输之上拆分计量，为问题侧提供最早量化。"
+    },
+    {
+      "item_id": "02d505da249588037229d17d",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06634v1"
+      ],
+      "reason": "flash-comm实测自回归解码中集合通信每层每token执行一次、微秒级固定协调开销在B300上已超过小消息传输本身；把就绪同步并入数据移动（数据块自带哨兵值或块序号、接收端直接校验、稳态零跨卡屏障）后8卡B300上all-reduce较SGLang custom AR v2中位降28.8%、最高43.7%，端到端TPOT降1.7%至6.8%（仅限单NVLink域2至8卡、bf16或fp32对齐张量、需Hopper以上GPU）；为同步开销移出热路径提供直接实测。"
+    },
+    {
+      "item_id": "52bf64e6777327522d956d96",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.13188v1"
+      ],
+      "reason": "NVLinkOneSided证明小批量MoE专家并行的dispatch/combine固定开销可经单边远程写去除：源GPU不经元数据交换直接把token写入目标GPU按源秩划分的对称槽位、分组GEMM按槽索引原地计算，八卡B300往返较DeepEP快1.75至3.00倍（每秩不超128个token）、MoE层较DeepEP+DeepGEMM最高快2.37倍，并给出批量反转边界的首个数据点（仅限单一NVLink域、工作区显存随EP规模增长、大批量被融合的MegaMoE反超、未报告端到端吞吐与功耗）。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "收益随批量反转的临界点与形态（每秩128个token以内收益最大、大批量被MegaMoE反超，临界批量未系统扫描）",
+    "跨互连域可迁移性：证据集中在单一NVLink域与ConnectX-7 RDMA，跨节点规模与PCIe层级未验证",
+    "按源秩划分的对称工作区显存随EP规模增长的容量代价与多租户共存行为未刻画",
+    "端到端吞吐与功耗收益未量化（NVLinkOneSided未报告端到端，flash-comm的TPOT收益为1.7%至6.8%）"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单节点8卡B300或H20上以vLLM/SGLang运行开源MoE模型，实现单边NVLink写dispatch/combine与就绪同步并入数据移动两种变体，按每秩token数（16至512）与专家并行规模扫描并记录输出精度。",
+    "inputs": [
+      "开源MoE checkpoint与专家并行配置",
+      "单边写与同步融合两个通信变体实现",
+      "每秩token数与EP规模扫描范围"
+    ],
+    "baselines": [
+      "DeepEP+DeepGEMM默认路径",
+      "NCCL或SGLang custom AR基线",
+      "融合MegaMoE类大批量路径"
+    ],
+    "metrics": [
+      "dispatch/combine往返时延",
+      "MoE层时延与解码TPOT",
+      "输出精度余弦相似度",
+      "对称工作区显存增量"
+    ],
+    "support_criteria": [
+      "小批量档往返与MoE层时延收益可复现且跨硬件代际方向一致，精度余弦相似度不低于0.9999",
+      "批量反转临界点可由固定开销与传输项的解析比值预测"
+    ],
+    "reject_criteria": [
+      "收益仅在单一批量档或单一NVLink域成立，或对称工作区显存增量使可部署EP规模受限"
+    ],
+    "limitations": [
+      "首版限单节点解码相位与NVLink域内，不含训练、跨节点与多租户场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-10-18",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_394a38ef9573691ad2d2",
+      "issue_date": "2026-11-13",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "跨期已发布证据（GPU直连RDMA机制级测量给出0.70微秒底线与最多4.6微秒库开销、flash-comm把就绪同步并入数据移动降低B300 all-reduce中位28.8%）与本期NVLinkOneSided收敛于同一机理：解码期集合通信的固定协调开销主导小批量时延，可经单边写与同步融合移出热路径且收益随批量反转；按problem+mechanism+target身份创建为正式Idea并保持observing；三证据指向同一机理的聚合判断属跨记录推断(inferred)。",
+      "evidence_item_ids": [
+        "0f57e9c803a44b31a40aff39",
+        "02d505da249588037229d17d",
+        "52bf64e6777327522d956d96"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_1938f7be7a00f26dd3a8",
+  "identity": {
+    "problem_key": "serial_short_decode_serving_mismatch",
+    "mechanism_key": "stepwise_execution_shape_matched_operators",
+    "target_key": "chained_decode_orchestration_p99"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "步骤化执行加形状匹配算子能否改善链式短解码编排负载的P99",
+  "problem": "生成式推荐的串行语义ID解码与通用大模型服务栈的同构prefill+decode循环结构不匹配；链式短解码的Agent编排负载面临同样的服务错配。",
+  "hypothesis": "对链式短解码的Agent编排负载，把执行拆成按步骤的规划并为各步骤匹配形状专用算子（行块注意力、基数树剪枝等），能在同构解码循环基线上把P99延迟降低30%以上且吞吐不降。",
+  "mechanism": "按语义ID步骤分别约束束宽与键长，配行块注意力与基数树剪枝算子；执行引擎按步骤规划与验证新引擎，替代每步全量同构解码循环。",
+  "expected_effect": "同等批大小下P99延迟显著下降、吞吐提升，链式短解码负载获得可热更新的专用服务路径。",
+  "topic_ids": [
+    "frontier_exploration"
+  ],
+  "status": "seed",
+  "evidence_for": [
+    {
+      "item_id": "58094799e85900bbb0848eb6",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.12296v1"
+      ],
+      "reason": "RecoGEM在快手4亿DAU生产运行逾9个月，OneModel批32下P99为30.8毫秒对基线89.0毫秒、1053QPS对366QPS（吞吐2.88倍）；其project_relevance明确指出该机制值得在链式短解码的Agent编排负载上验证。"
+    },
+    {
+      "item_id": "4dbbb250ecf4fe397b22b923",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.30497v1"
+      ],
+      "reason": "跨域类比支持（inferred）：Reffine以关系代数加稀疏迭代的统一IR实现负载无关的算子融合与自动并行，TPC-H较DuckDB至多快24.9倍、流式较Polars平均快18.3倍、图分析较NetworkX平均快47.9倍，支持按负载形状定制执行优于同构通用路径的机制类；但证据来自内存分析而非自回归解码服务，且个别TPC-H查询反被Umbra快1.3倍，提示收益依赖负载形状。"
+    },
+    {
+      "item_id": "603f570c541870947fa99431",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.23558v1"
+      ],
+      "reason": "问题面支持并构成竞争杠杆（inferred）：Duru实测共享推理集群上多步智能体减速严重且不均，与本假设的目标负载同属多步智能体链式请求；它以相对独占执行的归一化减速统一驱动准入、调度与扩缩容，在3模型×3轨迹、MI300X与H100共15种设置下把p99减速较FCFS基线几何平均降44.4%，吞吐为基线的91.8%至127.4%，即不改执行形状的系统层调度也能改善尾部，但部分设置吞吐低于基线。其boundary明示无法消除长预填充干扰、H100上Azure轨迹的Qwen3-Coder公平性恶化27.9%，提示调度杠杆留有残余干扰；Duru的指标是归一化减速而非绝对P99延迟，且未检验步骤化执行或形状专用算子，故不是对本假设的直接检验。"
+    },
+    {
+      "item_id": "70a2ec117de8d2515e3a3a00",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.23512v1"
+      ],
+      "reason": "机制面类比支持（inferred）：DexAttention把规划与执行解耦为GPU聚类分配器、CPU贪心调度器与常驻内核，以6至23毫秒的在线规划在四节点16卡、11组训练配置上较各组最快基线几何均值加速1.39倍，动态视频注意力较Ring Attention提速2.11至2.37倍且含规划时间；这与本假设“按步骤规划并配形状专用执行路径替代同构循环”同属廉价规划加专用执行的机制类，其project_relevance明示可向Agent状态编排迁移并需用原型验证规划成本可否摊销。boundary明示较Ring多占0.8至2.4GiB内存、加速比剔除超时与溢出输入；证据来自分布式稀疏注意力训练而非自回归解码服务，对本假设是跨域类比。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "原结果仅覆盖快手两类SID模型且未披露GPU型号",
+    "注意力加速为微基准而非端到端数据",
+    "与通用LLM serving栈混部时的干扰未测",
+    "Agent编排trace与SID生成的负载形状差异未量化",
+    "形状专用算子在自回归解码负载上的收益仅有跨域类比（内存分析的Reffine、分布式稀疏注意力训练的DexAttention），无解码侧直接证据",
+    "智能体级归一化减速驱动的准入、调度与扩缩容（Duru式，不改执行形状）与步骤化形状匹配执行的收益是否叠加未测；Duru无法消除的长预填充干扰在步骤化执行下是否仍在未测",
+    "在线规划开销在短解码链路上能否摊销未测：DexAttention的6至23毫秒规划相对训练步长廉价，而RecoGEM批32下P99为30.8毫秒，同等量级的规划开销占比可能很高"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "一个7B—32B模型，负载用真实Agent编排trace回放或语义ID式串行短解码模拟。",
+    "inputs": [
+      "批大小1—32",
+      "链长2—10步",
+      "束宽8—64、键长按步骤上限扫描",
+      "每步在线规划预算扫描（含DexAttention式6至23毫秒量级），记录规划开销占步长比例",
+      "共享集群对照：与长预填充请求混部（Duru式多步智能体轨迹）与独占执行两组"
+    ],
+    "baselines": [
+      "同构解码循环：每步统一prefill+decode的通用serving路径",
+      "FCFS通用serving调度",
+      "智能体级归一化减速驱动准入、调度与扩缩容（Duru式，不改执行形状）"
+    ],
+    "metrics": [
+      "P99延迟",
+      "P95延迟",
+      "QPS",
+      "每请求GPU秒",
+      "智能体级归一化减速p99（相对独占执行）",
+      "每步规划开销占比与常驻内核额外显存占用"
+    ],
+    "support_criteria": [
+      "同等批大小下P99降低不低于30%且吞吐不下降"
+    ],
+    "reject_criteria": [
+      "P99改善不足10%",
+      "吞吐下降超过10%",
+      "收益仅出现在微基准算子上、端到端无改善",
+      "加速结论须剔除超时或溢出请求才成立"
+    ],
+    "limitations": [
+      "原结果仅覆盖两类SID模型且未披露GPU型号",
+      "微基准算子加速不等于端到端收益",
+      "与通用serving栈混部的干扰未测",
+      "在线规划开销与常驻内核显存代价只有分布式稀疏注意力训练的类比数据，解码服务上未测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "idea_1938f7be7a00f26dd3a8_created_2026-11-11",
+      "issue_date": "2026-11-11",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "58094799e85900bbb0848eb6给出步骤化执行引擎在生产生成式推荐负载上的P99与吞吐证据，并把链式短解码的Agent编排列为值得验证的迁移方向；立此假设检验该机制能否迁移出SID场景。",
+      "evidence_item_ids": [
+        "58094799e85900bbb0848eb6"
+      ]
+    },
+    {
+      "event_id": "idea_1938f7be7a00f26dd3a8_evidence_added_2026-11-13",
+      "issue_date": "2026-11-13",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "4dbbb250ecf4fe397b22b923在内存分析域以统一IR加稀疏编译证明形状专用执行大幅超越通用引擎，为形状匹配算子机制类提供跨域类比支持（inferred）；解码服务侧仍无直接证据，故仅补证据、状态维持seed。",
+      "evidence_item_ids": [
+        "4dbbb250ecf4fe397b22b923"
+      ]
+    },
+    {
+      "event_id": "idea_1938f7be7a00f26dd3a8_evidence_added_2026-11-25",
+      "issue_date": "2026-11-25",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "603f570c541870947fa99431实测共享推理集群上多步智能体减速严重且不均，以归一化减速驱动准入、调度与扩缩容把p99减速较FCFS几何平均降44.4%、吞吐为基线的91.8%至127.4%，并明示无法消除长预填充干扰，是同一尾部目标上不改执行形状的竞争杠杆（inferred）；70a2ec117de8d2515e3a3a00以6至23毫秒在线规划加常驻内核在16卡稀疏注意力训练上几何均值加速1.39倍，属廉价规划加专用执行的同类机制（inferred）。据此补证据、新增两项未知项、把“仅内存分析域类比”的未知项更正为含分布式稀疏注意力训练类比，并加入FCFS与Duru式调度基线、规划预算扫描与混部对照、归一化减速与规划开销指标及“须剔除超时或溢出请求才成立”的否决条件；两项均未直接检验步骤化形状匹配执行，状态维持seed。",
+      "evidence_item_ids": [
+        "603f570c541870947fa99431",
+        "70a2ec117de8d2515e3a3a00"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_a8fa0e8c2e72284efc2f",
+  "identity": {
+    "problem_key": "cross_model_session_handoff_cold_reread_or_lossy_summary",
+    "mechanism_key": "frozen_model_trained_mla_latent_kv_translator",
+    "target_key": "mixed_attention_model_pair_session_kv"
+  },
+  "idea_type": "solution_concept",
+  "title": "冻结源目标只训翻译器：混合注意力模型对间的会话免重读KV交接",
+  "problem": "会话从一个模型交接给另一个模型时，接收方要么冷重读全部历史、付出完整Prefill成本，要么退化为有损摘要续答，源模型已算好的KV状态无法直接复用。",
+  "hypothesis": "若源与目标模型均冻结、只训练一个翻译器，把源MLA潜变量逐词元线性映射为目标自己的KV格式，并从源第0层潜变量解码词元id以保住精确召回、多轮交接只翻译新增分段，则目标无需重读历史即可续答，64K交接显著快于冷重读且质量与原生重读持平。",
+  "mechanism": "只训练翻译器，源与目标冻结；MLA潜变量逐词元线性映射；从源第0层潜变量解码词元id以保住精确召回；多轮交接只翻译新增分段，分段增量翻译是质量必需而非仅省时。",
+  "target": "共享分词器的混合注意力（MLA）模型对之间会话交接时目标模型的KV缓存与会话状态入口",
+  "expected_effect": "64K切换较冷重读快18.7与46.8倍，经PCIe传4.2GB KV加148MiB翻译器状态耗84毫秒；同构对上分段翻译多轮续答与原生重读持平，追赶时间约为其1/6。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发表记录同时给出问题（跨模型会话交接被迫冷重读或有损摘要）、可解释机制（冻结源与目标只训翻译器、MLA潜变量逐词元线性映射、从源第0层潜变量解码词元id保精确召回、多轮仅翻译新增分段）、目标对象（混合注意力模型对的会话KV交接）与可检验效应（64K交接较冷重读快18.7与46.8倍、同构对与原生重读质量持平、追赶时间约1/6）；该完整机制未被任何既有候选或Idea声明。"
+  },
+  "evidence": [
+    {
+      "item_id": "b49c6bccc286b5c961ad8d18",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.12062v1"
+      ],
+      "reason": "《KV缓存跨模型翻译：混合注意力模型间的会话交接》给出冻结双模型只训翻译器的MLA潜变量逐词元线性映射机制、从源第0层潜变量解码词元id保精确召回与多轮分段增量翻译，以及64K交接较冷重读快18.7与46.8倍、PCIe传4.2GB KV加148MiB状态耗84毫秒的结果；边界为机内GPU/PCIe实测无WAN数据、仅同分词器模型对、多轮单种子且个别方向低于原生。",
+      "independence_group": "arxiv:2611.12062"
+    }
+  ],
+  "evidence_item_ids": [
+    "b49c6bccc286b5c961ad8d18"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.12062v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.12062"
+  ],
+  "unknowns": [
+    "翻译器只在同分词器模型对上验证，跨分词器或跨架构家族能否训练未证",
+    "机内PCIe 84毫秒的交接在WAN时延与带宽下是否仍优于冷重读或摘要续答没有数据",
+    "多轮交接仅单种子，个别翻译方向质量低于原生重读的失败模式未定位",
+    "预印本单源证据，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在共享分词器的混合注意力模型对上实现冻结双模型、只训翻译器的KV交接链路：MLA潜变量逐词元线性映射加源第0层潜变量解码词元id，多轮交接仅翻译新增分段；在机内PCIe与受控WAN仿真两种链路上测交接时延与续答质量。",
+    "inputs": [
+      "至少两组共享分词器的混合注意力（MLA）模型对",
+      "64K级多轮长会话负载",
+      "机内GPU/PCIe与受控WAN仿真两类链路",
+      "多随机种子的多轮交接序列"
+    ],
+    "baselines": [
+      "接收方冷重读全历史（冷Prefill续答）",
+      "有损摘要交接（摘要续答）",
+      "同构对原生重读（质量参照）"
+    ],
+    "metrics": [
+      "64K交接端到端首token时延及对冷重读的加速比",
+      "交接传输字节数（KV与翻译器状态）",
+      "续答质量对原生重读的偏差（含词元id精确召回）",
+      "多轮交接累积漂移与追赶时间"
+    ],
+    "support_criteria": [
+      "共享分词器模型对上分段增量翻译的续答质量与原生重读持平，且交接时延较冷重读显著下降",
+      "多轮交接后词元id精确召回保持"
+    ],
+    "reject_criteria": [
+      "多轮交接质量随轮次漂移超出原生重读容差，或翻译开销与字节数抵消冷重读节省",
+      "分词器一致的非同构模型对上续答质量系统性低于有损摘要或冷重读"
+    ],
+    "limitations": [
+      "论文传输数据为机内PCIe实测，WAN行为需仿真外推",
+      "仅同分词器模型对，跨分词器与跨家族未证",
+      "多轮结果单种子且个别方向低于原生"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且与既有身份含义不同：与跨模型KV映射加阈值刷新的调度假设（candidate_7d4c5b213d117cba4697）区别在冻结双模型只训翻译器、从源第0层潜变量解码词元id保精确召回与多轮分段增量翻译；与端到端压缩编解码器（candidate_6df55f097eece2b8f831）、异构Agent定长潜层消息（candidate_9e927e70e72ef3e7c872）和接收端查询侧读取（candidate_5b2eac76b34dc8a2d3bb）的机制与目标对象均不同。但证据为单一预印本，仅覆盖同分词器模型对、机内GPU/PCIe实测且多轮单种子、个别翻译方向低于原生重读，缺独立支持与适用边界确认，先延后观察。",
+  "related_candidate_ids": [
+    "candidate_7d4c5b213d117cba4697",
+    "candidate_6df55f097eece2b8f831",
+    "candidate_9e927e70e72ef3e7c872",
+    "candidate_5b2eac76b34dc8a2d3bb"
+  ],
+  "related_idea_ids": [
+    "idea_7d4c5b213d117cba4697"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_4b1158bde4dac9a36cb5",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且与既有身份含义不同：与跨模型KV映射加阈值刷新的调度假设（candidate_7d4c5b213d117cba4697）区别在冻结双模型只训翻译器、从源第0层潜变量解码词元id保精确召回与多轮分段增量翻译；与端到端压缩编解码器（candidate_6df55f097eece2b8f831）、异构Agent定长潜层消息（candidate_9e927e70e72ef3e7c872）和接收端查询侧读取（candidate_5b2eac76b34dc8a2d3bb）的机制与目标对象均不同。但证据为单一预印本，仅覆盖同分词器模型对、机内GPU/PCIe实测且多轮单种子、个别翻译方向低于原生重读，缺独立支持与适用边界确认，先延后观察。",
+      "evidence_item_ids": [
+        "b49c6bccc286b5c961ad8d18"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

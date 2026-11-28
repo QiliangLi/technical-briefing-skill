@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_2745372d201969f8b506",
+  "identity": {
+    "problem_key": "moe_expert_weight_memory_bandwidth_bound",
+    "mechanism_key": "rotor_seed_onchip_weight_regeneration",
+    "target_key": "single_node_moe_decoding"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "以转子种子在片上重生成MoE专家权重，释放参数显存并单机化消除跨机all-to-all",
+  "problem": "稀疏MoE解码受专家权重的HBM容量与加载带宽双重制约：多机专家并行每步都需跨机all-to-all，网络侧调度只能缓解而非消除该税；把专家权重单机放置又会挤占KVCache显存、限制长上下文容量。",
+  "hypothesis": "把约三成MoE层的专家FFN投影离线拟合成每层数百KB的转子种子，推理时由SM内的转子生成单元按需重生成权重块，可在可接受精度损失内替代这部分权重的存储与HBM加载：释放28–29%参数显存（4096上下文KV容量扩至1.2–2.6倍），并在单机容量内消除每步跨机专家all-to-all。",
+  "mechanism": "离线将各专家FFN投影拟合为每层数百KB的转子种子；推理时SM内的转子生成单元实时重生成权重块，绕开HBM加载。每专家8 token时FFN内核较cuBLASLt FP8基线快2.28–3.23倍（内核实测）。",
+  "target": "单机MoE解码serving中约三成MoE层的专家FFN权重存储与HBM加载路径",
+  "expected_effect": "释放28–29%参数显存、4096上下文KVCache容量扩至1.2–2.6倍；单机化后消除跨机专家all-to-all；FFN内核较FP8基线快2.28–3.23倍为内核实测，系统级吞吐与解码时延为模拟器投影。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-16",
+    "rationale": "Direct模式：单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应（内核实测加速与显存释放量级）。身份与全部既有Candidate与Idea不同：idea_f7841984fcce6a274881本期待该记录吸收为KV传输/重算交叉点的非网络对照基线，其对象是KV交接决策而非专家权重重生成；网络侧MoE候选（candidate_44ec3b507db01363db15、candidate_fe5ae3613b2811ae297e等）优化跨机集合通信本身，本候选以单机化消除该通信，属显存侧替代身份。"
+  },
+  "evidence": [
+    {
+      "item_id": "2e8c5f6524d462c8d1d442b1",
+      "issue_date": "2026-11-16",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.16890v1"
+      ],
+      "reason": "《FORGE用转子种子在片上重生成MoE专家权重》给出完整问题、机制、目标与量化效应：每专家8 token时FFN内核较cuBLASLt FP8基线快2.28–3.23倍、释放28–29%参数显存、4096上下文KV容量扩至1.2–2.6倍；边界为系统级吞吐与解码时延系模拟器投影、RGU未流片、替换微调模型后下游精度降幅未量化。",
+      "independence_group": "arxiv:2610.16890"
+    }
+  ],
+  "evidence_item_ids": [
+    "2e8c5f6524d462c8d1d442b1"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.16890v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.16890"
+  ],
+  "unknowns": [
+    "系统级吞吐与解码时延为模拟器投影而非实测，RGU硬件单元未流片",
+    "以重生成权重替换微调模型后的下游精度降幅未量化，适用边界缺失",
+    "种子拟合对更大专家规模与不同FFN结构的可扩展性、逐层重生成的计算与能耗开销未报告",
+    "超出单机容量后仍需网络侧调度，网络侧传输与调度的增量收益须在该单机化容量边界之外量化"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在单GPU MoE解码栈（如vLLM）中将约三成MoE层专家FFN替换为转子种子重生成路径（RGU以CUDA核近似），对照FP8权重存储与多机专家并行两种基线，测参数显存、KV容量、内核时延、端到端吞吐/时延与下游精度。",
+    "inputs": [
+      "MoE模型及各专家FFN权重与离线种子拟合流程",
+      "单GPU MoE解码serving栈",
+      "4096上下文解码负载集",
+      "下游任务评测集"
+    ],
+    "baselines": [
+      "cuBLASLt FP8专家权重单机基线",
+      "多机专家并行（每步跨机all-to-all）基线"
+    ],
+    "metrics": [
+      "参数显存占用与释放比例",
+      "4096上下文KVCache容量",
+      "每专家8 token的FFN内核时延",
+      "端到端解码吞吐与时延",
+      "下游任务精度差"
+    ],
+    "support_criteria": [
+      "参数显存释放接近28–29%且4096上下文KV容量扩至1.2–2.6倍量级",
+      "端到端吞吐与时延不劣于FP8单机基线",
+      "下游精度降幅可量化且在可接受范围内"
+    ],
+    "reject_criteria": [
+      "逐层重生成的计算与能耗开销吞噬显存与带宽收益",
+      "下游精度降幅不可接受或随替换层占比快速恶化",
+      "实测系统级结果显著低于模拟器投影"
+    ],
+    "limitations": [
+      "RGU未流片，评估依赖CUDA近似核与模拟器校准",
+      "仅覆盖单机容量内场景，超限后需网络侧调度配合"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，身份与全部既有Candidate与Idea不同（idea_f7841984fcce6a274881本期待该记录吸收为交叉点的非网络对照基线，不覆盖专家权重重生成这一身份）；但仅有单一独立性来源，且系统级效应为模拟器投影、RGU未流片、替换后下游精度降幅未量化，缺独立佐证与适用边界，等待人工谱系决策。",
+  "related_candidate_ids": [
+    "candidate_44ec3b507db01363db15",
+    "candidate_fe5ae3613b2811ae297e",
+    "candidate_a51116b6406edd9d5f5f"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-16",
+  "last_updated_issue": "2026-11-16",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_66caa060b7db817dce3e",
+      "issue_date": "2026-11-16",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应完整，身份与全部既有Candidate与Idea不同（idea_f7841984fcce6a274881本期待该记录吸收为交叉点的非网络对照基线，不覆盖专家权重重生成这一身份）；但仅有单一独立性来源，且系统级效应为模拟器投影、RGU未流片、替换后下游精度降幅未量化，缺独立佐证与适用边界，等待人工谱系决策。",
+      "evidence_item_ids": [
+        "2e8c5f6524d462c8d1d442b1"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

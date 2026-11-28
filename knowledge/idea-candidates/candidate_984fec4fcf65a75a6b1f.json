@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_984fec4fcf65a75a6b1f",
+  "identity": {
+    "problem_key": "cross_deployment_kv_reuse_collapse",
+    "mechanism_key": "affinity_routing_keyed_compressed_retention",
+    "target_key": "multi_region_agent_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "部署亲和路由加双键控压缩保留治理跨部署KV复用坍塌：与既有Idea同身份",
+  "problem": "会话KV复用在跨部署边界上大幅坍塌：微软四条M365生产链路逾1.21亿次调用实测显示复用率从88.9%跌至29.0%，按会话与部署双键控后即使无限内存重建下限也从5.4%升至20.2%，跨域Agent服务缺少把放置路由与压缩保留一起调度的机制。",
+  "hypothesis": "把部署亲和作为路由的一阶信号、按会话与部署双键控缓存，并在预算紧张时把被挤出的KV降级为int4级多分辨率保留而非丢弃，可将跨部署重建下限与重算率压到可预算水平，优于纯负载均衡或容量驱逐。",
+  "mechanism": "网关按部署亲和路由会话后续请求；缓存以会话加部署双键索引以隔离跨部署不可复用部分并量化路由下限；预算耗尽时对被挤出KV做int4多分辨率降级保留（十分之一预算下重算率13.6%，优于先知式FNU的31.1%与LRU的63%）。",
+  "target": "多区域Agent服务的KV复用、放置路由与压缩保留层",
+  "expected_effect": "跨部署会话重建率从20.2%键控下限向5.4%会话键下限回收、复用率从29.0%向88.9%恢复，紧预算下重算率显著低于容量驱逐基线，并形成何时值得复制或迁移KV而非本地重算的成本判据。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-02",
+    "rationale": "直发任务的单条已发布记录同时给出问题（跨部署复用坍塌与20.2%键控重建下限）、可解释机制（部署亲和路由、会话加部署双键控、int4多分辨率降级保留）、目标对象与可检验效应；但其身份与既有Idea完全一致，按查重规则记为duplicate。"
+  },
+  "evidence": [
+    {
+      "item_id": "2224d2aa0004e9d9d8ad28ac",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.22863v1"
+      ],
+      "reason": "微软M365生产实测首次量化跨部署KV复用坍塌（88.9%降至29.0%）与会话加部署双键控的20.2%重建下限，并给出int4多分辨率保留在十分之一预算下13.6%重算率优于先知式FNU 31.1%与LRU 63%的可检验效应；字节估算借用Llama-2-70B布局，未测WAN传输与时延。",
+      "independence_group": "arxiv:2610.22863"
+    }
+  ],
+  "evidence_item_ids": [
+    "2224d2aa0004e9d9d8ad28ac"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.22863v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.22863"
+  ],
+  "unknowns": [
+    "亲和路由在会话跨部署迁移下的尾延迟与状态迁移代价未测",
+    "int4降级保留对下游任务质量、审计与遗忘义务的影响未知",
+    "字节估算借用Llama-2-70B布局且仅覆盖四类M365负载，外推边界未定"
+  ],
+  "validation_plan": {
+    "mode": "data_analysis",
+    "minimal_model": "沿用既有Idea idea_984fec4fcf65a75a6b1f的回放验证计划：在带部署与会话标识的多站点请求trace上回放部署亲和路由加双键控压缩保留策略，与负载均衡及容量驱逐基线对比。",
+    "inputs": [
+      "带部署与会话标识的生产请求trace",
+      "各站点KV容量与带宽配置",
+      "压缩保留档位（全量、int4、丢弃）"
+    ],
+    "baselines": [
+      "负载均衡路由加LRU驱逐",
+      "先知式FNU淘汰",
+      "无限内存上界"
+    ],
+    "metrics": [
+      "跨部署重建率（对齐20.2%键控下限）",
+      "重算token量",
+      "TTFT P95与P99",
+      "闲置驻留字节"
+    ],
+    "support_criteria": [
+      "重建率显著低于无亲和基线且TTFT尾延迟不劣化"
+    ],
+    "reject_criteria": [
+      "亲和路由的迁移或复制成本在主要负载上抵消重建节省，或收益只在低切换率负载出现"
+    ],
+    "limitations": [
+      "与既有Idea同身份，验证应并入其计划而非另立",
+      "trace回放不覆盖WAN拥塞、故障重试与多租户隔离的全部行为"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "与既有Idea idea_984fec4fcf65a75a6b1f（cross_deployment_kv_reuse_collapse + affinity_routing_keyed_compressed_retention + multi_region_agent_serving）问题、机制、目标与含义一致；该Idea已于2026-11-02以created事件（idea_decision_1d66c552d84879e9cc56）把本触发记录吸收为创始证据（evidence_for含2224d2aa0004e9d9d8ad28ac），不另立候选。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_984fec4fcf65a75a6b1f"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_4cad6166cbb2bc823feb",
+      "issue_date": "2026-11-02",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "触发记录与既有Idea idea_984fec4fcf65a75a6b1f同问题同机制同目标同含义，该Idea的2026-11-02 created事件已把本记录吸收为创始证据。",
+      "evidence_item_ids": [
+        "2224d2aa0004e9d9d8ad28ac"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

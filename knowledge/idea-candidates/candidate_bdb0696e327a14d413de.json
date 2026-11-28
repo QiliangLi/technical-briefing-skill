@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_bdb0696e327a14d413de",
+  "identity": {
+    "problem_key": "gpu_node_local_state_isolation",
+    "mechanism_key": "pooled_nvme_of_namespace_gds_kv_tiering",
+    "target_key": "multi_node_shared_kv_checkpoint_tier"
+  },
+  "idea_type": "solution_concept",
+  "title": "把每节点NVMe池化为NVMe-oF共享命名空间，作GDS直连KV/Checkpoint分层的共享外置层",
+  "problem": "推理KV缓存与checkpoint困在GPU节点本地NVMe，各自孤立、随节点丢失即失效；外置到共享层时主机中转限制单客户端吞吐（ENA 100 Gbps、EFA 700 Gbps量级），而直连路径是否真DMA（有无隐性回退）在共享层场景下缺可验证手段。",
+  "hypothesis": "若把每节点NVMe组成RAID5并经NVMe-oF/RDMA汇成单一共享命名空间，作为KV缓存按温度分层的共享外置层，GPU侧经GPUDirect Storage直接DMA、控制面走独立网络，并以gds_stats计数器加CPU路径A/B验证真直连而非吞吐推断，则可在节点故障后保住共享层KV/Checkpoint的同时，把单客户端吞吐与命中路径时延维持在优于主机中转基线的水平。",
+  "mechanism": "每节点NVMe组成RAID5阵列，经NVMe-oF/RDMA互连汇成单一名空间并SAN直达访问NSD；GPFS控制走独立以太网、数据走400G IB；GPU侧经GPUDirect Storage在显存与共享层间直接DMA、不经CPU中转缓冲；上层KV按温度分级并LRU逐出到共享层；用gds_stats计数器与CPU路径A/B判定真DMA。",
+  "target": "多节点GPU集群的共享KV缓存与checkpoint外置层（Tier-0共享命名空间）",
+  "expected_effect": "五节点口径聚合读达132.1 GiB/s、124012次I/O全部走nvfs DMA且零次兼容回退可复现；单客户端吞吐上限由100/700 Gbps量级升至GDS后的1200 Gbps量级（规格口径），T3提升约数百微秒、5万token以上命中通常快于重算；checkpoint与KV不再随单节点丢失。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-02",
+    "rationale": "同期两条独立来源各给出互补的一半：五节点PoC给出池化NVMe-oF共享命名空间加计数器可验证的GDS真DMA数据面，AWS给出KV按温度分层加GDS直连共享文件系统的时延与吞吐预算；二者联合支持池化共享NVMe层作KV/Checkpoint外置分层这一任一单条记录均未陈述的机制。"
+  },
+  "evidence": [
+    {
+      "item_id": "363c4ba5b9dc1ce36a6f1bec",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science"
+      ],
+      "reason": "五节点PoC给出共享层数据面与验证方法：每节点5块NVMe组RAID5经NVMe-oF/RDMA汇成单一命名空间，GPFS控制走独立以太网、数据走400G IB，聚合读132.1 GiB/s，gds_stats计数124012次I/O全部nvfs DMA、零次兼容回退，证明真DMA可用计数器而非吞吐推断验证（厂商自测于单一五节点集群，未测能耗与端到端负载，收敛角色下真DMA受限）。",
+      "independence_group": "url:https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science"
+    },
+    {
+      "item_id": "74f57e627ff3e61c3d6c26a1",
+      "issue_date": "2026-11-02",
+      "source_urls": [
+        "https://aws.amazon.com/blogs/storage/accelerate-inference-with-kv-cache-tiering-on-aws"
+      ],
+      "reason": "AWS给出KV分层策略与外置层预算：HBM、主机DRAM、并行文件系统与S3四级按温度分级LRU逐出，GDS在显存与FSx for Lustre间直接DMA绕过CPU与主机内存，单客户端吞吐上限由ENA的100 Gbps、EFA的700 Gbps升至加GDS后的1200 Gbps，T3提升约数百微秒、5万token以上通常快于重算（架构文无实测，吞吐为规格上限，GDS仅限NVIDIA实例且需同可用区，Trainium改走EFA）。",
+      "independence_group": "url:https://aws.amazon.com/blogs/storage/accelerate-inference-with-kv-cache-tiering-on-aws"
+    }
+  ],
+  "evidence_item_ids": [
+    "363c4ba5b9dc1ce36a6f1bec",
+    "74f57e627ff3e61c3d6c26a1"
+  ],
+  "source_urls": [
+    "https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science",
+    "https://aws.amazon.com/blogs/storage/accelerate-inference-with-kv-cache-tiering-on-aws"
+  ],
+  "independence_groups": [
+    "url:https://xinnor.io/blog/disaggregated-tier-0-storage-for-hpc-and-ai-xiraid-opus-and-ibm-storage-scale-poc-at-the-weizmann-institute-of-science",
+    "url:https://aws.amazon.com/blogs/storage/accelerate-inference-with-kv-cache-tiering-on-aws"
+  ],
+  "unknowns": [
+    "PoC为厂商自测于单一五节点集群，未测能耗与端到端负载，收敛角色下真DMA受限",
+    "AWS吞吐为规格上限、架构文无实测，GDS仅限NVIDIA实例且需同可用区，Trainium改走EFA",
+    "共享命名空间上叠加KV按温度分层与LRU逐出的命中率、尾时延与写路径无数据",
+    "RAID5重建与KV逐出、checkpoint写的交互及多节点一致性未验证"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "五节点级原型：每节点本地NVMe组RAID5经NVMe-oF汇成单一共享命名空间作KV/Checkpoint外置层，GPU经GDS直达访问，上层按温度分层LRU逐出；以gds_stats计数器与CPU路径A/B验证真DMA，叠加单节点故障注入。",
+    "inputs": [
+      "KV与checkpoint混合负载",
+      "命中率与温度分布扫描",
+      "节点数1-5与每节点NVMe数",
+      "400G级RDMA网络带宽",
+      "gds_stats计数器与CPU路径A/B开关",
+      "单节点故障注入"
+    ],
+    "baselines": [
+      "单节点本地NVMe加内核GDS",
+      "主机CPU中转的共享并行文件系统",
+      "无分层直写共享命名空间"
+    ],
+    "metrics": [
+      "聚合与单客户端读吞吐",
+      "KV命中时TTFT与尾时延P99",
+      "nvfs DMA计数与兼容回退次数",
+      "节点故障后共享层KV/Checkpoint可恢复性",
+      "主机CPU占用"
+    ],
+    "support_criteria": [
+      "计数器显示全部I/O走nvfs DMA、零隐性回退",
+      "命中路径TTFT与单客户端吞吐同时优于主机中转基线",
+      "单节点故障后共享层KV/Checkpoint仍可访问"
+    ],
+    "reject_criteria": [
+      "收敛角色下直连受限或隐性回退显著",
+      "共享层尾时延抵消分层收益或故障恢复不可用"
+    ],
+    "limitations": [
+      "两条证据均为厂商口径、无第三方复测",
+      "未覆盖能耗与端到端训练负载",
+      "RAID5重建与KV逐出交互未测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备且身份与既有Candidate/Idea不同，但两条证据均为厂商口径（单一集群自测PoC与无实测的架构文规格），缺独立量化支持，共享层KV负载的适用性边界未证，先缓议观察。",
+  "related_candidate_ids": [
+    "candidate_47cb76376a9afb422662",
+    "candidate_5793492d38cc44d3e3bd"
+  ],
+  "related_idea_ids": [
+    "idea_e201a2fc3d5bd226c7fe"
+  ],
+  "first_seen_issue": "2026-11-02",
+  "last_updated_issue": "2026-11-02",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_262285ca1bc97ab12189",
+      "issue_date": "2026-11-02",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备且身份与既有Candidate/Idea不同，但两条证据均为厂商口径（单一集群自测PoC与无实测的架构文规格），缺独立量化支持，共享层KV负载的适用性边界未证，先缓议观察。",
+      "evidence_item_ids": [
+        "363c4ba5b9dc1ce36a6f1bec",
+        "74f57e627ff3e61c3d6c26a1"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

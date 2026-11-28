@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "issue_date": "2026-11-25",
+  "knowledge_snapshot_id": "knowledge-5fe6d01146319398",
+  "status": "complete",
+  "topic_changes": [
+    {
+      "topic_id": "accelerator_io_datapath",
+      "topic_name": "加速器直连I/O与存储数据路径",
+      "change_kind": "no_material_change",
+      "origin": "applied_task",
+      "task_id": "knowledge_9b55d9c933a3db42a7d1022b",
+      "roadmap_version": 2,
+      "what_changed": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_state": "evidence_building",
+      "affected_branches": [],
+      "evidence_item_ids": [
+        "3ff0cd9d65c5cf58953ab06e"
+      ],
+      "current_judgement": "加速器直连I/O与存储数据路径当前应按数据经DMA直达显存已成主线、I/O发起与控制权正离开主机内核（移入用户态或加速器自身）、但带实测数字的证据仍集中在少数结果的工程验证期来看待：uGDS用户态NVMe路径在A100上4KiB同步写时延较GDS低84.1%、LMCache命中时TTFT降62.7%（每句柄仅一块本地NVMe、错误恢复与隔离证据薄弱、尚属原型），五节点PoC以gds_stats计数器证实124012次I/O全部走nvfs DMA、零次兼容回退（厂商自测、未测能耗与端到端负载），PLINK在4KB随机读微基准中测得BaM式同步路径93.1%的I/O周转时间耗在CQ轮询与门铃、队列重构后使SSD饱和所需I/O warp由238个降至136个（仅warp数量、无时延与端到端结果），这些实测全部落在加速器发起I/O与加速器存储栈两支，而细粒度I/O与存储控制器协同一支至今没有任何实测，只有美光25M-100M IOPS的前瞻路线图、FS-SSD与最新收录的GNoF（提出GPU原生执行、低SM开销的NVMe-oF完成路径）等止于路线图或题录的信号；厂商口径的峰值IOPS（GRAID 1亿、KIOXIA 20+ MIOPS演示、美光25M-100M目标）不能替代成熟度证据，当前的制约因素是GPU侧I/O处理的warp占用与脱离主机路径后的错误恢复语义这两处尚缺实测，所以评估任何方案都应把使SSD饱和所需I/O warp数和nvfs/posix路径计数列为必测指标，uGDS类控制面出内核的路径可以试点KV缓存或向量检索外置但须先通过错误恢复与POSIX适配评估，而AWS 1200 Gbps的规格上限、VDURA V12 GA与Google Cloud Managed Lustre将支持GDS等部署信号，以及SSCAD、FlatCake等主源缺失条目同样不足以单独支撑架构决策；一旦PLINK的时延与端到端负载结果、GNoF、FS-SSD或SSCAD的全文与评测数据、第三方对uGDS和厂商IOPS数字的复测出现，就应上调对应分支的成熟度判断。"
+    },
+    {
+      "topic_id": "agent_acceleration",
+      "topic_name": "Agent语义加速",
+      "change_kind": "no_material_change",
+      "origin": "applied_task",
+      "task_id": "knowledge_5d6980d7cdf0b97c4533490a",
+      "roadmap_version": 5,
+      "what_changed": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_state": "evidence_building",
+      "affected_branches": [],
+      "evidence_item_ids": [
+        "33821a0237c825c99d15bf17",
+        "493cca57b30e06720b10b050",
+        "b12a4bf83bed3d9b8bb77ac9",
+        "c8c63f6c2da32c991213ef19"
+      ],
+      "current_judgement": "当前判断不变：可计入语义加速的仍只是“先验证、后固化/复用”形态下的机械路径，检索选型仍须先过整文件BM25加查询扩写的公平基线再谈稠密索引，选型的共同限制因素是验证开销与自进化全程成本能否与收益同账计价，本期四条证据把这项计价落到具体口径——决策下放方面，AnyS1让校准过的4B System-1一次前向接管可枚举决策，SOPBench与ALFWorld成本分别省91%和88%且通过率84.3对55.2、成功率95.5对82.8，但关掉回退门后ALFWorld由95.5跌至40.3、阈值校准每工作流约需50次开发运行且未测代码场景，下放决策时回退门与校准成本必须同账，未经代码场景验证前不计入已验证路径；故障恢复方面，单主机故障注入显示目标端幂等只能去重、不能让故障后的结果可知，补上派发前授权、动作台账、崩溃对账等五项机制后重复效应0/200对较简基线各117/200，代价是运行窗口吞吐约为故障开放基线的七分之一，工具链引入重试或并行前应先把恢复机制的吞吐代价计入预算（未评审预印本，对象是工单类操作而非代码编辑Agent）；harness自进化方面，AHE-Beta以需求证据门禁取代基准分数，38个留出任务pass@1由21.9%升至33.3%且执行token少40.8%，Vestrum用1-10条长episode逐组件改进Claude Code，8个留出任务通过率63.7%升至70.3%、测试成本为其1.03倍且无任务下降，但前者总算力未报、后者省的是任务执行数而非总token，自进化的同账总成本仍未补齐、继续列为候选路径而非已验证路径；会改变判断的观察：AnyS1在代码场景复现并摊销校准成本，或需求门禁、逐组件进化在总算力同账口径下跨模型保持成本优势。"
+    },
+    {
+      "topic_id": "ai_chip_accelerator",
+      "topic_name": "AI芯片与加速器",
+      "change_kind": "no_material_change",
+      "origin": "applied_task",
+      "task_id": "knowledge_2fb2561fe33fb1602bbaefe4",
+      "roadmap_version": 2,
+      "what_changed": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_state": "evidence_building",
+      "affected_branches": [],
+      "evidence_item_ids": [
+        "44b498ded86e1240b8c3d5f8",
+        "60c8ba8630635de9b8152f26",
+        "8cc98a5d88836e3c4728f8e1",
+        "bc38a5a9fe31e353a5114eb8"
+      ],
+      "current_judgement": "AI芯片证据继续收敛于『可用算力由软件栈、执行资源映射与数据通路执行结构决定、而非峰值规格表』的判断，本期在编译产物层、非CUDA优化栈与消费级存储分层三处给出同原理的新外推，并在芯粒互连层补上一条仿真信号：其一，连主流GPU的硬件调度能力也会被默认编译路径挡在用户程序之外——nvcc从不输出NVIDIA闭源库在用的SASS调度字段，逆向出EXEMPT与START等标记并在编译后免改源码改写cubin后，vLLM MarlinMoE在H20最高提速5.4%、Qwen3-30B MoE端到端32路解码最高+3.6%（H100上+2.3%）（44b498ded86e1240b8c3d5f8，https://arxiv.org/abs/2611.24437v1；摘要的31.9%内核提速缺可见证据支撑、仅限NVIDIA、issue槽已满时EXEMPT未必缩短内核），与上期Apple神经引擎『通行认知反映调度器默认而非硬件包络』（a7f1631484402e02b552aec0，https://arxiv.org/abs/2611.19101v1）同族（inferred），优化前应先确认默认工具链与运行时是否已暴露目标硬件的调度控制；其二，非CUDA加速器的可用性能由编译优化栈与张量形状共同决定——Mirage超级优化器经Triton栈移植到昇腾910B3后，融合RMSNorm+MatMul七种配置较参考内核快27.6%–87.0%、门控MLP九种配置快4.2%–58.4%，而FNN两个较大配置反而慢51.5%与151.8%（bc38a5a9fe31e353a5114eb8，https://arxiv.org/abs/2611.22844v1；仅内核级数据、无端到端与功耗），与此前TrainBridge在Ascend 910C上把低效主要归因于软件栈、优化后NPU仍慢于GPU参考1.5至2.0倍的实测（92b5f6640589c7fb2e6b086f，https://arxiv.org/abs/2610.29171v1）同向（inferred），选型评估应按形状分档做内核实测并预设回退配置，而非只看峰值算力；其三，消费级平台跑大MoE的瓶颈在于显存、内存与SSD被当作独立缓存而反复换页，Tideway把显存加内存并成统一池、SSD仅作出核后备、按预填充与解码阶段维护不同布局并跨层去重专家，RTX 5090加16–128GiB内存上端到端较最强基线平均1.97倍、最高3.18倍，TTFT平均2.40倍、TPOT约1.61倍（60c8ba8630635de9b8152f26，https://arxiv.org/abs/2611.14848v1；单卡RTX 5090与三个MoE模型、无功耗数据、逐项最快基线身份未披露），与SSD-LLaMA的专家流水线（f356968039545b01ff980787，https://arxiv.org/abs/2609.18110v1）构成两个不同系统上的同机理实测（inferred，二者是否同口径对比未知），把『容量够不够』的选型问题改写为『分层驻留与换页开销够不够低』；其四，芯粒与晶圆级集成的不规则互连使依赖规则网格的传统无死锁路由失效，LASH-PAT以分层最短路径为基础、按本地拥塞选择附加最短路径并保持无死锁，BookSim2仿真十种64芯粒拓扑上相对每组最佳基线吞吐提升21.15%、每包能耗降低12.77%（8cc98a5d88836e3c4728f8e1，https://arxiv.org/abs/2611.22937v1；全部为仿真、能耗为推导值、无硬件实测），目前只是芯粒互连设计的仿真信号；当前判断：对自有推理部署应先做三件低成本动作——核查默认编译与运行时路径是否已暴露硬件调度与引擎包络、在昇腾等非CUDA平台上按形状分档实测内核并预设回退、显存不足时用统一内存池加阶段化布局替代独立缓存换页，芯粒路由结论暂不进入选型依据；观察升级条件是SASS调度改写在其他架构代际复现且内核级提速获得可核实证据、昇腾超优化收益给出端到端数据与回退配置的判别条件、分层MoE推理给出能耗与明确的基线口径、以及LASH-PAT出现真实互连硬件数据。"
+    },
+    {
+      "topic_id": "ai_infra_horizontal",
+      "topic_name": "AI Infra横向动态",
+      "change_kind": "no_material_change",
+      "origin": "applied_task",
+      "task_id": "knowledge_686cd20a3f3da078c5386f7c",
+      "roadmap_version": 2,
+      "what_changed": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_state": "evidence_building",
+      "affected_branches": [],
+      "evidence_item_ids": [
+        "357cf5ceda39eff6bac4a19e"
+      ],
+      "current_judgement": "AI Infra横向当前最可执行的判断仍是推理优化收益必须在目标硬件、目标负载结构与端到端链路上重测后再采用：跨硬件实测已两次出现收益翻转（INT8在无点积指令CPU上反慢1.65–1.76倍且千张固定输入top-1一致数降到958–965，Apple Silicon上六种投机解码方法单请求主基准全部负收益、KV剪枝却最高1.75倍而RTX 4090至多1.02倍），kernel级加速也不代表服务收益（PhyAI配对加速1.40–4.65倍下Cosmos3吞吐随batch仅增14.3%）；本期华为在昇腾上以树注意力掩码加静态KV区把OpenOneRec-1.7B、束宽512的生成式推荐负载算子总时延降到vLLM约37%（76.3毫秒对209.0毫秒）并与定制版76.4毫秒持平，但注意力核本身慢于定制核、靠掩码KV管理补齐，端到端最多快25倍的说法缺可见表格支撑且无吞吐数据，应读作「长输入全束共享、输出仅数token」负载结构上的冗余KV访问消除而非可照搬的内核提速；因此束宽大、输出短的解码负载可把树注意力掩码加静态KV区列为待测候选，采用前须在自有硬件上核对原文数据并测端到端时延、多请求吞吐与输出质量；serving_runtime_compiler主线的杠杆已从kernel与稀疏化延伸到负载结构、预填充检索摊销（SCR检索调用8959→1165、InfiniteBench平均TTFT约降35%）、推理微调混部（DeltaServe在Nutanix生产trace上微调吞吐较LLMStation高2.9倍且SLO百分之百达标）与全局容量调度（TRE在2节点8卡A100上P95时延降11.9%–79.0%），加速器内存分支的HBF分层仿真（权重驻HBM时1× trace完成时间降46.0–60.0%）与SK hynix转述的以内存为中心架构主张互为呼应，但两者分别是trace仿真与二手综述，且混合配置平均TPOT高于HBM-only；当前限制因素仍是验证规模与证据层级（单卡实测、双服务器真值、trace仿真、二手引用），若出现多卡实机复现或生产trace上的TPOT/P95与成本数据、且近内存定量主张经Tesseract与CENT等原始论文核实，应把对应观察项升级为可复用结论，在此之前延迟敏感场景不应采用HBF混合分层配置。"
+    },
+    {
+      "topic_id": "cross_region",
+      "topic_name": "跨域传输",
+      "change_kind": "no_material_change",
+      "origin": "applied_task",
+      "task_id": "knowledge_b4b1713a4412f063be6ff48a",
+      "roadmap_version": 1,
+      "what_changed": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_state": "evidence_building",
+      "affected_branches": [],
+      "evidence_item_ids": [
+        "ee2ccaef47803b5f108f72ec"
+      ],
+      "current_judgement": "跨域传输当前仍应看作设计旋钮不断加厚而广域链路未经验证：本期新增的CodeReel只是单机类比（代码生成视频Agent以归一化绘图命令为键做内容寻址的精确帧复用，每构建中位等待降至Rebuild的0.62-0.67倍、时移编辑下仅重绘43.9%的帧，只支持2D程序化绘制，其项目判断明确跨域传输只能类比参考），传输对重算的交叉点依据的是Lightstorm解析模型的70B MHA每流74-111Gbps而非实测，可借鉴的收益都还没有广域链路验证（载荷侧MLA专用NVFP4量化把缓存字节缩至约三分之一、0.93-1.25比特网格编码因较BF16精度降约36-44个百分点暂不足以支撑传输决策，服务侧轨迹亲和加KV/状态双池容量均衡在更高并发下保持98.3%-98.6%复用、主机DRAM恢复被逐出前缀把过载SLO达标率从22.8%升至100%），因此跨域方案应继续把FP4档位连同运行时逐层精度作为待传字节旋钮、把轨迹亲和与双池均衡并入按部署键控的亲和路由，并把可由任务语义键精确重建的制品与KV状态分开做重算对传输的计价（此为跨记录推断），而实测WAN RTT、传输字节与P95才是把这一信号视图升级为阶段判断的分界。"
+    },
+    {
+      "topic_id": "kv_management",
+      "topic_name": "KVCache管理与复用",
+      "change_kind": "no_material_change",
+      "origin": "applied_task",
+      "task_id": "knowledge_da62eb2788675150075617ce",
+      "roadmap_version": 1,
+      "what_changed": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_state": "evidence_building",
+      "affected_branches": [],
+      "evidence_item_ids": [
+        "d4b721befbfddff4ee664cd6"
+      ],
+      "current_judgement": "自研 KV 栈下一轮改造仍应优先『流量自适应/语义感知驱逐＋含执行路径与操作历史的多维来源绑定缓存键』（回放口径下意图感知驱逐把命中率从 LRU 的 12.2% 提到 34.6%、TTFT 从 6.98 秒降到 3.76 秒，954a38c6f86e6cf1050cee83；省略权重版本的缓存键 45 页中 42 页冲突、恢复绑定后归零，f8c637164ffa4d998894ce4d），被包裹重复内容参照 KVUse/SemPIC 口径评估 KV 级复用而非只依赖前缀缓存；本期新增的 K=V 合并存储（d4b721befbfddff4ee664cd6）是不丢信息的容量杠杆而非驱逐或复用机制，不改变这一排序：Gemma 4 全局层每 KV 头每 token 只存一行、原版分页内核经交叠视图读取，16 位下每请求解码 KV 内存缩小 1.34 至 1.40 倍且 432 个答案仅 2 个不同，但只在解码池满时才换成每步多解 1.24 至 1.38 倍 token，并依赖 Gemma 4 等宽 K=V 结构、仅 16 位缓存适用、等批量 eager 步慢 4% 至 9%；对它应先排查后立项——确认自有模型是否存在可互推的 K/V 冗余、生产解码池是否常态打满，两者都成立再投入，并注意按现有证据它不能与 vLLM v0.32.0 已按架构设为默认的 FP8 低精度 KV（03ef64972818234359298513）叠加（跨条目推断）；会改变判断的观察点维持『语义驱逐命中率→时延传导的在线生产验证』『跨来源/跨适配器复用质量代价边界』『命中率×KV 压缩的联合能耗收益』三处，并新增『自有模型 K/V 冗余排查与解码池饱和度』一处。"
+    },
+    {
+      "topic_id": "tpn",
+      "topic_name": "状态感知网络、TPN",
+      "change_kind": "no_material_change",
+      "origin": "applied_task",
+      "task_id": "knowledge_a9628b6273452bb11adf1017",
+      "roadmap_version": 6,
+      "what_changed": "本期新增了已发布证据，但没有改变当前外部技术判断。",
+      "evidence_state": "evidence_building",
+      "affected_branches": [],
+      "evidence_item_ids": [
+        "4ac578e519611f62caa30461",
+        "72b76ec84b73ae5fad422fcb",
+        "e0678313165756651d188df1",
+        "fc9a2fdbed7013ff0b3040c8"
+      ],
+      "current_judgement": "TPN方向本期证据（XM-Sparse、Parallel Prompting、智能体间消息跳过与KVPath）均不含网络侧机制，判断维持『网络侧KV调度必须在带宽不敏感的非网络基线之上证明增量收益』，且本期证据进一步提示可证明的对象是被上游削减后的残余流量：XM-Sparse把KV与K-index缓存卸载到scale-up内存池、让DMA预取让位于按需检索与模型通信，以互连带宽换HBM容量，匹配batch下TBT较PCIe基线降35.8%/45.8%、吞吐较HiSparse最高4.52倍（内存池为模拟、单节点、无TTFT与分位），Parallel Prompting把同一长文档的多问并成单请求使每步只读一次文档KV、较原生SGLang快3.7至6.0倍但只在共享文档请求预先已知的离线批量成立，消息跳过以有限样本认证在接收方低不确定性时跳过39.9%的验证者调用、答案改动率以高概率不超过5%且P99不劣于基准，KVPath以跨层路径把GQA缓存最多压掉68.65%（仅约0.6B参数、解析体积而无服务实测）；推断：节点内以互连换容量、单请求内合并共享前缀、智能体层跳过交接与模型侧压缩字节正在网络之前消化容量、重复读取、交接等待与传输量，TAILROLL与Callo所定的『避免重新预填、感知KV位置』仍是网络侧价值仅有的证明路径，Parallel Prompting“在线服务需调度器集成”的边界正是这条路径要回答的问题；当前最可执行的下一步不变：把vllm-rlt的在途预算与步间提交复现为网络侧调度器原语，强制以TAILROLL/Callo这类带宽不敏感纯调度基线为对照，以HyCoInfer式带宽自适应压缩深度、星上容量-距离约束、KVPath式压缩后的残余字节与消息跳过比例为调度输入，在多节点多租户P95/P99 TTFT、TPOT与网络利用率口径下证明在线到达、共享请求不预先已知时残余流量的收益；只有出现按前缀在线归并或跨节点放置/预取并同时报告聚合KV传输量与网络利用率的已发布系统，才应上调对网络侧机制的判断。"
+    }
+  ],
+  "idea_events": [
+    {
+      "idea_id": "idea_08f0269ef7fd181c9968",
+      "title": "把热前缀当作可复制对象，联合路由与跨节点 KV 放置",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增同前缀请求并入单请求使共享文档KV每步只读一次的引擎内实证（Parallel Prompting，较原生SGLang快3.7至6.0倍），给出共享前缀共置的收益量级；状态保持observing，其前提为请求预先已知的离线批量，跨节点前缀热度复制与在线路由归并的TTFT收益仍无直接证据。",
+      "evidence_item_ids": [
+        "e0678313165756651d188df1"
+      ]
+    },
+    {
+      "idea_id": "idea_0beeab7573d3f58b0330",
+      "title": "把硬件知识与真实部署验收接成内核优化闭环",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增Mirage移植昇腾910B3作为NPU上自动优化内核须按形状做真机验收的证据：候选图经形式化验证后在NPU执行，融合负载较参考内核最高快87.0%但FNN两个较大配置反而慢51.5%与151.8%，说明验证通过不等于性能达标、优化决策难以跨硬件迁移；Idea状态保持observing，仍缺跨设备硬件知识复用、可用内核比例与模型级收益的直接度量。",
+      "evidence_item_ids": [
+        "bc38a5a9fe31e353a5114eb8"
+      ]
+    },
+    {
+      "idea_id": "idea_15ffa6ef1f0591976613",
+      "title": "MoE专家权重容量墙可用分层驻留加流式I/O重叠在真实硬件上兑现",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增Tideway作为MoE专家权重容量墙在消费级真实硬件上的第二个系统实测：显存加内存统一池、SSD仅作出核后备、跨层专家去重与按预填充/解码阶段维护不同布局，端到端较最强基线平均1.97倍（最高3.18倍）、TTFT平均2.40倍、TPOT约1.61倍；其与SSD-LLaMA专家流水线收敛于分层驻留加换页与I/O开销控制同一机理属跨记录推断(inferred)；Idea状态保持observing，能耗、逐项最快基线身份与绝对解码速率仍缺。",
+      "evidence_item_ids": [
+        "60c8ba8630635de9b8152f26"
+      ]
+    },
+    {
+      "idea_id": "idea_1938f7be7a00f26dd3a8",
+      "title": "步骤化执行加形状匹配算子能否改善链式短解码编排负载的P99",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "603f570c541870947fa99431实测共享推理集群上多步智能体减速严重且不均，以归一化减速驱动准入、调度与扩缩容把p99减速较FCFS几何平均降44.4%、吞吐为基线的91.8%至127.4%，并明示无法消除长预填充干扰，是同一尾部目标上不改执行形状的竞争杠杆（inferred）；70a2ec117de8d2515e3a3a00以6至23毫秒在线规划加常驻内核在16卡稀疏注意力训练上几何均值加速1.39倍，属廉价规划加专用执行的同类机制（inferred）。据此补证据、新增两项未知项、把“仅内存分析域类比”的未知项更正为含分布式稀疏注意力训练类比，并加入FCFS与Duru式调度基线、规划预算扫描与混部对照、归一化减速与规划开销指标及“须剔除超时或溢出请求才成立”的否决条件；两项均未直接检验步骤化形状匹配执行，状态维持seed。",
+      "evidence_item_ids": [
+        "603f570c541870947fa99431",
+        "70a2ec117de8d2515e3a3a00"
+      ]
+    },
+    {
+      "idea_id": "idea_30e35e81d5172a1e7747",
+      "title": "硬件能力增益的栈内保留率可由执行上下文条件预测",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增NVIDIA SASS调度字段实测作为执行上下文条件判据的跨域支持（inferred）：默认编译路径（nvcc）不输出闭源库在用的调度字段、用户程序用不上硬件调度优化，编译后改写cubin放置标记才在vLLM兑现2.3%至3.6%的端到端收益，且收益以issue槽未满为条件，把『默认栈掩盖硬件能力』的失配来源从端侧调度器默认层扩展到编译器输出层；Idea状态保持observing，发射余量条件尚未量化成判据、仅限NVIDIA。",
+      "evidence_item_ids": [
+        "44b498ded86e1240b8c3d5f8"
+      ]
+    },
+    {
+      "idea_id": "idea_3210449905dccfbab27b",
+      "title": "按接收方需求与不确定性裁剪或跳过智能体间状态交接",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "CacheBack（按接收方需求过滤交接状态）、PriorityFEC（按效用排序在截止期内部分交接）与本期的有限样本认证消息跳过跨三期形成同一机制链——由接收方需求或不确定性决定交接多少状态，问题-机制-目标身份成立，据此建立研究假设；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "72b76ec84b73ae5fad422fcb",
+        "96d509d58f4e4506ea914036",
+        "ed4d6f4a29231c530ddb5255"
+      ]
+    },
+    {
+      "idea_id": "idea_7ba369353fb1935cba45",
+      "title": "Agent产出与Harness自进化的验收要独立化并按配对任务计，而不是看总分或构建者自测",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "新增两条harness自进化证据：AHE-Beta从问题侧直接支持“以基准分选改动看不到隐含用户需求且易选中任务特定补丁”，Vestrum以“无任务下降”陈述改进结果；两者的选型依据分别是需求证据门禁与失败类别驱动的单组件编辑，均未以配对新增/丢失任务统计选型、也无独立验证者对照，不构成对假设的直接检验，状态保持seed。",
+      "evidence_item_ids": [
+        "493cca57b30e06720b10b050",
+        "c8c63f6c2da32c991213ef19"
+      ]
+    },
+    {
+      "idea_id": "idea_876c619ed473b24b78bc",
+      "title": "用版本化项目状态和可演化 Harness 承接长任务连续性",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增需求证据门禁进化（AHE-Beta，38个留出任务pass@1由21.9%升至33.3%、执行token少40.8%）与现成Harness上的少样本逐组件改进（Vestrum，8个留出任务通过率63.7%升至70.3%且无任务下降）；两者分别为接受门约束的Harness自改进补充新的验收信号源与单组件可回退形态，但总算力未报、留出任务少且测试模型未公开，状态保持observing。",
+      "evidence_item_ids": [
+        "493cca57b30e06720b10b050",
+        "c8c63f6c2da32c991213ef19"
+      ]
+    },
+    {
+      "idea_id": "idea_a90d71c35ea8a0f208da",
+      "title": "在工具调用前加入状态与资源监督层",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增故障注入实测：派发前授权、带稳定标识的动作台账、目标端幂等、崩溃后对账与证据封存五机制并用的完整配置把重复效应压到0/200（较简基线各117/200），代价是运行窗口吞吐约为故障开放基线的七分之一；为分派前状态监督补上恢复协议与吞吐代价的数值，但来自单主机工单类合成基准、未拆分各机制贡献且误拒绝率仍未报告，状态保持observing。",
+      "evidence_item_ids": [
+        "b12a4bf83bed3d9b8bb77ac9"
+      ]
+    },
+    {
+      "idea_id": "idea_b593def0a978f8a8de0e",
+      "title": "K/V 可互推层合并单份存储加交叠视图读取的按请求省显存方案",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "依据已发布证据新建 Idea：vLLM 原型把 Gemma 4 全局层 K=V 缓存经交叠视图合并为单份存储，16 位下每请求解码 KV 内存缩小 1.34 至 1.40 倍且输出与原布局逐位一致，解码池满时每步解码 token 数为原引擎 1.24 至 1.38 倍；vLLM v0.32.0 的 FP8 低精度 KV 作为同类问题的替代杠杆入证，用以界定其不损失信息但仅 16 位适用的增量边界。",
+      "evidence_item_ids": [
+        "03ef64972818234359298513",
+        "d4b721befbfddff4ee664cd6"
+      ]
+    },
+    {
+      "idea_id": "idea_e1285c01e23224b5a002",
+      "title": "把可枚举决策下放给校准过的小模型并保留置信回退门，而不是每步调用大模型",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "seed",
+      "reason": "AnyS1给出明确问题（Agent每步调用大模型、成本随轨迹增长）与可检验机制（可枚举决策由校准的4B指针小模型一次前向作答、置信不足回退大模型），并在容器任务上给出带成本口径的实测（成本省91%和88%、通过率与成功率高于基线），建立解决方案Idea；未测代码场景且仅单一骨干，保持seed；当前没有执行仿真或实验。",
+      "evidence_item_ids": [
+        "33821a0237c825c99d15bf17"
+      ]
+    },
+    {
+      "idea_id": "idea_f7841984fcce6a274881",
+      "title": "KV 传输、重算与就地计算存在随带宽和命中率变化的交叉点",
+      "decision": "evidence_added",
+      "from_status": "observing",
+      "to_status": "observing",
+      "reason": "新增scale-up内存池卸载（XM-Sparse）与模型侧跨层KV压缩（KVPath）两条节点内与模型侧对照证据：前者把卸载策略族的基线抬到scale-up内存池并给出预取让位于按需检索与模型通信的带宽仲裁形态，后者支持传输字节可在模型侧预先压缩、残余字节应进入传输代价估算；状态保持observing，传输、重算与就地计算在统一负载下的完整对照仍缺失。",
+      "evidence_item_ids": [
+        "4ac578e519611f62caa30461",
+        "fc9a2fdbed7013ff0b3040c8"
+      ]
+    },
+    {
+      "idea_id": "idea_fe6623eb4e10956f7e86",
+      "title": "执行反馈联合修订harness能否在留出任务上稳定胜过固定harness",
+      "decision": "evidence_added",
+      "from_status": "seed",
+      "to_status": "seed",
+      "reason": "2f1e15a99df26c0caffd3147以过程特征选择器决定逐题采纳或回退的单条证据边修订，在gpt-4o-mini上把四基准均值从0.6654升至0.7031而完整预算得分反而低于半预算，为“任务间退化受控”提供可借用的门控手段（inferred：其修订对象是通信拓扑而非工具、技能与代码）；6535dfd0d767623673351af3把溯源记录嵌入产物后不重跑即可定位差异来源，是检查重放之外的候选修订触发信号（inferred：跨域类比，采集开销未测量）。据此补证据、新增两项未知项，并把采纳门控、修订预算扫描、溯源触发信号对照、仅修订通信拓扑基线及延迟与检出率指标纳入验证计划；两项均未直接检验联合修订，状态维持seed。",
+      "evidence_item_ids": [
+        "2f1e15a99df26c0caffd3147",
+        "6535dfd0d767623673351af3"
+      ]
+    }
+  ]
+}

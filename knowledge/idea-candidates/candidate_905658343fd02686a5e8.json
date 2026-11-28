@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_905658343fd02686a5e8",
+  "identity": {
+    "problem_key": "repeated_sop_reinterpretation_and_drift",
+    "mechanism_key": "fsm_state_scoped_capsule_replay_gate",
+    "target_key": "agent_sop_runtime_tool_chain"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "以外部FSM状态为程序胶囊划定复用作用域：重放校验通过才提交状态迁移，机械环节免模型调用",
+  "problem": "长程重复SOP任务同时支付两类可避免成本：一是可复用技能每次调用都要模型重新解读并重排工具调用，token随调用次数累积（SkillCache记录的对照面显示原开销巨大，其胶囊化后token均值降80.9%/74.3%）；二是流程状态放在模型上下文里会被压缩抹除，Agent偏离开头一次给出的流程，重述提示或续跑只会让漂移改道（200账号SOP任务最强基线仅48.4项忠实正确决策）。而已有的胶囊复用没有流程状态作用域：胶囊源自单次执行、可硬编码取值、检索与失效未测，无作用域的复用本身会成为新的漂移源。",
+  "hypothesis": "把可复用技能编译为参数化程序胶囊，并将胶囊的复用作用域绑定到运行时守护进程持有并落盘的有限状态机状态上：工具调用门先查当前状态允许哪些操作，命中当前状态作用域内编译的胶囊直接由执行器重放执行，重放校验通过即作为守卫成功条件提交状态迁移；未命中、执行失败或需判断的环节交还模型，原技能保留作回退，Stop门仍拦住提前收工。如此机械环节免模型调用而token与模型调用数下降，同时忠实正确决策不随账号数衰减，硬编码或过期胶囊被限制在单状态内可检测、不跨状态扩散。",
+  "mechanism": "组合两条已发布机制：其一，状态机由守护进程持有并落盘、上下文压缩无法抹除，在工具调用、状态迁移与回合结束三处强制执行，工具调用先查当前状态是否允许，守卫命令成功退出才提交迁移（arxiv:2611.10884）；其二，编译器不看评测即可把冷执行与原技能编译为程序加步骤的参数化胶囊，复用前重放校验，执行器串接程序传值，失败或需判断才交还模型（arxiv:2611.10022）。合成点为任何单条记录未陈述的语义：胶囊编译时记录其合法FSM状态作用域，状态门按当前状态分发胶囊，且以胶囊重放校验通过作为状态迁移的守卫成功条件。",
+  "target": "长程重复SOP任务的Agent运行时工具执行链（外部状态机门与胶囊执行器）",
+  "expected_effect": "在多账号、多批次的重复SOP任务上：模型调用数与token显著下降（单机制对照：SkillCache在87项SkillsBench任务上token均值降80.9%（Sonnet）与74.3%（Opus）、Sonnet模型调用均值23.6降至5.6且奖励持平）；忠实正确决策保持到任务末段不衰减（单机制对照：Haiku配FSM得139.2项忠实正确决策且稳定到最后账号，最强基线48.4）；越界胶囊（硬编码取值、过期参数）被状态门拦截并在单状态内失效，不污染其他状态的执行。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-11-11",
+    "rationale": "同期两条独立记录互补：FSM记录（arxiv:2611.10884）给出外部流程状态、三处强制门与200账号漂移量化，SkillCache记录（arxiv:2611.10022）给出胶囊编译、复用前重放校验与token量化。胶囊复用作用域绑定外部FSM状态、以重放校验提交状态迁移的机制仅由二者联合支撑，任何单条记录均未陈述；且该组合直指SkillCache自述未测的失效与硬编码风险。"
+  },
+  "evidence": [
+    {
+      "item_id": "00be0bbfbdcd09b699f05b75",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10884v1"
+      ],
+      "reason": "该记录提供组合机制的状态与门半边：问题（长程任务中Agent偏离开头一次给出的流程，重述提示或续跑只会让漂移改道；流程状态在模型上下文中会被压缩抹除）、机制（状态机由守护进程持有并落盘；工具调用、状态迁移与回合结束三处强制执行；工具调用先查当前状态是否允许，守卫命令成功退出才提交迁移，Stop门拦住提前收工）、效应（200账号SOP任务上Haiku配FSM得139.2项忠实正确决策且稳定到最后账号，最强基线48.4；SWE-bench较难任务69对62，分歧全偏FSM）与边界（主实验仅评估单一SOP任务与单一运行时；守卫过严会误拦合法操作，简单任务中位耗时增23%）。该记录未陈述任何编译或胶囊复用语义。",
+      "independence_group": "arxiv:2611.10884"
+    },
+    {
+      "item_id": "aa7e960b767618e9bbe78462",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.10022v1"
+      ],
+      "reason": "该记录提供组合机制的编译与重放校验半边：问题（可复用技能每次调用都要模型重新解读并重排工具调用，token随调用次数累积）、机制（编译器不看评测即可把冷执行与原技能编译为参数化胶囊，复用前重放校验；执行器串接程序传值，失败或需判断才交还模型，原技能保留作回退）、效应（87项SkillsBench任务上token均值降80.9%（Sonnet）与74.3%（Opus）且奖励持平；Sonnet模型调用均值23.6降至5.6）与边界（仅限SkillsBench与Claude Code；胶囊源自单次执行，可硬编码取值，检索与失效未测）。该记录的胶囊没有流程状态作用域，其失效与硬编码风险无门控——正是本候选用FSM状态作用域补上的缺口。",
+      "independence_group": "arxiv:2611.10022"
+    }
+  ],
+  "evidence_item_ids": [
+    "00be0bbfbdcd09b699f05b75",
+    "aa7e960b767618e9bbe78462"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.10884v1",
+    "https://arxiv.org/abs/2611.10022v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.10884",
+    "arxiv:2611.10022"
+  ],
+  "unknowns": [
+    "组合机制无任何记录直接测量：两条记录分别只在单一SOP任务与单一运行时、SkillsBench与Claude Code上评估，联合效应为零手实测。",
+    "硬编码取值的胶囊在状态作用域内的检出率未测，状态门能否可靠区分可复用与过期胶囊未知。",
+    "守卫过严会误拦合法操作且简单任务中位耗时增23%（FSM记录边界），叠加胶囊分发后净收益边界未知。",
+    "状态数与胶囊数增大后的检索与作用域匹配开销未测。"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在自有Agent运行时上实现状态作用域胶囊执行器：守护进程持有并落盘FSM，胶囊编译时记录编译时状态作为作用域，工具调用门按当前状态分发胶囊，重放校验通过即提交状态迁移，未命中、失败或需判断交还模型并以原技能回退。",
+    "inputs": [
+      "多账号多批次重复SOP任务集，含参数变化与过期场景注入",
+      "原技能定义与冷执行轨迹（用于编译胶囊）",
+      "FSM状态机定义、守卫命令与状态迁移表"
+    ],
+    "baselines": [
+      "纯模型逐调用执行原技能（无FSM无胶囊）",
+      "无状态作用域的SkillCache式胶囊直接复用（无FSM门）",
+      "纯FSM门控、全部调用交模型（无胶囊）"
+    ],
+    "metrics": [
+      "每任务模型调用数与token消耗",
+      "忠实正确决策数及其随账号数的衰减曲线",
+      "越界与硬编码胶囊的拦截率（按作用域内外分类）",
+      "状态迁移守卫误拦合法操作的比率与任务时延"
+    ],
+    "support_criteria": [
+      "相对无FSM门的胶囊复用，越界/硬编码胶囊拦截率显著上升且忠实决策不随账号数衰减；相对纯FSM门控，模型调用数与token显著下降；成功率不低于纯模型基线。"
+    ],
+    "reject_criteria": [
+      "状态作用域分发使误拦率或时延开销抵消token收益，或忠实度低于纯FSM门控基线。"
+    ],
+    "limitations": [
+      "两条源记录分别仅覆盖单一SOP任务/单一运行时与SkillsBench/Claude Code，组合净效应无直接测量；本计划为建议，尚未执行。"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "proposed",
+  "disposition_reason": "四要素完整：问题（重复SOP任务的token累积与长程流程漂移，且无作用域胶囊复用自身引入失效风险）、机制（胶囊复用作用域绑定守护进程FSM状态、重放校验作为迁移守卫成功条件）、目标（长程SOP任务Agent运行时工具链）、可检验效应（调用数/token下降、忠实决策不衰减、越界胶囊单状态内拦截）齐备。两条同期独立记录（arxiv:2611.10884与arxiv:2611.10022）互补联合支撑这一任何单条记录未陈述的机制，符合cross_source_synthesis要求（一期内两个独立canonical组）。与既有候选含义不同：candidate_60d0a7b86b01d6a58334为回执激活的决策图复用、无流程状态作用域与迁移守卫语义；candidate_d07fef8532bb5bcc7c10为日志离线求解MDP策略、属学习型策略而非编译胶囊重放；candidate_82694673e9654740abb2为执行树步骤身份的回放记账、非复用门；candidate_a90d71c35ea8a0f208da为调用前监督层、只监督不复用。等待人工晋升。",
+  "related_candidate_ids": [
+    "candidate_60d0a7b86b01d6a58334",
+    "candidate_d07fef8532bb5bcc7c10",
+    "candidate_82694673e9654740abb2",
+    "candidate_a90d71c35ea8a0f208da"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_9a7b0509a84dcb632ff4",
+      "issue_date": "2026-11-11",
+      "decision": "proposed",
+      "from_disposition": null,
+      "to_disposition": "proposed",
+      "reason": "新候选：FSM运行时（00be0bbfbdcd09b699f05b75）与SkillCache（aa7e960b767618e9bbe78462）两条同期独立记录互补，联合支撑胶囊复用作用域绑定外部FSM状态、以重放校验提交状态迁移的机制；该机制任何单条记录未陈述，身份与既有候选及Idea均不同，四要素完整，列为proposed等待人工晋升。",
+      "evidence_item_ids": [
+        "00be0bbfbdcd09b699f05b75",
+        "aa7e960b767618e9bbe78462"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

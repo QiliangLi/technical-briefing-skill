@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_805d8be017ab32c9726f",
+  "identity": {
+    "problem_key": "cross_adapter_backbone_kv_reuse_quality_cost_unestablished",
+    "mechanism_key": "provenance_gated_backbone_reuse_with_divergence_targeted_repair",
+    "target_key": "multi_lora_backbone_prefix_kv_reuse_path"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "跨LoRA骨干KV复用：来源门控加分歧边界定向修复换质量等价",
+  "problem": "共享骨干配多LoRA专家的部署可一次计算骨干prefill KV跨专家复用，8K上下文warm-cache TTFT约16倍（30ms对486ms），但标准适配器上的质量代价未被确立：GSM8K上Δ最高-4.6 EM。同时共享缓存层仅按token内容派生键会让不兼容状态互相复用——跨适配器冲突已实测把精度从0.94拉到0.64；而按来源完全隔离又使跨专家复用收益归零，且固定预算下来源分离有吞吐从42降到15请求每秒的先例。缺一条『受控跨适配器复用＋定向修复』能否以有界代价恢复质量等价的可检验假设。",
+  "hypothesis": "在多LoRA服务中，以来源描述符门控骨干KV的跨适配器复用（差分检测器标记同键异字节），并把重算修复预算定向投向按专家接管边界扫描定位的适配器分歧段（对照均匀token级修复），可在保留不低于8倍warm-cache TTFT的同时，把GSM8K相对各适配器独立预填充的质量差从最高-4.6 EM收窄到0.5 EM以内、修复预算不超过输入的10%；若5%-10%定向预算无法把质量差收窄到1 EM以内、或修复开销使warm-cache TTFT优势降到2倍以下、或来源门控的容量与吞吐代价吞掉复用收益（对照来源分离42对15请求每秒的先例），则跨适配器骨干KV复用应保持按适配器来源隔离为默认行为。",
+  "mechanism": "三组件组合：(1) 复用门控——把适配器身份、权重版本与KV表示绑入缓存键（描述符对计算与共享来源单射），差分检测器监控同键异字节，替代仅按token内容派生键；(2) 修复定位——按专家接管边界扫描找到适配器分歧段，把重算预算定向投到该目标段并移位到兼容位置重算（对照检索复用中修复预算应花在目标块、移位重算优于原地重算的结论），而非均匀token级修复；(3) 收益保留——骨干段共享预填充KV、仅分歧段重算，warm-cache TTFT收益按未重算比例保留。该组合机制未见于任何单条引用记录。",
+  "target": "多LoRA服务的骨干前缀KV复用路径：共享缓存层的键控、专家接管边界扫描与重算修复预算的决策点。",
+  "expected_effect": "GSM8K质量差从最高-4.6 EM收窄到相对各适配器独立预填充0.5 EM以内；warm-cache TTFT保留不低于8倍（对照30ms对486ms）；同键异字节冲突经差分检测后归零（对照恢复来源绑定后42/45页冲突归零）；修复预算不超过输入10%，门控吞吐与容量代价单列且有界（对照来源分离42对15请求每秒的反例教训）。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-11-13",
+    "rationale": "三条跨期记录联合支持一条任何单条都未陈述的机制：788f1bb39a068886ede516b1（2026-11-13）给出跨适配器复用收益（16倍warm-cache TTFT）、未确立的质量代价（Δ最高-4.6 EM）与专家接管边界扫描、闭式ridge KV翻译器线索，但明确质量等价与通用边界规则均未确立；f8c637164ffa4d998894ce4d（2026-10-18）证明复用必须来源门控并配差分检测（跨适配器冲突精度0.94降至0.64、恢复绑定后冲突归零），但其处方是隔离而非定向修复；cadc885d313b830c50aec301（2026-11-06）证明修复预算应定向检索命中的目标块且移位重算更优（5%预算九设置全胜），但语境是检索复用而非适配器分歧。组合成『来源门控＋分歧边界定向修复』的跨适配器复用质量等价假设，引用三个issue日期。"
+  },
+  "evidence": [
+    {
+      "item_id": "788f1bb39a068886ede516b1",
+      "issue_date": "2026-11-13",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.17109v1"
+      ],
+      "reason": "触发证据：Qwen3-1.7B配两适配器扫描专家接管边界，骨干prefill KV跨专家复用换8K上下文warm-cache TTFT约16倍（30ms对486ms），但GSM8K质量Δ最高-4.6 EM，另试闭式ridge KV翻译器而结果未报；两分支峰值内存仅低12%且前缀未物理共享。边界为单骨干两适配器小规模扫描，作者明确质量等价与通用边界规则均未确立——同时给出问题（质量代价未定）、边界扫描方法与修复旋钮线索。",
+      "independence_group": "arxiv:2609.17109"
+    },
+    {
+      "item_id": "f8c637164ffa4d998894ce4d",
+      "issue_date": "2026-10-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.38706v1"
+      ],
+      "reason": "门控组件证据：共享KV缓存层仅按token内容派生键会忽略适配器、权重版本与租户身份，不兼容状态互相复用，跨适配器冲突实测把精度从0.94拉到0.64；来源描述符把适配器身份、权重精度/版本与KV表示绑入键后差分检测冲突归零（省略权重版本时45页中42页冲突）。边界为仅覆盖单主机与独立缓存服务器，固定预算下来源分离吞吐从42降至15请求每秒——为跨来源复用提供必须的门控与检测仪表及其代价上界。",
+      "independence_group": "arxiv:2609.38706"
+    },
+    {
+      "item_id": "cadc885d313b830c50aec301",
+      "issue_date": "2026-11-06",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.06397v1"
+      ],
+      "reason": "修复定位组件证据：非前缀KV复用中损伤分散于其余块、token级修复不知预算投向，把重算预算花在目标块（检索Top-1移位到紧邻问题处再重算）在5%预算下九个设置全部胜过token级选择器且移位重算优于原地重算0.07至0.18。边界为仅7B-8B模型、四个英文数据集且缺吞吐显存数据；跨条目推断(inferred)：『预算定向目标块加移位重算』原则迁移到适配器分歧段修复未测。",
+      "independence_group": "arxiv:2611.06397"
+    }
+  ],
+  "evidence_item_ids": [
+    "788f1bb39a068886ede516b1",
+    "f8c637164ffa4d998894ce4d",
+    "cadc885d313b830c50aec301"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.17109v1",
+    "https://arxiv.org/abs/2609.38706v1",
+    "https://arxiv.org/abs/2611.06397v1"
+  ],
+  "independence_groups": [
+    "arxiv:2609.17109",
+    "arxiv:2609.38706",
+    "arxiv:2611.06397"
+  ],
+  "unknowns": [
+    "闭式ridge KV翻译器的实测效果未在触发论文报告，定向重算与ridge翻译的优劣未比较",
+    "触发扫描仅单骨干（Qwen3-1.7B）两适配器，接管边界规则向第三适配器与更大骨干的迁移未确立",
+    "修复预算定向结论来自检索复用语境（7B-8B、四个英文数据集），适配器分歧语境的迁移未测",
+    "骨干前缀未物理共享（两分支峰值内存仅低12%），定向修复与物理共享页管理的组合未评估",
+    "门控与差分检测在复用开启下的吞吐与容量代价未量化（对照来源分离42对15请求每秒先例）",
+    "无serving级并发、命中率与能耗数据，16倍TTFT在并发下的留存未测"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "多LoRA服务测试床（vLLM/SGLang多LoRA路径）：先以Qwen3-1.7B两适配器复现触发口径，再用一款8B骨干与不少于3个适配器检验边界规则外推。",
+    "inputs": [
+      "适配器对与三元组扫描，逐对做专家接管边界扫描定位分歧段",
+      "修复预算1%/5%/10%输入token，定向分歧段重算对照均匀token级修复与无修复",
+      "来源门控开/关 × 差分检测器开/关的四象限",
+      "8K上下文GSM8K加至少一个多任务质量集"
+    ],
+    "baselines": [
+      "各适配器独立全量预填充（质量上界、TTFT下界486ms口径）",
+      "无门控盲共享复用（质量下界，对照精度0.94降至0.64先例）",
+      "按来源完全隔离的独立缓存（复用收益下界）",
+      "均匀token级修复（修复策略对照）"
+    ],
+    "metrics": [
+      "GSM8K EM相对各适配器独立预填充的差值",
+      "warm-cache TTFT倍数（对照30ms对486ms）",
+      "同键异字节冲突数与差分检出率",
+      "修复token占比、门控吞吐与容量开销"
+    ],
+    "support_criteria": [
+      "质量差收窄到0.5 EM以内且warm-cache TTFT保留不低于8倍",
+      "冲突经差分检测后归零且修复预算不超过输入10%",
+      "边界规则在第三个适配器上迁移成立"
+    ],
+    "reject_criteria": [
+      "5%-10%定向预算下质量差仍大于1 EM",
+      "修复开销使warm-cache TTFT优势低于2倍",
+      "门控吞吐或容量代价吞掉复用收益或边界规则不迁移"
+    ],
+    "limitations": [
+      "触发证据为小规模单骨干两适配器在审预印本扫描，质量等价与通用边界规则未确立",
+      "修复定向原则自检索复用语境迁移，适配器分歧语境未直接验证",
+      "缺并发、命中率与能耗维度，ridge翻译器结果未公开"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "候选完整（问题、机制、目标、可检验效应齐备）且与既有40条候选、8条Idea的身份与含义比对后真正不同，但按deferred处置：联合机制『来源门控＋分歧边界定向修复』无任何独立执行证据（三个组件分属三个独立组，均未在跨适配器复用语境下组合测试）；适用边界缺失（触发论文明确质量等价与通用边界规则未确立，仅Qwen3-1.7B两适配器GSM8K扫描）；门控组件与既有candidate_d12cd71359d58f2356ea（来源绑键）及idea_e2ff81802e9e160bca19（作用域来源绑定键加差分检测护栏）同源，复用其护栏还是另立契约需人工谱系决策。",
+  "related_candidate_ids": [
+    "candidate_d12cd71359d58f2356ea",
+    "candidate_7bf46e88dbc0e1cfb70d"
+  ],
+  "related_idea_ids": [
+    "idea_e2ff81802e9e160bca19",
+    "idea_3957174660eb8129b82b"
+  ],
+  "first_seen_issue": "2026-10-18",
+  "last_updated_issue": "2026-11-13",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_1af87c523fab42b9deff",
+      "issue_date": "2026-11-13",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "跨期合成触发项788f1bb39a068886ede516b1（跨LoRA骨干KV复用质量代价未定）与f8c637164ffa4d998894ce4d（来源门控）、cadc885d313b830c50aec301（修复预算定向目标块）联合支持『来源门控＋分歧边界定向修复』机制，任何单条记录均未陈述；身份与既有候选/Idea不同，但联合机制无独立执行证据、适用边界未确立且门控组件谱系需人工决策，按deferred处置。",
+      "evidence_item_ids": [
+        "788f1bb39a068886ede516b1",
+        "f8c637164ffa4d998894ce4d",
+        "cadc885d313b830c50aec301"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

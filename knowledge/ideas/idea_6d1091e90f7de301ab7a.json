@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "idea_id": "idea_6d1091e90f7de301ab7a",
+  "identity": {
+    "problem_key": "multi_die_gpu_homogeneity_assumption",
+    "mechanism_key": "topology_aware_intra_gpu_sharding",
+    "target_key": "chiplet_gpu_llm_serving"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "多die GPU的LLM服务须以芯片内拓扑感知分片替代同构设备假设",
+  "problem": "Chiplet/多die GPU（MI300X级XCD与裸片阉割分区）在物理上不再对称：GPU内外互连带宽差约十倍、远程HBM访问时延最高拉高67%，而现有LLM框架与调度器仍把分区出的虚拟GPU当作独立同构设备，带来KV冗余、算术强度坍缩与集合通信走错层级，芯片内带宽层级被浪费。",
+  "hypothesis": "在多die GPU上，若把GPU内跨die维度作为与GPU间分片正交的额外分片维度——二维GEMM切分保持瓦片算术强度、集合通信按GPU内高带宽链路与跨GPU链路分层路由、调度同时纳入裸片位置与缓存分区归属——则LLM推理在低批量档可取得可复现的吞吐与时延收益（MI300X上Llama3-405B低batch最高1.41倍量级）、消除KV冗余并避免朴素分片的OOM，且收益大小可由GPU内外带宽比与远程访问时延惩罚解释；若软件不感知该层级，同构假设的代价随代际带宽差距扩大而放大。",
+  "mechanism": "Starscream保持GPU间分片并在GPU内跨XCD叠加正交分片维度，二维GEMM切分保持瓦片算术强度，GPU内通信走USR、跨GPU走XGMI；不对称感知调度在调度时同时考虑裸片位置与缓存分区归属，测量并回避远程HBM与近倍增L2时延的裸片不对称。",
+  "expected_effect": "MI300X/MI355X上LLM分片从同构假设切换到NUMA感知后低批量吞吐提升（最高1.41倍量级）、KV冗余消除、朴素分片OOM消失；不对称感知调度避免至多1.33倍性能波动、LLM推理复用提升最高14.3%；形成按芯片内带宽比预测分片收益的部署判据。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "status": "observing",
+  "evidence_for": [
+    {
+      "item_id": "369ee9744aeb77d4efa8bd3b",
+      "issue_date": "2026-09-28",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.24270v1"
+      ],
+      "reason": "多die GPU裸片不对称实测：制造阉割与缓存/内存分区使GPU物理上不再对称而调度器仍假设对称，远程HBM访问约高34%时延（最高拉高HBM时延67%、近倍增L2时延），不对称感知调度让主流核最高1.22倍、LLM推理复用最高14.3%提升、避免至多1.33倍性能波动；需硬件拓扑信息暴露给运行时、测量限于特定GPU代际。"
+    },
+    {
+      "item_id": "7dc5411880dfa7aadd67548a",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.15951v1"
+      ],
+      "reason": "Starscream在MI300X上以GPU内跨XCD正交分片加分层集合通信（USR/XGMI）验证同构设备假设的代价：KV冗余、算术强度坍缩与GPU内外约十倍带宽差被忽视，CPX/NPS4对SPX/NPS1在Llama3-405B低batch最高1.41倍、中batch约1.08倍、朴素分片部分batch下OOM；摘要的4倍与1.43倍缺逐点数值、仅推理与kernel评测、无端到端吞吐与功耗。"
+    }
+  ],
+  "evidence_against": [],
+  "unknowns": [
+    "收益是否随批量反转及其与GPU内外带宽比的定量关系（中batch仅约1.08倍，大批量与吞吐饱和区未报告）",
+    "跨代际可迁移性：不对称测量与XCD结构绑定特定GPU代际，MI355X及非AMD chiplet GPU上的形态未验证",
+    "端到端吞吐与功耗收益未量化（Starscream仅推理与kernel评测、为预印本）",
+    "硬件拓扑信息暴露给运行时的接口成本与调度开销未刻画"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "一台可切换SPX/NPS1与CPX/NPS4分区模式的MI300X（或MI355X）节点，先用微基准测得GPU内USR与跨GPU XGMI有效带宽及远程HBM访问时延惩罚，再跑LLM推理对照",
+    "inputs": [
+      "Llama3-405B级与1至8B级稠密及MoE模型的推理负载",
+      "批量扫描（每GPU 1至512 token）",
+      "KV缓存布局两版：按die亲和共享与按虚拟设备独立",
+      "远程/本地HBM与L2访问微基准结果"
+    ],
+    "baselines": [
+      "框架默认同构虚拟GPU分片（SPX/NPS1）",
+      "朴素按die独立分片（无分层集合通信）",
+      "不感知裸片不对称的对称调度器"
+    ],
+    "metrics": [
+      "低/中/高批量decode与prefill吞吐",
+      "KV显存占用与冗余倍数",
+      "GPU内与跨GPU集合通信量占比",
+      "远程访问时延惩罚与性能波动幅度（1.33倍量级参照）",
+      "OOM发生率"
+    ],
+    "support_criteria": [
+      "拓扑感知分片在低批量档（每GPU数十token以内）取得不低于1.1倍吞吐且高批量无回退",
+      "收益大小与实测GPU内外带宽比同向变化",
+      "KV冗余消除且朴素分片OOM消失"
+    ],
+    "reject_criteria": [
+      "各批量档收益均在测量噪声（如±5%）内",
+      "收益与带宽比无关或方向相反",
+      "默认栈在同等NUMA提示接口下即可取得相同收益（说明瓶颈在提示接口而非分片结构）"
+    ],
+    "limitations": [
+      "已有数字为预印本口径：4倍与1.43倍缺逐点数值、无端到端吞吐与功耗",
+      "不对称实测绑定特定GPU代际，向其他chiplet GPU外推须重测",
+      "未覆盖训练相位与多租户复用场景"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "first_seen_issue": "2026-09-28",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "idea_decision_11faf6affcfd527e1b5b",
+      "issue_date": "2026-11-18",
+      "decision": "created",
+      "from_status": null,
+      "to_status": "observing",
+      "reason": "跨期已发布证据（2026-09-28多die GPU裸片不对称实测：远程HBM访问时延最高拉高67%、不对称感知调度避免至多1.33倍波动、LLM推理复用提升最高14.3%）与本期Starscream（MI300X GPU内跨XCD正交分片加USR/XGMI分层通信，Llama3-405B低batch最高1.41倍、朴素分片部分batch下OOM）收敛于同一机理：多die GPU上LLM服务须以芯片内拓扑感知分片替代同构设备假设、收益可由GPU内外带宽比解释；按problem+mechanism+target身份创建为正式Idea并保持observing；两证据指向同一机理的聚合判断属跨记录推断(inferred)。",
+      "evidence_item_ids": [
+        "369ee9744aeb77d4efa8bd3b",
+        "7dc5411880dfa7aadd67548a"
+      ]
+    }
+  ]
+}

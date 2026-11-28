@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_6331e2cfbe234e8515c0",
+  "identity": {
+    "problem_key": "model_parallel_collective_communication_bottleneck",
+    "mechanism_key": "grouped_dual_scale_fp4_collective_compression",
+    "target_key": "h100_tensor_pipeline_parallel_llm_training"
+  },
+  "idea_type": "solution_concept",
+  "title": "以微分组双尺度FP4量化把模型并行训练的集合通信压缩至四比特并显式换取吞吐",
+  "problem": "模型并行训练中张量并行与流水并行的集合通信是瓶颈，已有通信压缩方法多止步于FP8，更低比特的训练侧通信量化机制及其精度代价缺少已发表实测。",
+  "hypothesis": "若以微分组双尺度FP4量化对齐张量分布、两级快速Walsh-Hadamard变换抑制量化误差、warp协作半字节打包，并把压缩与解压融合进集合通信单内核，则H100上模型并行训练吞吐可显著高于BF16通信路径，且精度代价显式可查、随分组尺寸可调。",
+  "mechanism": "微分组双尺度FP4量化对齐张量分布，两级快速Walsh-Hadamard变换抑制误差，warp协作半字节打包，围绕集合通信单内核压解。",
+  "target": "H100 GPU上张量并行与流水并行的LLM训练通信路径（实测为Qwen-7B单机）",
+  "expected_effect": "Qwen-7B张量并行微分组64时155.3 TFLOP/s/GPU，为BF16的1.40倍、损失2.2306；最高1.56倍出现在分组256，PPL升至21.36；流水并行最高仅1.01倍。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发表记录同时给出问题（模型并行训练的集合通信是瓶颈、已有通信压缩多止步FP8）、可解释机制（微分组双尺度FP4量化、两级快速Walsh-Hadamard变换、warp协作半字节打包、集合通信单内核压解）、目标对象（H100上张量与流水并行训练的通信路径）与可检验效应（Qwen-7B张量并行微分组64时155.3 TFLOP/s/GPU为BF16的1.40倍、最高1.56倍在分组256、PPL升至21.36）。"
+  },
+  "evidence": [
+    {
+      "item_id": "398597b26090cf365e0505bc",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.04323v1"
+      ],
+      "reason": "FP4Quant记录给出问题（模型并行训练的集合通信是瓶颈、已有通信压缩多止步FP8）、机制（微分组双尺度FP4量化对齐张量分布、两级快速Walsh-Hadamard变换抑制误差、warp协作半字节打包、围绕集合通信单内核压解）、目标（H100上张量与流水并行训练通信路径）与可检验效应（Qwen-7B张量并行微分组64时155.3 TFLOP/s/GPU为BF16的1.40倍、损失2.2306；最高1.56倍在分组256、PPL升至21.36；流水并行最高仅1.01倍），并同时给出仅Qwen-7B单机实验、通信量缩减字节与互连细节未见、流水并行最高仅1.01倍的边界。",
+      "independence_group": "arxiv:2611.04323"
+    }
+  ],
+  "evidence_item_ids": [
+    "398597b26090cf365e0505bc"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.04323v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.04323"
+  ],
+  "unknowns": [
+    "仅Qwen-7B单机实验，其他模型规模与多机、多节点互连上未验证",
+    "通信量缩减字节与互连细节未见，收益所依赖的通信占比未披露",
+    "流水并行最高仅1.01倍，流水并行路径基本无收益的适用边界未界定",
+    "精度代价显著且随分组增大上升：分组256时PPL升至21.36，可接受的精度档位未划定",
+    "单一arXiv v1预印本独立分组，缺独立复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在自有H100上以Qwen-7B级张量并行与流水并行训练负载复现微分组双尺度FP4通信压缩（两级快速Walsh-Hadamard变换加集合通信单内核压解），与BF16未压缩通信及FP8通信压缩对照，并扫描微分组尺寸绘制吞吐-精度代价曲线。",
+    "inputs": [
+      "Qwen-7B级模型与张量/流水并行训练配置",
+      "NVFP4微分组尺寸与双尺度量化配置",
+      "H100集合通信内核与互连画像"
+    ],
+    "baselines": [
+      "BF16未压缩集合通信训练",
+      "FP8通信压缩基线"
+    ],
+    "metrics": [
+      "训练吞吐（TFLOP/s/GPU）与相对BF16加速比",
+      "训练损失与困惑度等精度代价",
+      "通信字节数缩减比例与端到端迭代时间"
+    ],
+    "support_criteria": [
+      "张量并行吞吐加速在自有负载复现，且精度代价落在显式可接受的分组档位"
+    ],
+    "reject_criteria": [
+      "精度代价（如PPL升至21.36量级）超出可接受范围，或加速依赖未披露的通信占比而不可复现"
+    ],
+    "limitations": [
+      "首版仅覆盖单机H100与Qwen-7B级张量/流水并行口径"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应齐备，且与既有候选及Idea的身份元组不同（NVFP4权重推理候选属MoE权重显存带宽墙、INT8训练随机舍入候选属TPU计算侧量化、Mac集群归约候选属MPS分布式后端缺口，均非训练集合通信的FP4压缩）；但仅有单一arXiv预印本独立分组支撑，仅Qwen-7B单机实验、通信量缩减字节与互连细节未见、流水并行最高仅1.01倍、分组256时PPL升至21.36的精度代价边界未划定，缺独立复现，先观察。",
+  "related_candidate_ids": [
+    "candidate_677162bb3beb92db288b",
+    "candidate_2869e9753cbf999dc290"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_c9f98be4c29edd62efc3",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应齐备，且与既有候选及Idea的身份元组不同（NVFP4权重推理候选属MoE权重显存带宽墙、INT8训练随机舍入候选属TPU计算侧量化、Mac集群归约候选属MPS分布式后端缺口，均非训练集合通信的FP4压缩）；但仅有单一arXiv预印本独立分组支撑，仅Qwen-7B单机实验、通信量缩减字节与互连细节未见、流水并行最高仅1.01倍、分组256时PPL升至21.36的精度代价边界未划定，缺独立复现，先观察。",
+      "evidence_item_ids": [
+        "398597b26090cf365e0505bc"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

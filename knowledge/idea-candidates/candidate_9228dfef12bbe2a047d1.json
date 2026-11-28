@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_9228dfef12bbe2a047d1",
+  "identity": {
+    "problem_key": "tool_call_autoregressive_decode_latency",
+    "mechanism_key": "per_user_call_memory_speculative_drafting",
+    "target_key": "tool_agent_serving"
+  },
+  "idea_type": "solution_concept",
+  "title": "按用户调用记忆做工具调用投机解码配在线写回与副作用门控",
+  "problem": "工具调用Agent的主要时延来自逐词自回归解码，重复用户的大量调用模式可预知。",
+  "hypothesis": "每用户在线更新的LRU调用记忆取最近邻作草稿、验证通过后写回，并对声明不可逆副作用的调用在验证完成前推迟执行，可显著加速解码且不引入错误不可逆执行；静态冻结缓存会随任务漂移失效。",
+  "mechanism": "容量48的按用户LRU加余弦最近邻检索作草稿；在线写回；不可逆副作用声明门控。",
+  "target": "多会话工具Agent服务",
+  "expected_effect": "解码加速最高1.74倍，预热后接受token较冻结基线在BFCL提升27%、Seal-Tools提升34%，副作用门控把错误不可逆执行降为零。",
+  "topic_ids": [
+    "agent_acceleration"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-27",
+    "rationale": "单条已发表记录给出问题、机制、目标与可检验效应。"
+  },
+  "evidence": [
+    {
+      "item_id": "0f8f0782f43e62451d8d7661",
+      "issue_date": "2026-10-27",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.31840v1"
+      ],
+      "reason": "SPECMEM给出按用户调用记忆投机草稿、在线写回与副作用门控机制及最高1.74倍加速与冻结基线对照。",
+      "independence_group": "arxiv:2610.31840"
+    }
+  ],
+  "evidence_item_ids": [
+    "0f8f0782f43e62451d8d7661"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.31840v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.31840"
+  ],
+  "unknowns": [
+    "重复行为由基准任务模拟生成",
+    "预热覆盖全部任务时增益缩至约2%",
+    "未在代码Agent轨迹上验证"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在真实多用户工具Agent流量上复现按用户调用记忆投机解码",
+    "inputs": [
+      "多用户会话轨迹",
+      "副作用声明集",
+      "冷启动与新任务混合负载"
+    ],
+    "baselines": [
+      "无投机基线",
+      "冻结静态缓存"
+    ],
+    "metrics": [
+      "解码加速比",
+      "接受token数",
+      "错误不可逆执行数"
+    ],
+    "support_criteria": [
+      "加速两成以上且不可逆错误为零，静态基线随漂移失效"
+    ],
+    "reject_criteria": [
+      "真实流量增益与模拟不成立或门控时延不可接受"
+    ],
+    "limitations": [
+      "评测为模拟流量"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与边界证据完整（含静态缓存失效对照），但为模拟流量且未覆盖代码Agent轨迹，先观察。",
+  "related_candidate_ids": [
+    "candidate_c6d5b30460e42e21f238"
+  ],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-10-27",
+  "last_updated_issue": "2026-10-27",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_2fcc213aad8bbb9b40e",
+      "issue_date": "2026-10-27",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与边界证据完整（含静态缓存失效对照），但为模拟流量且未覆盖代码Agent轨迹，先观察。",
+      "evidence_item_ids": [
+        "0f8f0782f43e62451d8d7661"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

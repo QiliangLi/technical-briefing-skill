@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_0700dd4855109f3b7938",
+  "identity": {
+    "problem_key": "kvcache_cost_grows_with_length",
+    "mechanism_key": "fixed_circulant_memory_attention_readout",
+    "target_key": "transformer_inference_state"
+  },
+  "idea_type": "solution_concept",
+  "title": "用固定容量循环记忆单元替代KVCache：推理状态恒定从根因消解跨域KV传输与放置",
+  "problem": "Transformer的KVCache体积与单token成本随上下文长度增长，跨域场景需要传输、放置与管理的序列状态随之线性膨胀，这是跨域KV传输与放置问题的架构层根源。",
+  "hypothesis": "若以固定数量记忆单元的循环状态加注意力读取替代KVCache，序列状态体积与上下文长度解耦为常数，跨域需同步与放置的推理状态载荷随之有界。",
+  "mechanism": "每个记忆单元是复数对角循环矩阵的动力学系统，按输入相关的leak rate在旧状态与候选状态间插值更新；解码器仅以注意力读取各单元当前输出，不再维护随长度增长的KVCache。",
+  "target": "Transformer推理的架构层序列状态（KVCache的替代表示），即跨域场景中需传输与放置的推理状态对象",
+  "expected_effect": "H100随机权重实测：prefill后状态约68KB（Mamba约1000KB），单token 1.6ms最低；OWT困惑度33.93落后Mamba的20.15。跨域收益为根因推断：状态恒定使跨域传输与放置的对象体积不随上下文增长。",
+  "topic_ids": [
+    "cross_region"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-09",
+    "rationale": "单条已发布记录同时给出问题（KVCache与单token成本随长度增长）、可解释机制（复数对角循环矩阵记忆单元按输入相关leak rate插值更新、注意力读取）、目标对象（架构层推理状态）与可检验效应（prefill后状态约68KB对Mamba约1000KB、单token 1.6ms、OWT困惑度33.93对20.15）。"
+  },
+  "evidence": [
+    {
+      "item_id": "e5864328b0087cc65228153c",
+      "issue_date": "2026-11-09",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.41850v1"
+      ],
+      "reason": "《DMT用固定循环记忆替代KVCache，推理状态恒定》给出问题、机制、目标与H100随机权重实测；边界为语言建模与zero-shot落后Mamba、规模止于125M、prefill因M²注意力远高于Mamba。",
+      "independence_group": "arxiv:2610.41850"
+    }
+  ],
+  "evidence_item_ids": [
+    "e5864328b0087cc65228153c"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.41850v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.41850"
+  ],
+  "unknowns": [
+    "语言建模与zero-shot质量显著落后Mamba（OWT困惑度33.93对20.15），质量差距随规模扩大的收敛性未知",
+    "实测止于125M随机权重，无真实训练的大模型或下游任务结果",
+    "prefill因M²注意力代价远高于Mamba，长上下文下prefill成本边界未给出",
+    "跨域收益为根因路线推断，无WAN RTT、传输字节或P95实测",
+    "单一预印本，无独立复现"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在125M至1B级Transformer上实现固定容量循环记忆单元替代KVCache（复数对角循环矩阵单元、输入相关leak rate插值更新、注意力读取），真实训练后度量状态字节、单token时延、困惑度与下游任务，并在可控WAN仿真链路上度量跨域状态传输体积与TTFT。",
+    "inputs": [
+      "125M-1B级Transformer实现",
+      "OWT类预训练语料",
+      "长上下文与多轮Agent负载",
+      "WAN时延与带宽矩阵（跨域段）"
+    ],
+    "baselines": [
+      "标准KVCache Transformer",
+      "Mamba类循环状态基线",
+      "KV压缩或量化传输管线"
+    ],
+    "metrics": [
+      "prefill后状态字节数及其随上下文长度的增长曲线",
+      "单token时延与prefill开销",
+      "困惑度与下游任务分数",
+      "跨域传输字节与TTFT/P95"
+    ],
+    "support_criteria": [
+      "状态字节与上下文长度解耦为常数，且跨域仿真段传输体积与TTFT显著低于KVCache管线",
+      "质量损失随规模扩大收敛到可接受界内"
+    ],
+    "reject_criteria": [
+      "质量差距随规模不收敛",
+      "M² prefill开销在长上下文上抵消恒定状态的收益"
+    ],
+    "limitations": [
+      "原始结果为125M随机权重与困惑度口径，跨域段为仿真外推而非实测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素齐全且身份区别于既有候选与Idea：既有循环架构类候选（随机深度共享末轮KV、跨轮收敛共享加保留时程打包）均在保留KV缓存的前提下压缩或共享它，无既有身份以固定容量循环记忆在架构层取消KVCache；但证据为单一预印本、仅125M随机权重实测、质量显著落后Mamba且prefill更贵，跨域收益是根因推断无实测，缺独立支持与适用边界确认。",
+  "related_candidate_ids": [
+    "candidate_fe89d9e56f50de65c1e3",
+    "candidate_6640dfa217e4a75ed5f0"
+  ],
+  "related_idea_ids": [
+    "idea_d994d97852383184acfe"
+  ],
+  "first_seen_issue": "2026-11-09",
+  "last_updated_issue": "2026-11-09",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_f70ba933e8eac07eefa4",
+      "issue_date": "2026-11-09",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素齐全且身份区别于既有循环架构类候选（均为压缩或共享既有KV而非取消KV），但单一预印本仅125M随机权重实测、质量落后Mamba且prefill更贵，跨域收益为根因推断，缺独立支持与适用边界确认。",
+      "evidence_item_ids": [
+        "e5864328b0087cc65228153c"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

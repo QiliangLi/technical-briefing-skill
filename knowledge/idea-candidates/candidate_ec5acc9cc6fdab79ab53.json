@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_ec5acc9cc6fdab79ab53",
+  "identity": {
+    "problem_key": "serverless_llm_cold_start_duplicated_init",
+    "mechanism_key": "worm_shared_pool_cas_slot_table",
+    "target_key": "serverless_llm_inference"
+  },
+  "idea_type": "solution_concept",
+  "title": "写一次读多次共享CXL池加CAS租约槽表消除Serverless LLM重复冷启动开销",
+  "problem": "Serverless LLM冷启动长达57-85秒，其中仅5-11%用于加载权重，其余是每台服务器重复执行的编译与引擎初始化；多服务器各自重建相同工件既拖慢扩容又浪费内存。",
+  "hypothesis": "把权重、编译代码与编译键发布到写一次后只读的共享CXL内存池，后续服务器经DMA原地读取并以CAS加租约的槽表索引工件，可在规避多写一致性的同时把冷启动从57-85秒降至11.0-21.0秒、请求流中位TTFT降64%/p90降72%；若共享原地读取不能消除重复编译初始化，或CAS槽表争用随服务器数扩展吞没收益，则该假设被证伪。",
+  "mechanism": "首启服务器把权重、编译代码与编译键写入写一次后只读的共享池，槽表索引用CAS加租约更新，其余服务器经DMA原地读取同一份工件，免除各自的重复编译与初始化。",
+  "target": "多服务器Serverless LLM推理（sllm+vLLM栈，六个1B-14B模型）的冷启动路径",
+  "expected_effect": "六个1B-14B模型冷启动从57-85秒降至11.0-21.0秒（缩短4.1-5.2倍），请求流上中位TTFT降64%、p90降72%。",
+  "topic_ids": [
+    "memory_dsa"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-18",
+    "rationale": "单条已发表系统记录（Cairn）同时给出具体问题、可解释机制、目标对象与可检验效应，构成本期直接触发候选。"
+  },
+  "evidence": [
+    {
+      "item_id": "6df5dbff0cb942224f410949",
+      "issue_date": "2026-11-18",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.16180v1"
+      ],
+      "reason": "Cairn给出问题（冷启动仅5-11%用于加载权重、其余为各服务器重复的编译与初始化，57-85秒）、机制（权重与引擎工件发布到写一次后只读的共享CXL池、其余服务器经DMA原地读取、槽表以CAS加租约更新）、目标（多服务器Serverless LLM推理的冷启动路径）与可检验效应（冷启动降至11.0-21.0秒、请求流中位TTFT降64%/p90降72%）；边界：未用真实CXL硬件，池以远端NUMA加两台VM模拟，集群规模结果是仿真，首次发布让首载慢22-23%。",
+      "independence_group": "arxiv:2611.16180"
+    }
+  ],
+  "evidence_item_ids": [
+    "6df5dbff0cb942224f410949"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.16180v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.16180"
+  ],
+  "unknowns": [
+    "单一arXiv来源构成单独立性分组，无独立复现",
+    "池以远端NUMA加两台VM模拟、未用真实CXL硬件，集群规模结果是仿真；真实CXL下多服务器并发CAS租约争用未测",
+    "首次发布让首载慢22-23%，模型或工件频繁更新场景下的摊销边界未知",
+    "该证据本期已作为相邻领域结构证据进入idea_2f2161ae7470caca28bb，本候选是否独立成Idea的谱系归属待人工决策"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "在真实CXL内存池上实现写一次读多次工件池与CAS租约槽表，多台服务器经DMA原地读取，运行Serverless LLM栈回放冷启动与请求流。",
+    "inputs": [
+      "六个1B-14B模型的权重与编译工件",
+      "Serverless冷启动与请求流负载轨迹",
+      "并发服务器数与槽表更新速率扫描"
+    ],
+    "baselines": [
+      "sllm+vLLM每服务器独立加载（57-85秒冷启动）",
+      "无CAS租约的朴素共享只读挂载",
+      "远端NUMA加两台VM的模拟形态（Cairn原配置）"
+    ],
+    "metrics": [
+      "冷启动时间",
+      "中位与p90 TTFT",
+      "首载开销（首次发布惩罚）",
+      "槽表CAS争用与租约更新开销"
+    ],
+    "support_criteria": [
+      "真实CXL多服务器下冷启动仍较独立加载缩短约4倍以上，且请求流TTFT中位/p90改善保持",
+      "目标服务器规模下槽表CAS争用有界"
+    ],
+    "reject_criteria": [
+      "真实CXL带宽时延使DMA原地读取收益消失",
+      "CAS租约争用随服务器数扩展劣化冷启动或尾延迟"
+    ],
+    "limitations": [
+      "原型绑定特定CXL拓扑与Serverless栈",
+      "首次发布22-23%惩罚在工件频繁更新场景可能放大",
+      "集群规模结论需仿真外推"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "四要素完整且身份与既有候选和Idea不同（问题为Serverless冷启动重复初始化而非KV容量、向量换页或跨节点页缓存一致性，机制为WORM共享池加CAS槽表而非混合内存服务、交换机一致性目录或公平准入，目标为Serverless LLM推理冷启动），但证据仅单一独立性分组（arXiv:2611.16180）无独立复现，池以两台VM加远端NUMA模拟、无真实CXL硬件、集群规模为仿真、首次发布使首载慢22-23%构成适用边界；且该证据本期已是idea_2f2161ae7470caca28bb的相邻领域结构证据，是否独立成Idea的谱系决策留待人工，故列为deferred。",
+  "related_candidate_ids": [
+    "candidate_2f2161ae7470caca28bb",
+    "candidate_68a0b3404f5d3b4cb63a"
+  ],
+  "related_idea_ids": [
+    "idea_2f2161ae7470caca28bb"
+  ],
+  "first_seen_issue": "2026-11-18",
+  "last_updated_issue": "2026-11-18",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_d628ff0f26139388d2",
+      "issue_date": "2026-11-18",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "四要素完整且身份与既有候选和Idea不同（问题为Serverless冷启动重复初始化而非KV容量、向量换页或跨节点页缓存一致性，机制为WORM共享池加CAS槽表而非混合内存服务、交换机一致性目录或公平准入，目标为Serverless LLM推理冷启动），但证据仅单一独立性分组（arXiv:2611.16180）无独立复现，池以两台VM加远端NUMA模拟、无真实CXL硬件、集群规模为仿真、首次发布使首载慢22-23%构成适用边界；且该证据本期已是idea_2f2161ae7470caca28bb的相邻领域结构证据，是否独立成Idea的谱系决策留待人工，故列为deferred。",
+      "evidence_item_ids": [
+        "6df5dbff0cb942224f410949"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

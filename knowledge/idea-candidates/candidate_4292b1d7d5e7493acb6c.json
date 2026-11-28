@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_4292b1d7d5e7493acb6c",
+  "identity": {
+    "problem_key": "gqa_head_independent_eviction_budget_overrun",
+    "mechanism_key": "group_entropy_pooled_page_aligned_eviction",
+    "target_key": "gqa_kv_cache_eviction_path"
+  },
+  "idea_type": "solution_concept",
+  "title": "GQA驱逐用组内熵权重池化并页帧对齐以按构造封顶缓存预算",
+  "problem": "GQA架构下KVCache驱逐若逐head独立打分驱逐，共享KV缓冲必须保留各head保留集的并集，实测缓存最多膨胀到预算的5.10倍，预算约束被破坏，且驱逐粒度与硬件分配粒度（PagedAttention页帧）不对齐。",
+  "hypothesis": "把逐head独立驱逐改为在物理GQA组内用sink隔离的Rényi-2熵权重池化各head分数、并把驱逐投影到PagedAttention页帧粒度，可在保持检索质量下按构造保证缓存占用恒等于预算（1008次测量恒为1.0，对照逐head驱逐并集最高5.10倍），且20%预算needle检索显著优于平均池化（100%对0%）。",
+  "mechanism": "在物理GQA组内以sink隔离的Rényi-2熵权重把各head驱逐分数池化为组级单一分数序列，再将驱逐投影到PagedAttention页帧粒度执行，与硬件分配粒度对齐；保留集为组级共识而非head并集，从而按构造保证预算不超限。",
+  "target": "GQA架构LLM的KVCache驱逐策略（PagedAttention页帧粒度的组内池化打分与驱逐决策点）。",
+  "expected_effect": "逐head独立驱逐并集开销最高5.10倍预算时，本方法1008次测量缓存/预算比值恒为1.0；20%预算needle检索100%对平均池化0%；边界为仅Qwen2.5-1.5B试点、无serving吞吐实测、strict判据下深度0召回仅0.00-0.33。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-11",
+    "rationale": "单条已发布记录同时给出问题（GQA下逐head独立驱逐迫使共享KV缓冲保留并集、缓存最多膨胀到预算的5.10倍）、可解释机制（物理GQA组内用sink隔离的Rényi-2熵权重池化各head分数，再投影到PagedAttention页帧驱逐，与硬件分配粒度对齐）、目标对象（GQA模型KVCache驱逐策略）与可检验效应（1008次测量预算比值恒为1.0对并集最高5.10倍、20%预算needle检索100%对平均池化0%）。"
+  },
+  "evidence": [
+    {
+      "item_id": "b31255edd83a780764e98b71",
+      "issue_date": "2026-11-11",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.03135v1"
+      ],
+      "reason": "Page-EntroKV给出问题（GQA下逐head独立驱逐迫使共享KV缓冲保留并集，实测缓存最多膨胀到预算的5.10倍）、机制（物理GQA组内用sink隔离的Rényi-2熵权重池化各head分数，再投影到PagedAttention页帧驱逐，与硬件分配粒度对齐）、目标（GQA模型KVCache驱逐策略）与可检验效应（head独立驱逐并集开销最高5.10倍，本方法1008次测量恒为1.0；20%预算needle检索100%对平均池化0%）；边界为仅Qwen2.5-1.5B试点、无serving吞吐实测、strict判据下深度0召回仅0.00-0.33。",
+      "independence_group": "arxiv:2610.03135"
+    }
+  ],
+  "evidence_item_ids": [
+    "b31255edd83a780764e98b71"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.03135v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.03135"
+  ],
+  "unknowns": [
+    "仅Qwen2.5-1.5B单模型试点，跨规模与跨GQA分组结构的外推未知",
+    "无serving吞吐实测，组内池化打分与页帧对齐驱逐的运行时开销未量化",
+    "strict判据下深度0召回仅0.00-0.33，质量边界未系统刻画",
+    "熵权重池化与层异质性预算、未来查询等其他驱逐信号的组合未评估",
+    "单一预印本，无独立工作线复现"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在统一KVCache驱逐框架中实现GQA组内sink隔离Rényi-2熵权重池化打分加PagedAttention页帧对齐驱逐，对照逐head独立驱逐与平均池化。",
+    "inputs": [
+      "Qwen2.5-1.5B复现口径加多规模GQA模型",
+      "KV预算扫描（含20%档）",
+      "needle检索与LongBench/RULER负载",
+      "页帧对齐开/关与池化方式（熵权重/平均）消融"
+    ],
+    "baselines": [
+      "逐head独立驱逐（并集保留口径）",
+      "平均池化打分驱逐",
+      "全量注意力（质量上界参照）"
+    ],
+    "metrics": [
+      "缓存占用/预算比值与预算违约次数",
+      "needle检索召回率",
+      "LongBench/RULER任务分数",
+      "打分与驱逐路径运行时开销"
+    ],
+    "support_criteria": [
+      "预算比值恒为1.0（1008次口径无违约）且20%预算needle检索显著优于平均池化",
+      "多规模GQA模型上任务分数不劣于逐head并集保留口径"
+    ],
+    "reject_criteria": [
+      "组内池化打分在多跳或长文档负载上质量显著低于逐head并集保留",
+      "页帧对齐驱逐的运行时开销超过预算受控带来的收益"
+    ],
+    "limitations": [
+      "原始证据仅Qwen2.5-1.5B试点且无serving吞吐实测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "机制与效应完整且与既有驱逐打分/粒度类候选不同义（candidate_80a11fa68bdf30c34571为层形状加未来查询打分信号、candidate_d4ad44954f43a2562f13与idea_d4ad44954f43a2562f13为打分层深度选择、idea_18458bcb48f7ddff4d4c为驱逐即降级冷层，均非GQA组内head分数池化加页帧对齐的预算构造保证），但证据为单一预印本，仅Qwen2.5-1.5B试点、无serving吞吐实测、strict判据下深度0召回仅0.00-0.33，无独立支持，先观察。",
+  "related_candidate_ids": [
+    "candidate_80a11fa68bdf30c34571",
+    "candidate_d4ad44954f43a2562f13"
+  ],
+  "related_idea_ids": [
+    "idea_d4ad44954f43a2562f13"
+  ],
+  "first_seen_issue": "2026-11-11",
+  "last_updated_issue": "2026-11-11",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_5d10b65d18aa188b3232",
+      "issue_date": "2026-11-11",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "机制与效应完整且与既有驱逐打分/粒度类候选不同义（candidate_80a11fa68bdf30c34571为层形状加未来查询打分信号、candidate_d4ad44954f43a2562f13与idea_d4ad44954f43a2562f13为打分层深度选择、idea_18458bcb48f7ddff4d4c为驱逐即降级冷层，均非GQA组内head分数池化加页帧对齐的预算构造保证），但证据为单一预印本，仅Qwen2.5-1.5B试点、无serving吞吐实测、strict判据下深度0召回仅0.00-0.33，无独立支持，先观察。",
+      "evidence_item_ids": [
+        "b31255edd83a780764e98b71"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

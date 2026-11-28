@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_0c2408e7b9490dce060f",
+  "identity": {
+    "problem_key": "per_layer_independent_full_kv_cache_growth",
+    "mechanism_key": "cross_layer_base_delta_kv_path",
+    "target_key": "gqa_mla_transformer_kv_cache"
+  },
+  "idea_type": "solution_concept",
+  "title": "KVPath以第0层全维基KV加后续层低维delta的跨层路径压缩GQA/MLA推理的KV缓存体积",
+  "problem": "Transformer每层独立缓存全量KV，显存随长度与深度线性增长。对状态感知网络而言，这份逐层全量的KVCache字节正是跨节点交接要搬运的状态；该记录的相关性判断是缓存字节的削减原则上可等比缩小跨节点KVCache传输量、可纳入PD解耦成本估算，但文中无网络机制与端到端验证。",
+  "hypothesis": "若把每个token的KV沿深度连成路径，即第0层缓存全维基KV、其余各层只存由自身隐状态生成的低维delta KV并更新上层状态，则在参数匹配条件下GQA的KV缓存体积可减少67.19%至68.65%、MLA缓存可降至标准的45%至47%，同时困惑度不劣于基线（ResGQA低2.88%至3.48%）；压缩后的残余字节原则上可等比缩小跨节点KVCache传输量，但这一点在证据中只是原理性推断，尚无网络侧验证。",
+  "mechanism": "KVPath把token的KV沿深度连成路径：第0层缓存全维基KV；后续各层只存低维增量，即由自身隐状态生成低维delta KV并更新上层状态；提供残差与滚动两种变体。",
+  "target": "采用GQA或MLA注意力的Transformer在长上下文推理中的KV缓存，即模型侧逐层的缓存体积；跨节点KVCache传输是该缓存字节的下游环节，证据未对其做实测。",
+  "expected_effect": "参数匹配时GQA缓存减少67.19%至68.65%（最多68.65%），ResGQA困惑度低2.88%至3.48%；MLA缓存降至标准的45%至47%，困惑度不高于基线。以上均为解析缓存体积与困惑度口径的结果，不是实测服务吞吐；对跨节点KVCache传输量的等比缩减在证据中只是原理性推断，没有端到端验证。",
+  "topic_ids": [
+    "tpn"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-11-25",
+    "rationale": "Direct触发项单独给出完整的问题（每层独立缓存全量KV，显存随长度与深度线性增长）、机制（第0层全维基KV加其余各层由自身隐状态生成的低维delta KV）、目标（GQA/MLA的Transformer KV缓存）与可测效应（参数匹配下GQA缓存减少67.19%至68.65%、MLA降至标准的45%至47%及困惑度结果），候选直接落在该记录的跨层基KV加delta路径压缩机制上。"
+  },
+  "evidence": [
+    {
+      "item_id": "fc9a2fdbed7013ff0b3040c8",
+      "issue_date": "2026-11-25",
+      "source_urls": [
+        "https://arxiv.org/abs/2611.16072v1"
+      ],
+      "reason": "《KVPath以跨层路径方式压缩KV缓存体积》给出问题、机制与结果：Transformer每层独立缓存全量KV、显存随长度与深度线性增长；第0层缓存全维基KV，其余各层由自身隐状态生成低维delta KV并更新上层状态，提供残差与滚动两种变体；参数匹配时GQA缓存减少67.19%至68.65%、ResGQA困惑度低2.88%至3.48%，MLA缓存降至标准的45%至47%且困惑度不高于基线。实验规模止于约0.6B参数，未开发专用注意力内核，结果是解析缓存体积而非实测服务吞吐；文中无网络机制与端到端验证。",
+      "independence_group": "arxiv:2611.16072"
+    }
+  ],
+  "evidence_item_ids": [
+    "fc9a2fdbed7013ff0b3040c8"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2611.16072v1"
+  ],
+  "independence_groups": [
+    "arxiv:2611.16072"
+  ],
+  "unknowns": [
+    "压缩后的残余字节在真实PD交接与跨节点KVCache传输中占多少、传输量是否随缓存体积等比下降未经检验：文中无网络机制与端到端验证，等比缩小传输量只是原理性推断。",
+    "实验规模止于约0.6B参数且未开发专用注意力内核，更大规模模型上的缓存收益、delta生成与状态更新带来的运行时开销均无数据。",
+    "结果是解析缓存体积而非实测服务吞吐，对TTFT、TPOT等服务指标的影响未知。",
+    "已发布结论只报告ResGQA的困惑度（低2.88%至3.48%），滚动变体的缓存缩减与质量数字以及参数匹配对照的具体设置均未说明。",
+    "基KV加delta的跨层表示能否与精度位、低秩、发送端裁剪等既有表示轴（candidate_a3452ab66b5ff7c4a45e）叠加使用，误差叠加界未知。",
+    "该记录已于2026-11-25进入idea_f7841984fcce6a274881的证据链，被用作传输字节量可在模型侧预先压缩的判断依据与代价估算输入；本候选独立成案还是并入该Idea需人工世系决定。",
+    "证据仅单一arXiv独立组（arxiv:2611.16072），无独立复现。"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在双节点P/D解耦测试床上，以第0层全维基KV加其余各层低维delta KV的布局替换逐层全量KV，实测每token每层的存储字节与交接传输字节并与解析体积对账，对照参数匹配的标准GQA/MLA全量KV交接，补测并发端到端TTFT/TPOT/P95与delta生成、状态更新的运行时开销。",
+    "inputs": [
+      "双节点GPU测试床与P/D解耦serving栈",
+      "实现跨层基KV加delta布局的模型（含delta生成与状态更新）及参数匹配的标准对照",
+      "GQA与MLA两类注意力模型，含超出约0.6B的参数规模档位",
+      "残差与滚动两种变体",
+      "序列长度与交接KV规模扫描",
+      "互连带宽档位扫描",
+      "困惑度与长上下文任务质量评测集"
+    ],
+    "baselines": [
+      "参数匹配的标准GQA/MLA逐层全量KV缓存与全量交接（证据内基线）",
+      "仅做传输侧压缩的全量KV交接路径",
+      "idea_f7841984fcce6a274881的传输/重算/就地计算代价选择策略（以压缩后残余字节为代价估算输入）"
+    ],
+    "metrics": [
+      "每token每层KV存储字节与交接传输字节",
+      "解析体积与实测体积的偏差",
+      "并发端到端TTFT/TPOT/P95",
+      "困惑度与长上下文任务质量",
+      "delta生成与状态更新的运行时开销"
+    ],
+    "support_criteria": [
+      "实测存储与交接字节按证据量级复现（GQA减少67.19%至68.65%、MLA降至标准的45%至47%），且困惑度不劣于基线",
+      "交接字节的下降转化为P95交接完成时间或端到端TTFT的可测改善，并在多个带宽档位上保持"
+    ],
+    "reject_criteria": [
+      "实测字节或质量偏离解析口径，或delta生成、状态更新与缺失专用内核的开销吞没体积收益",
+      "交接字节下降在端到端TTFT/TPOT上无可测收益，或收益只在极窄的规模与长度点成立"
+    ],
+    "limitations": [
+      "原始证据止于约0.6B参数、无专用注意力内核且为解析缓存体积，更大规模与服务口径均需重新评测",
+      "原始证据无网络机制与端到端验证，跨节点传输收益属于外推"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可测效应完整，身份（模型侧以跨层基KV加低维delta路径压缩KV缓存体积）区别于既有候选与Idea；但证据仅单一arXiv独立组（arxiv:2611.16072），实验止于约0.6B参数、未开发专用注意力内核、结果为解析缓存体积而非实测服务吞吐，文中无网络机制与端到端验证，对TPN核心场景（跨节点KVCache传输）的适用边界未建立；且该记录已于2026-11-25进入idea_f7841984fcce6a274881的证据链（作为传输字节量可在模型侧预先压缩的判断依据与代价估算输入），独立成案还是并入该Idea需人工世系决定，先延期观察。",
+  "related_candidate_ids": [
+    "candidate_27a9818d884661609569",
+    "candidate_a3452ab66b5ff7c4a45e"
+  ],
+  "related_idea_ids": [
+    "idea_f7841984fcce6a274881"
+  ],
+  "first_seen_issue": "2026-11-25",
+  "last_updated_issue": "2026-11-25",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_f671cde6cfbad245f360",
+      "issue_date": "2026-11-25",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可测效应完整，身份（模型侧以跨层基KV加低维delta路径压缩KV缓存体积）区别于既有候选与Idea；但证据仅单一arXiv独立组（arxiv:2611.16072），实验止于约0.6B参数、未开发专用注意力内核、结果为解析缓存体积而非实测服务吞吐，文中无网络机制与端到端验证，对TPN核心场景（跨节点KVCache传输）的适用边界未建立；且该记录已于2026-11-25进入idea_f7841984fcce6a274881的证据链（作为传输字节量可在模型侧预先压缩的判断依据与代价估算输入），独立成案还是并入该Idea需人工世系决定，先延期观察。",
+      "evidence_item_ids": [
+        "fc9a2fdbed7013ff0b3040c8"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

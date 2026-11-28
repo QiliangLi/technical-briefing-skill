@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_791733287c306fe0d68e",
+  "identity": {
+    "problem_key": "hybrid_llm_checkpoint_aligned_prefix_reuse",
+    "mechanism_key": "tail_replay_state_reconstruction",
+    "target_key": "page_granular_hybrid_prefix_cache"
+  },
+  "idea_type": "research_hypothesis",
+  "title": "混合架构模型尾部重放页粒度前缀复用与预算可迁移性",
+  "problem": "混合架构 LLM 的线性注意力状态无法回退到任意前缀边界，现有系统只能按检查点对齐复用，前缀复用粒度与存储被检查点位置锁死。",
+  "hypothesis": "在门控线性注意力混合模型上，命中时重放近期尾部（5%-10% 重放预算）即可在每个页边界复用前缀，保持≥92% 质量并获得≥2 倍 TTFT 收益；且单模型离线标定的重放预算跨模型迁移时标定误差不超过 2 倍。",
+  "mechanism": "把门控线性注意力视为有损压缩，缓存全注意力 KV 而不存循环状态检查点；仅保留线性层输入的稀疏锚点，命中时重放一段近期尾部重建循环状态，配锚点旁路与流水化重放路径、传输重叠与 FFN 跳过降低开销。",
+  "target": "混合架构 LLM 的页粒度前缀缓存层",
+  "expected_effect": "质量保留 92.8%-100%（两条工作线口径），存储降到检查点方案的 0.36-0.51 倍，32K 输入 TTFT 最高加速 14.32 倍。",
+  "topic_ids": [
+    "kv_management"
+  ],
+  "origin": {
+    "kind": "cross_issue_synthesis",
+    "trigger_issue": "2026-10-29",
+    "rationale": "SuffixReplay（2026-09-30）与 Tail-Replay（2026-10-29 触发项）两条独立工作线联合支持同一尾部重放重建机制，构成任何单条记录未给出的跨工作线确认。"
+  },
+  "evidence": [
+    {
+      "item_id": "01cc758fee82d15570fa42a8",
+      "issue_date": "2026-09-30",
+      "source_urls": [
+        "https://arxiv.org/abs/2609.33477v1"
+      ],
+      "reason": "SuffixReplay 使每个 64-token 页边界成为可复用命中点：三模型保持 91.4-100% 质量、存储为 SGLang 检查点的 0.36-0.51 倍、超 HBM 时吞吐达其 2.3-4.3 倍、中位 TTFT 降 15-70%。",
+      "independence_group": "arxiv:2609.33477"
+    },
+    {
+      "item_id": "a356fb1d228c266c8744ca41",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2608.30310v2"
+      ],
+      "reason": "Tail-Replay 独立实现同一机制：5%-10% 重放保留 92.8%-99.9% 质量、32K 下 TTFT 最高加速 14.32 倍，重叠传输与 FFN 跳过较串行再降 18%-42%，构成跨工作线佐证。",
+      "independence_group": "arxiv:2608.30310"
+    }
+  ],
+  "evidence_item_ids": [
+    "01cc758fee82d15570fa42a8",
+    "a356fb1d228c266c8744ca41"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2609.33477v1",
+    "https://arxiv.org/abs/2608.30310v2"
+  ],
+  "independence_groups": [
+    "arxiv:2609.33477",
+    "arxiv:2608.30310"
+  ],
+  "unknowns": [
+    "重放预算跨模型、跨线性注意力骨干的可迁移性",
+    "多请求并发与连续批处理下的重放路径开销",
+    "PD 分离部署与 MoE 混合模型行为",
+    "两篇证据均未与 Marconi 等检查点方案直接对比"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "两款混合架构开源模型（如 gated-deltaNet 骨干与另一种线性注意力骨干），先在一个模型上离线标定重放预算再迁移到第二个。",
+    "inputs": [
+      "重放预算扫描 2.5%-20%（步长 2.5%）",
+      "前缀长度 8K/32K/128K",
+      "锚点保留密度与 FFN 跳过开/关对照"
+    ],
+    "baselines": [
+      "全量预填充",
+      "SGLang 检查点对齐复用（SuffixReplay 的对照口径）"
+    ],
+    "metrics": [
+      "质量保留（LongBench/RULER 口径）",
+      "TTFT P50/P95",
+      "存储占用相对检查点方案比值",
+      "解码吞吐与 TPOT"
+    ],
+    "support_criteria": [
+      "两款模型质量保留≥92%",
+      "TTFT≥2 倍于全量预填充",
+      "跨模型预算标定误差≤2 倍"
+    ],
+    "reject_criteria": [
+      "任一模型质量保留<90%",
+      "预算不可迁移、需逐模型重标定",
+      "存储节省<30%"
+    ],
+    "limitations": [
+      "未覆盖多请求并发、连续批处理与 PD 分离",
+      "两篇证据均未与 Marconi 等检查点方案直接对比"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "duplicate",
+  "disposition_reason": "Tail-Replay 与 9 月末 SuffixReplay 的跨期综合已在本期提升为正式 Idea（idea_791733287c306fe0d68e），且与既有候选 candidate_7706ef7dd120bbd9856f 同义，按重复处置并指向现有 Idea。",
+  "related_candidate_ids": [
+    "candidate_7706ef7dd120bbd9856f"
+  ],
+  "related_idea_ids": [
+    "idea_791733287c306fe0d68e"
+  ],
+  "first_seen_issue": "2026-09-30",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_517b07b65be4014b12cb",
+      "issue_date": "2026-10-29",
+      "decision": "duplicate",
+      "from_disposition": null,
+      "to_disposition": "duplicate",
+      "reason": "Tail-Replay 与 9 月末 SuffixReplay 的跨期综合已在本期提升为正式 Idea（idea_791733287c306fe0d68e），且与既有候选 candidate_7706ef7dd120bbd9856f 同义，按重复处置并指向现有 Idea。",
+      "evidence_item_ids": [
+        "01cc758fee82d15570fa42a8",
+        "a356fb1d228c266c8744ca41"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

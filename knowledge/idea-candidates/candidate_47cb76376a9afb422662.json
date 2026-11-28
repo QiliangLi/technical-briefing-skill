@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_47cb76376a9afb422662",
+  "identity": {
+    "problem_key": "cpu_bottleneck_in_kv_datapath",
+    "mechanism_key": "gpu_initiated_io_plus_shared_context_layer",
+    "target_key": "inference_storage_stack"
+  },
+  "idea_type": "solution_concept",
+  "title": "GPU发起I/O控制面加共享上下文层组成无CPU数据路径的推理存储栈",
+  "problem": "推理的KV搬移与细粒度访问仍经过主机CPU数据路径，成为共享上下文复用的瓶颈。",
+  "hypothesis": "GPU线程直接发起并控制细粒度NVMe访问，配合端到端RDMA的共享上下文记忆层，可把CPU移出推理数据路径。",
+  "mechanism": "GPU侧客户端库发起<4KB访问并经服务守护进程管理NVMe；MemKV层以大块组织、驱逐块入共享池，经RDMA在显存与NVMe间移动。",
+  "target": "推理存储栈的KV与上下文数据路径",
+  "expected_effect": "容量与GPU解耦，KV重算税下降；预期数据路径时延进入微秒级（厂商宣称）。",
+  "topic_ids": [
+    "accelerator_io_datapath"
+  ],
+  "origin": {
+    "kind": "cross_source_synthesis",
+    "trigger_issue": "2026-09-04",
+    "rationale": "同期三条独立来源分别给出控制面下移、受保护卷IOPS与共享上下文层，联合支持无CPU数据路径的存储栈形态。"
+  },
+  "evidence": [
+    {
+      "item_id": "6d2d783dbbd72017f98515e0",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://www.h3platform.com/blog-detail/81"
+      ],
+      "reason": "SCADA解读确认GPU线程可发起并控制<4KB NVMe访问。",
+      "independence_group": "url:https://www.h3platform.com/blog-detail/81"
+    },
+    {
+      "item_id": "30d45b2e7f98cfb8329a6b56",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://graidtech.com/post/100-million-iops-for-gpu-initiated-io"
+      ],
+      "reason": "GRAID给出受保护卷上亿级GPU发起IOPS的宣称。",
+      "independence_group": "url:https://graidtech.com/post/100-million-iops-for-gpu-initiated-io"
+    },
+    {
+      "item_id": "dda95f5f23dfe81db0904c32",
+      "issue_date": "2026-09-04",
+      "source_urls": [
+        "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide"
+      ],
+      "reason": "MinIO给出MemKV共享上下文层与加速数据织物的参考架构。",
+      "independence_group": "url:https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide"
+    }
+  ],
+  "evidence_item_ids": [
+    "6d2d783dbbd72017f98515e0",
+    "30d45b2e7f98cfb8329a6b56",
+    "dda95f5f23dfe81db0904c32"
+  ],
+  "source_urls": [
+    "https://www.h3platform.com/blog-detail/81",
+    "https://graidtech.com/post/100-million-iops-for-gpu-initiated-io",
+    "https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide"
+  ],
+  "independence_groups": [
+    "url:https://www.h3platform.com/blog-detail/81",
+    "url:https://graidtech.com/post/100-million-iops-for-gpu-initiated-io",
+    "url:https://www.min.io/blog/the-complete-gpu-storage-stack-aistor-memkv-architecture-guide"
+  ],
+  "unknowns": [
+    "各层宣称数字均无第三方复测",
+    "微秒时延的负载与拓扑条件",
+    "与同类共享KV方案的对比缺口"
+  ],
+  "validation_plan": {
+    "mode": "prototype",
+    "minimal_model": "搭建GPU发起I/O加RDMA共享KV层原型，测KV搬运与驱逐复用路径的时延与吞吐。",
+    "inputs": [
+      "GPU发起I/O栈",
+      "RDMA网络",
+      "NVMe共享池",
+      "推理负载"
+    ],
+    "baselines": [
+      "主机CPU中转数据路径",
+      "无共享层的本地KV"
+    ],
+    "metrics": [
+      "KV搬运时延",
+      "每GPU有效IOPS",
+      "CPU占用",
+      "命中率"
+    ],
+    "support_criteria": [
+      "数据路径时延与CPU占用同时下降"
+    ],
+    "reject_criteria": [
+      "微秒时延不可复现或吞吐受限"
+    ],
+    "limitations": [
+      "厂商宣称数字未复测"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "三条证据全部为厂商或解读类材料，机制组合方向明确但缺独立量化支持。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [],
+  "first_seen_issue": "2026-09-04",
+  "last_updated_issue": "2026-09-04",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_6677c122142ccb879e05",
+      "issue_date": "2026-09-04",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "三条证据全部为厂商或解读类材料，机制组合方向明确但缺独立量化支持。",
+      "evidence_item_ids": [
+        "6d2d783dbbd72017f98515e0",
+        "30d45b2e7f98cfb8329a6b56",
+        "dda95f5f23dfe81db0904c32"
+      ],
+      "actor": "agent"
+    }
+  ]
+}

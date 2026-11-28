@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "candidate_id": "candidate_dbcdbe6cf77d0c2b841c",
+  "identity": {
+    "problem_key": "gpu_analytics_hbm_capacity_wall",
+    "mechanism_key": "decompression_fused_first_class_operator",
+    "target_key": "gpu_analytical_query_engines"
+  },
+  "idea_type": "solution_concept",
+  "title": "把解压做成编译引擎一等算子融合进单内核以降低GPU分析引擎HBM占用",
+  "problem": "GPU分析引擎受限于HBM容量，A100到B300单位美元显存时长反降为0.93倍，而压缩列解压后的值仍要写回HBM，占用本已稀缺的显存。",
+  "hypothesis": "把瓦片解压做成编译引擎的一等算子并与逐元组执行融合进单个生成内核，解码值留在片上不写回HBM，可在可接受运行开销下显著降低HBM占用。",
+  "mechanism": "协作解压与逐元组执行融合进单个生成内核；新编码经窄接口接入而无需改下游算子；线程块按tpb×ipt划分并把占用率当作可调权衡。",
+  "target": "GPU分析型查询引擎（Proteus、HeavyDB）上的压缩列执行内核",
+  "expected_effect": "相对未压缩Proteus，FLBP-Shared省54%显存且开销8%，RFOR-Shared省60%但开销45%；对HeavyDB省46%到53%显存。",
+  "topic_ids": [
+    "ai_chip_accelerator"
+  ],
+  "origin": {
+    "kind": "single_evidence",
+    "trigger_issue": "2026-10-29",
+    "rationale": "单条已发布记录同时给出问题、可解释机制、目标对象与可检验效应，且其身份元组与既有候选及Idea不同。"
+  },
+  "evidence": [
+    {
+      "item_id": "5c8313fdb9163c2a11ea5240",
+      "issue_date": "2026-10-29",
+      "source_urls": [
+        "https://arxiv.org/abs/2610.32695v1"
+      ],
+      "reason": "《Proteus把GPU解压融合进单内核以降低HBM占用》给出问题（A100到B300单位美元显存时长反降为0.93倍）、机制（协作解压与逐元组执行融合进单个生成内核、解码值留在片上不写回HBM、新编码经窄接口接入）、目标（GPU分析引擎）与可检验效应（FLBP-Shared省54%显存且开销8%、RFOR-Shared省60%但开销45%、HeavyDB省46%至53%）。",
+      "independence_group": "arxiv:2610.32695"
+    }
+  ],
+  "evidence_item_ids": [
+    "5c8313fdb9163c2a11ea5240"
+  ],
+  "source_urls": [
+    "https://arxiv.org/abs/2610.32695v1"
+  ],
+  "independence_groups": [
+    "arxiv:2610.32695"
+  ],
+  "unknowns": [
+    "单arXiv v1预印本，缺独立复现",
+    "专用解压内核仍快2.7至4.7倍，融合内核的速度收益上限存疑",
+    "共享内存暂存量随投影列数增长，宽投影下的可扩展性未界定",
+    "摘要中的4倍与6倍加速缺少可见出处"
+  ],
+  "validation_plan": {
+    "mode": "benchmark",
+    "minimal_model": "在GPU分析引擎上复现解压融合进单内核的执行方式，并同时报告显存占用与运行开销。",
+    "inputs": [
+      "压缩列存数据集",
+      "投影列数档位",
+      "tpb×ipt线程块配置"
+    ],
+    "baselines": [
+      "未压缩执行",
+      "解压后写回HBM的分离内核",
+      "专用解压内核"
+    ],
+    "metrics": [
+      "HBM显存占用",
+      "相对运行开销",
+      "内核时长",
+      "线程块占用率"
+    ],
+    "support_criteria": [
+      "显存节省接近报告区间且相对开销可控",
+      "宽投影下共享内存不成为硬边界"
+    ],
+    "reject_criteria": [
+      "宽投影下共享内存溢出，或开销增幅超过显存收益"
+    ],
+    "limitations": [
+      "结论绑定GPU分析引擎与列式负载，不直接外推到训练负载"
+    ],
+    "execution_status": "suggestion_only"
+  },
+  "disposition": "deferred",
+  "disposition_reason": "问题、机制、目标与可检验效应完整，且与既有格式选型、UVM预取、内核闭环等候选及Idea的身份元组不同；但系单源arXiv v1预印本缺独立复现，专用解压内核仍快2.7至4.7倍、摘要4倍与6倍数字缺可见出处，且共享内存暂存量随投影列数增长，先观察。",
+  "related_candidate_ids": [],
+  "related_idea_ids": [
+    "idea_0beeab7573d3f58b0330"
+  ],
+  "first_seen_issue": "2026-10-29",
+  "last_updated_issue": "2026-10-29",
+  "decision_log": [
+    {
+      "event_id": "candidate_decision_f6e7d47634ec5a0a8164",
+      "issue_date": "2026-10-29",
+      "decision": "deferred",
+      "from_disposition": null,
+      "to_disposition": "deferred",
+      "reason": "问题、机制、目标与可检验效应完整，且与既有格式选型、UVM预取、内核闭环等候选及Idea的身份元组不同；但系单源arXiv v1预印本缺独立复现，专用解压内核仍快2.7至4.7倍、摘要4倍与6倍数字缺可见出处，且共享内存暂存量随投影列数增长，先观察。",
+      "evidence_item_ids": [
+        "5c8313fdb9163c2a11ea5240"
+      ],
+      "actor": "agent"
+    }
+  ]
+}
