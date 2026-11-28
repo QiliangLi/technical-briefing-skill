@@ -263,7 +263,10 @@ class World:
         """What a careful host session writes: cite the first candidate carrying an expected term, or stay silent."""
 
         payload = self.task_input(task)
-        chosen = next((item for item in payload["candidates"] if any(term in item["title"] for term in expect_any)), None)
+        chosen = next(
+            (item for item in payload["candidates"] if any(term in f"{item['title']} {item.get('summary', '')}" for term in expect_any)),
+            None,
+        )
         return self.assessment(task, matched=("prior_art",) if chosen else (), doc_id=chosen["id"] if chosen else None)
 
     def apply(self, task: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:

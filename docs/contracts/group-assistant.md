@@ -16,14 +16,17 @@ Four document kinds are indexed, each with a stable ID:
 
 | Kind | ID | Indexed text | Link |
 | --- | --- | --- | --- |
-| Briefing item | `item:<brief_item_id>` | title and keywords (weighted), core conclusion, mechanism | `#archive?date=<issue>&item=<id>` |
+| Briefing item | `item:<brief_item_id>` | title and keywords (weighted), reader lead, core conclusion, mechanism, result, boundary | `#archive?date=<issue>&item=<id>` |
 | Radar entry | `radar:<paper_key>` | title (weighted), topic and direction names | `#archive?date=<issue>` |
 | Idea | `idea:<idea_id>` | title (weighted), problem, hypothesis, mechanism | `#ideas?idea=<id>` |
 | Roadmap | `roadmap:<topic_id>` | topic name (weighted), summary, branch names and open questions | `#roadmaps?topic=<id>` |
+| Issue judgement | `judgement:<issue>:<n>` | title (weighted) and body, from the issue's reader projection | `#archive?date=<issue>` |
+
+Every document also carries what a reply may quote without a model writing it: `headline` and `lead` from the reader card in `archive/issues/<date>/reader.json`, and for an item `result`, `boundary` and `project_relevance`. All of it is published and checked.
 
 Links are built from `site_base_url` and an ID in the index; the published site's hash routes are the only targets. The snapshot's name is a digest of its inputs, so the same corpus and site address always rebuild byte-identical content apart from the timestamp, and a changed input yields a different digest. `assistant index build` rebuilds; `assistant index validate` reports whether the stored snapshot matches.
 
-Retrieval is lexical: English words plus Chinese character bigrams, BM25 with titles and keywords weighted, and no segmentation dependency. A question is answered directly only when the best hit explains enough of it: strength, coverage and matched units each have to clear a fixed bar. Otherwise the question goes to a refinement task. `assistant ask` shows the decision for one question; `assistant eval` scores the question set in `eval/assistant-questions.json`.
+Retrieval is lexical: English words plus Chinese character bigrams, BM25 with titles and keywords weighted, and no segmentation dependency. A question is searched as it was asked. A discussion is searched message by message and the rankings are fused by reciprocal rank, because read as one block its sentences bury the words that matter. A question is answered directly only when the best hit explains enough of it: strength, coverage and matched units each have to clear a fixed bar. Otherwise the question goes to a refinement task. `assistant ask` shows the decision for one question; `assistant eval` scores the question set in `eval/assistant-questions.json`.
 
 ## Admission and policy
 

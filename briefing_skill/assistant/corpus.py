@@ -1,7 +1,7 @@
 """Published corpus for the group assistant index.
 
-Only published records are read: archived issues, their radar records and the
-materialized Roadmap/Idea files. Candidates, full-text caches and run
+Only published records are read: archived issues with the reader cards written
+for them, their radar records and the materialized Roadmap/Idea files. Candidates, full-text caches and run
 directories are never indexed, so anything the assistant can cite is public.
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 # Bumping this changes the input digest and forces every deployment to rebuild.
-INDEXER_VERSION = 2
+INDEXER_VERSION = 3
 
 
 def _text(value: Any) -> str:
@@ -28,23 +28,51 @@ def _file_digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _item_doc(item: dict[str, Any], date: str, base: str) -> dict[str, Any] | None:
+def _item_doc(item: dict[str, Any], card: dict[str, Any] | None, date: str, base: str) -> dict[str, Any] | None:
+    """A briefing item together with the reader card written for it.
+
+    The machine fields say what was found; the card's ``lead`` says it in the
+    words a reader sees. Both are published and checked, so a reply may quote
+    either without a model writing anything.
+    """
+
     item_id = _text(item.get("brief_item_id"))
     title = _text(item.get("title"))
     if not item_id or not title:
         return None
     keywords = [_text(keyword) for keyword in item.get("keywords") or []]
     conclusion = _text(item.get("core_conclusion"))
+    lead = _text(card.get("lead")) if card else ""
+    mechanism, result = _text(item.get("mechanism")), _text(item.get("result"))
+    boundary, relevance = _text(item.get("boundary")), _text(item.get("project_relevance"))
     return {
         "id": f"item:{item_id}",
         "kind": "item",
         "title": title,
-        "search": " ".join([title] * 3 + keywords * 3 + [conclusion, _text(item.get("mechanism"))]),
+        "headline": _text(card.get("title")) if card and card.get("title") else title,
+        "search": " ".join([title] * 3 + keywords * 3 + [lead, conclusion, mechanism, result, boundary]),
         "summary": conclusion,
+        "lead": lead or conclusion,
+        "result": result,
+        "boundary": boundary,
+        "project_relevance": relevance,
         "issue_date": date,
         "url": f"{base}#archive?date={date}&item={item_id}",
         "topic_id": _text(item.get("topic_id")),
         "direction_id": _text(item.get("direction_id")),
+    }
+
+
+def _plain(doc: dict[str, Any]) -> dict[str, Any]:
+    """Give a document without a reader card the same citation fields as an item."""
+
+    return {
+        **doc,
+        "headline": doc["title"],
+        "lead": doc.get("summary") or "",
+        "result": "",
+        "boundary": "",
+        "project_relevance": "",
     }
 
 
@@ -54,7 +82,7 @@ def _radar_doc(record: dict[str, Any], base: str) -> dict[str, Any] | None:
     if not key or not title:
         return None
     date = _text(record.get("issue_date"))
-    return {
+    return _plain({
         "id": f"radar:{key}",
         "kind": "radar",
         "title": title,
@@ -64,7 +92,7 @@ def _radar_doc(record: dict[str, Any], base: str) -> dict[str, Any] | None:
         "url": f"{base}#archive?date={date}",
         "topic_id": _text(record.get("topic_id")),
         "direction_id": _text(record.get("direction_id")),
-    }
+    })
 
 
 def _idea_doc(idea: dict[str, Any], base: str) -> dict[str, Any] | None:
@@ -72,7 +100,7 @@ def _idea_doc(idea: dict[str, Any], base: str) -> dict[str, Any] | None:
     title = _text(idea.get("title"))
     if not idea_id or not title:
         return None
-    return {
+    return _plain({
         "id": f"idea:{idea_id}",
         "kind": "idea",
         "title": title,
@@ -86,7 +114,7 @@ def _idea_doc(idea: dict[str, Any], base: str) -> dict[str, Any] | None:
         "topic_id": next(iter(idea.get("topic_ids") or []), ""),
         "direction_id": "",
         "status": _text(idea.get("status")),
-    }
+    })
 
 
 def _roadmap_doc(roadmap: dict[str, Any], base: str) -> dict[str, Any] | None:
@@ -99,7 +127,7 @@ def _roadmap_doc(roadmap: dict[str, Any], base: str) -> dict[str, Any] | None:
     for branch in branches:
         parts.append(_text(branch.get("name")))
         parts.extend(_text(question) for question in branch.get("open_questions") or [])
-    return {
+    return _plain({
         "id": f"roadmap:{topic_id}",
         "kind": "roadmap",
         "title": title,
@@ -109,7 +137,27 @@ def _roadmap_doc(roadmap: dict[str, Any], base: str) -> dict[str, Any] | None:
         "url": f"{base}#roadmaps?topic={topic_id}",
         "topic_id": topic_id,
         "direction_id": "",
-    }
+    })
+
+
+def _judgement_doc(judgement: dict[str, Any], date: str, base: str, number: int) -> dict[str, Any] | None:
+    """One of an issue's judgements: a digest of what changed that a reader can cite."""
+
+    title = _text(judgement.get("title"))
+    body = _text(judgement.get("body"))
+    if not title or not body:
+        return None
+    return _plain({
+        "id": f"judgement:{date}:{number}",
+        "kind": "judgement",
+        "title": title,
+        "search": " ".join([title] * 3 + [body]),
+        "summary": body,
+        "issue_date": date,
+        "url": f"{base}#archive?date={date}",
+        "topic_id": "",
+        "direction_id": "",
+    })
 
 
 def load_corpus(root: Path, site_base_url: str) -> tuple[list[dict[str, Any]], list[Path]]:
@@ -131,11 +179,19 @@ def load_corpus(root: Path, site_base_url: str) -> tuple[list[dict[str, Any]], l
     index = _load(index_path)
     for issue in sorted(index.get("issues") or [], key=lambda row: str(row.get("date") or "")):
         date = _text(issue.get("date"))
-        issue_path = root / "archive" / "issues" / date / "issue.json"
+        issue_dir = root / "archive" / "issues" / date
+        reader_path = issue_dir / "reader.json"
+        reader = _load(reader_path) if reader_path.exists() else {}
+        cards = reader.get("items") or {}
+        issue_path = issue_dir / "issue.json"
         if issue_path.exists():
             inputs.append(issue_path)
             for item in _load(issue_path).get("items") or []:
-                add(_item_doc(item, date, base))
+                add(_item_doc(item, cards.get(_text(item.get("brief_item_id"))), date, base))
+        if reader_path.exists():
+            inputs.append(reader_path)
+            for number, judgement in enumerate(reader.get("judgements") or []):
+                add(_judgement_doc(judgement, date, base, number))
         papers_rel = _text(issue.get("papers_file"))
         papers_path = (root / "archive" / papers_rel) if papers_rel else None
         if papers_path is not None and papers_path.exists():

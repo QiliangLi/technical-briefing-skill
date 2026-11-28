@@ -14,12 +14,14 @@ from typing import Any
 from pathlib import Path
 
 from ..utils import read_json
-from .constants import ASSESS_CANDIDATES
+from .retrieval import search_discussion
 from .replies import URL
 
 SCENARIO_FILE = "eval/assistant-discussions.json"
 ACTS = ("none", "answer", "add", "review", "gap")
-# What the corpus holds for a discussion: a matching item among the first
+# How many fused hits a discussion is given before its coverage is judged.
+HITS = 10
+# What the corpus holds for a discussion: a matching item among its first
 # lexical hits, one the corpus holds but the hits miss, or none at all.
 COVERAGES = ("reached", "missed", "absent")
 COVERAGE_LABELS = {"reached": "库里有，也检得到", "missed": "库里有，但前十名里检不到", "absent": "库里没有"}
@@ -64,10 +66,10 @@ def shape_problems(scenarios: list[dict[str, Any]]) -> list[str]:
     return problems
 
 
-def discussion_text(scenario: dict[str, Any]) -> str:
+def discussion_lines(scenario: dict[str, Any]) -> list[str]:
     """What the assistant reads of a discussion: its latest messages, as the engine queries them."""
 
-    return " ".join(line["text"] for line in scenario["messages"][-6:])
+    return [line["text"] for line in scenario["messages"][-6:]]
 
 
 def cites_expected(titles: list[str], scenario: dict[str, Any]) -> bool:
@@ -77,10 +79,13 @@ def cites_expected(titles: list[str], scenario: dict[str, Any]) -> bool:
 def coverage_of(index: Any, scenario: dict[str, Any]) -> str:
     """Measure what the corpus holds for a discussion, the way the engine queries it."""
 
-    if not cites_expected([doc["title"] for doc in index.docs], scenario):
+    def names(doc: dict[str, Any]) -> str:
+        return f"{doc['title']} {doc.get('headline', '')}"  # a reader headline can word it differently
+
+    if not any(cites_expected([names(doc)], scenario) for doc in index.docs):
         return "absent"
-    hits = index.search(discussion_text(scenario), ASSESS_CANDIDATES)
-    return "reached" if cites_expected([hit["doc"]["title"] for hit in hits], scenario) else "missed"
+    hits = search_discussion(index, discussion_lines(scenario), HITS)
+    return "reached" if cites_expected([names(hit["doc"]) for hit in hits], scenario) else "missed"
 
 
 def evaluate(scenario: dict[str, Any], replies: list[str], *, site_base_url: str) -> dict[str, Any]:

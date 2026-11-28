@@ -227,6 +227,28 @@ def assess(index: LexicalIndex, query: str, limit: int = 20) -> dict[str, Any]:
     return {"hits": hits, "state": state, "top_strength": strength, "top_score": best["score"] if best else 0.0, "top_coverage": explained, "top_units": units}
 
 
+def search_discussion(index: LexicalIndex, messages: list[str], limit: int) -> list[dict[str, Any]]:
+    """Search for a discussion: each message on its own, then fuse the rankings.
+
+    A discussion read as one block buries the words that matter under the rest
+    of its sentences. Each message is searched alone and the rankings are fused
+    by reciprocal rank, so one message carrying the right words is enough.
+    """
+
+    scores: dict[int, float] = {}
+    found_by: dict[int, int] = {}
+    texts = messages[-6:]
+    for text in texts:
+        for rank, hit in enumerate(index.search(text, limit * 2), start=1):
+            scores[hit["doc_index"]] = scores.get(hit["doc_index"], 0.0) + 1.0 / (60 + rank)
+            found_by[hit["doc_index"]] = found_by.get(hit["doc_index"], 0) + 1
+    ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    return [
+        {"doc": index.docs[doc_index], "doc_index": doc_index, "score": round(score, 4), "strength": found_by[doc_index] / len(texts)}
+        for doc_index, score in ranked
+    ]
+
+
 def snapshot_dir(state_dir: Path | None, root: Path) -> Path:
     return (state_dir or default_state_dir(root)) / "index"
 
