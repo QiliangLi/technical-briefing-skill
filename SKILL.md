@@ -168,6 +168,25 @@ python briefing.py knowledge manifest build && python briefing.py knowledge mani
 
 Candidate 发现细节与升格门禁见「Idea Candidate 发现与升格」一节；字段与命令的权威定义见 `docs/contracts/knowledge-materialization.md`。
 
+### 第五步之后：群助手的索引与每周 Idea 卡片
+
+知识阶段提交后重建群助手的索引，让它能引用本期新发布的条目和 idea：
+
+```bash
+python briefing.py assistant index build
+```
+
+距上一次推送至少七天时，把几条 idea 发成卡片让同事评判。推送是外发动作，和发信一样必须带 `--confirm-send`，且由你本人确认：
+
+```bash
+python briefing.py feedback prepare --issue <date>   # 选卡，并给没有通俗文案的 idea 排「卡片文案」任务
+python briefing.py feedback push --issue <date>      # 只预览；会话执行完文案任务后再看一次
+python briefing.py feedback push --issue <date> --confirm-send
+python briefing.py feedback collect                  # 对账，可随时手动跑
+```
+
+`prepare` 排出的 `card_copy` 任务由群助手的宿主会话执行（`assistant tasks wait` → 写输出 → `assistant tasks apply`），和简报的任务队列不是一回事。宿主会话要用一个专门的 ZCode 会话，不能是跑简报的这个；它不调用 lark-cli。操作步骤见 `docs/operations/group-assistant.md`，选卡规则与发送门禁见 `docs/contracts/group-assistant.md`。
+
 ## ZCode workflow 执行模式
 
 在 ZCode 宿主中，第一～三步默认由保存的动态 workflow `briefing-run` 编排执行，主会话不再逐任务内联处理，运行结束后只收到最终报告与邮件预览。workflow 只能由用户显式发起：

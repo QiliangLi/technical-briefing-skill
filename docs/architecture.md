@@ -92,6 +92,20 @@ audit history while keeping formal Idea counts and confirmed graph relations sep
 
 Freshness is stated, not implied. After the graph gates, the same workflow rebuilds and validates `knowledge/manifest.json` (`briefing_skill/knowledge_publication.py`) and validates the per-issue projections under `knowledge/issue-diffs/`. The manifest records both the formal knowledge watermark and the independent Candidate discovery watermark/counts. Formal `publication_state` remains `archive_only` → `analysis_pending` → `knowledge_complete` (plus operator-marked `analysis_failed`); `candidate_analysis_state` independently reports whether every published item has a Candidate or reasoned no-op. The issue diffs bind homepage "current judgement" text to applied tasks, published evidence, and the graph snapshot id. A manifest claiming `knowledge_complete` while watermarks lag, the graph is stale, or the head issue's diff is missing fails publication; pending states publish with an explicit pending notice, and the homepage renders the projections as-is instead of repackaging old Roadmap summaries as this issue's change. See `docs/contracts/knowledge-materialization.md` and `docs/contracts/editorial-workbench-ui.md`.
 
+## Feishu group assistant
+
+A second process sits beside the pipeline and reads only what it has published. `briefing_skill/assistant/` answers questions raised in one Feishu group from an index over archived issues, ideas and roadmaps, and collects colleagues' verdicts on ideas through weekly cards.
+
+```text
+archive/index.json + archive/issues/<date>/{issue,papers}.json
+knowledge/index.json + ideas/*.json + roadmaps/*.json
+→ Lexical Index (briefing_skill/assistant/retrieval.py, deterministic, digest-named snapshot)
+→ resident process `assistant serve` (lark-cli as the bot → engine → gated outbox)
+→ semantic task files → host session (`assistant tasks wait` → output → `assistant tasks apply`)
+```
+
+It holds the same boundary as the pipeline: Python owns admission, retrieval, every gate on speaking and the ledger; a host session performs bounded semantic work through task files and nothing leaves the group except what a program check passed. The process binds no model API, calls lark-cli only as the bot, and keeps all state, including group chat text, under the ignored `workspace/assistant/`. It shares no state with briefing runs and must run in a session of its own. See `docs/operations/group-assistant.md` and `docs/contracts/group-assistant.md`.
+
 ## Where details live
 
 - Operational behavior is documented in `docs/operations/`.

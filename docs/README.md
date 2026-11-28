@@ -16,7 +16,6 @@ This directory separates current documentation from dated project records. Start
 - [Evidence Graph UI generation brief](designs/2026-08-31-evidence-graph-ui-generation-brief.md)
 - [arXiv outage web fallback](designs/2026-09-24-arxiv-outage-web-fallback.md)
 - [ZCode workflow orchestration for briefing runs](designs/2026-10-15-zcode-workflow-orchestration.md)
-- [Feishu group assistant: idea feedback and discussion-aware retrieval](designs/2026-11-27-feishu-group-assistant.md)
 
 Create non-trivial designs under `designs/` before implementation. Once an implementation is complete, move durable behavior into the current architecture, operations, or contracts documentation. Historical design records belong under `history/designs/` only after that transfer is complete.
 
@@ -27,6 +26,7 @@ Create non-trivial designs under `designs/` before implementation. Once an imple
 - [Execution telemetry](operations/execution-telemetry.md)
 - [Historical backfill](operations/historical-backfill.md)
 - [Knowledge freshness and publication gates](operations/knowledge-freshness.md)
+- [Feishu group assistant](operations/group-assistant.md)
 - [ZCode workflow run](operations/zcode-workflow-run.md)
 
 These files describe how a current installation behaves and how to diagnose it.
@@ -43,6 +43,7 @@ These files describe how a current installation behaves and how to diagnose it.
 - [Project insight layer](contracts/project-insight-layer.md)
 - [Semantic golden evaluation](contracts/semantic-golden-eval.md)
 - [Technology value assessment](contracts/technology-value-assessment.md)
+- [Feishu group assistant](contracts/group-assistant.md)
 
 These files define durable interfaces and quality rules. Prompt and schema details remain in `../prompts/` and `../schemas/`.
 
@@ -57,3 +58,4 @@ These files define durable interfaces and quality rules. Prompt and schema detai
 - [Implemented knowledge graph long-edge and lens differentiation diagnosis](history/designs/2026-09-02-knowledge-graph-lens-and-edge-diagnosis.md)
 - [Implemented Idea continuous discovery and historical backfill](history/designs/2026-09-03-idea-discovery-and-backfill.md)
 - [Implemented per-issue knowledge stage after send](history/designs/2026-10-26-knowledge-stage-after-send.md)
+- [Implemented Feishu group assistant](history/designs/2026-11-27-feishu-group-assistant.md)

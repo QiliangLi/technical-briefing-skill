@@ -101,6 +101,7 @@ python briefing.py stats --run latest
 python briefing.py backfill-status
 python scripts/run_golden_eval.py
 pytest -q
+python briefing.py assistant status                 # 飞书群助手：心跳、去向计数与自检
 ```
 
 成本、数量和时间窗口都由 [config/settings.yaml](config/settings.yaml) 控制。README 不复制这些易变默认值，避免配置修改后出现两套说法。
@@ -116,6 +117,18 @@ python3 briefing.py knowledge graph build     # 保证图谱与当前输入一�
 python3 briefing.py knowledge manifest build  # 刷新新鲜度清单（需先完成 graph build）
 python3 -m http.server 8000                   # 在仓库根目录启动后访问 http://127.0.0.1:8000/site/
 ```
+
+## 飞书群助手
+
+`briefing_skill/assistant/` 是流水线之外的一个小进程：在一个飞书群里回答点名它的提问，答案只来自上面这个已发布的知识库；每周还可以把几条 idea 发成带按钮的卡片，收集同事的判断。它以机器人身份经 lark-cli 收发，需要判断的部分交由一个 ZCode 会话通过任务文件完成，不绑定模型 API。群聊原文只留在被忽略的 `workspace/assistant/`。
+
+```bash
+python briefing.py assistant index build
+python briefing.py assistant ask "KV cache 分层卸载"   # 离线看一问的检索结果，不发送
+python briefing.py assistant status
+```
+
+启用、会话循环、每周卡片和故障处置见 [docs/operations/group-assistant.md](docs/operations/group-assistant.md)。
 
 ## 仓库导航
 
