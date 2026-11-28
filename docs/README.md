@@ -16,7 +16,6 @@ This directory separates current documentation from dated project records. Start
 - [Evidence Graph UI generation brief](designs/2026-08-31-evidence-graph-ui-generation-brief.md)
 - [arXiv outage web fallback](designs/2026-09-24-arxiv-outage-web-fallback.md)
 - [ZCode workflow orchestration for briefing runs](designs/2026-10-15-zcode-workflow-orchestration.md)
-- [Feishu group assistant as a group member: speaking by scenario](designs/2026-11-28-group-assistant-as-group-member.md)
 
 Create non-trivial designs under `designs/` before implementation. Once an implementation is complete, move durable behavior into the current architecture, operations, or contracts documentation. Historical design records belong under `history/designs/` only after that transfer is complete.
 
@@ -60,3 +59,4 @@ These files define durable interfaces and quality rules. Prompt and schema detai
 - [Implemented Idea continuous discovery and historical backfill](history/designs/2026-09-03-idea-discovery-and-backfill.md)
 - [Implemented per-issue knowledge stage after send](history/designs/2026-10-26-knowledge-stage-after-send.md)
 - [Implemented Feishu group assistant](history/designs/2026-11-27-feishu-group-assistant.md)
+- [Implemented Feishu group assistant as a group member](history/designs/2026-11-28-group-assistant-as-group-member.md)

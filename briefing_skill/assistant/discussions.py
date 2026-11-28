@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ..utils import read_json
 from .retrieval import search_discussion
-from .replies import URL
+from .replies import URL, visible_length
 
 SCENARIO_FILE = "eval/assistant-discussions.json"
 ACTS = ("none", "answer", "add", "review", "gap")
@@ -105,7 +105,7 @@ def evaluate(scenario: dict[str, Any], replies: list[str], *, site_base_url: str
         "links-come-from-the-site": all(link.startswith(site_base_url) for link in URL.findall(text)),
         "cites-something-expected": cites_expected([text], scenario) if spoke else True,
         "avoids-the-wrong-things": not any(term in text for term in scenario["avoid"]),
-        "short-enough": len(text) <= REPLY_CHAR_LIMIT,
+        "short-enough": visible_length(text) <= REPLY_CHAR_LIMIT,  # links do not count, as in the program
     }
     return {"ok": all(checks.values()), "checks": checks, "spoke": spoke}
 

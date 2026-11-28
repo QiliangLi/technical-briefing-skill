@@ -94,7 +94,7 @@ Freshness is stated, not implied. After the graph gates, the same workflow rebui
 
 ## Feishu group assistant
 
-A second process sits beside the pipeline and reads only what it has published. `briefing_skill/assistant/` answers questions raised in one Feishu group from an index over archived issues, ideas and roadmaps, and collects colleagues' verdicts on ideas through weekly cards.
+A second process sits beside the pipeline and reads only what it has published. `briefing_skill/assistant/` takes part in one Feishu group: it answers questions raised there from an index over archived issues, their reader cards, ideas and roadmaps; it is looked at every discussion as it starts and decides with a host session whether to join it, review an idea or report a coverage gap to the owner; it offers a new issue when it holds something for the group; and it collects colleagues' verdicts on ideas through weekly cards.
 
 ```text
 archive/index.json + archive/issues/<date>/{issue,papers}.json

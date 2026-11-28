@@ -188,8 +188,9 @@ class Live:
     def _await_replies(self, root: str, session: str, timeout: float) -> tuple[list[str], list[str]]:
         """Wait for the assistant's replies to a discussion; silence comes with the ledger's reasons.
 
-        With a stand-in session, silence is final once every message has a settled
-        disposition and nothing is in flight, so the wait ends there.
+        Silence is final once every message has a settled disposition and nothing
+        is in flight, so the wait ends there; a report to the owner leaves the
+        group just as silent as having nothing to say.
         """
 
         thread = f"{LIVE_CHAT}:{root}"
@@ -203,7 +204,7 @@ class Live:
             if sent:
                 time.sleep(REPLY_TIMEOUT)  # let a second reply arrive before judging
                 break
-            if session == "stand-in" and time.time() >= settled_not_before and self._settled(thread, root):
+            if time.time() >= settled_not_before and self._settled(thread, root):
                 break
             time.sleep(2)
         replies = [row["text"] for row in self.rows("SELECT text FROM outbox WHERE reply_to=? AND status='sent' ORDER BY created_at", (root,))]

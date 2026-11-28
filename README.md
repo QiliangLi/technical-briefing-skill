@@ -120,7 +120,7 @@ python3 -m http.server 8000                   # 在仓库根目录启动后访�
 
 ## 飞书群助手
 
-`briefing_skill/assistant/` 是流水线之外的一个小进程：在一个飞书群里回答点名它的提问，答案只来自上面这个已发布的知识库；每周还可以把几条 idea 发成带按钮的卡片，收集同事的判断。它以机器人身份经 lark-cli 收发，需要判断的部分交由一个 ZCode 会话通过任务文件完成，不绑定模型 API。群聊原文只留在被忽略的 `workspace/assistant/`。
+`briefing_skill/assistant/` 是流水线之外的一个小进程，在一个飞书群里像一名成员那样参与：回答点名它的提问，在讨论进行时接话、审核同事提出的想法，讨论到日报没覆盖的方向时私聊报给你，新一期发布后挑出和群里的工作相关的条目。答案只来自上面这个已发布的知识库；每周还可以把几条 idea 发成带按钮的卡片，收集同事的判断。它以机器人身份经 lark-cli 收发，需要判断的部分交由一个 ZCode 会话通过任务文件完成，不绑定模型 API。群聊原文只留在被忽略的 `workspace/assistant/`。
 
 ```bash
 python briefing.py assistant index build

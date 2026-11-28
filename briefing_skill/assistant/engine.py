@@ -514,14 +514,15 @@ class Engine:
     def _discussion_window(self, thread_key: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
         """The latest messages of a discussion with senders replaced by labels, and the labels themselves."""
 
+        # Only what people wrote: the assistant's own messages are not discussion.
         rows = self.store.fetchall(
-            "SELECT * FROM events WHERE thread_key=? ORDER BY created_ms DESC, trigger_id DESC LIMIT ?",
+            "SELECT * FROM events WHERE thread_key=? AND is_bot=0 ORDER BY created_ms DESC, trigger_id DESC LIMIT ?",
             (thread_key, WINDOW_MAX_MESSAGES),
         )[::-1]
         nearby: list[dict[str, Any]] = []
         if rows:
             nearby = self.store.fetchall(
-                "SELECT * FROM events WHERE chat_id=? AND created_ms < ? AND thread_key <> ? ORDER BY created_ms DESC LIMIT ?",
+                "SELECT * FROM events WHERE chat_id=? AND is_bot=0 AND created_ms < ? AND thread_key <> ? ORDER BY created_ms DESC LIMIT ?",
                 (rows[0]["chat_id"], rows[0]["created_ms"], thread_key, CONTEXT_NEIGHBOURS),
             )[::-1]
         aliases: dict[str, str] = {}

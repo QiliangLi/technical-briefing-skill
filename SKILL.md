@@ -212,14 +212,14 @@ CreateWorkflow saved: { name: "briefing-run", args: { mode: "resume", concurrenc
 
 用户说「运行群助手」或「开始监控群」时，在一个新会话里执行下面的循环。这个会话不跑简报；两者可以同时进行，群助手对日报的产物只读。它不是一个有始有终的 workflow，而是一直挂着的循环，所以不做成 `CreateWorkflow`。细则与故障处置见 `docs/operations/group-assistant.md`。
 
-1. 启动：把 `.venv/bin/python3 briefing.py assistant serve` 作为后台任务运行，再运行 `.venv/bin/python3 briefing.py assistant status`。`service.running` 为 true、`service.consumers` 四项都是 ready、`self_check.ok` 为 true 才继续；否则把输出发给用户并停下。
+1. 启动：运行 `.venv/bin/python3 briefing.py assistant serve --detach`，它会作为独立进程启动并立刻返回；再运行 `.venv/bin/python3 briefing.py assistant status`，确认 `service.running` 为 true、`service.consumers` 四项都是 ready、`self_check.ok` 为 true。不满足就把输出发给用户并停下。
 2. 等待：把 `.venv/bin/python3 briefing.py assistant tasks wait` 作为后台任务运行。它只在有语义任务时退出，退出时会话被叫醒。必须后台运行，前台命令十分钟就会超时；不要加 `--timeout` 轮询，空闲时那会白白消耗 token。
-3. 执行：对每张执行卡，只读卡上列的提示词、Schema 和输入文件，按提示词写一个 JSON 对象到卡上的输出路径，然后 `.venv/bin/python3 briefing.py assistant tasks apply --task <task_id>`。apply 返回 `ok: false` 时不重试、不手改输出，把 `errors` 原样报告。
+3. 执行：把返回里的每张执行卡各派一个子代理去做，主会话只记下结果。子代理只读卡上列的提示词、Schema 和输入文件，按提示词写一个 JSON 对象到卡上的输出路径，然后运行 `.venv/bin/python3 briefing.py assistant tasks apply --task <task_id>`。提示词允许时，子代理可以运行 `.venv/bin/python3 briefing.py assistant search --task <task_id> "<检索式>"` 自己再查，每个任务至多四次。apply 返回 `ok: false` 时不重试、不手改输出，把 `errors` 原样报告。
 4. 全部 apply 后回到第 2 步。
 
-用户说「查看群助手」时运行 `assistant status`，逐块解释它的含义。用户说「停止群助手」时先 `.venv/bin/python3 briefing.py assistant stop`，再结束后台任务。
+用户说「查看群助手」时运行 `assistant status`，逐块解释它的含义。用户说「停止群助手」时运行 `.venv/bin/python3 briefing.py assistant stop`，再结束后台任务。
 
-不变量：宿主会话不调用 `lark-cli`，不向任何群发送消息，不改任务的输入文件，除上面列出的命令外不运行其他 `assistant` 或 `feedback` 命令；它要判断的内容只来自执行卡列出的输入。
+不变量：宿主会话和它的子代理不调用 `lark-cli`，不向任何群发送消息，不改任务的输入文件，除上面列出的命令外不运行其他 `assistant` 或 `feedback` 命令；它们要判断的内容只来自执行卡列出的输入和自己的检索。
 
 ## 上下文与成本硬规则
 
