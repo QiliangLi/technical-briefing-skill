@@ -51,11 +51,13 @@ python briefing.py assistant status
 
 用一个专门的 ZCode 会话，不能是跑简报定时任务的那个，权限模式要不弹确认。
 
-1. 拉起进程：把 `python briefing.py assistant serve` 作为后台任务运行。
-2. 等待：`python briefing.py assistant tasks wait`。有语义任务时它才返回，
-   一次带回攒批的全部执行卡，末尾写着下一步。
+1. 拉起进程：把 `.venv/bin/python3 briefing.py assistant serve` 作为后台任务运行。
+2. 等待：把 `.venv/bin/python3 briefing.py assistant tasks wait` 也作为后台任务运行。
+   它只在有语义任务时才退出，退出时会话被叫醒，一次带回攒批的全部执行卡，
+   末尾写着下一步。要在后台跑：前台命令最多十分钟就会超时。不要加 `--timeout`
+   轮询，那样空闲时也会消耗 token。
 3. 执行：每张卡只读卡上列的提示词、Schema 和输入文件，把一个 JSON 对象写到
-   卡上的输出路径，然后 `python briefing.py assistant tasks apply --task <task_id>`。
+   卡上的输出路径，然后 `.venv/bin/python3 briefing.py assistant tasks apply --task <task_id>`。
 4. 全部 apply 后回到第 2 步。
 
 会话不调用 lark-cli，不发送任何消息，不改输入文件。apply 是唯一的写入口，
@@ -64,6 +66,27 @@ python briefing.py assistant status
 2026-11-28 的实测：`tasks wait` 在三个文案任务攒够 60 秒后立刻返回；读三份
 输入、写三份文案、逐个 apply 用了约三分钟；三个任务全部采纳，再 `wait` 在
 超时后返回 `no_tasks`。整个过程会话没有调用 lark-cli。
+
+给新会话的启动语，在仓库根目录开会话后直接粘贴：
+
+```text
+你是飞书群助手的宿主会话，只做下面这件事，不运行简报流程。命令一律用
+.venv/bin/python3 briefing.py …。
+
+1. 启动：把 .venv/bin/python3 briefing.py assistant serve 作为后台任务运行，再运行
+   .venv/bin/python3 briefing.py assistant status，确认 service.running 为 true、
+   service.consumers 四项都是 ready、self_check.ok 为 true。不满足就把输出发给我，然后停下。
+2. 等待：把 .venv/bin/python3 briefing.py assistant tasks wait 作为后台任务运行，不要前台运行，
+   也不要加 --timeout。它会在有任务时退出并叫醒你。
+3. 执行：读它的输出。每张卡只读卡上列的 prompt、schema 和 input 三个文件，按 prompt 写一个
+   JSON 对象到卡上的 output 路径，然后运行
+   .venv/bin/python3 briefing.py assistant tasks apply --task <task_id>。
+   apply 返回 ok 为 false 时不重试、不手改，把 errors 原样记下来。
+4. 全部 apply 后回到第 2 步。
+
+约束：不调用 lark-cli，不往任何群发送消息，不改 input 文件，只运行上面列出的命令。
+我说「停止」时，先运行 .venv/bin/python3 briefing.py assistant stop，再结束后台任务。
+```
 
 ## 每周的 Idea 卡片
 
